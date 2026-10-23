@@ -9,7 +9,7 @@ Give each robot a name, a personality and a home folder, stick it anywhere on sc
 1. Install the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) and sign in, so `claude` works in a terminal. The robots run your own Claude Code.
 2. Download **C-Bot-Setup-x.y.z.exe** from the [latest release](https://github.com/nguyencuongabcxyz/c-bot-releases/releases/latest) and run it. It installs just for you, no admin rights needed, with Start-menu and desktop shortcuts. Until the app is code-signed, Windows may say *"Windows protected your PC"*: click **More info → Run anyway**.
 
-C-Bot then **updates itself**: it checks for a new version at start and every few hours, downloads it in the background and installs it the next time it restarts. Right-click the tray icon to see the version, check now, or **Restart to update** straight away. Updates never touch your robots or chats; they live in `%APPDATA%\C-Bot`. The free characters (`characters/`) are installed next to the app, under `resources\characters`.
+C-Bot then **updates itself**: it checks for a new version at start and every few hours, downloads it in the background and installs it the next time it restarts. Right-click the tray icon to see the version, check now, or **Restart to update** straight away. Updates never touch your robots or chats; they live in `%APPDATA%\C-Bot`. The free characters aren't in the installer, to keep it small: download the ones you like from [`characters/`](characters/CREDITS.md) and pick them in the Workshop's **📦 My model**.
 
 ## Run it from source
 

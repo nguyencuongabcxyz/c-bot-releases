@@ -1,6 +1,6 @@
 {
   "name": "c-bot",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cartoon desktop robots that are secretly Claude Code",
   "main": "src/main/main.js",
   "scripts": {
@@ -38,12 +38,10 @@
       "!src/**/*.map",
       "!src/renderer/office3d/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "characters",
-        "to": "characters"
-      }
+    "electronLanguages": [
+      "en-US"
     ],
+    "compression": "maximum",
     "win": {
       "target": [
         {
