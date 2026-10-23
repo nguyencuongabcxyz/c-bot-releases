@@ -1263,6 +1263,7 @@
     cbot.send('robot:drag', { phase: 'move', dx, dy });
   });
 
+  let monitorClick = 0; // a pending single click on the monitor (see endPress)
   function endPress(e) {
     if (!press) return;
     const p = press;
@@ -1273,6 +1274,14 @@
     document.documentElement.style.setProperty('--swing', '0deg');
     state.lastActivity = Date.now();
     if (!p.moved) {
+      if (state.awake && !state.mirroring && !state.collapsed && office.hitsMonitor(e.clientX, e.clientY)) {
+        if (monitorClick) {
+          clearTimeout(monitorClick);
+          monitorClick = 0;
+          crashMonitor();
+        } else monitorClick = setTimeout(() => ((monitorClick = 0), poke()), 260);
+        return;
+      }
       if (state.mirroring) openTerminal();
       else if (state.collapsed) openChat();
       else if (state.awake) poke();
@@ -2993,6 +3002,9 @@
     drum: 2.6, slump: 2.8, dvd: 9, 'dvd-lucky': 9, feed: 9.6, standdesk: 21, milktea: 5.6, dumbbell: 6, phone: 7, sleepphone: 8, pushup: 10,
     'cat-tail': 4.5, 'cat-mug': 4.2, 'loopy-pencil': 3.8, 'nerd-glasses': 2, 'nerd-guitar': 4.5, 'girl-hair': 3.2, 'girl-heart': 2.6, 'robot-antenna': 2.4, 'robot-defrag': 1.8,
     bubble: 5.2, mumble: 3.6, dream: 6.5, sleeptype: 4.2, slide: 6.5, snore: 2.4, drift: 10, drool: 2.6,
+    // IT office life
+    duck: 6, reboot: 7, stackoverflow: 5, cable: 4.5, crumbs: 5, 'crumbs-cookie': 5, merge: 6, standup: 7, jira: 5.5, works: 5, jitter: 6.5,
+    friday: 4.5, monday: 6, noodles: 7, payday: 6, eyebreak: 6, bsod: 4.2,
   };
   const CRITTER_ANTICS = { cat: ['cat-tail', 'cat-mug'], loopy: ['loopy-pencil'], nerd: ['nerd-glasses', 'nerd-guitar'], girl: ['girl-hair', 'girl-heart'], robot: ['robot-antenna', 'robot-defrag'] };
   const DREAMS = { loopy: ['🪵', '🌲', '🥕'], cat: ['🐟', '🧶', '🐭'], nerd: ['🍕', '💾', '🎮'], girl: ['🧋', '🐱', '🌸'], robot: ['🔋', '⚙️', '💾'] };
@@ -3032,10 +3044,47 @@
   const idleAwake = () => state.awake && !state.busy && !helpersOut() && !state.mirroring && !press;
   const idleAsleep = () => !state.awake && !state.busy && !helpersOut() && !state.mirroring && !press;
 
-  // after 10 pm it sleeps in a nightcap
+  // after 10 pm it sleeps in a nightcap, or, still up, codes with its hood up in the monitor's glow
   function nightcap() {
     const h = new Date().getHours();
-    robot.dataset.nightcap = idleAsleep() && (h >= 22 || h < 6) ? '1' : '';
+    const late = h >= 22 || h < 6;
+    robot.dataset.nightcap = idleAsleep() && late ? '1' : '';
+    robot.dataset.lateNight = state.awake && late ? '1' : '';
+  }
+
+  // Office-calendar gags: what the clock makes more likely right now
+  function calendarWeights() {
+    const now = new Date();
+    const day = now.getDay();
+    const h = now.getHours();
+    return {
+      friday: day === 5 && h >= 15 ? 2.5 : 0, // no deploys on a Friday afternoon
+      monday: day === 1 && h < 12 ? 2 : 0, // Monday morning: coffee on a drip
+      noodles: h === 12 ? 2.5 : 0, // lunch at the desk
+      payday: now.getDate() === 25 ? 1.5 : 0,
+    };
+  }
+  // and once an hour, in its first ten minutes, a stretch and a 20-20-20 eye break
+  let eyeBreakHour = '';
+  function eyeBreakDue() {
+    const now = new Date();
+    const key = `${now.toDateString()} ${now.getHours()}`;
+    if (now.getMinutes() >= 10 || key === eyeBreakHour) return false;
+    eyeBreakHour = key;
+    return true;
+  }
+
+  // Double-clicking the monitor crashes the computer, and it knows it was you
+  function crashMonitor() {
+    if (!idleAwake()) return poke();
+    stopAntic();
+    antic('bsod');
+    Sfx.crash();
+    express('open', 'wide', 1100);
+    cue(1.2, () => {
+      express('flat', 'flat', 2800);
+      showPop(quip('bsod') || 'You did this.', 2400);
+    });
   }
 
   // Leaning back, hands behind its head… until your mouse comes near, when it
@@ -3075,6 +3124,10 @@
       standdesk: sec > 20 ? 0.8 : 0, // presses the desk's ▲ and works standing up for a bit
       talk: sec > 25 ? 1.4 : 0, critter: crit.length ? 2 : 0,
       slump: sec > 90 ? 1.5 : 0, drum: sec > 90 ? 1.5 : 0, attention: sec > 120 ? 1.2 : 0,
+      // IT office life
+      duck: 1, stackoverflow: 0.9, cable: 0.6, crumbs: 0.6, 'crumbs-cookie': 0.25, jira: 0.8, works: 0.8,
+      reboot: sec > 20 ? 0.8 : 0, merge: sec > 30 ? 0.7 : 0, jitter: sec > 30 ? 0.6 : 0, standup: sec > 40 ? 0.6 : 0,
+      ...calendarWeights(),
     });
     lastAntic = name;
     switch (name) {
@@ -3260,6 +3313,132 @@
         antic(name);
         express('flat', 'flat', 2600);
         break;
+      case 'duck':
+        // rubber duck debugging: explains, the duck squeaks, OH!
+        antic(name);
+        cue(0.3, () => Sfx.pop());
+        cue(0.8, () => {
+          express('open', 'talk', 2600);
+          showPop(quip('duck') || '…', 2400);
+        });
+        cue(3.8, () => Sfx.squeak());
+        cue(4.3, () => {
+          Sfx.done();
+          express('happy', 'wide', 1200);
+          showPop(quip('oh') || 'OH!', 1500);
+        });
+        break;
+      case 'reboot':
+        // the screen freezes: glare, tap tap, power off and on again
+        antic(name);
+        cue(0.3, () => express('flat', 'flat', 1600));
+        for (const at of [1.4, 1.7, 3.0]) cue(at, () => Sfx.tool());
+        cue(3.6, () => Sfx.wake());
+        cue(5.8, () => {
+          express('happy', 'smile', 1100);
+          showPop(quip('reboot') || 'Fixed!', 1300);
+        });
+        break;
+      case 'stackoverflow':
+        antic(name);
+        for (const at of [1.8, 2.9]) cue(at, () => Sfx.thunk());
+        cue(3.6, () => express('open', 'flat', 1200));
+        cue(3.8, () => showPop(quip('so') || '…', 1300));
+        break;
+      case 'cable':
+        antic(name);
+        for (const at of [1.2, 1.6]) cue(at, () => Sfx.tool());
+        cue(2.2, () => {
+          Sfx.thunk();
+          express('open', 'wide', 1500);
+        });
+        cue(2.9, () => showPop(quip('cable') || 'Oops.', 1500));
+        break;
+      case 'crumbs':
+      case 'crumbs-cookie':
+        antic(name);
+        cue(1.2, () => Sfx.rattle());
+        if (name === 'crumbs-cookie') {
+          cue(2.7, () => {
+            Sfx.ooh();
+            express('happy', 'wide', 1300);
+            showPop(quip('cookie') || '!', 1500);
+          });
+        }
+        break;
+      case 'merge':
+        antic(name);
+        cue(1.2, () => {
+          express('dizzy', 'flat', 1800);
+          showPop(quip('merge') || '?!', 1700);
+        });
+        cue(3.2, () => express('closed', 'smile', 2400));
+        cue(3.4, () => showPop((quip('breathe') || [])[0] || '…', 1100));
+        cue(4.6, () => showPop((quip('breathe') || [])[1] || '…', 1100));
+        break;
+      case 'standup': {
+        // the daily stand-up, standing on its chair
+        antic(name);
+        const lines = quip('standup') || ['Yesterday: stuff.', 'Today: more stuff.', 'Blockers: you.'];
+        lines.forEach((line, i) => cue(1.0 + i * 1.8, () => {
+          express('open', 'talk', 1500);
+          showPop(line, 1700);
+        }));
+        break;
+      }
+      case 'jira':
+        antic(name);
+        cue(4.0, () => {
+          Sfx.oops();
+          express('closed', 'flat', 1000);
+        });
+        cue(5.4, () => showPop(quip('jira') || '…', 1400));
+        break;
+      case 'works':
+        antic(name);
+        cue(0.3, () => {
+          express('happy', 'smile', 1500);
+          showPop(quip('works') || 'Works on my machine!', 1700);
+        });
+        cue(1.8, () => Sfx.thunk());
+        cue(2.5, () => express('happy', 'smile', 1800));
+        break;
+      case 'jitter':
+        // three coffees in a row, then warp-speed typing
+        antic(name);
+        for (const at of [0.8, 1.5, 2.2]) cue(at, () => Sfx.slurp());
+        cue(2.4, () => express('open', 'wide', 3800));
+        cue(2.6, () => showPop(quip('jitter') || '!!!', 1500));
+        break;
+      case 'friday':
+        antic(name);
+        express('flat', 'flat', 4000);
+        cue(0.5, () => showPop(quip('friday') || 'No deploys on Friday!', 2600));
+        break;
+      case 'monday':
+        antic(name);
+        express('flat', 'flat', 5600);
+        cue(1.0, () => showPop(quip('monday') || '…coffee.', 2000));
+        break;
+      case 'noodles':
+        antic(name);
+        cue(0.3, () => Sfx.pop());
+        for (const at of [1.5, 2.7, 3.9]) cue(at, () => {
+          Sfx.slurp();
+          express('happy', 'o', 700);
+        });
+        break;
+      case 'payday':
+        antic(name);
+        cue(0.3, () => {
+          Sfx.kaching();
+          express('happy', 'wide', 2400);
+        });
+        cue(4.2, () => {
+          express('flat', 'flat', 1600);
+          showPop(quip('payday') || '…', 1600);
+        });
+        break;
       case 'dvd-lucky':
         antic(name);
         cue(6.0, () => {
@@ -3304,7 +3483,12 @@
 
   function antics() {
     const boredFor = Date.now() - state.lastActivity;
-    if (idleAwake() && boredFor > 6000 && Date.now() > anticUntil && Math.random() < 0.9) awakeAntic(boredFor);
+    nightcap();
+    if (idleAwake() && boredFor > 6000 && Date.now() > anticUntil && eyeBreakDue()) {
+      antic('eyebreak');
+      cue(0.3, () => express('closed', 'o', 1400));
+      cue(2.2, () => showPop(quip('eyebreak') || '20-20-20!', 2000));
+    } else if (idleAwake() && boredFor > 6000 && Date.now() > anticUntil && Math.random() < 0.9) awakeAntic(boredFor);
     if (state.awake && !state.busy && !helpersOut() && !state.mirroring && !input.value && boredFor > AUTO_SLEEP_MS) {
       stopAntic();
       showPop(pick(persona().sleepy), 1500);

@@ -35,6 +35,7 @@ const REACTIONS = ['hop', 'squish', 'shake', 'spin', 'idea', 'chomp', 'bonk', 'h
 // the squeaky-hammer bonk, in seconds: pops in, winds up, strikes, rebounds, shrinks away
 // (the hit time is mirrored by BONK_HIT_MS in robot.js, which lands the sound and reaction)
 const BONK = { appear: 0.18, windup: 0.34, hit: 0.42, leave: 0.72, end: 1.02, scale: 0.8 };
+const NIGHT_GLOW = new THREE.Color('#7fb2ff');
 const easeOutBack = (p) => 1 + 2.4 * (p - 1) ** 3 + 1.4 * (p - 1) ** 2;
 const CAMERA = { target: new THREE.Vector3(-0.38, 0.7, -0.7), dir: new THREE.Vector3(0.62, 0.5, 0.8), distance: 5.95, fov: 27 };
 
@@ -176,6 +177,7 @@ function mount(host, { stateEl, moodEl, width, height }) {
       });
   }
   let lights = 1;
+  let night = 0; // 0..1, up past 10 pm (data-late-night)
   let nextZ = 0;
   let nextSteam = 0;
   let nextSweat = 0;
@@ -502,7 +504,7 @@ function mount(host, { stateEl, moodEl, width, height }) {
     }
     set.screen.tex.needsUpdate = true;
     const glowColor = SCREEN_LIGHT[shown.startsWith('dream:') ? 'dream' : shown] || (A.screen ? '#9fb0ff' : null);
-    set.screen.light.intensity = mix(set.screen.light.intensity, glowColor ? 1.4 * (1 - A.screenDim) : 0, ease(dt, 6));
+    set.screen.light.intensity = mix(set.screen.light.intensity, (glowColor ? 1.4 * (1 - A.screenDim) : 0) + 1.6 * night, ease(dt, 6));
     if (glowColor) set.screen.light.color.set(glowColor);
     set.screen.led.material.color.set(screen === 'off' ? (Math.sin(t * 2.5) > 0 ? '#ffb347' : '#5a4630') : '#7bed9f');
 
@@ -513,9 +515,12 @@ function mount(host, { stateEl, moodEl, width, height }) {
 
     // ---- lighting: bright while awake, dimmed and bluish while asleep
     lights = mix(lights, awake || working ? 1 : 0, ease(dt, 3));
-    hemi.intensity = mix(0.5, 1.2, lights);
-    hemi.color.set('#9fb0ff').lerp(new THREE.Color('#ffffff'), lights);
-    sun.intensity = mix(0.3, 1.3, lights);
+    // up past 10 pm: the room goes dim and the monitor's glow lights its face
+    night = mix(night, d.lateNight === '1' && awake ? 1 : 0, ease(dt, 2));
+    hemi.intensity = mix(0.5, 1.2, lights) * (1 - 0.45 * night);
+    hemi.color.set('#9fb0ff').lerp(new THREE.Color('#ffffff'), lights * (1 - 0.6 * night));
+    sun.intensity = mix(0.3, 1.3, lights) * (1 - 0.6 * night);
+    if (night > 0.01) set.screen.light.color.lerp(NIGHT_GLOW, night);
     set.lamp.light.intensity = mix(0, 1.2, lights) * A.lamp;
     // a dance party turns the desk lamp into a disco light
     if (dancing) {
@@ -590,6 +595,15 @@ function mount(host, { stateEl, moodEl, width, height }) {
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+    },
+    // Is this point (client px) on the monitor's screen? (double-clicking it crashes the computer)
+    hitsMonitor(clientX, clientY) {
+      const r = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, 1 - ((clientY - r.top) / r.height) * 2);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, camera);
+      const hit = ray.intersectObjects([set.office, robot.root], true)[0];
+      return hit?.object.material === set.screen.material;
     },
     // Where the robot's head is on screen (CSS px within the canvas).
     headPosition() {

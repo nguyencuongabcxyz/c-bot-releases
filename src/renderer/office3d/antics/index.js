@@ -5,6 +5,10 @@ import { ASLEEP, tick as asleepTick } from './asleep.js';
 import { CRITTERS, tick as critterTick } from './critters.js';
 import { PHONE } from './phone.js';
 import { PUSHUP } from './pushup.js';
+import { DESK } from './desk.js';
+import { TEAM } from './team.js';
+import { CALENDAR, tick as calendarTick } from './calendar.js';
+import { PRANKS } from './pranks.js';
 
 // Antics: the little things a robot does when nobody's asking it anything
 // (sipping coffee, sneezing, snoring a snot bubble…). The page starts one by
@@ -12,6 +16,7 @@ import { PUSHUP } from './pushup.js';
 //   data-antic       its name (a key of AWAKE / ASLEEP / CRITTERS)
 //   data-antic-seq   a fresh value each time, so the same antic can play twice in a row
 //   data-antic-text  optional words for it (a mumble, a dream emoji)
+//   data-late-night  '1' while it's up past 10 pm (c.lateNight)
 // and the 3D view plays it for its `dur` seconds. It's dropped as soon as the
 // robot wakes up or falls asleep (or gets a new body), so it never fights the
 // real work.
@@ -38,8 +43,8 @@ import { PUSHUP } from './pushup.js';
 // The standing desk's height lives outside antics (awake.js liftTick): an antic
 // sets c.set.office.userData.lift.deskTo / seatTo and the desk motors there.
 // Modules may also export tick(c) for things that live outside one antic (the nightcap).
-const HANDLERS = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP };
-const TICKS = [awakeTick, asleepTick, critterTick].filter(Boolean);
+const HANDLERS = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS };
+const TICKS = [awakeTick, asleepTick, critterTick, calendarTick].filter(Boolean);
 
 const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 const mix = (a, b, k) => a + (b - a) * k;
@@ -185,6 +190,7 @@ export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }) {
         t, dt, body: d.body || 'loopy', robot, set, emit, worldPoint, mix, toward, THREE,
         antic: run?.name || '', // what's playing (ticks use it, e.g. the standing desk comes down otherwise)
         camYaw, monitorYaw, curYaw, mugHome, lampHome, asleep, nightcap: d.nightcap === '1',
+        lateNight: d.lateNight === '1', // awake past 10 pm: hood up (calendar.js)
         hand: (side = 'R') => worldPoint(robot.arms[side === 'L' ? 'armL' : 'armR'].elbow, 0, -0.24, 0),
         say: (text, kind = 'speech') => {
           if (text) bubble.want = { text, kind };

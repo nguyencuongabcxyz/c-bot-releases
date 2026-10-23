@@ -100,6 +100,11 @@ window.Sfx = (() => {
     slurp() { [0, 0.09, 0.2, 0.31].forEach((at) => noise({ at, dur: 0.08, vol: 0.09, freq: 700 })); tone(260, { at: 0.42, dur: 0.06, type: 'sine', vol: 0.07, to: 520 }); },
     // straining at the third rep: a low, wobbly "hnnngh"
     grunt() { tone(150, { dur: 0.5, type: 'sawtooth', vol: 0.025, to: 120 }); tone(156, { dur: 0.5, type: 'sawtooth', vol: 0.02, to: 128 }); },
+    // IT-office antics: a yanked cable's thunk, a keyboard full of crumbs, payday's ka-ching, a blue-screen crash
+    thunk() { tone(110, { dur: 0.18, type: 'sine', vol: 0.12, to: 60 }); noise({ dur: 0.08, vol: 0.05, freq: 300, type: 'lowpass' }); },
+    rattle() { for (let i = 0; i < 9; i++) noise({ at: i * 0.11 + Math.random() * 0.04, dur: 0.03, vol: 0.05, freq: 3200 }); },
+    kaching() { tone(1568, { dur: 0.08, type: 'square', vol: 0.03 }); tone(2093, { at: 0.08, dur: 0.25, type: 'triangle', vol: 0.06 }); noise({ at: 0.05, dur: 0.15, vol: 0.03, freq: 5000 }); },
+    crash() { [523, 392, 311, 196].forEach((f, i) => tone(f, { at: i * 0.12, dur: 0.16, type: 'square', vol: 0.04 })); noise({ at: 0.5, dur: 0.25, vol: 0.05, freq: 900 }); },
     boing() { tone(180, { dur: 0.4, type: 'sine', vol: 0.06, to: 520 }); },
     // hover-menu interactions
     charge() {
