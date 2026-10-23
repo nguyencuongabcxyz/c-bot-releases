@@ -1157,7 +1157,7 @@ function sanitize(fields = {}) {
   if (typeof fields.color === 'string' && /^#[0-9a-f]{6}$/i.test(fields.color)) out.color = fields.color;
   if (typeof fields.model === 'string') out.model = fields.model.trim();
   if (typeof fields.accessory === 'string') out.accessory = fields.accessory;
-  if (['loopy', 'cat', 'nerd', 'robot', 'custom'].includes(fields.body)) out.body = fields.body;
+  if (['loopy', 'cat', 'nerd', 'girl', 'robot', 'custom'].includes(fields.body)) out.body = fields.body;
   if (['classic', 'sioux'].includes(fields.theme)) out.theme = fields.theme;
   if (fields.size in SIZES) out.size = fields.size;
   if (typeof fields.glb === 'string' && (fields.glb === '' || MODEL_FILE.test(fields.glb))) out.glb = fields.glb;

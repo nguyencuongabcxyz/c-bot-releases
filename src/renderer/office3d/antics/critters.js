@@ -4,7 +4,8 @@ import { LAYOUT } from '../scene.js';
 
 // Each character's own idle fidget: the cat chases its tail and tests your
 // patience with the mug, Loopy gnaws a pencil, the nerd pushes up his glasses or
-// shreds an air guitar, the robot flicks its antenna or defragments.
+// shreds an air guitar, the girl twirls a pigtail or makes a finger heart, the
+// robot flicks its antenna or defragments.
 // robot.js only plays them for the matching body. See ./index.js for the contract.
 
 const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
@@ -29,7 +30,7 @@ const _arm = [0, 0, 0];
 const _head = [0, 0, 0];
 
 // elbow to the middle of the hand, per body (the upper arm comes from the rig)
-const FOREARM = { loopy: 0.18, cat: 0.15, nerd: 0.2, robot: 0.24 };
+const FOREARM = { loopy: 0.18, cat: 0.15, nerd: 0.2, girl: 0.2, robot: 0.24 };
 
 /**
  * Two-bone IK: the arm angles ([pitch, out, elbow], written into `out`) that put
@@ -243,6 +244,56 @@ export const CRITTERS = {
       if (s > 0.4 && s < 4.0 && s >= (run.nextNote ?? 0)) {
         run.nextNote = s + 0.3 + Math.random() * 0.15;
         c.emit('note', c.hand('R'), { life: 1.1, vel: new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.45, 0.15), size: 0.12, spin: (Math.random() - 0.5) * 3 });
+      }
+    },
+  },
+
+  // twirls a pigtail round a finger, head tipped towards it, the lock bouncing along
+  'girl-hair': {
+    dur: 3.2,
+    fadeIn: 0.4,
+    fadeOut: 0.5,
+    update(c, A) {
+      const { s, w, robot, run } = c;
+      const tail = robot.pigtails?.[1];
+      if (tail) {
+        run.rot ??= tail.rotation.clone();
+        const twirl = ramp(s, 0.5, 0.8) * (1 - ramp(s, 2.5, 3.0));
+        tail.rotation.x = run.rot.x + Math.sin(s * 9) * 0.25 * twirl;
+        tail.rotation.z = run.rot.z + Math.cos(s * 9) * 0.12 * twirl;
+      }
+      const a = s * 9;
+      const reach = aim(c, 'R', onHead(c, 0.43 + Math.cos(a) * 0.025, 0.28 + Math.sin(a) * 0.03, -0.04), _arm);
+      c.toward(A.armR, _arm, w);
+      A.reachR = c.mix(1, reach, w);
+      A.head[2] = c.mix(A.head[2], -0.2, w);
+      A.head[1] = c.mix(A.head[1], 0.15, w);
+      A.antenna += Math.sin(s * 4.5) * 0.15 * w;
+    },
+    end(c) {
+      const tail = c.robot.pigtails?.[1];
+      if (tail && c.run.rot) tail.rotation.copy(c.run.rot);
+    },
+  },
+
+  // a finger heart in front of the chin, a head tilt, and little hearts float up
+  'girl-heart': {
+    dur: 2.6,
+    fadeIn: 0.4,
+    fadeOut: 0.5,
+    update(c, A) {
+      const { s, w, robot, run } = c;
+      for (const [side, x] of [['L', -0.03], ['R', 0.03]]) {
+        const reach = aim(c, side, robot.torso.localToWorld(_p.set(x, 0.62, 0.36)), _arm);
+        c.toward(side === 'L' ? A.armL : A.armR, _arm, w);
+        A[side === 'L' ? 'reachL' : 'reachR'] = c.mix(1, reach, w);
+      }
+      A.head[2] = c.mix(A.head[2], 0.22, w);
+      A.head[0] = c.mix(A.head[0], -0.06, w);
+      A.lean = c.mix(A.lean, 0.06, w);
+      if (s > 0.8 && s < 2.0 && s >= (run.nextHeart ?? 0)) {
+        run.nextHeart = s + 0.35;
+        c.emit('heart', robot.torso.localToWorld(_p.set(0, 0.7, 0.38)), { life: 1.1, vel: new THREE.Vector3((Math.random() - 0.5) * 0.2, 0.45, 0.1), size: 0.11 });
       }
     },
   },

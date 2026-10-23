@@ -48,6 +48,7 @@ const FACE_SPOTS = {
   cat: { nose: [0.05, 0.23, 0.43], mouth: [-0.06, 0.2, 0.41] },
   loopy: { nose: [0.06, 0.29, 0.44], mouth: [-0.08, 0.2, 0.39] },
   nerd: { nose: [0.05, 0.25, 0.41], mouth: [-0.07, 0.2, 0.37] },
+  girl: { nose: [0.04, 0.25, 0.4], mouth: [-0.06, 0.2, 0.37] },
 };
 function spot(c, which) {
   const f = FACE_SPOTS[c.body];

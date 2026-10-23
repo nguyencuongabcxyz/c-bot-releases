@@ -2991,11 +2991,11 @@
   const ANTIC_SEC = {
     sip: 3.4, 'sip-empty': 3.8, tip: 3.2, toss: 2.8, 'toss-hit': 2.8, hum: 4.5, sneeze: 2.2, lamp: 2.8,
     drum: 2.6, slump: 2.8, dvd: 9, 'dvd-lucky': 9, feed: 9.6, standdesk: 21, milktea: 5.6, dumbbell: 6, phone: 7, sleepphone: 8, pushup: 10,
-    'cat-tail': 4.5, 'cat-mug': 4.2, 'loopy-pencil': 3.8, 'nerd-glasses': 2, 'nerd-guitar': 4.5, 'robot-antenna': 2.4, 'robot-defrag': 1.8,
+    'cat-tail': 4.5, 'cat-mug': 4.2, 'loopy-pencil': 3.8, 'nerd-glasses': 2, 'nerd-guitar': 4.5, 'girl-hair': 3.2, 'girl-heart': 2.6, 'robot-antenna': 2.4, 'robot-defrag': 1.8,
     bubble: 5.2, mumble: 3.6, dream: 6.5, sleeptype: 4.2, slide: 6.5, snore: 2.4, drift: 10, drool: 2.6,
   };
-  const CRITTER_ANTICS = { cat: ['cat-tail', 'cat-mug'], loopy: ['loopy-pencil'], nerd: ['nerd-glasses', 'nerd-guitar'], robot: ['robot-antenna', 'robot-defrag'] };
-  const DREAMS = { loopy: ['🪵', '🌲', '🥕'], cat: ['🐟', '🧶', '🐭'], nerd: ['🍕', '💾', '🎮'], robot: ['🔋', '⚙️', '💾'] };
+  const CRITTER_ANTICS = { cat: ['cat-tail', 'cat-mug'], loopy: ['loopy-pencil'], nerd: ['nerd-glasses', 'nerd-guitar'], girl: ['girl-hair', 'girl-heart'], robot: ['robot-antenna', 'robot-defrag'] };
+  const DREAMS = { loopy: ['🪵', '🌲', '🥕'], cat: ['🐟', '🧶', '🐭'], nerd: ['🍕', '💾', '🎮'], girl: ['🧋', '🐱', '🌸'], robot: ['🔋', '⚙️', '💾'] };
   const quip = (k) => persona().quips?.[k];
   let anticSeq = 0;
   let anticUntil = 0;
@@ -3120,6 +3120,8 @@
         if (c === 'cat-mug') cue(2.2, () => express('flat', 'flat', 1300));
         if (c === 'robot-antenna') cue(0.6, () => Sfx.boing());
         if (c === 'robot-defrag') express('dizzy', 'flat', 1800);
+        if (c === 'girl-heart') cue(0.5, () => express('happy', 'wide', 1800));
+        if (c === 'girl-hair') express('happy', 'smile', 2800);
         if (c === 'loopy-pencil') {
           cue(0.7, () => express('happy', 'chomp', 2400));
           cue(1.2, () => Sfx.chomp());

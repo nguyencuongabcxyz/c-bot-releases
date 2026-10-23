@@ -26,6 +26,7 @@ const MASKS = {
   cat: { y: 0.31, z: 0.36, w: 0.42, h: 0.12, round: true },
   loopy: { y: 0.37, z: 0.37, w: 0.46, h: 0.13, round: true },
   nerd: { y: 0.33, z: 0.39, w: 0.44, h: 0.12, round: true },
+  girl: { y: 0.33, z: 0.39, w: 0.46, h: 0.13, round: true },
 };
 
 const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));

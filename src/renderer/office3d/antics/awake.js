@@ -557,7 +557,7 @@ function feed() {
 // A bubble tea pops into its hand (0.35); it lifts the straw to its mouth and
 // sips, tapioca pearls riding up the straw while the tea goes down (1.2–3.6);
 // then 😋, and the cup pops away again. robot.js plays: pop 0.35, slurps 1.3 / 2.3.
-const MOUTHS = { robot: [0, 0.2, 0.3], cat: [0, 0.2, 0.42], loopy: [0, 0.2, 0.4], nerd: [0, 0.2, 0.38] };
+const MOUTHS = { robot: [0, 0.2, 0.3], cat: [0, 0.2, 0.42], loopy: [0, 0.2, 0.4], nerd: [0, 0.2, 0.38], girl: [0, 0.2, 0.37] };
 const CUP_H = 0.15;
 const STRAW = 0.17;
 const BOBA_SIZE = 1.35; // a bit bigger than life, so it reads in the small window

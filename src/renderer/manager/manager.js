@@ -16,7 +16,7 @@
   const SIZES = { small: '🐭 Small', normal: '🙂 Normal', large: '🦒 Large', huge: '🐘 Huge' };
   // desk themes (office3d/themes.js); picking one also picks its paint job
   const THEMES = { classic: { label: '🎨 Classic' }, sioux: { label: '⛺ Sioux Connect', paint: '#F47920' } };
-  const BODIES = { loopy: '🦫 Loopy', cat: '🐱 Cat', nerd: '🤓 Nerd', robot: '🤖 Robot', custom: '📦 My model' };
+  const BODIES = { loopy: '🦫 Loopy', cat: '🐱 Cat', nerd: '🤓 Nerd', girl: '👧 Girl', robot: '🤖 Robot', custom: '📦 My model' };
   const PERMISSION_HINTS = {
     default: 'Can read and search files. Anything that changes things gets politely refused.',
     acceptEdits: 'Can read and edit files in its folder. Shell commands are still refused.',

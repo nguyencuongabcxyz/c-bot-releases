@@ -6,6 +6,7 @@ import { buildRobot, POSES } from './robot3d.js';
 import { buildLoopy } from './loopy3d.js';
 import { buildCat } from './cat3d.js';
 import { buildNerd } from './nerd3d.js';
+import { buildGirl } from './girl3d.js';
 import { loadModel, buildCustom } from './custom3d.js';
 import { buildHammer, HAMMER } from './hammer.js';
 import { createMinis } from './minibots.js';
@@ -17,7 +18,7 @@ import { createBed } from './bed.js';
 
 // The 3D workstation is a pure "view" of the robot's state. It reads what the page
 // already tracks on every frame:
-//   stateEl.dataset  screen, pose, eyes, mouth, acc, name, body (loopy | cat | nerd | robot | custom), glb, glbTurn,
+//   stateEl.dataset  screen, pose, eyes, mouth, acc, name, body (loopy | cat | nerd | girl | robot | custom), glb, glbTurn,
 //                    helpers (how many helper agents are at work: little bots circle the desk),
 //                    theme (the desk, screen and badge style: classic | sioux),
 //                    antic, anticSeq, anticText, nightcap (idle antics: see antics/index.js)
@@ -28,7 +29,7 @@ import { createBed } from './bed.js';
 
 const ROBOT_SCALE = 0.82;
 // who sits at the desk; both share one rig (see robot3d.js)
-const BODIES = { loopy: buildLoopy, cat: buildCat, nerd: buildNerd, robot: buildRobot };
+const BODIES = { loopy: buildLoopy, cat: buildCat, nerd: buildNerd, girl: buildGirl, robot: buildRobot };
 // (charge, tickle, highfive, dance: from the robot's hover menu)
 const REACTIONS = ['hop', 'squish', 'shake', 'spin', 'idea', 'chomp', 'bonk', 'helper-step', 'charge', 'tickle', 'highfive', 'dance'];
 // the squeaky-hammer bonk, in seconds: pops in, winds up, strikes, rebounds, shrinks away
