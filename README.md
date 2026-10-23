@@ -210,7 +210,7 @@ It also lives the office life: it explains its bug to a rubber duck until the du
 
 The clock joins in: on Friday afternoons it holds up a "NO DEPLOYS ON FRIDAY" sign, on Monday mornings it's on a coffee drip, at lunch (12–1) it slurps instant noodles at the desk, on the 25th it's payday (money rain, then an empty wallet), once an hour it stretches and takes a 20-20-20 eye break, and after 10 pm it codes with its hood up in the glow of the monitor.
 
-Asleep, every 30–60 seconds: a snot bubble that pops and half-wakes it ("huh?"), sleep-talking, dreams in a thought bubble (and faintly on the dark monitor), typing in its sleep, slowly sliding down the chair, a big snore that rattles the mug, the chair drifting round, a drop of drool. After 10 pm it sleeps in a nightcap.
+Asleep, every 30–60 seconds: a snot bubble that pops and half-wakes it ("huh?"), sleep-talking, dreams in a thought bubble (and faintly on the dark monitor), typing in its sleep, slowly sliding down the chair, a big snore that rattles the mug, the chair drifting round, a drop of drool. After 10 pm it sleeps in a nightcap. It has office dreams too: a nightmare that prod is down (it jolts awake, "…just a dream"), snores that fill a progress bar to "Sleep.exe ✓ 100%", a 3 am message buzzing its phone (it slaps it face-down without waking), a little robot vacuum that bumps into it while hoovering up crumbs, and, on the floor, rolling itself up into a blanket burrito 🌯.
 
 The 3D side lives in `src/renderer/office3d/antics/` (`index.js` explains how an antic is written); `robot.js` decides when they play and adds the sounds and words.
 

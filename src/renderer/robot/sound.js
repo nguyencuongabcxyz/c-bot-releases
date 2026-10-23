@@ -105,6 +105,10 @@ window.Sfx = (() => {
     rattle() { for (let i = 0; i < 9; i++) noise({ at: i * 0.11 + Math.random() * 0.04, dur: 0.03, vol: 0.05, freq: 3200 }); },
     kaching() { tone(1568, { dur: 0.08, type: 'square', vol: 0.03 }); tone(2093, { at: 0.08, dur: 0.25, type: 'triangle', vol: 0.06 }); noise({ at: 0.05, dur: 0.15, vol: 0.03, freq: 5000 }); },
     crash() { [523, 392, 311, 196].forEach((f, i) => tone(f, { at: i * 0.12, dur: 0.16, type: 'square', vol: 0.04 })); noise({ at: 0.5, dur: 0.25, vol: 0.05, freq: 900 }); },
+    // sleep antics: waking from a nightmare with a gasp, a phone buzzing on the desk, a robot vacuum's hum
+    gasp() { noise({ dur: 0.35, vol: 0.06, freq: 2400, type: 'highpass' }); tone(500, { dur: 0.3, type: 'sine', vol: 0.05, to: 900 }); },
+    buzz() { tone(140, { dur: 0.35, type: 'sawtooth', vol: 0.03 }); tone(146, { dur: 0.35, type: 'square', vol: 0.015 }); },
+    vacuum() { noise({ dur: 1.6, vol: 0.025, freq: 500, type: 'lowpass' }); tone(220, { dur: 1.6, type: 'sine', vol: 0.012 }); },
     boing() { tone(180, { dur: 0.4, type: 'sine', vol: 0.06, to: 520 }); },
     // hover-menu interactions
     charge() {

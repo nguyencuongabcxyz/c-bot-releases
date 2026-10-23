@@ -3005,10 +3005,14 @@
     // IT office life
     duck: 6, reboot: 7, stackoverflow: 5, cable: 4.5, crumbs: 5, 'crumbs-cookie': 5, merge: 6, standup: 7, jira: 5.5, works: 5, jitter: 6.5,
     friday: 4.5, monday: 6, noodles: 7, payday: 6, eyebreak: 6, bsod: 4.2,
+    // more sleep
+    nightmare: 6.5, snorebar: 9, ping: 5, vacuum: 9, burrito: 8,
   };
   const CRITTER_ANTICS = { cat: ['cat-tail', 'cat-mug'], loopy: ['loopy-pencil'], nerd: ['nerd-glasses', 'nerd-guitar'], girl: ['girl-hair', 'girl-heart'], robot: ['robot-antenna', 'robot-defrag'] };
   const DREAMS = { loopy: ['🪵', '🌲', '🥕'], cat: ['🐟', '🧶', '🐭'], nerd: ['🍕', '💾', '🎮'], girl: ['🧋', '🐱', '🌸'], robot: ['🔋', '⚙️', '💾'] };
   const quip = (k) => persona().quips?.[k];
+  // what lights up its phone at 3 am
+  const PINGS = ['Boss: quick question?', 'PROD ALERT 🔥', 'Can you hop on a call?', 'Is the site down??', '@channel standup moved to 7am'];
   let anticSeq = 0;
   let anticUntil = 0;
   let lastAntic = '';
@@ -3457,7 +3461,8 @@
     // on the floor there's no chair or keyboard to sleep-type at, slide down or drift round on
     const chair = robot.dataset.sleepStyle !== 'floor' ? 0.8 : 0;
     // ...nor an eye mask to slide up for a sneaky scroll on the phone
-    const name = pickAntic({ bubble: 1.2, mumble: 1.2, dream: 1.2, sleeptype: chair, slide: chair, snore: 1.3, drift: chair, drool: 0.7, sleepphone: chair && 1.0 });
+    const name = pickAntic({ bubble: 1.2, mumble: 1.2, dream: 1.2, sleeptype: chair, slide: chair, snore: 1.3, drift: chair, drool: 0.7, sleepphone: chair && 1.0,
+      nightmare: 0.9, snorebar: 1, ping: 0.9, vacuum: 0.8, burrito: chair ? 0 : 1.2 }); // the burrito needs the blanket on the floor
     if (name === 'sleepphone') {
       // mask up, eyes open, scroll a bit, mask down, eyes shut (office3d/antics/phone.js)
       antic(name);
@@ -3476,8 +3481,31 @@
       antic(name, pick(['huh?', 'wha—?', 'mm? huh?']));
       cue(4.4, () => Sfx.pop());
       cue(4.5, () => express('open', 'talk', 700));
-    } else if (name) antic(name);
+    } else if (name && name !== 'nightmare' && name !== 'ping') antic(name); // those two come with words, below
     if (name === 'slide') cue(5.4, () => Sfx.oops());
+    // more sleep (office3d/antics/sleepy.js and night.js)
+    if (name === 'nightmare') {
+      antic(name, quip('justdream') || '…just a dream.');
+      cue(0.4, () => express('closed', 'flat', 2100));
+      cue(2.6, () => {
+        Sfx.gasp();
+        express('open', 'wide', 1600);
+      });
+      cue(4.2, () => express('open', 'talk', 1300));
+    } else if (name === 'snorebar') {
+      for (const at of [0.6, 2.4, 4.2, 6.0]) cue(at, () => Sfx.snore());
+      cue(6.2, () => Sfx.tick());
+    } else if (name === 'ping') {
+      antic(name, pick(PINGS));
+      for (const at of [0.3, 0.9, 1.5]) cue(at, () => Sfx.buzz());
+      cue(2.8, () => Sfx.thunk());
+    } else if (name === 'vacuum') {
+      for (const at of [0.3, 4.0]) cue(at, () => Sfx.vacuum());
+      for (const at of [2.0, 2.8, 3.6]) cue(at, () => Sfx.tool());
+    } else if (name === 'burrito') {
+      cue(0.5, () => Sfx.swish());
+      cue(4.0, () => Sfx.snore());
+    }
     if (name === 'snore') cue(0.6, () => Sfx.snore());
   }
 

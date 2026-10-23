@@ -12,7 +12,8 @@ import { LAYOUT } from './scene.js';
 // sleeps there, then put back. update() runs after the frame has posed the robot,
 // so the floor placement wins over the chair's sitting position.
 
-const FLOOR = {
+// (exported for antics that move it about in bed and put it back: the blanket burrito)
+export const FLOOR = {
   hips: new THREE.Vector3(-0.18, 0.19, -0.2), // where it lies (office space): where the chair was, head to the left
   yaw: 0.3, // its body along the desk's front, its face turned a little towards the camera
   roll: Math.PI / 2, // on its side, knees forward: curled up
@@ -155,6 +156,16 @@ export function createBed({ emit }) {
   }
 
   return {
+    /** Lying on the floor right now (in bed, not just asked to be). */
+    get onFloor() {
+      return onFloor;
+    },
+    /** This desk's pillow and blanket ({ group, pillow, blanket }), or null before the first frame.
+     *  update() places them afresh every frame, so an antic may move them after it (in place). */
+    props(set) {
+      return set.office.userData.bed || null;
+    },
+
     /** Where its 3D speech bubble should float when it's lying down (office space), or null. */
     bubbleAt(set, out) {
       if (!onFloor) return null;

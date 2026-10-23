@@ -304,7 +304,7 @@ function mount(host, { stateEl, moodEl, width, height }) {
     const danceSway = dancing ? Math.sin(sDance * Math.PI * 2) * 0.45 : 0;
     // idle antics (sipping coffee, snot bubbles…) play on top of the pose
     const A = { lean: cur.lean, head: [...cur.head], armL, armR, yaw: 0, tip: 0, rootY: 0, rootZ: 0, mug: new THREE.Vector3(), mugTilt: 0, lamp: 1, screen: null, screenDim: 0, shake: 0, reachL: 1, reachR: 1, antenna: 0 };
-    antics.update({ t, dt, d, pose, robot, set, curYaw: cur.yaw, A, bubbleAt });
+    antics.update({ t, dt, d, pose, robot, set, curYaw: cur.yaw, A, bubbleAt, bed });
     set.swivel.rotation.order = 'YXZ';
     set.swivel.rotation.y = cur.yaw + spinExtra + A.yaw + danceSway;
     set.swivel.rotation.x = -A.tip;
