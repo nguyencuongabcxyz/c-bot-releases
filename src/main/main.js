@@ -11,6 +11,7 @@ const { PERSONALITIES, systemPromptFor, publicPersonalities } = require('./perso
 const { trayIcon } = require('./trayIcon');
 const { startUpdates, checkForUpdates, restartToUpdate, updateState } = require('./updater');
 const { keepOnTop } = require('./topmost');
+const { createWalkers } = require('./walker');
 const { searchFiles, mentionedPaths } = require('./files');
 const mcpApps = require('./mcpApps');
 
@@ -48,6 +49,7 @@ const PERMISSION_MODES = {
 let store;
 let tray;
 let managerWin = null;
+let walkers = null; // robots out for a walk round the screen (walker.js)
 const robots = new Map(); // id -> { win, expanded, anchor, drag, chatW, resize }
 const sessions = new Map(); // "robotId|tabId" -> ClaudeSession
 const terminals = new Map(); // id -> { child, mirror } while the robot's conversation is open in a terminal
@@ -172,7 +174,10 @@ function createRobotWindow(character, index = 0) {
   win.loadFile(path.join(__dirname, '..', 'renderer', 'robot', 'index.html'), { query: { id: character.id } });
   guardNavigation(win);
   win.once('ready-to-show', () => win.showInactive());
-  win.on('closed', () => robots.delete(character.id));
+  win.on('closed', () => {
+    robots.delete(character.id);
+    walkers?.close(character.id);
+  });
   // Windows shutting down / signing out doesn't send before-quit: save right now
   win.on('query-session-end', saveNow);
   win.on('session-end', saveNow);
@@ -211,6 +216,12 @@ function hideRobot(id) {
 function sendToRobot(id, channel, payload) {
   const r = robots.get(id);
   if (r && !r.win.isDestroyed()) r.win.webContents.send(channel, payload);
+  if (channel === 'robot:character') walkers?.character(id, walkerLook(payload));
+}
+
+// what a walker needs to look like its robot
+function walkerLook(c) {
+  return c && { name: c.name, color: c.color, body: c.body, glb: c.glb, glbTurn: c.glbTurn, accessory: c.accessory, theme: c.theme, size: c.size };
 }
 
 // Eyes follow the mouse: poll the global cursor and tell each robot where it is
@@ -227,6 +238,7 @@ function startCursorTracking() {
       // relative to the robot box; the renderer knows where the 3D head is
       r.win.webContents.send('robot:cursor', { x: p.x - r.anchor.x, y: p.y - r.anchor.y });
     }
+    walkers?.cursor(p);
   }, 66);
 }
 
@@ -734,6 +746,7 @@ function refreshTray() {
           click: (item) => (item.checked ? showRobot(c.id) : hideRobot(c.id)),
         }))
       : [{ label: 'No robots yet', enabled: false }]),
+    ...chars.filter((c) => walkers?.has(c.id)).map((c) => ({ label: `🚶  Call ${c.name} back to the desk`, click: () => walkers.dock(c.id) })),
     { type: 'separator' },
     {
       label: 'Mute robot sounds',
@@ -822,6 +835,7 @@ function registerIpc() {
   ipcMain.handle('robot:init', (event) => {
     const id = idFromSender(event);
     const c = store.get(id);
+    walkers.close(id);
     return {
       character: c ? robotView(c) : null,
       personalities: publicPersonalities(),
@@ -1021,12 +1035,40 @@ function registerIpc() {
     if (c?.folder) shell.openPath(c.folder);
   });
 
-  ipcMain.handle('robot:menu', (event, { awake }) => {
+  // it gets up and goes for a walk round the screen (asleep: it sleepwalks)
+  ipcMain.handle('robot:wander-prep', (event, { asleep } = {}) => !!walkers.prepare(idFromSender(event), { asleep: !!asleep }));
+  ipcMain.handle('robot:wander', (event, { asleep, feet } = {}) => {
+    const at = feet && Number.isFinite(feet.x) && Number.isFinite(feet.y) ? { x: feet.x, y: feet.y } : undefined;
+    return !!walkers.go(idFromSender(event), { asleep: !!asleep, feet: at });
+  });
+  ipcMain.on('robot:walker', (event, what) => {
+    const id = idFromSender(event);
+    if (what === 'wave') walkers.wave(id);
+    else if (what === 'asleep' || what === 'awake') walkers.setAsleep(id, what === 'asleep');
+    else if (what === 'dock') walkers.dock(id);
+    else if (what === 'docked') walkers.close(id); // the desk has its character back: the walker can go
+    else if (what === 'cancel' && !walkers.isOut(id)) walkers.close(id); // it sat back down before setting off
+  });
+  walkers.registerIpc(ipcMain, { characterOf: (id) => walkerLook(store.get(id)) });
+
+  ipcMain.handle('robot:menu', (event, { awake, away }) => {
     const id = idFromSender(event);
     const c = store.get(id);
     const r = robots.get(id);
     if (!c || !r) return;
     const say = (action) => r.win.webContents.send('robot:action', action);
+    if (away) {
+      Menu.buildFromTemplate([
+        { label: `${c.name} is out for a walk`, enabled: false },
+        { type: 'separator' },
+        { label: '🚶 Call back to the desk', click: () => walkers.dock(id) },
+        { label: 'Open folder', click: () => shell.openPath(c.folder) },
+        { label: 'Customize…', click: () => openManager(id) },
+        { type: 'separator' },
+        { label: 'Put away (hide)', click: () => hideRobot(id) },
+      ]).popup({ window: r.win });
+      return;
+    }
     const canPaste = clipboardHasSomething();
     Menu.buildFromTemplate([
       { label: `${c.name} — ${path.basename(c.folder) || c.folder}`, enabled: false },
@@ -1036,6 +1078,7 @@ function registerIpc() {
       { label: canPaste ? '📋 Paste screenshot / file from clipboard' : '📋 Paste (copy a screenshot or file first)', enabled: canPaste, click: () => say('paste') },
       { label: 'New tab', click: () => say('new-tab') },
       { label: '🔨 Bonk with the squeaky hammer (wake up / hurry up)', click: () => say('bonk') },
+      { label: awake ? '🚶 Go for a walk' : '🚶 Sleepwalk', click: () => say('wander') },
       { label: 'Past conversations…', click: () => say('history') },
       { label: 'Open folder', click: () => shell.openPath(c.folder) },
       { type: 'separator' },
@@ -1164,6 +1207,7 @@ function sanitize(fields = {}) {
   if (typeof fields.glbName === 'string') out.glbName = fields.glbName.slice(0, 120);
   if ([0, 1, 2, 3].includes(fields.glbTurn)) out.glbTurn = fields.glbTurn;
   if (fields.clickOpens === 'chat' || fields.clickOpens === 'terminal') out.clickOpens = fields.clickOpens;
+  if (typeof fields.wanders === 'boolean') out.wanders = fields.wanders;
   return out;
 }
 
@@ -1223,6 +1267,7 @@ app.whenReady().then(() => {
   protocol.handle('cbot-app', mcpApps.servePage);
   localFiles.setAllowedRoots(() => [os.homedir(), os.tmpdir(), path.join(app.getPath('userData'), 'attachments'), ...store.list().map((c) => c.folder)]);
   protocol.handle('cbot-file', localFiles.serveImage);
+  walkers = createWalkers({ robots, sizeOf: (id) => SIZES[store.get(id)?.size] || 1, preload, guardNavigation, onChange: () => refreshTray() });
   registerIpc();
   removeUnusedModels();
 
@@ -1232,7 +1277,7 @@ app.whenReady().then(() => {
   refreshTray();
 
   store.list().forEach((c, i) => c.visible && createRobotWindow(c, i));
-  keepOnTop(() => [...robots.values()].map((r) => r.win));
+  keepOnTop(() => [...[...robots.values()].map((r) => r.win), ...walkers.windows()]);
   if (!store.list().length) openManager('new');
   startCursorTracking();
 

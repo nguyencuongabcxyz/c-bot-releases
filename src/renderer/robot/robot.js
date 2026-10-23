@@ -337,6 +337,7 @@
   }
 
   function wake({ sayHi = true } = {}) {
+    if (state.away) return awayClick(); // it's out: drag it back first
     if (state.awake) return;
     state.awake = true;
     stopAntic();
@@ -374,6 +375,7 @@
   }
 
   function openChat({ focus = true } = {}) {
+    if (state.away) return awayClick(); // it's out for a walk: drag it back first
     if (!state.collapsed) return;
     state.collapsed = false;
     state.news = '';
@@ -403,6 +405,7 @@
 
   function sleep() {
     if (!state.awake) return;
+    if (state.away) cbot.send('robot:walker', 'asleep'); // dozes off out there: it sleepwalks
     state.awake = false;
     stopAntic();
     state.collapsed = false;
@@ -1274,6 +1277,7 @@
     document.documentElement.style.setProperty('--swing', '0deg');
     state.lastActivity = Date.now();
     if (!p.moved) {
+      if (state.away) return awayClick();
       if (state.awake && !state.mirroring && !state.collapsed && office.hitsMonitor(e.clientX, e.clientY)) {
         if (monitorClick) {
           clearTimeout(monitorClick);
@@ -1302,7 +1306,7 @@
 
   robot.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    cbot.invoke('robot:menu', { awake: state.awake });
+    cbot.invoke('robot:menu', { awake: state.awake, away: !!state.away });
   });
 
   // ------------------------------------------------------------ composer
@@ -1867,7 +1871,7 @@
     if (robot.classList.contains('menu-open') || menuOpenTimer) return;
     menuOpenTimer = setTimeout(() => {
       menuOpenTimer = 0;
-      if (!press && !body.classList.contains('dragging')) robot.classList.add('menu-open');
+      if (!press && !body.classList.contains('dragging') && !state.away) robot.classList.add('menu-open');
     }, 350);
   }
   // hides a moment after the mouse goes (a short grace, so brushing the edge doesn't flicker it)
@@ -3007,6 +3011,8 @@
     friday: 4.5, monday: 6, noodles: 7, payday: 6, eyebreak: 6, bsod: 4.2,
     // more sleep
     nightmare: 6.5, snorebar: 9, ping: 5, vacuum: 9, burrito: 8,
+    // wandering off round the screen and being brought back
+    stepout: 4, stepin: 1.4,
   };
   const CRITTER_ANTICS = { cat: ['cat-tail', 'cat-mug'], loopy: ['loopy-pencil'], nerd: ['nerd-glasses', 'nerd-guitar'], girl: ['girl-hair', 'girl-heart'], robot: ['robot-antenna', 'robot-defrag'] };
   const DREAMS = { loopy: ['🪵', '🌲', '🥕'], cat: ['🐟', '🧶', '🐭'], nerd: ['🍕', '💾', '🎮'], girl: ['🧋', '🐱', '🌸'], robot: ['🔋', '⚙️', '💾'] };
@@ -3027,6 +3033,11 @@
   // something more important came up: the 3D view drops whatever it was playing
   function stopAntic() {
     state.slacking = 0;
+    // stopped getting up to leave (a click, a task): the walker that was getting ready goes
+    if (state.leaving && !state.away) {
+      state.leaving = false;
+      cbot.send('robot:walker', 'cancel');
+    }
     if (!robot.dataset.antic) return;
     robot.dataset.antic = '';
     robot.dataset.anticSeq = String(++anticSeq);
@@ -3045,8 +3056,8 @@
     return options[0]?.[0];
   }
 
-  const idleAwake = () => state.awake && !state.busy && !helpersOut() && !state.mirroring && !press;
-  const idleAsleep = () => !state.awake && !state.busy && !helpersOut() && !state.mirroring && !press;
+  const idleAwake = () => state.awake && !state.busy && !helpersOut() && !state.mirroring && !press && !state.away;
+  const idleAsleep = () => !state.awake && !state.busy && !helpersOut() && !state.mirroring && !press && !state.away;
 
   // after 10 pm it sleeps in a nightcap, or, still up, codes with its hood up in the monitor's glow
   function nightcap() {
@@ -3054,6 +3065,70 @@
     const late = h >= 22 || h < 6;
     robot.dataset.nightcap = idleAsleep() && late ? '1' : '';
     robot.dataset.lateNight = state.awake && late ? '1' : '';
+  }
+
+  // ---- wandering off
+  // Now and then it gets up and goes for a walk round the screen (asleep, it
+  // sleepwalks), in a little window of its own; the desk stands empty with a BRB
+  // note. To use it again, drag it back onto its desk (main.js / walker.js dock it).
+  const wanders = () => state.character?.wanders !== false; // the Workshop's "Wanders off"
+  const AWAY_NOTE = '🚶 Out for a walk: drag me back to my desk!';
+
+  function leaveDesk() {
+    if (state.away || state.busy || helpersOut() || state.mirroring) return;
+    stopAntic();
+    robot.classList.remove('menu-open');
+    if (state.awake) collapse(); // the chat tucks away: it can't chat from out there
+    antic('stepout');
+    // the walker window loads (hidden) while it gets up...
+    state.leaving = true;
+    cbot.invoke('robot:wander-prep', { asleep: !state.awake });
+    // ...and once it's up and turned, takes over with its feet on this very spot ('handoff'
+    // below) and walks it off from there
+    cue(0.7, () => {
+      cbot.invoke('robot:wander', { asleep: !state.awake, feet: office.feetPosition() }).then((ok) => ok || stopAntic());
+    });
+    cue(3.8, () => state.away || stopAntic()); // (no walker came: it sits back down)
+  }
+
+  // the walker window has it now: the desk lets go of its own
+  function goneWalking() {
+    if (state.away) return;
+    state.leaving = false;
+    state.away = true;
+    robot.dataset.away = '1';
+    state.news = AWAY_NOTE;
+    renderWorking();
+  }
+
+  // dropped back on the desk (or called back from the tray): it hops into its chair
+  function backToDesk({ quiet = false, feet = null } = {}) {
+    if (!state.away) return;
+    state.away = false;
+    robot.dataset.away = '';
+    body.classList.remove('dock-target');
+    if (state.news === AWAY_NOTE) state.news = '';
+    renderWorking();
+    state.lastActivity = Date.now();
+    if (quiet) return;
+    // it stands where it was put down (if that's on the desk's floor), then goes to its chair
+    const at = feet && office.floorAt(feet.x, feet.y);
+    antic('stepin', at ? `${at.x.toFixed(3)},${at.z.toFixed(3)}` : '');
+    // once it's drawn here, the walker window can go (no blink in between)
+    requestAnimationFrame(() => requestAnimationFrame(() => cbot.send('robot:walker', 'docked')));
+    cue(1.0, () => Sfx.boing());
+    if (state.awake) {
+      cue(1.1, () => {
+        express('happy', 'smile', 1400);
+        showPop(quip('back') || "I'm back!", 1800);
+      });
+    }
+  }
+
+  // the empty desk was clicked: it waves from wherever it is
+  function awayClick() {
+    cbot.send('robot:walker', 'wave');
+    if (state.awake) showPop(AWAY_NOTE, 2200);
   }
 
   // Office-calendar gags: what the clock makes more likely right now
@@ -3132,6 +3207,7 @@
       duck: 1, stackoverflow: 0.9, cable: 0.6, crumbs: 0.6, 'crumbs-cookie': 0.25, jira: 0.8, works: 0.8,
       reboot: sec > 20 ? 0.8 : 0, merge: sec > 30 ? 0.7 : 0, jitter: sec > 30 ? 0.6 : 0, standup: sec > 40 ? 0.6 : 0,
       ...calendarWeights(),
+      wander: wanders() && sec > 120 ? 3 : 0, // bored for two minutes: off for a walk round the screen
     });
     lastAntic = name;
     switch (name) {
@@ -3443,6 +3519,9 @@
           showPop(quip('payday') || '…', 1600);
         });
         break;
+      case 'wander':
+        leaveDesk();
+        break;
       case 'dvd-lucky':
         antic(name);
         cue(6.0, () => {
@@ -3462,7 +3541,9 @@
     const chair = robot.dataset.sleepStyle !== 'floor' ? 0.8 : 0;
     // ...nor an eye mask to slide up for a sneaky scroll on the phone
     const name = pickAntic({ bubble: 1.2, mumble: 1.2, dream: 1.2, sleeptype: chair, slide: chair, snore: 1.3, drift: chair, drool: 0.7, sleepphone: chair && 1.0,
-      nightmare: 0.9, snorebar: 1, ping: 0.9, vacuum: 0.8, burrito: chair ? 0 : 1.2 }); // the burrito needs the blanket on the floor
+      nightmare: 0.9, snorebar: 1, ping: 0.9, vacuum: 0.8, burrito: chair ? 0 : 1.2, // the burrito needs the blanket on the floor
+      sleepwalk: wanders() ? 1.2 : 0 });
+    if (name === 'sleepwalk') return leaveDesk();
     if (name === 'sleepphone') {
       // mask up, eyes open, scroll a bit, mask down, eyes shut (office3d/antics/phone.js)
       antic(name);
@@ -3632,6 +3713,18 @@
     else if (action === 'terminal') openTerminal();
     else if (action === 'bonk') bonkRobot();
     else if (action === 'paste') pasteClipboard();
+    else if (action === 'wander') {
+      // right-click menu: off for a walk now (not in the middle of a job, though)
+      if (state.busy || helpersOut() || state.mirroring) showPop("Can't go now, I'm working!", 1800);
+      else leaveDesk();
+    }
+    else if (action === 'handoff') goneWalking();
+    else if (action === 'dock' || String(action).startsWith('dock:')) {
+      const [x, y] = String(action).slice(5).split(',').map(Number);
+      backToDesk({ feet: Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null });
+    }
+    else if (action === 'dock-hover') body.classList.add('dock-target');
+    else if (action === 'dock-leave') body.classList.remove('dock-target');
   });
 
   // ------------------------------------------------------------ boot

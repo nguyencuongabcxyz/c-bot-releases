@@ -13,8 +13,9 @@ import { createMinis } from './minibots.js';
 import { buildBattery } from './battery.js';
 import { drawScreen, SCREEN_LIGHT } from './screens.js';
 import { spriteTexture, badgeTexture } from './materials.js';
-import { createAntics } from './antics/index.js';
+import { createAntics, wearTick } from './antics/index.js';
 import { createBed } from './bed.js';
+import { createWalker, frameSolo, AWAY_TURN } from './walker3d.js';
 
 // The 3D workstation is a pure "view" of the robot's state. It reads what the page
 // already tracks on every frame:
@@ -26,6 +27,16 @@ import { createBed } from './bed.js';
 //   moodEl classes   awake / asleep / thinking / talking / dragging / typing
 //   CSS variables    --paint, --look-x, --look-y, --swing
 // so the robot window and the Workshop preview can drive it without knowing about 3D.
+//
+// Out for a walk (the "wanders off" feature):
+//   data-away '1'    it's out: the chair is empty, the monitor says BRB, no antics
+//                    (antics/walk.js has it step out of, and back into, the chair)
+//   mount(..., { solo: true })  the character alone, out on the user's desktop (walker3d.js);
+//                    it reads body, glb, glbTurn, acc, name, theme, eyes, mouth, nightcap,
+//                    lateNight, --paint as the desk does, plus
+//     data-gait      stand | walk | sleepwalk | wave | look | sit | dangle | land
+//     data-heading   left | right | toward | away
+//     data-speed     walking pace (1 = about two steps a second)
 
 const ROBOT_SCALE = 0.82;
 // who sits at the desk; both share one rig (see robot3d.js)
@@ -37,9 +48,26 @@ const REACTIONS = ['hop', 'squish', 'shake', 'spin', 'idea', 'chomp', 'bonk', 'h
 const BONK = { appear: 0.18, windup: 0.34, hit: 0.42, leave: 0.72, end: 1.02, scale: 0.8 };
 const NIGHT_GLOW = new THREE.Color('#7fb2ff');
 const easeOutBack = (p) => 1 + 2.4 * (p - 1) ** 3 + 1.4 * (p - 1) ** 2;
+const isUnder = (o, root) => {
+  for (; o; o = o.parent) if (o === root) return true;
+  return false;
+};
 const CAMERA = { target: new THREE.Vector3(-0.38, 0.7, -0.7), dir: new THREE.Vector3(0.62, 0.5, 0.8), distance: 5.95, fov: 27 };
+// Out walking (solo) it's drawn just as big as at its desk, seen from the same height: the
+// desk window is DESK_H CSS px tall (robot.js ROBOT_H), and this is how many of them a world
+// unit takes up where it stands up from its chair (antics/walk.js).
+const DESK_H = 290;
+function soloView(height) {
+  const eye = CAMERA.target.clone().addScaledVector(CAMERA.dir.clone().normalize(), CAMERA.distance);
+  const spot = new THREE.Vector3(LAYOUT.chair.x, 0, LAYOUT.chair.z);
+  spot.addScaledVector(new THREE.Vector3(eye.x - spot.x, 0, eye.z - spot.z).normalize(), 0.32).setY(0.55);
+  // (+3%: by the time the walker takes over it has stepped a little nearer the camera; measured)
+  const pxPerUnit = (1.03 * DESK_H) / (2 * eye.distanceTo(spot) * Math.tan(THREE.MathUtils.degToRad(CAMERA.fov / 2)));
+  const pitch = Math.asin(CAMERA.dir.y / CAMERA.dir.length());
+  return { height, pxPerUnit, fov: CAMERA.fov, pitch };
+}
 
-function mount(host, { stateEl, moodEl, width, height }) {
+function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(width, height);
@@ -54,14 +82,17 @@ function mount(host, { stateEl, moodEl, width, height }) {
   scene.add(world);
 
   const camera = new THREE.PerspectiveCamera(CAMERA.fov, width / height, 0.1, 50);
-  camera.position.copy(CAMERA.target).addScaledVector(CAMERA.dir.clone().normalize(), CAMERA.distance);
-  camera.lookAt(CAMERA.target);
+  if (solo) frameSolo(camera, soloView(height));
+  else {
+    camera.position.copy(CAMERA.target).addScaledVector(CAMERA.dir.clone().normalize(), CAMERA.distance);
+    camera.lookAt(CAMERA.target);
+  }
 
   // ---- lights
   const hemi = new THREE.HemisphereLight('#ffffff', '#b9a7ff', 1.2);
   const sun = new THREE.DirectionalLight('#fff4e0', 1.6);
   sun.position.set(2.5, 4.5, 2.2);
-  sun.castShadow = true;
+  sun.castShadow = !solo; // out walking, a soft blob under its feet does instead (walker3d.js)
   sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.left = sun.shadow.camera.bottom = -2.4;
   sun.shadow.camera.right = sun.shadow.camera.top = 2.4;
@@ -72,12 +103,15 @@ function mount(host, { stateEl, moodEl, width, height }) {
   // ---- set + actor
   let theme = themeOf('classic');
   let themeKey = 'classic';
-  let set = buildOffice(theme);
-  world.add(set.office);
+  // (solo: no desk, just the character on an invisible ground)
+  let set = solo ? null : buildOffice(theme);
+  if (set) world.add(set.office);
   // a new theme: rebuild the workstation around the robot
   function dress(key) {
     themeKey = key;
     theme = themeOf(key);
+    paint = ''; // repaint the badge
+    if (solo) return robot?.setTheme?.(theme);
     world.remove(set.office);
     const old = set;
     set = buildOffice(theme);
@@ -88,7 +122,6 @@ function mount(host, { stateEl, moodEl, width, height }) {
       set.swivel.rotation.y = old.swivel.rotation.y;
       robot.setTheme?.(theme);
     }
-    paint = ''; // repaint the badge
   }
   let robot = null;
   let body = null;
@@ -98,17 +131,18 @@ function mount(host, { stateEl, moodEl, width, height }) {
     robot = build({ color: paint || '#5ac8fa', name: name || '' });
     robot.root.position.set(0, 0.09, 0.04);
     robot.root.scale.setScalar(ROBOT_SCALE);
-    set.swivel.add(robot.root);
+    (solo ? walker.stage : set.swivel).add(robot.root);
     robot.setTheme?.(theme);
     // re-apply what the old body was wearing
     acc = null;
     paint = '';
   }
-  const toy = buildHammer();
-  world.add(toy.hammer);
-  const minis = createMinis(world);
-  const charger = buildBattery();
-  world.add(charger.battery);
+  // the desk's toys (not out walking)
+  const toy = solo ? null : buildHammer();
+  if (toy) world.add(toy.hammer);
+  const minis = solo ? null : createMinis(world);
+  const charger = solo ? null : buildBattery();
+  if (charger) world.add(charger.battery);
   const play = { nextBolt: 0, nextHa: 0, nextNote: 0, burstFor: null, fiveFor: null };
 
   // ---- particles
@@ -128,6 +162,7 @@ function mount(host, { stateEl, moodEl, width, height }) {
     obj.localToWorld(v);
     return world.worldToLocal(v);
   };
+  const walker = solo ? createWalker({ world, emit, worldPoint, scale: ROBOT_SCALE }) : null;
 
   // ---- chair directions
   const chairPos = LAYOUT.chair;
@@ -136,10 +171,12 @@ function mount(host, { stateEl, moodEl, width, height }) {
   const monitorYaw = yawTo(LAYOUT.monitor) + 0.12;
   const thinkYaw = (camYaw + monitorYaw) / 2;
   const YAW = { idle: camYaw, talking: camYaw, cheer: camYaw, wave: camYaw, eager: camYaw, raise: camYaw, sleep: camYaw - 0.3, slack: camYaw - 0.15, typing: monitorYaw, reading: monitorYaw, thinking: thinkYaw };
+  // out for a walk: the empty chair, pushed back from the desk and turned a little towards you
+  const awayYaw = monitorYaw + (camYaw - monitorYaw) * AWAY_TURN;
 
-  const antics = createAntics({ world, emit, worldPoint, camYaw, monitorYaw });
+  const antics = solo ? null : createAntics({ world, emit, worldPoint, camYaw, monitorYaw });
   // asleep: in the chair with an eye mask, or curled up on the floor under a blanket
-  const bed = createBed({ emit });
+  const bed = solo ? null : createBed({ emit });
   const bedBubble = new THREE.Vector3();
   const bubbleAt = () => (bed.bubbleAt(set, bedBubble) ? world.worldToLocal(set.office.localToWorld(bedBubble)) : null);
 
@@ -199,9 +236,11 @@ function mount(host, { stateEl, moodEl, width, height }) {
     const scr = stateEl.dataset.screen || 'off';
     const working = scr !== 'off';
     // full frame rate only while something is really moving; idle and asleep tick slower
-    const lively = dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics.active || REACTIONS.some((r) => stateEl.classList.contains(r));
+    const lively = solo
+      ? walker.lively || dragging || particles.length > 0
+      : dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics.active || REACTIONS.some((r) => stateEl.classList.contains(r));
     const fps = lively ? 30 : awake ? 20 : 8;
-    if (document.hidden || now - lastFrame < 1000 / fps - 2) return;
+    if ((document.hidden && !solo) || now - lastFrame < 1000 / fps - 2) return; // (a walker draws while still hidden, to take over seamlessly)
     lastFrame = now;
     // rAF timestamps can trail performance.now() on the first frame; never step backwards
     const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
@@ -227,7 +266,9 @@ function mount(host, { stateEl, moodEl, width, height }) {
       acc = d.acc;
       robot.setAccessory(acc || 'none');
     }
-    if ((frame.n = (frame.n || 0) + 1) % 15 === 1) {
+    // (every frame at first, so a walker taking over from the desk is never the default colour)
+    const n = (frame.n = (frame.n || 0) + 1);
+    if (n < 30 || n % 15 === 1) {
       const p = getComputedStyle(stateEl).getPropertyValue('--paint').trim() || '#5ac8fa';
       if (p !== paint || d.name !== name) {
         paint = p;
@@ -248,11 +289,19 @@ function mount(host, { stateEl, moodEl, width, height }) {
       if (on) seen.add(r);
       else seen.delete(r);
     }
-    const since = (r) => (react[r] === undefined ? Infinity : t - react[r]);
+    if (solo) return soloFrame(t, dt, d, awake);
+    // out for a walk: nobody's in the chair
+    const gone = d.away === '1';
+    if (gone !== frame.gone) {
+      frame.gone = gone;
+      frame.goneAt = t;
+    }
+    // (nothing reacts to pokes while it's out)
+    const since = (r) => (gone || react[r] === undefined ? Infinity : t - react[r]);
 
     // ---- chair swivel target (+ a full spin for the "spin" reaction)
     const k = ease(dt, 5);
-    cur.yaw = mix(cur.yaw, YAW[pose] ?? camYaw, k);
+    cur.yaw = gone ? awayYaw : mix(cur.yaw, YAW[pose] ?? camYaw, k);
     const sSpin = since('spin');
     const spinExtra = sSpin < 0.9 ? Math.PI * 2 * (1 - (1 - sSpin / 0.9) ** 3) : 0;
 
@@ -304,7 +353,7 @@ function mount(host, { stateEl, moodEl, width, height }) {
     const danceSway = dancing ? Math.sin(sDance * Math.PI * 2) * 0.45 : 0;
     // idle antics (sipping coffee, snot bubbles…) play on top of the pose
     const A = { lean: cur.lean, head: [...cur.head], armL, armR, yaw: 0, tip: 0, rootY: 0, rootZ: 0, mug: new THREE.Vector3(), mugTilt: 0, lamp: 1, screen: null, screenDim: 0, shake: 0, reachL: 1, reachR: 1, antenna: 0 };
-    antics.update({ t, dt, d, pose, robot, set, curYaw: cur.yaw, A, bubbleAt, bed });
+    antics.update({ t, dt, d, pose, robot, set, curYaw: cur.yaw, A, bubbleAt, bed, away: gone });
     set.swivel.rotation.order = 'YXZ';
     set.swivel.rotation.y = cur.yaw + spinExtra + A.yaw + danceSway;
     set.swivel.rotation.x = -A.tip;
@@ -350,7 +399,9 @@ function mount(host, { stateEl, moodEl, width, height }) {
     const sq = sSquish < 0.5 ? Math.sin((sSquish / 0.5) * Math.PI * 3) * 0.14 * (1 - sSquish / 0.5) : 0;
     robot.root.scale.set(ROBOT_SCALE * (1 + sq), ROBOT_SCALE * (1 - sq), ROBOT_SCALE * (1 + sq));
     // asleep on the floor: off the chair and curled up under a blanket (wins over the seat position)
-    bed.update({ t, dt, pose, d, robot, body, set, camYaw });
+    bed.update({ t, dt, pose, d, robot, body, set, camYaw, away: gone });
+    const hidden = gone; // out for a walk: nothing of it here (no z's, sweat, helper bots…)
+    robot.root.visible = !hidden; // (with whatever it's wearing: mask, nightcap, hood)
     antics.place(); // an antic may take it out of the chair (push-ups on the floor)
     if (sSquish < dt * 1.5) {
       for (let i = 0; i < 3; i++) {
@@ -480,31 +531,21 @@ function mount(host, { stateEl, moodEl, width, height }) {
       emit('bulb', worldPoint(robot.head, 0.32, 0.85, 0), { life: 1.2, vel: new THREE.Vector3(0, 0.12, 0), size: 0.22 });
     }
 
-    // ---- face
-    robot.drawFace(robot.face.ctx, {
-      eyes: d.eyes || 'open',
-      mouth: d.mouth || 'smile',
-      lookX,
-      lookY,
-      blink: stateEl.classList.contains('blink') ? 1 : 0,
-      blush: stateEl.classList.contains('blush') || moodEl.classList.contains('typing'),
-      asleep: !awake && !working,
-      model: d.model,
-      t,
-    });
-    robot.face.tex.needsUpdate = true;
+    drawFaceNow(d, t, !awake && !working, lookX, lookY);
 
     // ---- monitor
-    // (an antic may borrow it: a screensaver, a dream on the dark screen)
-    const shown = A.screen || screen;
-    drawScreen(set.screen.ctx, shown, A.screen ? t - antics.startedAt : t - screenStart, paint || '#5ac8fa', theme);
+    // (an antic may borrow it: a screensaver, a dream on the dark screen; out for a walk: a BRB note)
+    const shown = gone ? 'brb' : A.screen || screen;
+    drawScreen(set.screen.ctx, shown, gone ? t - frame.goneAt : A.screen ? t - antics.startedAt : t - screenStart, paint || '#5ac8fa', theme);
     if (A.screen && A.screenDim > 0) {
       set.screen.ctx.fillStyle = `rgba(0,0,0,${A.screenDim})`;
       set.screen.ctx.fillRect(0, 0, set.screen.canvas.width, set.screen.canvas.height);
     }
     set.screen.tex.needsUpdate = true;
     const glowColor = SCREEN_LIGHT[shown.startsWith('dream:') ? 'dream' : shown] || (A.screen ? '#9fb0ff' : null);
-    set.screen.light.intensity = mix(set.screen.light.intensity, (glowColor ? 1.4 * (1 - A.screenDim) : 0) + 1.6 * night, ease(dt, 6));
+    // (the BRB note glows softly in a dark room, so the desk still reads asleep)
+    const glow = glowColor ? 1.4 * (1 - A.screenDim) * (gone ? mix(0.35, 1, lights) : 1) : 0;
+    set.screen.light.intensity = mix(set.screen.light.intensity, glow + 1.6 * night, ease(dt, 6));
     if (glowColor) set.screen.light.color.set(glowColor);
     set.screen.led.material.color.set(screen === 'off' ? (Math.sin(t * 2.5) > 0 ? '#ffb347' : '#5a4630') : '#7bed9f');
 
@@ -534,35 +575,42 @@ function mount(host, { stateEl, moodEl, width, height }) {
       nextSteam = t + (thinking ? 0.35 : 0.9);
       emit('steam', worldPoint(set.mug, (Math.random() - 0.5) * 0.04, 0.16, 0), { life: 1.6, vel: new THREE.Vector3(0, 0.18, 0), size: 0.07, grow: 2.2 });
     }
-    if (pose === 'sleep' && t > nextZ) {
+    if (pose === 'sleep' && !hidden && t > nextZ) {
       nextZ = t + 1.1;
       emit('z', worldPoint(robot.head, 0.25, 0.65, 0), { life: 2.2, vel: new THREE.Vector3(0.12, 0.22, 0), size: 0.1, grow: 2 });
     }
     // high effort: headband on; full memory: steam out of the ears
     robot.headband.visible = d.effort === 'xhigh' || d.effort === 'max';
-    if (d.brain === 'full' && awake && t > nextBrainSteam) {
+    if (d.brain === 'full' && awake && !hidden && t > nextBrainSteam) {
       nextBrainSteam = t + 0.5;
       for (const side of [-1, 1]) emit('steam', worldPoint(robot.head, side * 0.45, 0.35, 0), { life: 1.2, vel: new THREE.Vector3(side * 0.25, 0.3, 0), size: 0.08, grow: 2.5 });
     }
     const hurried = d.hurry === '1';
-    if ((screen === 'run' || (hurried && working)) && t > nextSweat) {
+    if ((screen === 'run' || (hurried && working)) && !hidden && t > nextSweat) {
       nextSweat = t + (hurried ? 0.6 : 1.4);
       emit('sweat', worldPoint(robot.head, 0.36, 0.5, 0.1), { life: 0.9, vel: new THREE.Vector3(0.05, -0.35, 0), size: 0.08 });
     }
-    if (pose === 'thinking' && scr !== 'helpers' && t > nextQuestion) {
+    if (pose === 'thinking' && scr !== 'helpers' && !hidden && t > nextQuestion) {
       nextQuestion = t + 1.6;
       emit('question', worldPoint(robot.head, -0.15, 0.85, 0), { life: 1.4, vel: new THREE.Vector3(0, 0.15, 0), size: 0.17, spin: 1.5 });
     }
     // helper agents at work: little bots circling over the desk
     const helperHome = worldPoint(robot.head, 0, robot.headTop ?? 0.6, 0);
     minis.update(t, dt, {
-      want: Math.min(6, Number(d.helpers) || 0),
+      want: hidden ? 0 : Math.min(6, Number(d.helpers) || 0),
       head: helperHome,
       center: helperHome.clone().lerp(LAYOUT.monitor, 0.2).setY(helperHome.y + 0.12),
       faceYaw: camYaw,
       hop: since('helper-step') < dt * 1.5,
       emit,
     });
+    tickParticles(dt);
+
+    robot.sync?.();
+    effect.render(scene, camera);
+  }
+
+  function tickParticles(dt) {
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.age += dt;
@@ -579,7 +627,52 @@ function mount(host, { stateEl, moodEl, width, height }) {
       p.s.material.opacity = life < 0.7 ? 1 : 1 - (life - 0.7) / 0.3;
       p.s.material.rotation = Math.sin(p.age * 4) * 0.2 * p.spin;
     }
+  }
 
+  function drawFaceNow(d, t, asleep, lookX, lookY) {
+    robot.drawFace(robot.face.ctx, {
+      eyes: d.eyes || 'open',
+      mouth: d.mouth || 'smile',
+      lookX,
+      lookY,
+      blink: stateEl.classList.contains('blink') ? 1 : 0,
+      blush: stateEl.classList.contains('blush') || moodEl.classList.contains('typing'),
+      asleep,
+      model: d.model,
+      t,
+    });
+    robot.face.tex.needsUpdate = true;
+  }
+
+  // Out for a walk on the user's desktop: just the character, standing on an invisible
+  // ground (walker3d.js poses it). Always fully lit out there; only its face reads asleep.
+  const wear = { robot: null, t: 0, dt: 0, nightcap: false, lateNight: false, asleep: false };
+  const look = [0, 0];
+  function soloFrame(t, dt, d, awake) {
+    look[0] = cssNum('--look-x');
+    look[1] = cssNum('--look-y');
+    walker.update({ t, dt, d, robot, swingDeg: cssNum('--swing'), look });
+    // the nightcap when it sleepwalks, the hood when it's up late (as at the desk)
+    wear.robot = robot;
+    wear.t = t;
+    wear.dt = dt;
+    wear.nightcap = d.nightcap === '1';
+    wear.lateNight = d.lateNight === '1';
+    wear.asleep = !awake;
+    wearTick(wear);
+    robot.headband.visible = d.effort === 'xhigh' || d.effort === 'max';
+    drawFaceNow(d, t, !awake, look[0], look[1]);
+    robot.antennaBall.color.set(awake ? theme.robot?.light || '#ff5e62' : '#8a90a6');
+    robot.chest.material.color.copy(robot.antennaBall.color);
+    robot.antenna.rotation.z = Math.sin(t * 2) * 0.05;
+    // it steps out of its desk lit as it was there (dimmed, asleep), then brightens up as it
+    // walks out into your screen
+    if (soloFrame.lit === undefined) lights = soloFrame.lit = awake ? 1 : 0;
+    lights = mix(lights, 1, ease(dt, 0.9));
+    hemi.intensity = mix(0.5, 1.2, lights);
+    hemi.color.set('#9fb0ff').lerp(new THREE.Color('#ffffff'), lights);
+    sun.intensity = mix(0.3, 1.3, lights);
+    tickParticles(dt);
     robot.sync?.();
     effect.render(scene, camera);
   }
@@ -595,26 +688,58 @@ function mount(host, { stateEl, moodEl, width, height }) {
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      if (solo) frameSolo(camera, soloView(h));
     },
     // Is this point (client px) on the monitor's screen? (double-clicking it crashes the computer)
     hitsMonitor(clientX, clientY) {
+      if (solo) return false;
       const r = renderer.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, 1 - ((clientY - r.top) / r.height) * 2);
       const ray = new THREE.Raycaster();
+      camera.updateMatrixWorld(); // (its stored matrices can be stale between frames)
       ray.setFromCamera(ndc, camera);
-      const hit = ray.intersectObjects([set.office, robot.root], true)[0];
+      // (not the robot while it's hidden, out for a walk)
+      const hit = ray.intersectObjects([set.office, robot.root], true).find((h) => robot.root.visible || !isUnder(h.object, robot.root));
       return hit?.object.material === set.screen.material;
+    },
+    // The point on the floor (office space, {x, z}) under a page point (CSS px): where a walker
+    // put down on the desk is standing (robot.js / antics/walk.js stepin)
+    floorAt(clientX, clientY) {
+      if (!set) return null;
+      const r = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, 1 - ((clientY - r.top) / r.height) * 2);
+      camera.updateMatrixWorld();
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, camera);
+      const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), -set.office.getWorldPosition(new THREE.Vector3()).y);
+      const hit = ray.ray.intersectPlane(floor, new THREE.Vector3());
+      if (!hit) return null;
+      set.office.worldToLocal(hit);
+      return { x: hit.x, z: hit.z };
+    },
+    // Where its feet are, in the page (CSS px): stepping out, the walker window takes over
+    // with its feet on this very spot (robot.js / main walker.js)
+    feetPosition() {
+      const v = new THREE.Vector3();
+      robot.root.getWorldPosition(v);
+      v.y = set ? set.office.getWorldPosition(new THREE.Vector3()).y : 0; // down on the floor
+      camera.updateMatrixWorld();
+      v.project(camera);
+      const r = renderer.domElement.getBoundingClientRect();
+      return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
     },
     // Where the robot's head is on screen (CSS px within the canvas).
     headPosition() {
       const v = new THREE.Vector3(0, 0.3, 0);
       robot.head.localToWorld(v);
+      camera.updateMatrixWorld();
       v.project(camera);
       const r = renderer.domElement.getBoundingClientRect();
       return { x: ((v.x + 1) / 2) * r.width, y: ((1 - v.y) / 2) * r.height };
     },
     dispose() {
       cancelAnimationFrame(raf);
+      walker?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

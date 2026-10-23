@@ -55,6 +55,8 @@ html, body {
   cursor: grab;
 }
 body.dragging #robot { cursor: grabbing; }
+/* a wandered-off robot is being carried over its desk: "drop me here" */
+body.dock-target #bot-host { filter: drop-shadow(0 0 10px #7bed9f) drop-shadow(0 0 3px #2ecc71); }
 #bot-host, #bot-host canvas { display: block; width: 300px; height: 290px; }
 #bot-host { transform: scale(var(--s)); transform-origin: 0 0; }
 /* little floating extras */

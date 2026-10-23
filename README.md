@@ -212,6 +212,14 @@ The clock joins in: on Friday afternoons it holds up a "NO DEPLOYS ON FRIDAY" si
 
 Asleep, every 30–60 seconds: a snot bubble that pops and half-wakes it ("huh?"), sleep-talking, dreams in a thought bubble (and faintly on the dark monitor), typing in its sleep, slowly sliding down the chair, a big snore that rattles the mug, the chair drifting round, a drop of drool. After 10 pm it sleeps in a nightcap. It has office dreams too: a nightmare that prod is down (it jolts awake, "…just a dream"), snores that fill a progress bar to "Sleep.exe ✓ 100%", a 3 am message buzzing its phone (it slaps it face-down without waking), a little robot vacuum that bumps into it while hoovering up crumbs, and, on the floor, rolling itself up into a blanket burrito 🌯.
 
+### Wandering off
+
+Leave it alone for a couple of minutes and it may get up and go for a walk round your screen (asleep, it sleepwalks: arms out, eyes shut). It steps out of its desk window into a little window of its own and strolls from place to place, stopping to look around, wave or sit down for a bit. Its desk stands empty with a **BRB** note on the monitor, and the chat tucks away: clicking the empty desk just makes it wave at you from wherever it is.
+
+To use it again, **drag it back onto its desk**: pick it up (it dangles and kicks), carry it over the desk (the desk lights up) and let go. It hops back into its chair, awake or asleep as it was. Put it down anywhere else and it carries on walking. If it's somewhere you can't reach, the tray menu (and the empty desk's right-click menu) can call it back. In the Workshop, **Wanders off → 🪑 Stays at its desk** turns this off for a robot.
+
+The walking happens in `src/main/walker.js` (the window and its route) and `src/renderer/walker/` (the page); the standing, walking character is office3d's solo mode (`walker3d.js`).
+
 The 3D side lives in `src/renderer/office3d/antics/` (`index.js` explains how an antic is written); `robot.js` decides when they play and adds the sounds and words.
 
 The 3D scene (Three.js, toon-shaded with ink outlines) lives in `src/renderer/office3d/` and is bundled by esbuild into `src/renderer/office3d.bundle.js`. `npm start` builds it automatically; run `npm run build` after editing it.

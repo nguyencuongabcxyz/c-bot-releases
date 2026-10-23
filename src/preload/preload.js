@@ -6,13 +6,13 @@ const INVOKE = new Set([
   'robot:tab-new', 'robot:tab-close', 'robot:tab-rename', 'robot:tab-activate', 'robot:tab-reopen',
   'robot:unqueue', 'robot:send-now', 'robot:brain', 'robot:set-brain', 'robot:compact',
   'robot:app-view', 'robot:app-page', 'robot:app-call', 'robot:open-link', 'robot:app-window', 'appview:init', 'robot:open-file',
-  'model:data', 'mgr:pick-model',
+  'model:data', 'mgr:pick-model', 'robot:wander', 'robot:wander-prep', 'walker:init',
   'mgr:state', 'mgr:pick-folder', 'mgr:create', 'mgr:update', 'mgr:delete', 'mgr:visible', 'mgr:reset', 'mgr:settings', 'mgr:pick-claude',
 ]);
-const SEND = new Set(['robot:drag', 'robot:resize', 'robot:click-through']);
+const SEND = new Set(['robot:drag', 'robot:resize', 'robot:click-through', 'robot:walker', 'walker:drag', 'walker:click', 'walker:ready', 'walker:through']);
 const LISTEN = new Set([
   'robot:layout', 'robot:cursor', 'robot:event', 'robot:character', 'robot:settings', 'robot:action',
-  'mgr:changed', 'mgr:focus',
+  'mgr:changed', 'mgr:focus', 'walker:state', 'walker:character', 'walker:cursor',
 ]);
 
 contextBridge.exposeInMainWorld('cbot', {

@@ -28,6 +28,11 @@
     chat: 'The cartoon chat. You can still jump to the terminal with ⌨️ or /terminal.',
     terminal: 'Real Claude Code in a terminal window, with every command and prompt. The robot acts out what happens there.',
   };
+  const WANDERS = { yes: '🚶 Now and then', no: '🪑 Stays at its desk' };
+  const WANDER_HINTS = {
+    yes: 'Left alone for a while it goes for a walk round the screen (asleep, it sleepwalks). Drag it back onto its desk to use it again.',
+    no: 'It never leaves its desk.',
+  };
   const NAMES = ['Sparky', 'Bolt', 'Widget', 'Pixel', 'Gizmo', 'Rusty', 'Beep', 'Nugget', 'Sprocket', 'Byte', 'Cogsworth', 'Zippy'];
 
   let state = { characters: [], personalities: {}, permissionModes: {}, settings: {} };
@@ -81,6 +86,7 @@
       permissionMode: 'default',
       model: '',
       clickOpens: 'chat',
+      wanders: true,
     };
   }
 
@@ -158,6 +164,9 @@
     renderChips($('#f-accessory'), ACCESSORIES, draft.accessory || 'none', (k) => update({ accessory: k }));
     renderChips($('#f-click'), CLICK_OPENS, draft.clickOpens || 'chat', (k) => update({ clickOpens: k }));
     $('#click-hint').textContent = CLICK_HINTS[draft.clickOpens || 'chat'];
+    const wander = draft.wanders === false ? 'no' : 'yes';
+    renderChips($('#f-wander'), WANDERS, wander, (k) => update({ wanders: k === 'yes' }));
+    $('#wander-hint').textContent = WANDER_HINTS[wander];
 
     const sw = $('#f-color');
     sw.innerHTML = '';
@@ -289,7 +298,7 @@
     selected = id;
     const c = state.characters.find((x) => x.id === id);
     draft = c
-      ? { name: c.name, folder: c.folder, personality: c.personality, color: c.color, accessory: c.accessory || 'none', body: c.body || 'loopy', theme: c.theme || 'classic', size: c.size || 'normal', glb: c.glb || '', glbName: c.glbName || '', glbTurn: c.glbTurn || 0, permissionMode: c.permissionMode, model: c.model || '', clickOpens: c.clickOpens || 'chat' }
+      ? { name: c.name, folder: c.folder, personality: c.personality, color: c.color, accessory: c.accessory || 'none', body: c.body || 'loopy', theme: c.theme || 'classic', size: c.size || 'normal', glb: c.glb || '', glbName: c.glbName || '', glbTurn: c.glbTurn || 0, permissionMode: c.permissionMode, model: c.model || '', clickOpens: c.clickOpens || 'chat', wanders: c.wanders !== false }
       : blankDraft();
     $('#form-error').textContent = '';
     renderList();

@@ -109,6 +109,12 @@ export function buildCustom(gltf, { turn = 0 } = {}) {
   };
   const rigged = !!(rig.head && rig.spine && rig.arm.neg && rig.arm.pos && rig.fore.neg && rig.fore.pos);
   const legs = !!(rig.thigh.neg && rig.thigh.pos);
+  // leg stand-ins, like the robot's hip groups (walker3d.js stands it up and walks it):
+  // hip.rotation.x PI/2 swings the thigh down, knee.rotation.x `straight` puts the shin in
+  // line with it. Left alone (identity) it sits, as before.
+  const legStand = rigged && legs && rig.shin.neg && rig.shin.pos
+    ? ['neg', 'pos'].map((k) => ({ k, side: k === 'neg' ? -1 : 1, hip: new THREE.Group(), knee: new THREE.Group(), straight: -Math.PI / 2 }))
+    : null;
 
   const box = new THREE.Box3().setFromObject(scene);
   const size = box.getSize(new THREE.Vector3());
@@ -129,6 +135,16 @@ export function buildCustom(gltf, { turn = 0 } = {}) {
   }
   const toRoot = (p) => p.clone().multiplyScalar(s).applyQuaternion(F).add(offset);
   const offset = target.clone().sub(anchor.clone().multiplyScalar(s).applyQuaternion(F));
+  // where its soles are with the legs straight down (root space): the hips less the legs' length
+  let standSole = 0;
+  if (legStand) {
+    standSole = Math.min(...legStand.map(({ k }) => {
+      const thigh = pos(rig.thigh[k]).distanceTo(pos(rig.shin[k]));
+      const foot = rig.foot[k];
+      const lower = foot ? pos(foot).distanceTo(pos(rig.shin[k])) + pos(foot).y - box.min.y : thigh * 1.1;
+      return toRoot(pos(rig.thigh[k])).y - (thigh + lower) * s;
+    }));
+  }
 
   const root = new THREE.Group(); // origin: centre of the seat top
   const container = new THREE.Group();
@@ -225,7 +241,7 @@ export function buildCustom(gltf, { turn = 0 } = {}) {
   // without a skeleton tips and squashes about its feet instead
   let sync;
   if (rigged) {
-    sync = retarget({ bones, rig, arms, torso, head, legs, F, kneeRoom: (knee) => knee.y * s + offset.y - FLOOR, s, floorToAnkle: (k) => (rig.foot[k] ? pos(rig.foot[k]).y - box.min.y : 0) * s });
+    sync = retarget({ bones, rig, arms, torso, head, legs, legStand, F, kneeRoom: (knee) => knee.y * s + offset.y - FLOOR, s, floorToAnkle: (k) => (rig.foot[k] ? pos(rig.foot[k]).y - box.min.y : 0) * s });
   } else {
     const pivot = new THREE.Group();
     pivot.position.copy(target);
@@ -242,6 +258,8 @@ export function buildCustom(gltf, { turn = 0 } = {}) {
   return {
     root, torso, head, antenna, arms, accessory, headband,
     ...noLights(),
+    legs: legStand, // (null: no legs to stand on, so it hops about like a plush)
+    standSole,
     headTop: top, // where the hammer lands
     face: { ...canvasTexture(4, 4), material: null },
     drawFace,
@@ -291,7 +309,7 @@ function boxOfBone(scene, headBone, toRoot) {
 // stand-in has (relative to the model's root), applied on top of a "virtual rest":
 // the model's own rest pose with the arms hanging down and the thighs forward
 // (sitting), which is how the robot's rest pose looks. Other bones keep their rest.
-function retarget({ bones, rig, arms, torso, head, legs, F, kneeRoom, s, floorToAnkle }) {
+function retarget({ bones, rig, arms, torso, head, legs, legStand, F, kneeRoom, s, floorToAnkle }) {
   const restLocal = new Map(bones.map((b) => [b, b.quaternion.clone()]));
   const restWorld = new Map();
   const parentRest = new Map();
@@ -321,9 +339,10 @@ function retarget({ bones, rig, arms, torso, head, legs, F, kneeRoom, s, floorTo
     for (const k of ['neg', 'pos']) {
       const thigh = rig.thigh[k];
       const shin = rig.shin[k];
+      const stand = legStand?.find((l) => l.k === k);
       const knee = shin ? pos(shin) : pos(thigh).add(DOWN);
       const sit = turn(knee.sub(pos(thigh)), forward);
-      drive.set(thigh, { rest: sit.clone().multiply(restWorld.get(thigh)), motion: () => IDENTITY });
+      drive.set(thigh, { rest: sit.clone().multiply(restWorld.get(thigh)), motion: stand ? () => stand.hip.quaternion : () => IDENTITY });
       if (!shin) continue;
       // shins hang down from the knee; long legs swing their feet forward so they
       // rest on the floor instead of going through it
@@ -336,7 +355,9 @@ function retarget({ bones, rig, arms, torso, head, legs, F, kneeRoom, s, floorTo
       const swing = len > room && room > 0 ? Math.acos(room / len) : len > 0 && room <= 0 ? Math.PI / 2 : 0;
       const hang = new THREE.Vector3(0, -Math.cos(swing), Math.sin(swing)).applyQuaternion(Finv);
       const shinTurn = turn(shinDir, hang);
-      drive.set(shin, { rest: shinTurn.multiply(restWorld.get(shin)), motion: () => IDENTITY });
+      const shinMotion = new THREE.Quaternion();
+      if (stand) stand.straight = -Math.PI / 2 + swing; // (its shin already hangs swung forward by `swing`)
+      drive.set(shin, { rest: shinTurn.multiply(restWorld.get(shin)), motion: stand ? () => shinMotion.multiplyQuaternions(stand.hip.quaternion, stand.knee.quaternion) : () => IDENTITY });
       if (foot) drive.set(foot, { rest: restWorld.get(foot), motion: () => IDENTITY }); // feet stay flat
     }
   }

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: blob:; connect-src 'self' blob:" />
+  <title>C-Bot (out for a walk)</title>
+  <style>
+    :root { --s: 1; --swing: 0deg; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; user-select: none; }
+    #walker { position: absolute; inset: 0; cursor: grab; }
+    body.dragging #walker { cursor: grabbing; }
+    #bot-host, #bot-host canvas { display: block; width: 190px; height: 250px; }
+    #bot-host { transform: scale(var(--s)); transform-origin: 0 0; }
+  </style>
+</head>
+<body class="awake">
+  <!-- (no title tooltip: on a window that moves and lets clicks through, Windows leaves it stuck on screen) -->
+  <div id="walker">
+    <div id="bot-host"></div>
+  </div>
+  <script src="../office3d.bundle.js"></script>
+  <script src="walker.js"></script>
+</body>
+</html>

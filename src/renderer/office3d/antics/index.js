@@ -11,6 +11,7 @@ import { CALENDAR, tick as calendarTick } from './calendar.js';
 import { PRANKS } from './pranks.js';
 import { SLEEPY } from './sleepy.js';
 import { NIGHT } from './night.js';
+import { WALK } from './walk.js';
 
 // Antics: the little things a robot does when nobody's asking it anything
 // (sipping coffee, sneezing, snoring a snot bubble…). The page starts one by
@@ -20,8 +21,8 @@ import { NIGHT } from './night.js';
 //   data-antic-text  optional words for it (a mumble, a dream emoji)
 //   data-late-night  '1' while it's up past 10 pm (c.lateNight)
 // and the 3D view plays it for its `dur` seconds. It's dropped as soon as the
-// robot wakes up or falls asleep (or gets a new body), so it never fights the
-// real work.
+// robot wakes up or falls asleep (or gets a new body, or goes out for a walk:
+// data-away), so it never fights the real work; none start while it's away.
 //
 // A handler is { dur, fadeIn?, fadeOut?, update(c, A), end?(c), place?(c), bubbleAt?(c) }.
 //   place runs after the frame has posed and seated the robot, so it can move the
@@ -45,7 +46,7 @@ import { NIGHT } from './night.js';
 // The standing desk's height lives outside antics (awake.js liftTick): an antic
 // sets c.set.office.userData.lift.deskTo / seatTo and the desk motors there.
 // Modules may also export tick(c) for things that live outside one antic (the nightcap).
-const HANDLERS = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS, ...SLEEPY, ...NIGHT };
+const HANDLERS = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS, ...SLEEPY, ...NIGHT, ...WALK };
 const TICKS = [awakeTick, asleepTick, critterTick, calendarTick].filter(Boolean);
 
 const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
@@ -139,6 +140,13 @@ function makeBubble(world) {
   };
 }
 
+/** What it wears without a desk round it (walker3d.js, out for a walk): the nightcap and the
+ *  late-night hood. c = { robot, t, dt, nightcap, lateNight, asleep } */
+export function wearTick(c) {
+  asleepTick(c);
+  calendarTick(c);
+}
+
 export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }) {
   const bubble = makeBubble(world);
   let run = null; // { name, h, start, text, asleep, robot, scratch }
@@ -171,7 +179,7 @@ export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }) {
     },
     mugHome,
     /** Called every frame, after the pose is worked out and before it's applied. */
-    update({ t, dt, d, pose, robot, set, curYaw, A, bubbleAt, bed }) {
+    update({ t, dt, d, pose, robot, set, curYaw, A, bubbleAt, bed, away = false }) {
       if (homesOf !== set) {
         // a new desk (theme change): remember where its mug and lamp sit
         homesOf = set;
@@ -184,9 +192,9 @@ export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }) {
         lastSeq = seq;
         finish();
         const h = HANDLERS[d.antic];
-        if (h && seq) run = { name: d.antic, h, start: t, text: d.anticText || '', asleep, robot, scratch: {} };
+        if (h && seq && !away) run = { name: d.antic, h, start: t, text: d.anticText || '', asleep, robot, scratch: {} };
       }
-      if (run && (run.asleep !== asleep || run.robot !== robot)) finish();
+      if (run && (away || run.asleep !== asleep || run.robot !== robot)) finish();
 
       const c = {
         t, dt, body: d.body || 'loopy', robot, set, emit, worldPoint, mix, toward, THREE,

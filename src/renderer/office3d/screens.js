@@ -777,6 +777,40 @@ const SCENES = {
     });
     ctx.textAlign = 'left';
   },
+
+  // out for a walk: a sticky note stuck over the desktop saying where it went (big: it has
+  // to read on a monitor about 90 px wide)
+  brb(ctx, t, paint) {
+    const sky = ctx.createLinearGradient(0, 0, 0, SCREEN_H);
+    sky.addColorStop(0, '#4f6fd0');
+    sky.addColorStop(1, '#9db4ff');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    ctx.fillStyle = paint;
+    roundRect(ctx, 6, 8, 16, 16, 4); ctx.fill(); // a desktop icon peeking out
+    // the note, a little crooked, fluttering now and then
+    ctx.save();
+    ctx.translate(SCREEN_W / 2 + 4, SCREEN_H / 2 + 2);
+    ctx.rotate(-0.025 + 0.01 * Math.sin(t * 1.3) * Math.max(0, Math.sin(t * 0.4)));
+    ctx.fillStyle = 'rgba(29,34,53,0.3)';
+    ctx.fillRect(-140, -84, 288, 180);
+    ctx.fillStyle = '#ffe066';
+    ctx.fillRect(-146, -90, 288, 180);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillRect(-146, -90, 288, 14); // the sticky strip
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 78px "Segoe UI", sans-serif';
+    ctx.fillText('BRB', -34, -34);
+    // the walker bobs along
+    ctx.font = '62px "Segoe UI Emoji", "Segoe UI Symbol", sans-serif';
+    ctx.fillText('🚶', 84, -36 - Math.abs(Math.sin(t * 4)) * 4);
+    ctx.font = '800 34px "Segoe UI", sans-serif';
+    ctx.fillText('drag me back', -2, 30);
+    ctx.fillText('to my desk', -2, 66);
+    ctx.restore();
+  },
 };
 
 // ---- helpers for the office gags
@@ -996,6 +1030,6 @@ export const SCREEN_LIGHT = {
   edit: '#a29bfe', run: '#7bed9f', web: '#5aa0ff', agent: '#ffd34d', helpers: '#ffd34d', plan: '#ffffff', talk: '#ffffff',
   done: '#2fbf71', ask: '#ffd34d', compact: '#ff9f43', error: '#2463d1', locked: '#ffd34d',
   dvd: '#4a5288', 'dvd-lucky': '#4a5288', dream: '#7d6cff', gibberish: '#3f9e6a', dance: '#ff6bd6',
-  frozen: '#dfe8f5', stackoverflow: '#ffe2c4', merge: '#ff7b8a', works: '#7bed9f', payday: '#5fd39a',
+  frozen: '#dfe8f5', stackoverflow: '#ffe2c4', merge: '#ff7b8a', works: '#7bed9f', payday: '#5fd39a', brb: '#ffe680',
   ...FEED_LIGHT,
 };

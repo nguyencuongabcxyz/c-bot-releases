@@ -11,6 +11,7 @@ import { LAYOUT } from './scene.js';
 // For the floor the robot is lifted off the chair into the office for as long as it
 // sleeps there, then put back. update() runs after the frame has posed the robot,
 // so the floor placement wins over the chair's sitting position.
+// While it's out for a walk (away) there's no bed: the chair is back in place, empty.
 
 // (exported for antics that move it about in bed and put it back: the blanket burrito)
 export const FLOOR = {
@@ -143,6 +144,7 @@ export function createBed({ emit }) {
   let aside = 0; // how far the chair has rolled away (0..1)
   let mask = null;
   let maskOf = null;
+  let wasAway = false;
   const U = new THREE.Vector3(); // along the body, towards the head
   const V = new THREE.Vector3(); // across it, towards the knees
   const P = new THREE.Vector3();
@@ -160,6 +162,14 @@ export function createBed({ emit }) {
     get onFloor() {
       return onFloor;
     },
+    /** How far the chair has rolled aside for the floor bed (0..1). An antic may hold it back
+     *  after update() (antics/walk.js: getting up off the floor and going out, or coming back). */
+    get aside() {
+      return aside;
+    },
+    set aside(v) {
+      aside = v;
+    },
     /** This desk's pillow and blanket ({ group, pillow, blanket }), or null before the first frame.
      *  update() places them afresh every frame, so an antic may move them after it (in place). */
     props(set) {
@@ -172,7 +182,7 @@ export function createBed({ emit }) {
       return out.copy(FLOOR.hips).addScaledVector(U, 0.62).add(P.set(0.28, 0.55, 0));
     },
 
-    update({ t, dt, pose, d, robot, body, set }) {
+    update({ t, dt, pose, d, robot, body, set, away = false }) {
       if (robot !== maskOf) {
         maskOf = robot;
         mask = buildMask(robot, body);
@@ -185,8 +195,8 @@ export function createBed({ emit }) {
 
       const asleep = pose === 'sleep';
       const style = d.sleepStyle === 'floor' ? 'floor' : 'chair';
-      const wantFloor = asleep && style === 'floor';
-      mask.visible = asleep && style === 'chair';
+      const wantFloor = asleep && style === 'floor' && !away;
+      mask.visible = asleep && style === 'chair' && !away;
 
       // the body lies on its side along the desk, facing the camera a little
       const yaw = FLOOR.yaw;
@@ -196,8 +206,9 @@ export function createBed({ emit }) {
       if (wantFloor !== onFloor) {
         onFloor = wantFloor;
         since = t;
-        // a little cloud as it hops down (or back up)
-        poof(set, onFloor ? P.copy(LAYOUT.chair).setY(0.5) : FLOOR.hips.clone());
+        // a little cloud as it hops down (or back up); none as it goes out or comes back in
+        // (antics/walk.js has it walk off and flop back into bed)
+        if (!away && !wasAway) poof(set, onFloor ? P.copy(LAYOUT.chair).setY(0.5) : FLOOR.hips.clone());
         if (!onFloor) {
           set.swivel.add(robot.root);
           robot.root.position.x = 0;
@@ -206,6 +217,7 @@ export function createBed({ emit }) {
         }
       }
 
+      wasAway = away;
       aside += ((onFloor ? 1 : 0) - aside) * Math.min(1, dt * 3);
       const chair = set.swivel.parent;
       chair.position.x = LAYOUT.chair.x + FLOOR.chairAside * smooth(aside);
