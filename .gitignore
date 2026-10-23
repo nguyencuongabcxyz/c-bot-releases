@@ -1,0 +1,5 @@
+node_modules/
+out/
+dist/
+src/renderer/office3d.bundle.js
+src/renderer/office3d.bundle.js.map

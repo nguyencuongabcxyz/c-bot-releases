@@ -1,0 +1,74 @@
+{
+  "name": "c-bot",
+  "version": "0.1.0",
+  "description": "Cartoon desktop robots that are secretly Claude Code",
+  "main": "src/main/main.js",
+  "scripts": {
+    "build": "esbuild src/renderer/office3d/index.js --bundle --format=iife --minify --sourcemap --outfile=src/renderer/office3d.bundle.js",
+    "prestart": "npm run build",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win",
+    "release": "npm run build && electron-builder --win --publish always"
+  },
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
+    "three": "^0.170.0"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.17",
+    "electron-updater": "^6.8.9",
+    "koffi": "3.3.2",
+    "marked": "^15.0.12"
+  },
+  "productName": "C-Bot",
+  "build": {
+    "appId": "com.cbot.desktop",
+    "productName": "C-Bot",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!src/**/*.map",
+      "!src/renderer/office3d/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "characters",
+        "to": "characters"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "C-Bot",
+      "artifactName": "C-Bot-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "nguyencuongabcxyz",
+        "repo": "c-bot-releases",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

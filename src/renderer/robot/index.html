@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: blob: https: cbot-file:; connect-src 'self' blob:; font-src 'self' data:; frame-src cbot-app:" />
+  <title>C-Bot</title>
+  <link rel="stylesheet" href="robot.css" />
+</head>
+<body class="asleep">
+  <!-- Speech-bubble chat panel (only while awake) -->
+  <section id="panel" aria-label="Chat">
+    <header>
+      <div class="who">
+        <span id="name">Robo</span>
+        <button id="folder" class="chip" title="Open folder"></button>
+      </div>
+      <div class="actions">
+        <button id="btn-terminal" title="Continue in the terminal: full Claude Code (/terminal)">⌨️</button>
+        <button id="btn-history" title="Past conversations (/resume)">🕘</button>
+        <button id="btn-bonk" title="Bonk me with the squeaky hammer: wake up / hurry up!">🔨</button>
+        <button id="btn-reset" title="Start this tab over (/clear)">⟲</button>
+        <button id="btn-collapse" title="Tuck the chat away and watch me work (click me to bring it back)">🔽</button>
+        <button id="btn-sleep" title="Go to sleep (Esc)">💤</button>
+      </div>
+    </header>
+    <div id="tabs" role="tablist" aria-label="Conversations"></div>
+    <div id="logs"></div>
+    <div id="todo" hidden></div>
+    <div id="helpers" hidden></div>
+    <!-- one helper agent up close: its job, its steps as they happen, its report -->
+    <div id="helper-view" hidden>
+      <div class="h-top">
+        <button id="hv-back" type="button" title="Back to chat (Esc)">←</button>
+        <div id="hv-title"></div>
+      </div>
+      <div id="hv-body"></div>
+    </div>
+    <div id="status" hidden><span class="dots"><i></i><i></i><i></i></span><span id="status-text"></span></div>
+    <div id="history" hidden>
+      <div class="h-top">
+        <button id="h-back" type="button" title="All conversations" hidden>←</button>
+        <input id="h-search" type="search" placeholder="Search past conversations…" autocomplete="off" />
+        <button id="h-close" type="button" title="Back to chat (Esc)">✕</button>
+      </div>
+      <div id="h-list" role="list"></div>
+      <div id="h-preview" hidden>
+        <div id="h-ptitle"></div>
+        <div id="h-msgs"></div>
+        <button id="h-resume" type="button">↩ Resume this conversation</button>
+      </div>
+    </div>
+    <div id="attachments" aria-label="Files for the next question" hidden></div>
+    <div id="brainbar">
+      <button id="brain-model" type="button" title="Switch my brain (model): /model"></button>
+      <button id="brain-effort" type="button" title="How hard I think (effort): /effort"></button>
+      <span class="spacer"></span>
+      <button id="brain-meter" type="button" title="How full my memory (context) is: /context">
+        <span class="bm-label">memory</span><span class="bm-bar"><i></i></span><span class="bm-pct">–</span>
+      </button>
+    </div>
+    <div id="menu" role="menu" hidden></div>
+    <form id="composer">
+      <div id="palette" role="listbox" hidden></div>
+      <textarea id="input" rows="1" placeholder="Ask me something… (/ for commands, @ for files)" spellcheck="true"></textarea>
+      <button id="send" type="submit" title="Send (Enter)">➤</button>
+    </form>
+    <div id="drop-hint" aria-hidden="true">🍽️ Drop it on me!</div>
+    <div class="tail" aria-hidden="true"></div>
+    <div class="resize-grip" title="Drag to resize the chat (double-click: back to normal)" aria-hidden="true"></div>
+  </section>
+
+  <!-- While it works with the chat tucked away: what it's doing, and a way back in -->
+  <div id="working" role="status" hidden>
+    <span class="dots"><i></i><i></i><i></i></span>
+    <span id="working-text"></span>
+    <button id="btn-bonk-working" class="bonk-btn" type="button" title="Bonk me with the squeaky hammer: wake up / hurry up!">🔨</button>
+    <button id="btn-peek" type="button" title="Open the chat">💬</button>
+  </div>
+
+  <!-- Running commentary: a thought bubble next to the robot's head -->
+  <div id="aside" aria-live="polite" hidden></div>
+
+  <!-- The robot -->
+  <div id="robot" class="robot">
+    <div id="pop" aria-live="polite"></div>
+    <div id="badge" aria-hidden="true">!</div>
+
+    <div id="bot-host"></div>
+    <div id="nametag"></div>
+    <!-- hover over the robot: a few ways to play with it -->
+    <div id="playmenu" role="toolbar" aria-label="Play with me">
+      <button type="button" data-play="bonk" title="Bonk with the squeaky hammer">🔨</button>
+      <button type="button" data-play="charge" title="Charge my battery">🔋</button>
+      <button type="button" data-play="tickle" title="Tickle">🤭</button>
+      <button type="button" data-play="highfive" title="High-five!">✋</button>
+      <button type="button" data-play="dance" title="Dance party">💃</button>
+    </div>
+  </div>
+
+  <script src="../../../node_modules/marked/marked.min.js"></script>
+  <script src="../../../node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="../office3d.bundle.js"></script>
+  <script src="sound.js"></script>
+  <script src="history.js"></script>
+  <script src="../appHost.js"></script>
+  <script src="robot.js"></script>
+</body>
+</html>

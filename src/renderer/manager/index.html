@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: blob:; connect-src 'self' blob:" />
+  <title>C-Bot · Robot Workshop</title>
+  <link rel="stylesheet" href="manager.css" />
+</head>
+<body>
+  <aside>
+    <div class="brand"><span class="logo">🤖</span> Robot Workshop</div>
+    <button id="new-robot" class="primary wide">＋ Build a new robot</button>
+    <ul id="robot-list" aria-label="Your robots"></ul>
+    <footer id="settings">
+      <div id="claude-status" class="claude"></div>
+      <label class="check"><input type="checkbox" id="mute" /> Mute robot sounds</label>
+    </footer>
+  </aside>
+
+  <main>
+    <section class="stage awake" id="stage">
+      <div class="speech" id="stage-speech">Hi! Build me!</div>
+      <div class="robot" id="preview" data-eyes="open" data-mouth="smile" data-acc="none" data-screen="idle" data-pose="idle"></div>
+      <div class="activity" id="stage-activity" aria-live="polite"></div>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <form id="editor" autocomplete="off">
+      <h1 id="editor-title">New robot</h1>
+
+      <label class="field">
+        <span>Name</span>
+        <input id="f-name" maxlength="24" placeholder="e.g. Sparky" required />
+      </label>
+
+      <div class="field">
+        <span>Home folder <small>— the robot runs Claude Code here</small></span>
+        <div class="folder-row">
+          <code id="f-folder" class="folder empty">No folder yet</code>
+          <button type="button" id="pick-folder">Choose…</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span>Personality</span>
+        <div class="chips" id="f-personality" role="radiogroup"></div>
+      </div>
+
+      <div class="field">
+        <span>Character</span>
+        <div class="chips" id="f-body" role="radiogroup"></div>
+        <div class="glb-row" id="glb-row" hidden>
+          <code id="glb-name"></code>
+          <button type="button" id="glb-change">Change…</button>
+          <button type="button" id="glb-turn" title="Turn it a quarter turn, until it faces you">↻ Turn</button>
+        </div>
+        <p class="hint" id="glb-status" hidden></p>
+      </div>
+
+      <div class="field">
+        <span>Size</span>
+        <div class="chips" id="f-size" role="radiogroup"></div>
+      </div>
+
+      <div class="field">
+        <span>Theme <small>— the desk, the screen and the robot's badge</small></span>
+        <div class="chips" id="f-theme" role="radiogroup"></div>
+      </div>
+
+      <div class="field">
+        <span>Paint job</span>
+        <div class="swatches" id="f-color" role="radiogroup"></div>
+      </div>
+
+      <div class="field">
+        <span>Accessory</span>
+        <div class="chips" id="f-accessory" role="radiogroup"></div>
+      </div>
+
+      <div class="two">
+        <label class="field">
+          <span>What may it do?</span>
+          <select id="f-permission"></select>
+        </label>
+        <label class="field">
+          <span>Brain</span>
+          <select id="f-model">
+            <option value="">Claude Code default</option>
+            <option value="opus">Opus (smartest)</option>
+            <option value="sonnet">Sonnet (balanced)</option>
+            <option value="haiku">Haiku (speedy)</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint" id="perm-hint"></p>
+
+      <div class="field">
+        <span>Clicking me opens</span>
+        <div class="chips" id="f-click" role="radiogroup"></div>
+      </div>
+      <p class="hint" id="click-hint"></p>
+
+      <div class="buttons">
+        <button type="submit" class="primary" id="save">Build it!</button>
+        <button type="button" id="toggle-visible" hidden></button>
+        <button type="button" id="forget" hidden>Forget conversation</button>
+        <span class="spacer"></span>
+        <button type="button" id="delete" class="danger" hidden>Scrap robot</button>
+      </div>
+      <p class="error" id="form-error" role="alert"></p>
+    </form>
+  </main>
+
+  <script src="../office3d.bundle.js"></script>
+  <script src="manager.js"></script>
+</body>
+</html>

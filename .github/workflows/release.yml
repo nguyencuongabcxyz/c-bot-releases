@@ -1,0 +1,56 @@
+# Build the Windows installer and publish it as a GitHub release whenever main gets a
+# version (package.json) that hasn't been released yet. Installed copies of C-Bot update
+# themselves from these releases (src/main/updater.js). Pushes that don't change the
+# version just check and stop. Uses the workflow's own GITHUB_TOKEN: no secrets to set up.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # or run it by hand from the Actions tab
+
+permissions:
+  contents: write # create the release and upload the installer
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is this version new?
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "v$version is already released: nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version is new: building and publishing it."
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.new == 'true'
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        if: steps.version.outputs.new == 'true'
+        run: npm ci
+
+      - name: Build and publish
+        if: steps.version.outputs.new == 'true'
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false' # not code-signed (yet)
