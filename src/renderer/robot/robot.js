@@ -426,6 +426,7 @@
           ? `🤖 ${out === 1 ? 'A helper is' : `${out} helpers are`} still working…`
           : state.news || 'Waiting for a question');
     workingEl.classList.toggle('news', asking || (!t && !!state.news));
+    workingEl.classList.toggle('idle', !asking && !t && !out && !state.news); // (its dots keep still)
   }
   workingEl.addEventListener('click', () => openChat());
 

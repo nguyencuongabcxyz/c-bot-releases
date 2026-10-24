@@ -130,7 +130,10 @@ body.collapsed #working:not([hidden]) { display: flex; }
 /* news while tucked away (done, or a question for you): no "working" dots, a nudge instead */
 #working.news .dots { display: none; }
 #working.news::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; box-shadow: 0 0 0 3px var(--accent-soft); }
-#working.news { border-color: color-mix(in srgb, var(--accent) 70%, transparent); animation: pop-in 0.22s ease-out, nudge 1.6s ease-in-out 0.3s infinite; }
+/* (no endless animations here: one keeps Windows redrawing the whole see-through window, the
+   height of the screen, 60 times a second; idle, the dots keep still and the news nudges 3 times) */
+#working.idle .dots i { animation: none; opacity: 0.45; }
+#working.news { border-color: color-mix(in srgb, var(--accent) 70%, transparent); animation: pop-in 0.22s ease-out, nudge 1.6s ease-in-out 0.3s 3; }
 @keyframes nudge { 0%, 70%, 100% { transform: translateY(0); } 80% { transform: translateY(-3px); } 90% { transform: translateY(1px); } }
 #working-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #working button {

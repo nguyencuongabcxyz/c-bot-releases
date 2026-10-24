@@ -47,6 +47,8 @@ const REACTIONS = ['hop', 'squish', 'shake', 'spin', 'idea', 'chomp', 'bonk', 'h
 // (the hit time is mirrored by BONK_HIT_MS in robot.js, which lands the sound and reaction)
 const BONK = { appear: 0.18, windup: 0.34, hit: 0.42, leave: 0.72, end: 1.02, scale: 0.8 };
 const NIGHT_GLOW = new THREE.Color('#7fb2ff');
+const STILL_SCREENS = new Set(['off', 'error']); // monitor scenes that don't move (screens.js)
+const MOVING_MOUTHS = new Set(['talk', 'wide', 'chomp']); // mouths that move by themselves (face.js, kitface.js)
 const easeOutBack = (p) => 1 + 2.4 * (p - 1) ** 3 + 1.4 * (p - 1) ** 2;
 const isUnder = (o, root) => {
   for (; o; o = o.parent) if (o === root) return true;
@@ -74,6 +76,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false; // (the frame loop says when: frame())
   host.appendChild(renderer.domElement);
   const effect = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultColor: [0.11, 0.13, 0.2], defaultAlpha: 1 });
 
@@ -206,6 +209,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   const seen = new Set();
   let screen = null;
   let screenStart = 0;
+  const screenDrawn = { set: null, key: '', at: 0 }; // what the monitor's canvas shows, and when it was drawn
   let paint = '';
   let acc = null;
   let name = null;
@@ -226,6 +230,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   let nextQuestion = 0;
   let last = performance.now();
   let lastFrame = 0;
+  let shadowAt = -Infinity; // when the shadow map was last redrawn
   let raf = 0;
   const clock0 = performance.now();
 
@@ -243,9 +248,15 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     const lively = solo
       ? walker.lively || dragging || particles.length > 0
       : dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics.active || !!stateEl.dataset.propHover || !!stateEl.dataset.stickyHover || stickiesMoving || REACTIONS.some((r) => stateEl.classList.contains(r));
-    const fps = lively ? 30 : awake ? 20 : 8;
+    const fps = lively ? 30 : awake ? 12 : 6;
     if ((document.hidden && !solo) || now - lastFrame < 1000 / fps - 2) return; // (a walker draws while still hidden, to take over seamlessly)
     lastFrame = now;
+    // the shadows follow every frame while something moves; sitting or sleeping, twice a second
+    // is plenty (they're the costliest part of a frame)
+    if (lively || now - shadowAt > 500) {
+      renderer.shadowMap.needsUpdate = true;
+      shadowAt = now;
+    }
     // rAF timestamps can trail performance.now() on the first frame; never step backwards
     const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
     last = Math.max(last, now);
@@ -537,12 +548,21 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     // ---- monitor
     // (an antic may borrow it: a screensaver, a dream on the dark screen; out for a walk: a BRB note)
     const shown = gone ? 'brb' : A.screen || screen;
-    drawScreen(set.screen.ctx, shown, gone ? t - frame.goneAt : A.screen ? t - antics.startedAt : t - screenStart, paint || '#5ac8fa', theme);
-    if (A.screen && A.screenDim > 0) {
-      set.screen.ctx.fillStyle = `rgba(0,0,0,${A.screenDim})`;
-      set.screen.ctx.fillRect(0, 0, set.screen.canvas.width, set.screen.canvas.height);
+    // redrawn (and sent to the GPU) only when it changes: a still scene once, a moving one
+    // at up to 20 fps
+    const dim = A.screen && A.screenDim > 0 ? A.screenDim : 0;
+    const screenKey = `${shown}|${paint}|${themeKey}|${dim.toFixed(2)}`;
+    if (set !== screenDrawn.set || screenKey !== screenDrawn.key || (!STILL_SCREENS.has(shown) && now - screenDrawn.at >= 48)) {
+      drawScreen(set.screen.ctx, shown, gone ? t - frame.goneAt : A.screen ? t - antics.startedAt : t - screenStart, paint || '#5ac8fa', theme);
+      if (dim) {
+        set.screen.ctx.fillStyle = `rgba(0,0,0,${dim})`;
+        set.screen.ctx.fillRect(0, 0, set.screen.canvas.width, set.screen.canvas.height);
+      }
+      set.screen.tex.needsUpdate = true;
+      screenDrawn.set = set;
+      screenDrawn.key = screenKey;
+      screenDrawn.at = now;
     }
-    set.screen.tex.needsUpdate = true;
     const glowColor = SCREEN_LIGHT[shown.split(':')[0]] || (A.screen ? '#9fb0ff' : null);
     // (the BRB note glows softly in a dark room, so the desk still reads asleep)
     const glow = glowColor ? 1.4 * (1 - A.screenDim) * (gone ? mix(0.35, 1, lights) : 1) : 0;
@@ -695,8 +715,11 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     }
   }
 
+  // the face is redrawn (and sent to the GPU) only when it changes; dizzy eyes and a talking,
+  // chomping or wide-open mouth move by themselves, so those draw every frame
+  let faceDrawn = { ctx: null, key: '' };
   function drawFaceNow(d, t, asleep, lookX, lookY) {
-    robot.drawFace(robot.face.ctx, {
+    const f = {
       eyes: d.eyes || 'open',
       mouth: d.mouth || 'smile',
       lookX,
@@ -706,7 +729,13 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
       asleep,
       model: d.model,
       t,
-    });
+    };
+    const moving = f.eyes === 'dizzy' || MOVING_MOUTHS.has(f.mouth);
+    // (the eyes drawn a quarter pixel apart look the same)
+    const key = moving ? '' : `${f.eyes}|${f.mouth}|${Math.round(lookX * 12)}|${Math.round(lookY * 12)}|${f.blink}|${f.blush}|${asleep}|${f.model}`;
+    if (key && key === faceDrawn.key && faceDrawn.ctx === robot.face.ctx) return;
+    faceDrawn = { ctx: robot.face.ctx, key };
+    robot.drawFace(robot.face.ctx, f);
     robot.face.tex.needsUpdate = true;
   }
 

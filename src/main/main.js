@@ -207,11 +207,18 @@ function saveNow() {
 
 // "Start with Windows": C-Bot comes back with your robots after a restart.
 // From a source checkout it's electron.exe plus this app's folder.
+// Start with Windows opens the installed app whenever there is one (it keeps itself up to
+// date); a copy run from source only puts itself there when nothing is installed
+function loginTarget() {
+  if (app.isPackaged) return { path: process.execPath, args: [] };
+  const installed = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'c-bot', 'C-Bot.exe');
+  if (process.platform === 'win32' && fs.existsSync(installed)) return { path: installed, args: [] };
+  return { path: process.execPath, args: [app.getAppPath()] };
+}
 function applyLoginItem() {
   if (process.platform !== 'win32' && process.platform !== 'darwin') return;
   const openAtLogin = store.settings.startAtLogin !== false;
-  const args = app.isPackaged ? [] : [app.getAppPath()];
-  app.setLoginItemSettings({ openAtLogin, path: process.execPath, args, name: 'C-Bot' });
+  app.setLoginItemSettings({ openAtLogin, ...loginTarget(), name: 'C-Bot' });
 }
 
 function createRobotWindow(character, index = 0) {
