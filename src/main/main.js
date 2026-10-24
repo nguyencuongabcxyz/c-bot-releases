@@ -49,9 +49,9 @@ const robotDims = (size) => {
 // Awake: the chat panel sits beside the robot, the full height of the screen.
 // You can drag its outer edge to make it wider or narrower (remembered per robot).
 const CHAT = { w: 520, min: 360 };
-// Awake with the chat tucked away: a strip above the robot (below it, at the top of
-// the screen) for the status bubble and its speech bubble, so neither covers the desk.
-const TUCK = { strip: 116, minW: 300 };
+// Awake with the chat tucked away: room above the robot (below it, at the top of the
+// screen) for the status bubble and its speech bubble, so neither covers the desk.
+const TUCK = { strip: 116 };
 
 const PERMISSION_MODES = {
   default: 'Look, don\'t touch (read-only)',
@@ -116,12 +116,12 @@ function clampAnchor(anchor, dims = ROBOT) {
 // robots start in the bottom-right corner), from the top of the screen to the bottom.
 function layoutFor(anchor, expanded, chatW = CHAT.w, dims = ROBOT, tucked = false) {
   if (!expanded && tucked) {
-    const wa = screen.getDisplayNearestPoint({ x: anchor.x + dims.w / 2, y: anchor.y + dims.h / 2 }).workArea;
-    const width = Math.max(dims.w, TUCK.minW);
-    const x = Math.round(Math.min(Math.max(anchor.x + dims.w / 2 - width / 2, wa.x), wa.x + wa.width - width));
-    const above = anchor.y - TUCK.strip >= wa.y;
-    const y = above ? anchor.y - TUCK.strip : anchor.y;
-    return { bounds: { x, y, width, height: dims.h + TUCK.strip }, robotX: anchor.x - x, robotY: anchor.y - y, placement: above ? 'tuck-above' : 'tuck-below' };
+    // The chat put away keeps the window the size and place it has with the chat open (the
+    // rest is see-through and lets clicks through), so tucking it away and opening it again
+    // is just the page: no window move, which would flicker. The status strip goes above the
+    // robot, or below it when the robot is near the top of the screen.
+    const open = layoutFor(anchor, true, chatW, dims);
+    return { ...open, side: open.placement, placement: open.robotY >= TUCK.strip ? 'tuck-above' : 'tuck-below' };
   }
   if (!expanded) {
     return { bounds: { x: anchor.x, y: anchor.y, width: dims.w, height: dims.h }, robotX: 0, robotY: 0, placement: 'none' };
@@ -148,13 +148,52 @@ function layoutFor(anchor, expanded, chatW = CHAT.w, dims = ROBOT, tucked = fals
   };
 }
 
-function applyLayout(id) {
+// hide: opening or closing the chat moves the window's corner (it grows to the screen's full
+// height beside the robot, or shrinks back round it), and the page only redraws for the new
+// size a few frames later. Until then Windows shows the old picture at the new place: the
+// robot flashing at the top of the screen, or a scrap of the chat where the robot should be.
+// So the window goes see-through for those frames, and comes back once the page says it has
+// drawn the new layout (robot:laid-out), or after REVEAL_MAX whatever happens.
+const REVEAL_MAX = 250;
+function applyLayout(id, { hide = false } = {}) {
   const r = robots.get(id);
   if (!r || r.win.isDestroyed()) return;
   const layout = layoutFor(r.anchor, r.expanded, r.chatW, r.dims, r.tucked);
+  const was = r.win.getBounds();
+  const b = layout.bounds;
+  const moves = was.x !== b.x || was.y !== b.y || was.width !== b.width || was.height !== b.height;
+  const seq = (r.layoutSeq = (r.layoutSeq || 0) + 1);
+  const masked = hide && moves;
   r.layout = layout;
-  r.win.webContents.send('robot:layout', { expanded: r.expanded, ...layout });
-  r.win.setBounds(layout.bounds);
+  const go = () => {
+    if (seq !== r.layoutSeq || r.win.isDestroyed()) return; // (a newer layout came meanwhile)
+    r.win.webContents.send('robot:layout', { expanded: r.expanded, seq, masked, ...layout });
+    r.win.setBounds(b);
+  };
+  if (!masked) return go();
+  // see-through first; Windows only applies that on its next frame, so move a little after.
+  // (1%, not 0: a fully see-through window counts as hidden, and the page stops drawing)
+  r.win.setOpacity(0.01);
+  r.maskSeq = seq;
+  clearTimeout(r.revealTimer);
+  r.revealTimer = setTimeout(() => revealRobot(r, seq), REVEAL_MAX);
+  setTimeout(go, HIDE_LEAD);
+}
+const HIDE_LEAD = 18; // ~1 frame
+// (any layout drawn from the hidden one on counts: a newer one may have replaced it)
+function revealRobot(r, seq) {
+  if (!r || !r.maskSeq || seq < r.maskSeq || r.win.isDestroyed()) return;
+  r.maskSeq = 0;
+  clearTimeout(r.revealTimer);
+  // back in over a few frames: a soft fade reads as part of the move, a snap as a flicker
+  let k = 0;
+  const step = () => {
+    if (r.maskSeq || r.win.isDestroyed()) return; // (hidden again meanwhile)
+    k += 1;
+    r.win.setOpacity(Math.min(1, k / 2));
+    if (k < 2) r.revealTimer = setTimeout(step, 16);
+  };
+  step();
 }
 
 // Save everything at once (the store normally waits a moment to batch changes).
@@ -1856,9 +1895,11 @@ function registerIpc() {
     if (!r) return;
     r.expanded = !!expanded;
     r.tucked = !expanded && !!tucked;
-    applyLayout(id);
+    applyLayout(id, { hide: true });
     if (r.expanded && focus) r.win.focus();
   });
+  // the page has drawn the layout it was sent, at the window's new size: show it again
+  ipcMain.on('robot:laid-out', (event, seq) => revealRobot(robots.get(idFromSender(event)), seq));
 
   // dragging the chat panel's outer edge: wider or narrower (the robot stays put)
   ipcMain.on('robot:resize', (event, { phase, dx = 0 }) => {

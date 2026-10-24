@@ -14,7 +14,7 @@ const INVOKE = new Set([
   'words:list', 'words:open', 'words:delete', 'words:quiz', 'words:export', 'words:settings',
   'mgr:state', 'mgr:pick-folder', 'mgr:create', 'mgr:update', 'mgr:delete', 'mgr:visible', 'mgr:reset', 'mgr:settings', 'mgr:pick-claude', 'mgr:find-claude',
 ]);
-const SEND = new Set(['robot:drag', 'robot:resize', 'robot:click-through', 'robot:walker', 'walker:drag', 'walker:click', 'walker:ready', 'walker:through', 'card:size', 'quick:size', 'social:report', 'robots:answer', 'palette:size', 'drone:arrived', 'drone:gone']);
+const SEND = new Set(['robot:drag', 'robot:laid-out', 'robot:resize', 'robot:click-through', 'robot:walker', 'walker:drag', 'walker:click', 'walker:ready', 'walker:through', 'card:size', 'quick:size', 'social:report', 'robots:answer', 'palette:size', 'drone:arrived', 'drone:gone']);
 const LISTEN = new Set([
   'robot:layout', 'robot:cursor', 'robot:event', 'robot:character', 'robot:settings', 'robot:action',
   'mgr:changed', 'mgr:focus', 'walker:state', 'walker:character', 'walker:cursor', 'walker:dream', 'robot:vocab', 'card:word', 'words:changed',

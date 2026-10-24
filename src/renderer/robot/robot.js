@@ -380,10 +380,24 @@
   function collapse() {
     if (!state.awake || state.collapsed || state.mirroring) return;
     state.collapsed = true;
-    body.classList.add('collapsed');
     hidePalette();
-    renderWorking();
-    cbot.invoke('robot:expand', false, { tucked: true });
+    panelOut(() => {
+      if (!state.collapsed || !state.awake) return; // (opened again meanwhile)
+      body.classList.add('collapsed');
+      renderWorking();
+      cbot.invoke('robot:expand', false, { tucked: true });
+    });
+  }
+
+  // The chat panel shrinks away before the window does (then main hides the window's resize)
+  const PANEL_OUT = 140;
+  function panelOut(then) {
+    if (!body.classList.contains('expanded')) return then();
+    body.classList.add('panel-out');
+    setTimeout(() => {
+      body.classList.remove('panel-out');
+      then();
+    }, PANEL_OUT);
   }
 
   function openChat({ focus = true } = {}) {
@@ -426,9 +440,13 @@
     renderWorking();
     Sfx.sleep();
     express('closed', 'o', 900);
-    body.classList.remove('awake', 'expanded');
+    body.classList.remove('awake');
     body.classList.add('asleep');
-    cbot.invoke('robot:expand', false);
+    panelOut(() => {
+      if (state.awake) return; // (woken again meanwhile)
+      body.classList.remove('expanded');
+      cbot.invoke('robot:expand', false);
+    });
     // a busy robot keeps working at its desk; otherwise the monitor goes dark
     if (!state.busy) setActivity('off');
     else renderPose();
@@ -3760,9 +3778,40 @@
     body.classList.toggle('room-above', l.robotY > 60);
     body.classList.toggle('tuck-above', l.placement === 'tuck-above');
     body.classList.toggle('tuck-below', l.placement === 'tuck-below');
+    body.classList.toggle('tuck-left', l.side === 'left'); // (which side the chat opens on: the strip lines up with the robot on that side)
     if (l.placement === 'none') setClickThrough(false);
     if (l.expanded) scrollDown();
+    laidOut(l);
   });
+  // Tell main once this layout is on screen at the window's new size (it keeps the window
+  // see-through until then, so the old picture never shows at the new place). The resize
+  // lands just after this message: wait for it, then a few frames for the page to be redrawn
+  // (a timer, not requestAnimationFrame, which can stall while the window is see-through).
+  const DRAW_WAIT = 50;
+  function laidOut(l) {
+    if (!l.masked) return;
+    const seq = l.seq;
+    const sized = () => Math.abs(innerWidth - l.bounds.width) <= 2 && Math.abs(innerHeight - l.bounds.height) <= 2; // (Windows may round)
+    const drawn = () =>
+      setTimeout(() => {
+        cbot.send('robot:laid-out', seq);
+        // the panel's pop-in played while the window was hidden: play it now it shows
+        if (l.expanded) {
+          const panel = $('#panel');
+          panel.style.animation = 'none';
+          void panel.offsetWidth;
+          panel.style.animation = '';
+        }
+      }, DRAW_WAIT);
+    if (sized()) return drawn();
+    const onResize = () => {
+      if (!sized()) return;
+      removeEventListener('resize', onResize);
+      drawn();
+    };
+    addEventListener('resize', onResize);
+    setTimeout(() => removeEventListener('resize', onResize), 400); // (main shows it anyway by then)
+  }
 
   // cursor position arrives relative to the robot box; aim from the robot's head
   cbot.on('robot:cursor', (c) => {

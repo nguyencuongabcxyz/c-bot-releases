@@ -7,18 +7,25 @@
 // asking. env: CBOT_PIPE (the pipe), CBOT_TOKEN (its password), CBOT_ROBOT (who's asking).
 const net = require('net');
 
+// readOnlyHint: Claude Code runs a tool's calls one after another unless the tool says it's
+// read-only, so without it asking two robots in one turn waited for the first answer before
+// even sending the second. Asking doesn't change anything here, so they can all go at once.
+const AT_ONCE = { readOnlyHint: true };
+
 const TOOLS = [
   {
     name: 'list_robots',
     description:
       'List the other C-Bot robots on this desktop: their names, the project folder each one looks after, and whether it is awake, busy or asleep. Use it to find out who you can ask.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: AT_ONCE,
   },
   {
     name: 'ask_robot',
     description:
       'Send a message to another C-Bot robot (by name) and get its answer. That robot works in its own project folder with its own tools, so ask it about its project: how something works, where something is, a value you need, or to check or do something there. ' +
-      'Ask one clear question at a time. Call this again with a follow-up if its answer is not enough or it asks you something back; it remembers the conversation. ' +
+      'Ask one clear question at a time. To ask several robots, call ask_robot for each of them in the same turn: they all work on it at the same time. ' +
+      'Call this again with a follow-up if its answer is not enough or it asks you something back; it remembers the conversation. ' +
       'Stop once you have what you need, then answer the user yourself. Set new_conversation when you start on an unrelated question.',
     inputSchema: {
       type: 'object',
@@ -30,6 +37,7 @@ const TOOLS = [
       required: ['robot', 'message'],
       additionalProperties: false,
     },
+    annotations: AT_ONCE,
   },
 ];
 

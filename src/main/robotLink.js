@@ -156,7 +156,8 @@ function createRobotLink({ dir, robots, store, statusOf, onAsk, onAnswered }) {
       if (!list.length) return '';
       return (
         `Other C-Bot robots on this desktop: ${list.map((c) => `${c.name} (looks after ${c.folder})`).join(', ')}. ` +
-        'When the user asks you to ask one of them something (or what you need is in their project), use the ask_robot tool: ask one clear question with the context it needs, ' +
+        'When the user asks you to ask one of them something (or what you need is in their project), use the ask_robot tool: ask one clear question with the context it needs ' +
+        '(to ask several robots, call ask_robot for each in the same turn, so they work at the same time), ' +
         'follow up with ask_robot as many times as it takes (it remembers the conversation), and once you have what you need, answer the user yourself, saying what you found out from whom.'
       );
     },

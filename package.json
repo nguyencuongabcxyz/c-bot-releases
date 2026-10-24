@@ -1,6 +1,6 @@
 {
   "name": "c-bot",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cartoon desktop robots that are secretly Claude Code",
   "main": "src/main/main.js",
   "scripts": {
