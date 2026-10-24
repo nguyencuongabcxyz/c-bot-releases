@@ -1,0 +1,119 @@
+/* Quick actions. Colours, fonts and icons: ../ui/theme.css (+ theme.js) and ../ui/icons.js;
+   quick.js sets --paint to the robot's colour. */
+/* (the accent comes from the robot's --paint, in theme.css) */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: transparent; overflow: hidden; }
+body { font: 13.5px/1.5 var(--font-ui); color: var(--fg); padding: 8px 8px 14px; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.ic { width: 15px; height: 15px; }
+
+/* (its natural height: the window is sized to it, quick:size) */
+#qa {
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: var(--r-lg, 14px); box-shadow: var(--shadow-pop);
+  padding: 0 14px 12px; overflow: hidden; animation: pop-in 0.2s ease-out;
+}
+@keyframes pop-in { from { transform: scale(0.97) translateY(6px); opacity: 0; } }
+
+/* the title bar is where you drag the window from */
+header {
+  display: flex; align-items: center; gap: 8px; -webkit-app-region: drag; user-select: none;
+  margin: 0 -14px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line);
+}
+h1 { margin: 0; font: 650 14px/1.2 var(--font-display, var(--font-ui)); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+h1 .ic { color: var(--accent); }
+.source { min-width: 0; flex: 1; font: 11px var(--font-mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-btn { -webkit-app-region: no-drag; width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); display: grid; place-items: center; padding: 0; flex: none; }
+.icon-btn:hover { background: var(--bg-2); color: var(--fg); }
+#btn-close { margin-left: auto; }
+
+/* the actions: a segmented control */
+#actions { display: flex; gap: 2px; padding: 3px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; }
+#actions button {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+  border: 0; background: transparent; border-radius: 6px; padding: 5px 6px; font-size: 12.5px; font-weight: 500; color: var(--muted);
+}
+#actions button .ic { width: 14px; height: 14px; }
+#actions button:hover { color: var(--fg); }
+#actions button.on { color: var(--fg); background: var(--bg); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 0 0 1px var(--line); }
+#actions button.on .ic { color: var(--accent); }
+
+/* your text */
+#input { position: relative; }
+#text {
+  width: 100%; resize: none; min-height: 58px; max-height: 128px; padding: 8px 10px 16px; overflow-y: auto;
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 9px; outline: none; line-height: 1.45; font-size: 13px;
+}
+#text:focus { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg); }
+#text::placeholder, #custom::placeholder { color: var(--muted); }
+.count { position: absolute; right: 10px; bottom: 5px; font: 10px var(--font-mono); color: var(--muted); pointer-events: none; }
+
+/* options: style chips, the translation direction, the answer language */
+.opt { display: flex; flex-direction: column; gap: 7px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.chips .legend { margin-right: 4px; }
+.chips button {
+  border: 1px solid var(--line-2); background: var(--bg); border-radius: 7px; padding: 2px 10px; font-size: 12px; font-weight: 500; color: var(--fg-2);
+}
+.chips button:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--line-2)); color: var(--fg); }
+.chips button[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--fg); box-shadow: inset 0 0 0 1px var(--accent); }
+#custom { width: 100%; padding: 5px 10px; border: 1px dashed var(--line-2); border-radius: 7px; background: transparent; outline: none; font-size: 12.5px; }
+#custom:focus { border-style: solid; border-color: var(--accent); box-shadow: var(--ring); }
+.dir { display: flex; align-items: center; gap: 8px; font: 600 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-2); }
+.dir .icon-btn { width: 24px; height: 24px; }
+
+/* the answer */
+#result { display: flex; flex-direction: column; gap: 6px; }
+.result-head { display: flex; align-items: center; gap: 8px; }
+.status { margin-left: auto; font: 10.5px var(--font-mono); color: var(--muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.status.busy::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: blink 1s ease-in-out infinite; }
+.status.bad { color: var(--danger); }
+@keyframes blink { 50% { opacity: 0.35; } }
+.out {
+  min-height: 64px; max-height: 220px; overflow-y: auto; padding: 10px 12px; border-radius: 9px; outline: none;
+  background: var(--bg); border: 1px solid var(--line-2); border-left: 3px solid var(--accent);
+  white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-size: 13.5px;
+}
+.out:focus-visible { box-shadow: var(--ring); }
+.out.md { white-space: normal; }
+.out.md > :first-child { margin-top: 0; }
+.out.md > :last-child { margin-bottom: 0; }
+.out.md p { margin: 0 0 6px; }
+.out.md ul, .out.md ol { margin: 2px 0 6px; padding-left: 18px; }
+.out.md li { margin: 2px 0; }
+.out.md code { font: 12px var(--font-mono); background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.out.md pre { background: var(--code-bg); color: var(--code-fg); padding: 8px 10px; border-radius: 7px; overflow-x: auto; font-size: 12px; }
+.out.md pre code { background: none; border: 0; padding: 0; color: inherit; }
+.out.empty { color: var(--muted); font-style: italic; }
+.out.stale { opacity: 0.55; }
+.out.cursor::after { content: ""; display: inline-block; width: 7px; height: 1.05em; vertical-align: -2px; margin-left: 2px; background: var(--accent); border-radius: 1px; animation: blink 0.9s steps(1) infinite; }
+
+/* refine: what changed, and why */
+#changes summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
+#changes summary::-webkit-details-marker { display: none; }
+#changes summary::before { content: "›"; font: 600 13px/1 var(--font-mono); color: var(--muted); transition: transform 0.15s; }
+#changes[open] summary::before { transform: rotate(90deg); }
+#changes .n { font: 10.5px var(--font-mono); color: var(--muted); }
+#changes-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; max-height: 132px; overflow-y: auto; }
+#changes-list li { font-size: 12.5px; line-height: 1.4; padding: 5px 8px; border-radius: 7px; background: var(--bg-2); border: 1px solid var(--line); }
+#changes-list del { color: var(--danger); text-decoration-color: color-mix(in srgb, var(--danger) 60%, transparent); }
+#changes-list ins { color: var(--ok); text-decoration: none; font-weight: 600; }
+#changes-list .arrow { color: var(--muted); margin: 0 5px; }
+#changes-list .why { display: block; color: var(--muted); font-size: 11.5px; }
+
+/* the buttons */
+footer { display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+footer button {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2); background: var(--bg);
+  border-radius: var(--r-btn, 7px); padding: 5px 11px; font-size: 12.5px; font-weight: 500; color: var(--fg-2); white-space: nowrap;
+}
+footer button .ic { width: 14px; height: 14px; color: var(--muted); }
+footer button:hover:not(:disabled) { background: var(--bg-2); color: var(--fg); }
+footer button:disabled { opacity: 0.45; cursor: default; }
+footer button.primary { background: var(--btn, var(--accent)); color: var(--on-btn, #0f172a); border-color: transparent; font-weight: 600; }
+footer button.primary .ic { color: inherit; }
+footer button.primary:hover:not(:disabled) { background: var(--btn, var(--accent)); filter: brightness(1.06); color: var(--on-btn, #0f172a); }
+footer button.done .ic { color: var(--ok); }
+.grow { flex: 1; }

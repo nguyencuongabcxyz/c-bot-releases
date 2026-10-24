@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { toon, glow, canvasTexture, badgeTexture } from './materials.js';
-import { FACE_W, FACE_H, drawFace } from './face.js';
+import { toon, canvasTexture } from './materials.js';
+
+// The robot's poses, and the hats every robot can wear (kit3d.js builds the robot itself).
 
 const mesh = (geo, mat, x = 0, y = 0, z = 0) => {
   const m = new THREE.Mesh(geo, mat);
@@ -28,119 +28,8 @@ export const POSES = {
   slack:    { lean: -0.38, head: [-0.2, 0, 0.05], armL: [-3.05, 0.3, -1.5], armR: [-3.05, 0.3, -1.5] },
 };
 
-export function buildRobot({ color, name }) {
-  const paint = toon(color);
-  const ink = toon('#1d2235');
-  const metal = toon('#8a90a6');
-
-  const root = new THREE.Group(); // origin: centre of the seat top
-
-  // legs (sitting: thighs forward, shins down to the floor)
-  for (const side of [-1, 1]) {
-    const hip = new THREE.Group();
-    hip.position.set(side * 0.13, 0.07, 0.02);
-    const thigh = mesh(new THREE.CapsuleGeometry(0.07, 0.2, 4, 10), metal, 0, 0, 0.15);
-    thigh.rotation.x = Math.PI / 2;
-    hip.add(thigh);
-    const shin = mesh(new THREE.CapsuleGeometry(0.06, 0.32, 4, 10), metal, 0, -0.24, 0.32);
-    hip.add(shin);
-    hip.add(mesh(new RoundedBoxGeometry(0.15, 0.08, 0.22, 2, 0.03), paint, 0, -0.5, 0.38));
-    root.add(hip);
-  }
-
-  // torso pivots at the hips so it can lean in towards the screen
-  const torso = new THREE.Group();
-  torso.position.y = 0.05;
-  root.add(torso);
-  torso.add(mesh(new RoundedBoxGeometry(0.5, 0.46, 0.36, 4, 0.12), paint, 0, 0.26, 0));
-  const chest = mesh(new THREE.SphereGeometry(0.045, 14, 12), glow('#ff5e62'), 0, 0.3, 0.182);
-  torso.add(chest);
-  torso.add(mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.1, 14), metal, 0, 0.52, 0));
-
-  // engineer's ID badge on a lanyard
-  const strapMat = toon('#2b6fe0');
-  for (const side of [-1, 1]) {
-    const strap = mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.3, 6), strapMat, side * 0.055, 0.36, 0.185);
-    strap.rotation.z = side * 0.32;
-    torso.add(strap);
-  }
-  const badge = badgeTexture(name, color);
-  const badgeMesh = mesh(new THREE.BoxGeometry(0.095, 0.125, 0.008), [toon('#fff'), toon('#fff'), toon('#fff'), toon('#fff'), new THREE.MeshToonMaterial({ map: badge.tex }), toon('#fff')], 0, 0.17, 0.188);
-  badgeMesh.rotation.x = -0.08;
-  torso.add(badgeMesh);
-
-  // head
-  const head = new THREE.Group();
-  head.position.y = 0.56;
-  torso.add(head);
-  head.add(mesh(new RoundedBoxGeometry(0.74, 0.58, 0.54, 4, 0.16), paint, 0, 0.3, 0));
-  const face = canvasTexture(FACE_W, FACE_H);
-  const faceMat = glow('#ffffff', { map: face.tex, transparent: true });
-  head.add(mesh(new THREE.PlaneGeometry(0.62, 0.426), faceMat, 0, 0.3, 0.273));
-  for (const side of [-1, 1]) {
-    const ear = mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.07, 18), paint, side * 0.39, 0.3, 0);
-    ear.rotation.z = Math.PI / 2;
-    head.add(ear);
-  }
-  const antenna = new THREE.Group();
-  antenna.position.y = 0.58;
-  antenna.add(mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 8), ink, 0, 0.1, 0));
-  const antennaBall = glow('#ff5e62');
-  antenna.add(mesh(new THREE.SphereGeometry(0.055, 14, 12), antennaBall, 0, 0.22, 0));
-  head.add(antenna);
-  const accessory = new THREE.Group();
-  head.add(accessory);
-  // worn at high effort
-  const headband = new THREE.Group();
-  const band = mesh(new THREE.TorusGeometry(0.385, 0.035, 8, 32), toon('#e5484d'), 0, 0.5, 0);
-  band.rotation.x = Math.PI / 2;
-  band.scale.set(1.02, 0.77, 1);
-  headband.add(band);
-  for (const side of [-1, 1]) {
-    const tail = mesh(new THREE.BoxGeometry(0.05, 0.16, 0.02), toon('#e5484d'), side * 0.06, 0.42, -0.3);
-    tail.rotation.z = side * 0.4;
-    headband.add(tail);
-  }
-  headband.visible = false;
-  head.add(headband);
-
-  // arms: shoulder -> upper arm -> elbow -> forearm -> hand
-  const arms = {};
-  for (const [key, side] of [['armL', -1], ['armR', 1]]) {
-    const shoulder = new THREE.Group();
-    shoulder.position.set(side * 0.3, 0.42, 0);
-    shoulder.add(mesh(new THREE.SphereGeometry(0.07, 12, 10), metal));
-    shoulder.add(mesh(new THREE.CapsuleGeometry(0.052, 0.16, 4, 10), metal, 0, -0.12, 0));
-    const elbow = new THREE.Group();
-    elbow.position.y = -0.25;
-    elbow.add(mesh(new THREE.CapsuleGeometry(0.048, 0.15, 4, 10), metal, 0, -0.11, 0));
-    elbow.add(mesh(new THREE.SphereGeometry(0.075, 14, 12), paint, 0, -0.24, 0));
-    shoulder.add(elbow);
-    torso.add(shoulder);
-    arms[key] = { shoulder, elbow, side };
-  }
-
-  root.traverse((o) => {
-    if (o.isMesh) o.castShadow = true;
-  });
-
-  return {
-    root, torso, head, antenna, antennaBall, chest, arms, accessory, headband,
-    headTop: 0.6, // where the hammer lands
-    face: { ...face, material: faceMat },
-    drawFace,
-    setColor(c) {
-      paint.color.set(c);
-    },
-    setAccessory(name) {
-      buildAccessory(accessory, name);
-      antenna.visible = !['tophat', 'crown', 'pirate', 'hardhat'].includes(name);
-    },
-    setTheme(theme) {
-      strapMat.color.set(theme.robot?.lanyard || '#2b6fe0');
-    },
-  };
-}
+// hats the antenna would poke through (it's hidden under them)
+export const BIG_HATS = ['tophat', 'crown', 'pirate', 'hardhat', 'gradcap', 'santa', 'elf', 'witch', 'beanie', 'strawhat', 'sunhat', 'partyhat'];
 
 export function buildAccessory(group, name) {
   group.clear();
@@ -172,6 +61,22 @@ export function buildAccessory(group, name) {
       add(mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.03, 28), black, 0, top + 0.015, 0));
       add(mesh(new THREE.CylinderGeometry(0.22, 0.23, 0.36, 28), black, 0, top + 0.2, 0));
       add(mesh(new THREE.CylinderGeometry(0.232, 0.232, 0.06, 28), toon('#e5484d'), 0, top + 0.07, 0));
+      break;
+    }
+    case 'gradcap': {
+      // a graduation cap (a vocabulary reward): the skull cap, the flat board on top, a gold tassel
+      const navy = toon('#1f2a4d');
+      const cap = add(mesh(new THREE.SphereGeometry(0.27, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), navy, 0, top - 0.08, 0)); // (as low as the hard hat, whose fit it borrows)
+      cap.scale.set(1, 0.55, 1);
+      const board = add(mesh(new THREE.BoxGeometry(0.62, 0.035, 0.62), navy, 0, top + 0.08, 0));
+      board.rotation.y = Math.PI / 4;
+      add(mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 12), toon('#ffd34d'), 0, top + 0.11, 0));
+      const tassel = new THREE.Group();
+      tassel.position.set(0.28, top + 0.1, 0.12);
+      tassel.add(mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.16, 6), toon('#ffd34d'), 0, -0.08, 0));
+      tassel.add(mesh(new THREE.ConeGeometry(0.035, 0.07, 10), toon('#ffd34d'), 0, -0.18, 0));
+      tassel.traverse((m) => m.isMesh && (m.castShadow = true));
+      group.add(tassel);
       break;
     }
     case 'crown': {
@@ -209,6 +114,139 @@ export function buildAccessory(group, name) {
       brim.rotation.x = Math.PI / 2;
       brim.scale.set(1.15, 0.62, 1);
       add(mesh(new THREE.SphereGeometry(0.05, 10, 8), toon('#fff'), 0, top + 0.1, 0.22));
+      break;
+    }
+    // ---- seasonal and party hats (the Workshop's themed looks use them too)
+    case 'santa': {
+      // a floppy red hat with a white fur brim and a pompom
+      const red = toon('#d62f3a');
+      const white = toon('#ffffff');
+      const brim = add(mesh(new THREE.TorusGeometry(0.34, 0.07, 12, 32), white, 0, top - 0.02, 0));
+      brim.rotation.x = Math.PI / 2;
+      const floppy = new THREE.Group();
+      floppy.position.set(0, top, 0);
+      floppy.rotation.z = -0.35;
+      floppy.add(mesh(new THREE.ConeGeometry(0.32, 0.46, 24), red, 0, 0.21, 0));
+      floppy.add(mesh(new THREE.SphereGeometry(0.075, 14, 12), white, 0, 0.45, 0));
+      floppy.traverse((m) => m.isMesh && (m.castShadow = true));
+      group.add(floppy);
+      break;
+    }
+    case 'elf': {
+      const green = toon('#2f9e5b');
+      const band = add(mesh(new THREE.CylinderGeometry(0.35, 0.36, 0.08, 28), toon('#d62f3a'), 0, top + 0.01, 0));
+      band.castShadow = true;
+      const tip = new THREE.Group();
+      tip.position.set(0, top + 0.04, 0);
+      tip.rotation.z = 0.3;
+      tip.add(mesh(new THREE.ConeGeometry(0.3, 0.52, 24), green, 0, 0.26, 0));
+      tip.add(mesh(new THREE.SphereGeometry(0.05, 12, 10), toon('#ffd34d'), 0, 0.53, 0));
+      tip.traverse((m) => m.isMesh && (m.castShadow = true));
+      group.add(tip);
+      break;
+    }
+    case 'antlers': {
+      // reindeer antlers on a headband
+      const brown = toon('#8a5a2b');
+      const band = add(mesh(new THREE.TorusGeometry(0.36, 0.02, 8, 32, Math.PI), toon('#d62f3a'), 0, top - 0.06, 0));
+      band.rotation.y = Math.PI / 2;
+      for (const side of [-1, 1]) {
+        const a = new THREE.Group();
+        a.position.set(side * 0.2, top - 0.01, 0);
+        a.rotation.z = -side * 0.3;
+        a.add(mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.3, 8), brown, 0, 0.15, 0));
+        for (const [y, len, tilt] of [[0.12, 0.13, 1.0], [0.22, 0.11, 0.9]]) {
+          const tine = mesh(new THREE.CylinderGeometry(0.016, 0.022, len, 8), brown, side * 0.05, y + 0.04, 0);
+          tine.rotation.z = -side * tilt;
+          a.add(tine);
+        }
+        a.traverse((m) => m.isMesh && (m.castShadow = true));
+        group.add(a);
+      }
+      break;
+    }
+    case 'witch': {
+      const dark = toon('#3b2a52');
+      add(mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.025, 32), dark, 0, top + 0.01, 0));
+      add(mesh(new THREE.CylinderGeometry(0.255, 0.26, 0.07, 28), toon('#9b59d0'), 0, top + 0.06, 0));
+      const tip = new THREE.Group();
+      tip.position.set(0, top + 0.02, 0);
+      tip.add(mesh(new THREE.ConeGeometry(0.25, 0.42, 24), dark, 0, 0.21, 0));
+      const bend = mesh(new THREE.ConeGeometry(0.1, 0.18, 16), dark, 0.05, 0.47, 0);
+      bend.rotation.z = -0.8;
+      tip.add(bend);
+      tip.add(mesh(new THREE.BoxGeometry(0.08, 0.07, 0.02), toon('#ffd34d'), 0, 0.05, 0.25));
+      tip.traverse((m) => m.isMesh && (m.castShadow = true));
+      group.add(tip);
+      break;
+    }
+    case 'horns': {
+      const red = toon('#e5484d');
+      for (const side of [-1, 1]) {
+        const horn = add(mesh(new THREE.ConeGeometry(0.06, 0.2, 14), red, side * 0.2, top + 0.08, 0.02));
+        horn.rotation.z = -side * 0.35;
+      }
+      break;
+    }
+    case 'sunhat': {
+      // a wide straw sun hat with a ribbon and a flower
+      const straw = toon('#f2d38b');
+      add(mesh(new THREE.CylinderGeometry(0.58, 0.6, 0.025, 36), straw, 0, top - 0.01, 0));
+      const crown = add(mesh(new THREE.SphereGeometry(0.3, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2), straw, 0, top - 0.02, 0));
+      crown.scale.set(1, 0.7, 1);
+      add(mesh(new THREE.CylinderGeometry(0.302, 0.302, 0.06, 28, 1, true), toon('#ff8fb1'), 0, top + 0.03, 0));
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        add(mesh(new THREE.SphereGeometry(0.035, 10, 8), toon('#ffffff'), 0.25 + Math.sin(a) * 0.04, top + 0.06 + Math.cos(a) * 0.04, 0.16));
+      }
+      add(mesh(new THREE.SphereGeometry(0.028, 10, 8), toon('#ffd34d'), 0.25, top + 0.06, 0.18));
+      break;
+    }
+    case 'strawhat': {
+      const straw = toon('#e9c46a');
+      add(mesh(new THREE.CylinderGeometry(0.45, 0.46, 0.025, 32), straw, 0, top, 0));
+      add(mesh(new THREE.CylinderGeometry(0.25, 0.28, 0.18, 28), straw, 0, top + 0.09, 0));
+      add(mesh(new THREE.CylinderGeometry(0.282, 0.282, 0.05, 28, 1, true), toon('#d62f3a'), 0, top + 0.04, 0));
+      break;
+    }
+    case 'tiara': {
+      const silver = toon('#dfe6f0');
+      const ring = add(mesh(new THREE.TorusGeometry(0.26, 0.02, 8, 32, Math.PI), silver, 0, top - 0.02, 0.04));
+      ring.rotation.x = -Math.PI / 2 + 0.2;
+      for (const [x, h] of [[-0.14, 0.08], [0, 0.13], [0.14, 0.08]]) add(mesh(new THREE.ConeGeometry(0.035, h, 6), silver, x, top + h / 2, 0.2 - Math.abs(x) * 0.4));
+      add(mesh(new THREE.OctahedronGeometry(0.035), toon('#ff8fb1'), 0, top + 0.05, 0.23));
+      break;
+    }
+    case 'partyhat': {
+      // a striped cone, a little to one side, with a pompom
+      const stripes = canvasTexture(64, 64, (ctx) => {
+        for (let i = 0; i < 8; i++) {
+          ctx.fillStyle = i % 2 ? '#ffd34d' : '#7c6cf2';
+          ctx.fillRect(0, i * 8, 64, 8);
+        }
+      });
+      const cone = add(mesh(new THREE.ConeGeometry(0.17, 0.36, 24), new THREE.MeshToonMaterial({ map: stripes.tex }), 0.12, top + 0.16, 0));
+      cone.rotation.z = -0.25;
+      add(mesh(new THREE.SphereGeometry(0.05, 12, 10), toon('#ff5e62'), 0.17, top + 0.34, 0));
+      break;
+    }
+    case 'hairbow': {
+      // a big bow on top, a little to one side
+      const pink = toon('#ff6fa5');
+      for (const side of [-1, 1]) {
+        const wing = add(mesh(new THREE.SphereGeometry(0.1, 14, 10), pink, 0.2 + side * 0.1, top + 0.05, 0.04));
+        wing.scale.set(1.1, 0.75, 0.4);
+        wing.rotation.z = side * 0.4;
+      }
+      add(mesh(new THREE.SphereGeometry(0.045, 12, 10), toon('#e0457f'), 0.2, top + 0.05, 0.06));
+      break;
+    }
+    case 'beanie': {
+      const knit = toon('#3a7bd5');
+      const dome = add(mesh(new THREE.SphereGeometry(0.37, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), knit, 0, top - 0.06, 0));
+      dome.scale.set(1.02, 0.8, 0.98);
+      add(mesh(new THREE.CylinderGeometry(0.385, 0.385, 0.09, 28), toon('#2b5fa8'), 0, top - 0.03, 0));
+      add(mesh(new THREE.SphereGeometry(0.08, 14, 12), toon('#ffffff'), 0, top + 0.25, 0));
       break;
     }
     case 'bowtie': {

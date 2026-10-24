@@ -1,0 +1,54 @@
+/* The drone that brings the action menu (main drone.js). Its colours follow the theme: a
+   sleek dark drone with a cyan beam (Future), a brass one with a warm lamp (Vintage); the
+   stripe is the robot's paint. */
+:root {
+  --paint: #5ac8fa;
+  --d-body: #1c2640;
+  --d-line: #0b1222;
+  --d-visor: #0a1020;
+  --d-eye: #7ff3ff;
+  --d-prop: rgba(205, 228, 255, 0.85);
+  --d-lens: #22d3ee;
+  --d-beam: 34, 211, 238; /* r, g, b */
+}
+[data-theme="vintage"] {
+  --d-body: #b8925a;
+  --d-line: #4a3520;
+  --d-visor: #3a2a18;
+  --d-eye: #ffd27a;
+  --d-prop: rgba(122, 84, 46, 0.85);
+  --d-lens: #ffb347;
+  --d-beam: 255, 190, 100;
+}
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; pointer-events: none; }
+
+#drone { position: absolute; left: 0; top: 0; width: 96px; height: 56px; opacity: 0; will-change: transform, opacity; }
+#drone svg { display: block; overflow: visible; filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.28)); }
+.arm { stroke: var(--d-line); stroke-width: 3.4; stroke-linecap: round; fill: none; }
+.hub { fill: var(--d-line); }
+.prop ellipse { fill: var(--d-prop); stroke: var(--d-line); stroke-width: 0.8; stroke-opacity: 0.5; }
+.prop { transform-box: fill-box; transform-origin: center; animation: spin 0.09s linear infinite; }
+.prop.right { animation-delay: -0.045s; }
+@keyframes spin { 0% { transform: scaleX(1); } 50% { transform: scaleX(0.25); } 100% { transform: scaleX(1); } }
+.body { fill: var(--d-body); stroke: var(--d-line); stroke-width: 2.4; }
+.stripe { stroke: var(--paint); stroke-width: 3; stroke-linecap: round; }
+.visor { fill: var(--d-visor); }
+.eye { fill: var(--d-eye); }
+.mount { fill: var(--d-line); }
+.lens { fill: var(--d-visor); stroke: var(--d-line); stroke-width: 2; transition: fill 0.2s; }
+#drone.projecting .lens { fill: var(--d-lens); filter: drop-shadow(0 0 5px var(--d-lens)); }
+[data-theme="future"] #drone.projecting .eye { filter: drop-shadow(0 0 3px var(--d-eye)); }
+
+/* the light from the lens down to the menu's top edge */
+#beam {
+  position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; transition: opacity 0.18s;
+  background: linear-gradient(to bottom, rgba(var(--d-beam), 0.55), rgba(var(--d-beam), 0.12));
+  clip-path: polygon(calc(50% - 5px) 0, calc(50% + 5px) 0, 100% 100%, 0 100%);
+}
+#beam.on { opacity: 1; animation: flicker 2.4s ease-in-out infinite; }
+@keyframes flicker { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.65; } }
+[data-theme="vintage"] #beam { background: linear-gradient(to bottom, rgba(var(--d-beam), 0.5), rgba(var(--d-beam), 0.1)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .prop, #beam.on { animation: none; }
+}

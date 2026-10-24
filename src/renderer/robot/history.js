@@ -47,7 +47,12 @@ window.HistoryView = ({ md, robotName, activeTabId, onResumed, onClose }) => {
       else if (s.active) bits.push('🟢 open elsewhere');
       bits.push(s.byRobot ? `🤖 with ${robotName()}` : '💻 Claude Code');
       if (s.messages) bits.push(`${s.messages} messages`);
-      item.querySelector('.h-sub').textContent = bits.join(' · ');
+      // (each bit can start with an emoji: drawn as its line icon)
+      const sub = item.querySelector('.h-sub');
+      bits.forEach((b, i) => {
+        if (i) sub.append(' · ');
+        sub.append(Icon.text(document.createElement('span'), b));
+      });
       item.title = s.preview ? `Last: ${s.preview}` : s.title;
       item.addEventListener('click', () => openPreview(s));
       list.appendChild(item);
@@ -84,7 +89,7 @@ window.HistoryView = ({ md, robotName, activeTabId, onResumed, onClose }) => {
         for (const it of m.items) {
           const row = document.createElement('div');
           row.className = 'msg qa-summary';
-          row.innerHTML = '✋ <span></span> → <b></b>';
+          row.innerHTML = `${Icon('hand', 'sm lead')}<span></span> → <b></b>`;
           row.querySelector('span').textContent = it.question;
           row.querySelector('b').textContent = it.answer;
           msgs.appendChild(row);
@@ -114,7 +119,7 @@ window.HistoryView = ({ md, robotName, activeTabId, onResumed, onClose }) => {
           for (const a of m.asides || []) {
             const chip = document.createElement('span');
             chip.className = 'tool aside';
-            chip.textContent = `💭 ${a}`;
+            Icon.text(chip, `💭 ${a}`);
             tools.appendChild(chip);
           }
           el.appendChild(tools);
@@ -138,7 +143,7 @@ window.HistoryView = ({ md, robotName, activeTabId, onResumed, onClose }) => {
     const s = showing;
     resumeBtn.disabled = !s || s.current;
     resumeBtn.classList.toggle('warn', confirmElsewhere);
-    resumeBtn.textContent = !s
+    Icon.text(resumeBtn, !s
       ? 'Resume'
       : s.current
         ? 'This is our current conversation'
@@ -146,7 +151,7 @@ window.HistoryView = ({ md, robotName, activeTabId, onResumed, onClose }) => {
           ? '📑 Switch to its tab'
           : confirmElsewhere
           ? 'It’s open in another Claude Code window. Resume anyway?'
-          : '↩ Resume this conversation';
+          : '↩ Resume this conversation');
   }
 
   function showList() {

@@ -438,10 +438,25 @@ const SCENES = {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(Math.sin(t * 0.8) * 0.12);
-    ctx.font = '96px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(emoji || '💭', 0, 6);
+    const dream = emoji || '💭';
+    if (/\p{L}{2}/u.test(dream)) {
+      // dreaming of a word (one of your English words): written in big glowing letters
+      let size = 54;
+      ctx.font = `800 ${size}px "Segoe UI", sans-serif`;
+      while (size > 20 && ctx.measureText(dream).width > SCREEN_W - 70) {
+        size -= 3;
+        ctx.font = `800 ${size}px "Segoe UI", sans-serif`;
+      }
+      ctx.shadowColor = '#c4a8ff';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = '#fffdf5';
+      ctx.fillText(dream, 0, 4);
+    } else {
+      ctx.font = '96px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+      ctx.fillText(dream, 0, 6);
+    }
     ctx.restore();
   },
 
@@ -811,6 +826,95 @@ const SCENES = {
     ctx.fillText('to my desk', -2, 66);
     ctx.restore();
   },
+
+  // one of your English words ("wordcard:tackle|giải quyết|tackle a problem"), on a
+  // flash card, the meaning fading in under it
+  wordcard(ctx, t, accent, theme, text = '') {
+    const [word = '', vi = '', phrase = ''] = text.split('|');
+    bg(ctx, '#2a3150');
+    ctx.fillStyle = '#fffdf5';
+    roundRect(ctx, 18, 14, SCREEN_W - 36, SCREEN_H - 28, 14);
+    ctx.fill();
+    ctx.fillStyle = '#ff8fab';
+    ctx.fillRect(18, 14, SCREEN_W - 36, 22);
+    ctx.fillStyle = '#fffdf5';
+    ctx.font = '800 13px "Segoe UI", sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('📚 MY WORDS', 30, 26);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = INK;
+    let size = 40;
+    ctx.font = `800 ${size}px "Segoe UI", sans-serif`;
+    while (size > 18 && ctx.measureText(word).width > SCREEN_W - 70) {
+      size -= 3;
+      ctx.font = `800 ${size}px "Segoe UI", sans-serif`;
+    }
+    ctx.fillText(word, SCREEN_W / 2, 76);
+    // the meaning and a phrase come in after a moment, as if it's remembering
+    const a = Math.min(1, Math.max(0, (t - 1.2) / 0.6));
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#b3261e';
+    ctx.font = '700 17px "Segoe UI", sans-serif';
+    const lines = [];
+    let line = '';
+    for (const part of vi.split(' ')) {
+      const next = line ? `${line} ${part}` : part;
+      if (ctx.measureText(next).width > SCREEN_W - 64 && line) {
+        lines.push(line);
+        line = part;
+      } else line = next;
+    }
+    if (line) lines.push(line);
+    lines.slice(0, 2).forEach((l, i) => ctx.fillText(l, SCREEN_W / 2, 114 + i * 21));
+    if (phrase) {
+      ctx.fillStyle = 'rgba(29,34,53,0.6)';
+      ctx.font = 'italic 14px "Segoe UI", sans-serif';
+      ctx.fillText(phrase.length > 36 ? phrase.slice(0, 35) + '…' : phrase, SCREEN_W / 2, 164);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  },
+
+  // looking up an English word ("define:meticulous"): the word typed into a
+  // dictionary's search box, then the results coming in
+  define(ctx, t, accent, theme, word = '') {
+    bg(ctx, '#f6f1e4');
+    ctx.fillStyle = '#b3261e';
+    ctx.fillRect(0, 0, SCREEN_W, 38);
+    ctx.fillStyle = '#fffaf0';
+    ctx.font = '800 20px "Segoe UI", sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('📖 Dictionary', 14, 20);
+    // the search box, the word typing in
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, 14, 50, SCREEN_W - 28, 34, 10);
+    ctx.fill();
+    ctx.strokeStyle = '#b3261e';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    let typed = word.slice(0, Math.max(0, Math.floor(t * 9)));
+    ctx.fillStyle = INK;
+    ctx.font = '700 19px "Segoe UI", sans-serif';
+    while (typed.length > 1 && ctx.measureText(typed).width > SCREEN_W - 80) typed = typed.slice(1);
+    ctx.fillText(typed, 26, 68);
+    if (Math.floor(t * 2.5) % 2 === 0) ctx.fillRect(28 + ctx.measureText(typed).width, 57, 2, 22);
+    ctx.font = '18px "Segoe UI Emoji", sans-serif';
+    ctx.fillText('🔍', SCREEN_W - 44, 68);
+    // results: a headword bar and lines filling in, over and over while it reads
+    const since = t - word.length / 9 - 0.3;
+    if (since > 0) {
+      const k = (since % 3.2) / 3.2;
+      ctx.fillStyle = '#b3261e';
+      ctx.fillRect(18, 100, 120 * Math.min(1, k * 4), 12);
+      ctx.fillStyle = 'rgba(29,34,53,0.35)';
+      [0.9, 0.72, 0.84, 0.5].forEach((w, i) => {
+        const shown = Math.min(1, Math.max(0, k * 5 - 0.6 - i * 0.5));
+        ctx.fillRect(18, 124 + i * 17, (SCREEN_W - 60) * w * shown, 8);
+      });
+    }
+    ctx.textBaseline = 'alphabetic';
+  },
 };
 
 // ---- helpers for the office gags
@@ -1012,11 +1116,12 @@ export function drawScreen(ctx, scene, t, paint, theme) {
   ctx.textAlign = 'left';
   // "helpers": the robot supervising its helper agents shows the helper-bots scene too
   let name = scene === 'helpers' ? 'agent' : scene;
-  // "dream:🐟": the dream scene, showing what it's dreaming of
+  // "dream:🐟" / "define:meticulous": the scene, given what to show
   let text = '';
-  if (typeof name === 'string' && name.startsWith('dream:')) {
-    text = name.slice(6);
-    name = 'dream';
+  const colon = typeof name === 'string' ? name.indexOf(':') : -1;
+  if (colon > 0) {
+    text = name.slice(colon + 1);
+    name = name.slice(0, colon);
   }
   const accent = theme?.screen?.accent || paint;
   (theme?.screen?.scenes?.[name] || SCENES[name] || SCENES.idle)(ctx, t, accent, theme, text);
@@ -1024,12 +1129,12 @@ export function drawScreen(ctx, scene, t, paint, theme) {
 }
 
 // Colour the monitor casts onto the robot and desk for each scene.
-// (A dream is shown as "dream:<emoji>"; look that up as "dream".)
+// (A scene given text, like "dream:<emoji>", is looked up by its name, "dream".)
 export const SCREEN_LIGHT = {
   off: null, boot: '#ffffff', idle: '#7bed9f', think: '#7ff3ff', read: '#ffffff', search: '#ffffff',
   edit: '#a29bfe', run: '#7bed9f', web: '#5aa0ff', agent: '#ffd34d', helpers: '#ffd34d', plan: '#ffffff', talk: '#ffffff',
   done: '#2fbf71', ask: '#ffd34d', compact: '#ff9f43', error: '#2463d1', locked: '#ffd34d',
   dvd: '#4a5288', 'dvd-lucky': '#4a5288', dream: '#7d6cff', gibberish: '#3f9e6a', dance: '#ff6bd6',
-  frozen: '#dfe8f5', stackoverflow: '#ffe2c4', merge: '#ff7b8a', works: '#7bed9f', payday: '#5fd39a', brb: '#ffe680',
+  frozen: '#dfe8f5', stackoverflow: '#ffe2c4', merge: '#ff7b8a', works: '#7bed9f', payday: '#5fd39a', brb: '#ffe680', define: '#fff3d6', wordcard: '#fff3d6',
   ...FEED_LIGHT,
 };

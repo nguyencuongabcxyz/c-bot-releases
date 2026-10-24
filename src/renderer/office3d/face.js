@@ -11,7 +11,7 @@ const EYES = { default: '#7ff3ff', opus: '#c4a8ff', fable: '#ffd34d', sonnet: '#
  * f: { eyes, mouth, lookX, lookY, blink (0..1 closed), blush, asleep, t }
  */
 export function drawFace(ctx, f) {
-  const EYE = EYES[f.model] || EYES.default;
+  const EYE = f.eyeColor || EYES[f.model] || EYES.default; // (a robot you built can pick its own eye colour)
   ctx.clearRect(0, 0, FACE_W, FACE_H);
   ctx.fillStyle = f.asleep ? '#121524' : '#1d2235';
   roundRect(ctx, 4, 4, FACE_W - 8, FACE_H - 8, 44);

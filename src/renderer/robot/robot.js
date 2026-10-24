@@ -50,7 +50,12 @@
     TaskList: ['📋', 'Checking the plan', 'plan'],
     TaskGet: ['📋', 'Checking a task', 'plan'],
     Skill: ['🎓', 'Using the skill', 'read'],
+    // asking another robot (main robotLink.js)
+    mcp__cbot__ask_robot: ['🤖', 'Asking', 'agent'],
+    mcp__cbot__list_robots: ['🤖', 'Looking for the other robots', 'agent'],
   };
+  // a tool chip's line icon, by the kind of step (../ui/icons.js)
+  const TOOL_ICONS = { read: 'file', search: 'search', run: 'terminal', edit: 'edit', web: 'globe', agent: 'bot', plan: 'plan', ask: 'help', think: 'wrench' };
   // monitor scene -> how the robot sits while it's on screen
   const POSES = {
     off: 'sleep', boot: 'idle', idle: 'idle', think: 'thinking', talk: 'talking',
@@ -93,7 +98,7 @@
   const folderName = () => (state.character?.folder || '').split(/[\\/]/).filter(Boolean).pop() || 'this folder';
   const fill = (line) =>
     line.replaceAll('{name}', state.character.name).replaceAll('{folder}', folderName()).replaceAll('{user}', state.user);
-  const fileIcon = (f) => (f.isDir ? '📁' : f.isImage ? '🖼️' : '📄');
+  const fileIcon = (f) => (f.isDir ? 'folder' : f.isImage ? 'image' : 'file'); // (a ui/icons.js name)
   // "anthropic-skills:pptx" -> "pptx (anthropic-skills)", as the bridge describes it live
   const skillLabel = (s) => {
     const i = s.lastIndexOf(':');
@@ -310,7 +315,8 @@
     $('#name').textContent = c.name;
     $('#nametag').textContent = c.name;
     const chip = $('#folder');
-    chip.textContent = `📁 ${folderName()}`;
+    chip.innerHTML = `${Icon('folder', 'sm')}<span></span>`;
+    chip.lastChild.textContent = folderName();
     chip.title = c.folder;
     robot.dataset.acc = c.accessory || 'none';
     // its size: the robot box scales as one, the 3D view renders sharp at that size
@@ -318,10 +324,9 @@
     document.documentElement.style.setProperty('--s', String(k));
     state.scale = k;
     office.setScale(k);
-    robot.dataset.body = c.body || 'loopy';
+    robot.dataset.body = 'kit';
+    robot.dataset.kit = JSON.stringify(c.kit || {}); // (its parts: office3d/kit3d.js)
     robot.dataset.theme = c.theme || 'classic';
-    robot.dataset.glb = c.glb || '';
-    robot.dataset.glbTurn = String(c.glbTurn || 0);
     robot.dataset.name = c.name;
     document.title = c.name;
   }
@@ -336,7 +341,8 @@
     }
   }
 
-  function wake({ sayHi = true } = {}) {
+  // tucked: just awake enough to show something (a word you caught), the chat stays tucked away
+  function wake({ sayHi = true, tucked = false } = {}) {
     if (state.away) return awayClick(); // it's out: drag it back first
     if (state.awake) return;
     state.awake = true;
@@ -350,14 +356,20 @@
     // jolt awake and boot the computer (unless it's already busy working)
     if (!state.busy) setActivity('boot', 1000);
     else renderPose();
-    cbot.invoke('robot:expand', true);
+    if (tucked) {
+      state.collapsed = true;
+      body.classList.add('collapsed');
+      renderWorking();
+      cbot.invoke('robot:expand', false, { tucked: true });
+    } else cbot.invoke('robot:expand', true);
     const hadBadge = body.classList.contains('has-badge');
     body.classList.remove('has-badge');
+    readVisitNote();
     setTimeout(() => {
       flash('hop', 600);
       if (!hadBadge && !state.busy && sayHi) greet();
       scrollDown();
-      input.focus();
+      if (!tucked) input.focus();
     }, 300);
   }
 
@@ -392,13 +404,13 @@
     const asking = [...tabs.values()].some((x) => x.question);
     const t = active()?.busy ? active() : [...tabs.values()].find((x) => x.busy);
     const out = helpersOut();
-    $('#working-text').textContent = asking
+    $('#working-text').textContent = plain(asking
       ? '✋ I have a question for you. Click to answer'
       : t
         ? t.statusText || 'Working on it…'
         : out
           ? `🤖 ${out === 1 ? 'A helper is' : `${out} helpers are`} still working…`
-          : state.news || 'Waiting for a question';
+          : state.news || 'Waiting for a question');
     workingEl.classList.toggle('news', asking || (!t && !!state.news));
   }
   workingEl.addEventListener('click', () => openChat());
@@ -421,6 +433,7 @@
     if (!state.busy) setActivity('off');
     else renderPose();
     renderFace();
+    socialReport({ kind: 'slept' });
   }
 
   function greet() {
@@ -472,7 +485,8 @@
         chip.className = 'file-chip';
         chip.title = f.path || f.name;
         if (f.thumb) chip.appendChild(thumbImg(f.thumb));
-        chip.appendChild(document.createElement('span')).textContent = f.thumb ? f.name : `${fileIcon(f)} ${f.name}`;
+        if (!f.thumb) chip.insertAdjacentHTML('beforeend', Icon(fileIcon(f), 'sm'));
+        chip.appendChild(document.createElement('span')).textContent = f.name;
         row.appendChild(chip);
       }
       el.appendChild(row);
@@ -518,7 +532,10 @@
       const [, name, detail] = entry.match(/^(\w+)\((.+)\)$/) || [null, entry, ''];
       const chip = document.createElement('span');
       chip.className = 'tool';
-      chip.textContent = `${(TOOLS[name] || ['🛠️'])[0]} ${name}${detail ? `: ${skillLabel(detail)}` : ''}${n > 1 ? ` ×${n}` : ''}`;
+      const kind = TOOLS[name]?.[2] || 'run';
+      chip.dataset.kind = kind;
+      chip.innerHTML = `${Icon(TOOL_ICONS[kind] || 'wrench')}<span></span>`;
+      chip.lastChild.textContent = `${name}${detail ? `: ${skillLabel(detail)}` : ''}${n > 1 ? ` ×${n}` : ''}`;
       row.appendChild(chip);
     }
     return row;
@@ -536,9 +553,9 @@
     const cut = Math.max(rel.lastIndexOf('/'), rel.lastIndexOf('\\'));
     const sum = document.createElement('summary');
     sum.title = d.file;
-    sum.innerHTML = '<span class="d-verb"></span><b class="d-name"></b><span class="d-dir"></span><span class="d-add"></span><span class="d-del"></span><button class="d-open" type="button" title="Open the file">↗</button>';
+    sum.innerHTML = `<span class="d-verb"></span><b class="d-name"></b><span class="d-dir"></span><span class="d-add"></span><span class="d-del"></span><button class="d-open" type="button" title="Open the file">${Icon('open', 'sm')}</button>`;
     sum.querySelector('.d-open').dataset.open = d.file;
-    sum.querySelector('.d-verb').textContent = d.created ? '📝 Created' : '✏️ Updated';
+    sum.querySelector('.d-verb').textContent = d.created ? 'Created' : 'Updated';
     sum.querySelector('.d-name').textContent = rel.slice(cut + 1);
     sum.querySelector('.d-dir').textContent = cut > 0 ? rel.slice(0, cut) : '';
     sum.querySelector('.d-add').textContent = d.added ? `+${d.added}` : '';
@@ -634,15 +651,15 @@
   function appCard(a) {
     const card = document.createElement('div');
     card.className = 'app-card';
-    card.innerHTML = '<div class="app-head"><span class="app-title"></span><span class="app-state">loading…</span><button class="app-big" type="button" title="Open in a big window" hidden>⤢</button></div>';
+    card.innerHTML = `<div class="app-head"><span class="app-title"></span><span class="app-state">loading…</span><button class="app-big" type="button" title="Open in a big window" hidden>${Icon('expand', 'sm')}</button></div>`;
     const title = card.querySelector('.app-title');
     const status = card.querySelector('.app-state');
     const bigBtn = card.querySelector('.app-big');
-    title.textContent = '🧩 Tool view';
+    Icon.text(title, '🧩 Tool view');
     (async () => {
       const view = a.uri ? a : await cbot.invoke('robot:app-view', a.name);
       if (!view) return card.remove(); // no view after all (or its server is out of reach)
-      title.textContent = `🧩 ${serverLabel(view.server)} · ${view.tool}`;
+      Icon.text(title, `🧩 ${serverLabel(view.server)} · ${view.tool}`);
       const page = await cbot.invoke('robot:app-page', view.server, view.uri);
       if (!page.ok) {
         status.textContent = `couldn't load: ${page.error}`;
@@ -697,7 +714,7 @@
   function asideChip(text) {
     const chip = document.createElement('span');
     chip.className = 'tool aside';
-    chip.textContent = `💭 ${text}`;
+    Icon.text(chip, `💭 ${text}`);
     return chip;
   }
 
@@ -741,7 +758,7 @@
   function addNote(text, cls = '', tab = active()) {
     const el = document.createElement('div');
     el.className = `msg note ${cls}`;
-    el.textContent = text;
+    Icon.text(el, text);
     tab.log.appendChild(el);
     scrollDown(tab);
   }
@@ -749,13 +766,17 @@
   function deniedNote(denials) {
     const el = document.createElement('div');
     el.className = 'denied';
-    el.textContent = `🔒 I wasn't allowed to use ${[...new Set(denials)].join(', ')}. Right-click me → Permissions to give me more power.`;
+    Icon.text(el, `🔒 I wasn't allowed to use ${[...new Set(denials)].join(', ')}. Right-click me → Permissions to give me more power.`);
     return el;
   }
 
+  // (the status line and strip are plain mono text: no leading emoji)
+  function plain(text) {
+    return String(text || '').replace(/^(?:\p{Extended_Pictographic}|\uFE0F|\u200D)+\s*/u, '');
+  }
   function setStatus(text) {
     statusRow.hidden = !text;
-    statusText.textContent = text || '';
+    statusText.textContent = plain(text);
   }
 
   // each tab keeps its own status line; only the visible one is shown
@@ -793,7 +814,7 @@
   function syncChrome() {
     const t = active();
     body.classList.toggle('busy', !!t?.busy);
-    $('#send').textContent = t?.busy ? '■' : '➤';
+    $('#send').innerHTML = Icon(t?.busy ? 'stop' : 'send');
     $('#send').title = t?.busy ? 'Stop' : 'Send (Enter)';
     if (!state.busy) body.classList.remove('thinking', 'talking');
     else if (!body.classList.contains('talking')) body.classList.add('thinking');
@@ -827,6 +848,7 @@
     state.attachments = [];
     renderAttachments();
     const question = text || (files.length === 1 ? 'Take a look at this.' : 'Take a look at these.');
+    tab.vocabWord = askedWord(text); // "what does X mean?": offer to save X under the answer
     tab.log.querySelectorAll('.greet').forEach((el) => el.remove());
     clearFinishedHelpers(tab);
     addUser(question, files, tab);
@@ -862,7 +884,7 @@
     el.classList.add('queued');
     const bar = document.createElement('div');
     bar.className = 'queue-actions';
-    bar.innerHTML = '<span>📨 next up</span><button type="button" title="Stop the current answer and do this now">⚡ Send now</button><button type="button" title="Don\'t send">✕</button>';
+    bar.innerHTML = `<span>${Icon('inbox', 'sm lead')}next up</span><button type="button" title="Stop the current answer and do this now">${Icon('zap', 'sm lead')}Send now</button><button type="button" title="Don't send">${Icon('x', 'sm')}</button>`;
     const [now, cancel] = bar.querySelectorAll('button');
     now.addEventListener('click', () => cbot.invoke('robot:send-now', tab.id, turnId));
     cancel.addEventListener('click', async () => {
@@ -887,7 +909,7 @@
     const [q] = tab.queue.splice(i, 1);
     q.el.classList.remove('queued');
     q.el.classList.add('dropped');
-    q.el.querySelector('.queue-actions').textContent = `📭 ${why}`;
+    Icon.text(q.el.querySelector('.queue-actions'), `📭 ${why}`);
   }
 
   // Stop: interrupt the answer (the conversation carries on); queued messages are returned
@@ -1041,7 +1063,10 @@
         const label = `${emoji} ${verb}${ev.detail ? ' ' + ev.detail : ''}`;
         const chip = document.createElement('span');
         chip.className = 'tool';
-        chip.textContent = label;
+        // (the chip: a line icon for the kind of step, then what it did; the status line keeps the emoji)
+        chip.dataset.kind = activity;
+        chip.innerHTML = `${Icon(TOOL_ICONS[activity] || (mcp ? 'plug' : 'wrench'))}<span></span>`;
+        chip.lastChild.textContent = `${verb}${ev.detail ? ' ' + ev.detail : ''}`;
         chip.title = label;
         if ((ev.name === 'Agent' || ev.name === 'Task') && ev.id) {
           chip.classList.add('agent-chip');
@@ -1116,6 +1141,8 @@
           finishCompact(tab);
           break;
         }
+        // Claude's turn on a note is over: no more 🔧 on its sticky (a bonk's rerun carries on with it)
+        if (tab.noteId && !(ev.interrupted && tab.bonk)) cbot.invoke('notes:act', 'working', { id: tab.noteId, working: false });
         const done = finishCurrent(tab);
         expireQuestion(tab);
         if (ev.interrupted) {
@@ -1125,6 +1152,8 @@
             done.content.innerHTML = md(said ? `${said}\n\n_…(${why})_` : tab.bonk ? '_🔨 Restarting, quicker!_' : '_Okay, okay, I stopped._');
           }
           if (tab.bonk) break; // the rerun follows straight away
+          tab.noteId = '';
+          if (tab.linkReq) linkAnswer(tab, { error: 'it was stopped before it finished' });
           if (show) setActivity(restingActivity());
           express('flat', 'o', 1200);
           renderTabs();
@@ -1139,7 +1168,17 @@
           }
           if (ev.isError) done.el.classList.add('error');
           if (ev.denials?.length) done.el.appendChild(deniedNote(ev.denials));
+          if (tab.vocabWord && !ev.isError) done.el.appendChild(saveWordChip(tab.vocabWord));
+          tab.vocabWord = '';
+          if (tab.noteId && !ev.isError) done.el.appendChild(tickNoteChip(tab.noteId));
         }
+        tab.noteId = ''; // (the chip goes on that one answer only)
+        // another robot asked this: its answer goes back to it (main robotLink.js)
+        if (tab.linkReq) {
+          const said = done ? (done.asked ? done.text.slice(done.offset || 0) : done.text) : '';
+          linkAnswer(tab, ev.isError ? { error: said || ev.text || 'it hit an error' } : { text: said || ev.text || '' });
+        }
+        if (!ev.isError) socialReport({ kind: 'done' });
         if (tab !== active()) tab.status = ev.isError ? 'error' : 'done'; // unread
         if (!show) {
           // a background tab finished while you watch another one
@@ -1175,6 +1214,12 @@
           break;
         }
         if (tab.compacting) finishCompact(tab, ev.message);
+        // a note it was asked about: no more 🔧 on its sticky (you can ask again)
+        if (tab.noteId) {
+          cbot.invoke('notes:act', 'working', { id: tab.noteId, working: false });
+          tab.noteId = '';
+        }
+        if (tab.linkReq) linkAnswer(tab, { error: ev.cancelled ? 'it was stopped' : ev.message || 'it failed' });
         const done = finishCurrent(tab);
         expireQuestion(tab);
         if (done) done.text = done.text.slice(done.offset || 0);
@@ -1277,7 +1322,17 @@
     document.documentElement.style.setProperty('--swing', '0deg');
     state.lastActivity = Date.now();
     if (!p.moved) {
+      const prop = office.propAt?.(e.clientX, e.clientY);
+      if (prop?.kind === 'note' || prop?.kind === 'board') return openNotesFromBoard(prop);
       if (state.away) return awayClick();
+      if (prop?.kind === 'hammer') return playWith('bonk');
+      if (prop?.kind === 'plug') return playWith('charge');
+      const note = office.stickyAt?.(e.clientX, e.clientY);
+      if (note?.kind === 'vocab') {
+        flash('hop', 500);
+        cbot.invoke('robot:vocab-open', note.id);
+        return;
+      }
       if (state.awake && !state.mirroring && !state.collapsed && office.hitsMonitor(e.clientX, e.clientY)) {
         if (monitorClick) {
           clearTimeout(monitorClick);
@@ -1473,7 +1528,7 @@
     const card = document.createElement('div');
     card.className = 'msg q-card';
     card.innerHTML = '<div class="q-title"></div>';
-    card.querySelector('.q-title').textContent = `✋ ${state.character.name} has ${questions.length > 1 ? `${questions.length} questions` : 'a question'}`;
+    card.querySelector('.q-title').textContent = `${state.character.name} has ${questions.length > 1 ? `${questions.length} questions` : 'a question'}`;
     const picks = questions.map(() => ({ labels: new Set(), other: '' }));
     const single = questions.length === 1 && !questions[0].multiSelect;
     const blocks = [];
@@ -1573,11 +1628,11 @@
       });
       card.classList.add('answered');
       card.querySelectorAll('button, input').forEach((el) => (el.disabled = true));
-      card.querySelector('.q-title').textContent = `✋ You answered ${state.character.name}`;
+      Icon.text(card.querySelector('.q-title'), `✋ You answered ${state.character.name}`);
       const ok = await cbot.invoke('robot:answer', tab.id, requestId, answers, items);
       if (!ok) {
         card.classList.add('expired');
-        card.querySelector('.q-title').textContent = '✋ Too late, that question has closed';
+        Icon.text(card.querySelector('.q-title'), '✋ Too late, that question has closed');
         return;
       }
       tab.question = null;
@@ -1669,14 +1724,14 @@
     if (!q || q.sent) return;
     q.card.classList.add('expired');
     q.card.querySelectorAll('button, input').forEach((el) => (el.disabled = true));
-    q.card.querySelector('.q-title').textContent = '✋ This question closed without an answer';
+    Icon.text(q.card.querySelector('.q-title'), '✋ This question closed without an answer');
   }
 
   function addQaSummary(items = [], tab = active()) {
     for (const it of items) {
       const el = document.createElement('div');
       el.className = 'msg qa-summary';
-      el.innerHTML = '✋ <span></span> → <b></b>';
+      el.innerHTML = `${Icon('hand', 'sm lead')}<span></span> → <b></b>`;
       el.querySelector('span').textContent = it.question;
       el.querySelector('b').textContent = it.answer;
       tab.log.appendChild(el);
@@ -1690,6 +1745,10 @@
   // ride along with the next question.
   state.attachments = [];
   const attachRow = $('#attachments');
+  // (and the one-click questions about a box of the screen: see “ask about the screen”)
+  const screenAsks = $('#screen-asks');
+  const PLACEHOLDER = input.placeholder;
+  let screenShot = null; // { path, source } of the box the chips ask about
   let dragDepth = 0;
   let craving = null;
 
@@ -1709,8 +1768,9 @@
       const chip = document.createElement('span');
       chip.className = 'file-chip';
       chip.title = f.path;
-      chip.innerHTML = '<span></span><button type="button" title="Spit it out">✕</button>';
-      chip.querySelector('span').textContent = f.thumb ? f.name : `${fileIcon(f)} ${f.name}`;
+      chip.innerHTML = `<span></span><button type="button" title="Spit it out">${Icon('x', 'sm')}</button>`;
+      chip.querySelector('span').textContent = f.name;
+      if (!f.thumb) chip.querySelector('span').insertAdjacentHTML('beforebegin', Icon(fileIcon(f), 'sm'));
       if (f.thumb) chip.prepend(thumbImg(f.thumb));
       chip.querySelector('button').addEventListener('click', () => {
         state.attachments = state.attachments.filter((a) => a !== f);
@@ -1720,6 +1780,7 @@
       });
       attachRow.appendChild(chip);
     }
+    renderScreenAsks();
   }
 
   function startCraving() {
@@ -1850,72 +1911,37 @@
   }
 
   function bonkRobot() {
+    if (quizWord) {
+      // a bonk mid-quiz: not now, thanks
+      return smack(() => {
+        cbot.invoke('robot:vocab-quiz', 'later');
+        express('dizzy', 'o', 1200);
+      });
+    }
     smack(bonked);
   }
 
   // Clicking a sleeping robot: the squeaky hammer wakes it up (no cooldown, and
   // it doesn't hurry a task along, it just wakes up and opens the chat).
-  // ------------------------------------------------------------ the hover menu: play with it
+  // ------------------------------------------------------------ playing with it
 
-  // Hover over the robot and a little menu pops up at its feet: bonk it, charge
-  // its battery, tickle it, high-five it, or throw a dance party. Apart from the
-  // bonk (which wakes it, like a click), these play on a sleeping robot too,
-  // without waking it or opening the chat.
-  const playMenu = $('#playmenu');
-  let menuOpenTimer = 0;
-  let menuCloseTimer = 0;
-  // shows after a short hover, and comes back whenever the mouse moves over the robot
-  function hoverMenu() {
-    clearTimeout(menuCloseTimer);
-    menuCloseTimer = 0;
-    if (robot.classList.contains('menu-open') || menuOpenTimer) return;
-    menuOpenTimer = setTimeout(() => {
-      menuOpenTimer = 0;
-      if (!press && !body.classList.contains('dragging') && !state.away) robot.classList.add('menu-open');
-    }, 350);
-  }
-  // hides a moment after the mouse goes (a short grace, so brushing the edge doesn't flicker it)
-  function leaveMenu() {
-    clearTimeout(menuOpenTimer);
-    menuOpenTimer = 0;
-    if (menuCloseTimer || !robot.classList.contains('menu-open')) return;
-    menuCloseTimer = setTimeout(() => {
-      menuCloseTimer = 0;
-      robot.classList.remove('menu-open');
-    }, 250);
-  }
-  robot.addEventListener('mouseenter', hoverMenu);
-  robot.addEventListener('mousemove', hoverMenu);
-  robot.addEventListener('mouseleave', leaveMenu);
-  // When the window is just the robot (asleep, or chat tucked away), Windows often
-  // doesn't tell a transparent window the mouse left, so mouseleave never comes.
-  // These catch the mouse leaving the window; robot:cursor (below) is the backstop.
-  document.documentElement.addEventListener('mouseleave', leaveMenu);
-  window.addEventListener('blur', leaveMenu);
-  // c is the real cursor, relative to the robot box's spot on screen
-  function menuCursor(c) {
-    if (!robot.classList.contains('menu-open') && !menuOpenTimer) return;
-    const s = state.scale || 1;
-    const m = 6; // a little slack around the edge
-    const outside = c.x < -m || c.y < -m || c.x > ROBOT_W * s + m || c.y > ROBOT_H * s + m;
-    if (outside) leaveMenu();
-  }
-  playMenu.addEventListener('pointerdown', (e) => e.stopPropagation()); // a button press isn't a drag or a poke
-  playMenu.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-play]');
-    if (!b) return;
-    e.stopPropagation();
-    playWith(b.dataset.play); // the menu stays: play again, or move away to hide it
-  });
-
-  const PLAY_MS = { charge: 2600, tickle: 1700, highfive: 1300, dance: 4300 };
-  function playWith(what) {
+  // Things round the desk to click (office3d props.js): the squeaky hammer on the desk
+  // bonks it (and wakes it if it's asleep, like a click), the charger's plug on the floor
+  // charges its battery (asleep too, without waking it). A dance party and a high-five it
+  // gets up to by itself now and then (awakeAntic), and for a milestone.
+  const PLAY_MS = { charge: 2600, highfive: 1300, dance: 4300 };
+  // (byUser: you clicked something; its own idle dance or high-five doesn't count as you being around)
+  function playWith(what, { byUser = true } = {}) {
     stopAntic(); // whatever idle antic was playing gives way
-    state.lastActivity = Date.now();
+    if (byUser) state.lastActivity = Date.now();
     if (what === 'bonk') return state.awake ? bonkRobot() : bonkAwake();
-    if (state.playing) return;
+    // (one at a time, but your click wins over a dance or high-five it got up to by itself)
+    if (state.playing && (!byUser || state.playingByUser)) return;
+    if (state.playing) robot.classList.remove(state.playing);
     state.playing = what;
-    setTimeout(() => (state.playing = null), PLAY_MS[what]);
+    state.playingByUser = byUser;
+    clearTimeout(playWith.timer);
+    playWith.timer = setTimeout(() => (state.playing = null), PLAY_MS[what]);
     flash(what, PLAY_MS[what]); // the 3D view acts it out
     if (what === 'charge') {
       Sfx.charge();
@@ -1925,11 +1951,6 @@
         flash('hop', 600);
         showPop(pick(['Battery 100%! ⚡', 'Fully charged!', 'Zap! I feel brand new.']), 2000);
       }, 2000);
-    } else if (what === 'tickle') {
-      Sfx.giggle();
-      express('happy', 'talk', 1600);
-      strikePose('cheer', 1500);
-      showPop(pick(['Hehehe! Stop it!', 'Ha-ha-ha! That tickles!', 'Nooo, not there! Hehe']), 1600);
     } else if (what === 'highfive') {
       strikePose('raise', 1200);
       express('open', 'o', 450);
@@ -2029,9 +2050,9 @@
     const done = tasks.filter((x) => x.status === 'completed').length;
     todoEl.classList.toggle('collapsed', !!t.todoCollapsed);
     todoEl.innerHTML = '<div class="todo-head"><span class="todo-title"></span><span class="todo-bar"><i></i></span><span class="todo-chev"></span></div><ul class="todo-list"></ul>';
-    todoEl.querySelector('.todo-title').textContent = `📋 Plan · ${done}/${tasks.length}`;
+    todoEl.querySelector('.todo-title').textContent = `Plan  ${done}/${tasks.length}`;
     todoEl.querySelector('.todo-bar i').style.width = `${(done / tasks.length) * 100}%`;
-    todoEl.querySelector('.todo-chev').textContent = t.todoCollapsed ? '▸ show' : '▾ hide';
+    todoEl.querySelector('.todo-chev').textContent = t.todoCollapsed ? 'show' : 'hide';
     todoEl.querySelector('.todo-head').addEventListener('click', () => {
       t.todoCollapsed = !t.todoCollapsed;
       renderTodo();
@@ -2041,7 +2062,7 @@
       const li = document.createElement('li');
       li.className = `${task.status}${task.id === t.justDone ? ' just-done' : ''}`;
       li.innerHTML = '<span class="ti"></span><span class="tt"></span>';
-      li.querySelector('.ti').textContent = task.status === 'completed' ? '✅' : task.status === 'in_progress' ? '' : '⬜';
+      li.querySelector('.ti').textContent = ''; // (a checkbox drawn in CSS: empty, spinning, ticked)
       li.querySelector('.tt').textContent = task.status === 'in_progress' ? task.activeForm || task.subject : task.subject;
       list.appendChild(li);
     }
@@ -2077,7 +2098,7 @@
   // what it's doing right now, how far it got, and its report when it's back.
   const helpersEl = $('#helpers');
   const helperView = { id: null, tab: null, timer: 0 };
-  const AGENT_ICON = { completed: '✅', failed: '⚠️', killed: '🛑', stopped: '🛑' };
+  const AGENT_ICON = { completed: 'check', failed: 'alert', killed: 'stop', stopped: 'stop' };
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const elapsed = (a) => {
     const s = Math.max(0, Math.round(((a.ended || Date.now()) - a.started) / 1000));
@@ -2181,9 +2202,9 @@
     const back = list.filter((a) => a.status !== 'running').length;
     helpersEl.classList.toggle('collapsed', !!t.helpersCollapsed);
     helpersEl.innerHTML = '<div class="todo-head"><span class="todo-title"></span><span class="todo-bar"><i></i></span><span class="todo-chev"></span></div><ul class="helper-list"></ul>';
-    helpersEl.querySelector('.todo-title').textContent = back === list.length ? `🤖 ${plural(list.length, 'helper')} · all back` : `🤖 Helpers · ${back}/${list.length} back`;
+    helpersEl.querySelector('.todo-title').textContent = back === list.length ? `${plural(list.length, 'helper')}  all back` : `Helpers  ${back}/${list.length} back`;
     helpersEl.querySelector('.todo-bar i').style.width = `${(back / list.length) * 100}%`;
-    helpersEl.querySelector('.todo-chev').textContent = t.helpersCollapsed ? '▸ show' : '▾ hide';
+    helpersEl.querySelector('.todo-chev').textContent = t.helpersCollapsed ? 'show' : 'hide';
     helpersEl.querySelector('.todo-head').addEventListener('click', () => {
       t.helpersCollapsed = !t.helpersCollapsed;
       renderHelpers();
@@ -2194,7 +2215,7 @@
       li.className = `${a.status}${a.id === t.justBack ? ' just-back' : ''}`;
       li.title = 'Click to watch it work';
       li.innerHTML = '<span class="hi"></span><span class="hn"></span><span class="hm"></span><span class="hs"></span>';
-      li.querySelector('.hi').textContent = AGENT_ICON[a.status] || '';
+      li.querySelector('.hi').innerHTML = AGENT_ICON[a.status] ? Icon(AGENT_ICON[a.status], 'sm') : '';
       li.querySelector('.hn').textContent = `${a.parent ? '↳ ' : ''}${a.description}`;
       li.querySelector('.hm').textContent = helperMeta(a);
       const firstLine = (a.summary || a.report || '').split('\n').find((l) => l.trim()) || '';
@@ -2239,7 +2260,7 @@
     const bodyEl = $('#hv-body');
     const nearBottom = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight < 60;
     const open = bodyEl.querySelector('details')?.open;
-    $('#hv-title').textContent = `🤖 ${a.description}`;
+    Icon.text($('#hv-title'), `🤖 ${a.description}`);
     const status = { running: '⏳ Working', completed: '✅ Done', failed: '⚠️ Failed', killed: '🛑 Stopped', stopped: '🛑 Stopped' }[a.status] || a.status;
     bodyEl.innerHTML = `
       <div class="hv-meta"><span class="pill-${a.status}"></span><span class="hv-kind"></span><span class="hv-stats"></span></div>
@@ -2247,7 +2268,7 @@
       <h4>Steps</h4><ul class="hv-steps"></ul>
       <div class="hv-said" hidden><h4>What it says</h4><div class="hv-words md-said"></div></div>
       <div class="hv-rep" hidden><h4>Report</h4><div class="hv-words md-rep"></div></div>`;
-    bodyEl.querySelector(`.pill-${a.status}`).textContent = status;
+    Icon.text(bodyEl.querySelector(`.pill-${a.status}`), status);
     bodyEl.querySelector('.hv-kind').textContent = `${a.kind || 'helper'}${a.background ? ' · in the background' : ''}`;
     bodyEl.querySelector('.hv-stats').textContent = helperMeta(a);
     bodyEl.querySelector('.hv-prompt').textContent = a.prompt || '(not shared)';
@@ -2259,7 +2280,7 @@
       const li = document.createElement('li');
       if (a.status === 'running' && i === a.steps.length - 1) li.className = 'now';
       li.innerHTML = '<span class="st"></span><span class="sw"></span>';
-      li.querySelector('.st').textContent = stepLabel(s);
+      Icon.text(li.querySelector('.st'), stepLabel(s));
       li.querySelector('.st').title = stepLabel(s);
       li.querySelector('.sw').textContent = `+${Math.max(0, Math.round((s.at - a.started) / 1000))}s`;
       steps.appendChild(li);
@@ -2293,6 +2314,7 @@
     xhigh: ['🔥', 'Full focus'],
     max: ['🤯', 'MAXIMUM BRAINPOWER'],
   };
+  const EFFORT_ICONS = { low: 'signal-low', medium: 'signal-medium', high: 'signal-high', xhigh: 'signal', max: 'rocket' };
   const models = () => (brainInfo.models.length ? brainInfo.models : FALLBACK_MODELS);
   const modelName = (v) => (models().find((m) => m.value === (v || '')) || { displayName: v || 'Default' }).displayName.replace(/\s*\(recommended\)/i, '');
 
@@ -2309,8 +2331,10 @@
   function renderBrain() {
     const t = active();
     if (!t) return;
-    $('#brain-model').textContent = `🧠 ${modelName(t.model)} ▾`;
-    $('#brain-effort').textContent = t.effort ? `${EFFORTS[t.effort]?.[0] || '⚡'} ${t.effort} ▾` : '⚡ auto ▾';
+    // (mono readouts: an icon, the value, a caret)
+    $('#brain-model').innerHTML = `${Icon('cpu')}<span></span><span class="caret">▼</span>`;
+    $('#brain-model').children[1].textContent = modelName(t.model);
+    $('#brain-effort').innerHTML = `${Icon('zap')}<span>${t.effort || 'auto'}</span><span class="caret">▼</span>`;
     const meter = $('#brain-meter');
     const ctx = t.context;
     const pct = ctx ? Math.max(0, Math.min(100, ctx.percentage)) : null;
@@ -2341,9 +2365,9 @@
     menuEl.appendChild(h);
     for (const it of items) {
       const el = document.createElement('div');
-      el.className = `menu-item${it.on ? ' on' : ''}`;
+      el.className = `menu-item${it.on ? ' on' : ''}${it.icon ? ' has-icon' : ''}`;
       el.setAttribute('role', 'menuitem');
-      el.innerHTML = '<b></b><small></small>';
+      el.innerHTML = `${it.icon ? Icon(it.icon) : ''}<b></b><small></small>`;
       el.querySelector('b').textContent = it.label;
       el.querySelector('small').textContent = it.desc || '';
       el.addEventListener('click', () => {
@@ -2374,15 +2398,15 @@
     const allowed = models().find((m) => m.value === (t.model || ''))?.efforts;
     const levels = Object.keys(EFFORTS).filter((l) => !allowed?.length || allowed.includes(l));
     openMenu($('#brain-effort'), 'How hard I think (effort)', [
-      { label: '⚡ auto', desc: "Claude Code's default", value: '', on: !t.effort },
-      ...levels.map((l) => ({ label: `${EFFORTS[l][0]} ${l}`, desc: EFFORTS[l][1], value: l, on: t.effort === l })),
+      { icon: 'zap', label: 'auto', desc: "Claude Code's default", value: '', on: !t.effort },
+      ...levels.map((l) => ({ icon: EFFORT_ICONS[l], label: l, desc: EFFORTS[l][1], value: l, on: t.effort === l })),
     ], (v) => setBrain(t, { effort: v }));
   }
   function openMemoryMenu() {
     const t = active();
     openMenu($('#brain-meter'), 'Memory (context)', [
-      { label: '🗜️ Compact now', desc: 'Squish the conversation into a summary to free up room', value: 'compact' },
-      { label: '📊 What’s in my head?', desc: 'How full my memory is', value: 'context' },
+      { icon: 'collapse', label: 'Compact now', desc: 'Squish the conversation into a summary to free up room', value: 'compact' },
+      { icon: 'gauge', label: 'What’s in my head?', desc: 'How full my memory is', value: 'context' },
     ], (v) => (v === 'compact' ? compactTab(t) : showContext(t)));
   }
   $('#brain-model').addEventListener('click', openModelMenu);
@@ -2733,6 +2757,10 @@
     { name: 'context', description: 'How full my memory is' },
     { name: 'terminal', description: 'Continue in full Claude Code, in a terminal' },
     { name: 'folder', description: 'Open my folder' },
+    { name: 'refine', args: '[text]', description: 'Refine, translate or explain some text (Quick actions)' },
+    { name: 'screen', description: 'Drag a box round part of the screen and ask about it' },
+    { name: 'note', args: '<text>', description: 'Jot a note down (it goes on my corkboard)' },
+    { name: 'notes', description: 'Open my notebook' },
     { name: 'sleep', description: 'Send me to bed' },
     { name: 'help', description: 'What I can do' },
   ];
@@ -2793,6 +2821,21 @@
         return true;
       case 'folder':
         cbot.invoke('robot:open-folder');
+        return true;
+      case 'screen':
+      case 'snip':
+        cbot.invoke('robot:screen-ask');
+        return true;
+      case 'refine':
+      case 'quick':
+        cbot.invoke('quick:open-blank', { text: arg });
+        return true;
+      case 'note':
+        if (!arg) cbot.invoke('notes:open', { focus: 'add' });
+        else cbot.invoke('notes:add', arg).then((n) => n && addNote(`📝 Noted: ${n.text}${n.important ? ' (important)' : ''}`));
+        return true;
+      case 'notes':
+        cbot.invoke('notes:open', { focus: null });
         return true;
       case 'sleep':
         sleep();
@@ -2875,7 +2918,7 @@
     paletteEl.innerHTML = '';
     const g = document.createElement('div');
     g.className = 'p-group';
-    g.textContent = `📁 ${folderName()}`;
+    Icon.text(g, `📁 ${folderName()}`);
     paletteEl.appendChild(g);
     if (!paletteItems.length) {
       const none = document.createElement('div');
@@ -2889,7 +2932,7 @@
       row.setAttribute('role', 'option');
       row.innerHTML = '<span class="p-icon"></span><span class="p-name"></span><span class="p-desc"></span>';
       const slash = item.rel.lastIndexOf('/');
-      row.querySelector('.p-icon').textContent = item.dir ? '📁' : '📄';
+      row.querySelector('.p-icon').innerHTML = Icon(item.dir ? 'folder' : 'file', 'sm');
       row.querySelector('.p-name').textContent = item.rel.slice(slash + 1) + (item.dir ? '/' : '');
       row.querySelector('.p-desc').textContent = slash > 0 ? item.rel.slice(0, slash) : '';
       row.title = item.rel;
@@ -3004,18 +3047,22 @@
   const ANTIC_SEC = {
     sip: 3.4, 'sip-empty': 3.8, tip: 3.2, toss: 2.8, 'toss-hit': 2.8, hum: 4.5, sneeze: 2.2, lamp: 2.8,
     drum: 2.6, slump: 2.8, dvd: 9, 'dvd-lucky': 9, feed: 9.6, standdesk: 21, milktea: 5.6, dumbbell: 6, phone: 7, sleepphone: 8, pushup: 10,
-    'cat-tail': 4.5, 'cat-mug': 4.2, 'loopy-pencil': 3.8, 'nerd-glasses': 2, 'nerd-guitar': 4.5, 'girl-hair': 3.2, 'girl-heart': 2.6, 'robot-antenna': 2.4, 'robot-defrag': 1.8,
+    dictionary: 30, 'word-show': 4.2, 'quiz-card': 120, 'word-glance': 7, 'robot-antenna': 2.4, 'robot-defrag': 1.8,
     bubble: 5.2, mumble: 3.6, dream: 6.5, sleeptype: 4.2, slide: 6.5, snore: 2.4, drift: 10, drool: 2.6,
     // IT office life
     duck: 6, reboot: 7, stackoverflow: 5, cable: 4.5, crumbs: 5, 'crumbs-cookie': 5, merge: 6, standup: 7, jira: 5.5, works: 5, jitter: 6.5,
     friday: 4.5, monday: 6, noodles: 7, payday: 6, eyebreak: 6, bsod: 4.2,
     // more sleep
     nightmare: 6.5, snorebar: 9, ping: 5, vacuum: 9, burrito: 8,
+    // your notes and the corkboard (office3d/antics/notes.js)
+    // the other robots (office3d/antics/social.js)
+    'turn-to': 2.6, listen: 10, 'clap-at': 2.2, 'plane-throw': 1.8, 'plane-catch': 2.6, 'plane-read': 2.6,
+    notewrite: 30, notepin: 2.4, notetoss: 2.8, boardlift: 3.4, boardglance: 2.6, allclear: 1.8, clockout: 2.6,
     // wandering off round the screen and being brought back
     stepout: 4, stepin: 1.4,
   };
-  const CRITTER_ANTICS = { cat: ['cat-tail', 'cat-mug'], loopy: ['loopy-pencil'], nerd: ['nerd-glasses', 'nerd-guitar'], girl: ['girl-hair', 'girl-heart'], robot: ['robot-antenna', 'robot-defrag'] };
-  const DREAMS = { loopy: ['🪵', '🌲', '🥕'], cat: ['🐟', '🧶', '🐭'], nerd: ['🍕', '💾', '🎮'], girl: ['🧋', '🐱', '🌸'], robot: ['🔋', '⚙️', '💾'] };
+  const CRITTER_ANTICS = { kit: ['robot-antenna', 'robot-defrag'] };
+  const DREAMS = { kit: ['🔋', '⚙️', '💾'], loopy: ['🪵', '🌲', '🥕'], cat: ['🐟', '🧶', '🐭'], nerd: ['🍕', '💾', '🎮'], girl: ['🧋', '🐱', '🌸'], robot: ['🔋', '⚙️', '💾'] };
   const quip = (k) => persona().quips?.[k];
   // what lights up its phone at 3 am
   const PINGS = ['Boss: quick question?', 'PROD ALERT 🔥', 'Can you hop on a call?', 'Is the site down??', '@channel standup moved to 7am'];
@@ -3076,8 +3123,8 @@
 
   function leaveDesk() {
     if (state.away || state.busy || helpersOut() || state.mirroring) return;
+    if (state.hosting && !state.visiting) return; // (a visitor's at its desk: it stays put)
     stopAntic();
-    robot.classList.remove('menu-open');
     if (state.awake) collapse(); // the chat tucks away: it can't chat from out there
     antic('stepout');
     // the walker window loads (hidden) while it gets up...
@@ -3097,7 +3144,9 @@
     state.leaving = false;
     state.away = true;
     robot.dataset.away = '1';
-    state.news = AWAY_NOTE;
+    // (its status strip: out to lunch, visiting, or just out for a walk)
+    const v = state.visiting;
+    state.news = state.awayNews = v?.mode === 'lunch' ? `🍜 Out for lunch with ${v.host}` : v ? `🚶 Visiting ${v.host}` : AWAY_NOTE;
     renderWorking();
   }
 
@@ -3105,9 +3154,10 @@
   function backToDesk({ quiet = false, feet = null } = {}) {
     if (!state.away) return;
     state.away = false;
+    awayNote.classList.remove('show');
     robot.dataset.away = '';
     body.classList.remove('dock-target');
-    if (state.news === AWAY_NOTE) state.news = '';
+    if (state.news === AWAY_NOTE || state.news === state.awayNews) state.news = '';
     renderWorking();
     state.lastActivity = Date.now();
     if (quiet) return;
@@ -3126,9 +3176,18 @@
   }
 
   // the empty desk was clicked: it waves from wherever it is
+  const awayNote = $('#away-note');
   function awayClick() {
     cbot.send('robot:walker', 'wave');
-    if (state.awake) showPop(AWAY_NOTE, 2200);
+    const name = state.character?.name || 'Your robot';
+    awayNote.textContent = state.visiting?.mode === 'lunch'
+      ? `🍜 ${name} is out for lunch with ${state.visiting.host}. Click ${name} to call it back, or drag it here.`
+      : state.visiting
+      ? `🚶 ${name} is visiting ${state.visiting.host}. Click ${name} to call it back, or drag it here.`
+      : `🚶 ${name} is out for a walk. Drag ${name} back onto this desk to use it again.`;
+    awayNote.classList.add('show');
+    clearTimeout(awayClick.t);
+    awayClick.t = setTimeout(() => awayNote.classList.remove('show'), 3200);
   }
 
   // Office-calendar gags: what the clock makes more likely right now
@@ -3207,10 +3266,34 @@
       duck: 1, stackoverflow: 0.9, cable: 0.6, crumbs: 0.6, 'crumbs-cookie': 0.25, jira: 0.8, works: 0.8,
       reboot: sec > 20 ? 0.8 : 0, merge: sec > 30 ? 0.7 : 0, jitter: sec > 30 ? 0.6 : 0, standup: sec > 40 ? 0.6 : 0,
       ...calendarWeights(),
-      wander: wanders() && sec > 120 ? 3 : 0, // bored for two minutes: off for a walk round the screen
+      wander: wanders() && sec > 180 ? 1.5 : 0, // bored for three minutes: off for a walk round the screen
+      'word-glance': sight.length ? 2 : 0, // one of your English words up on its monitor, read out
+      boardglance: board.total ? 1.2 : 0, // a look over at the corkboard, a pin straightened, a look at you
+      notestress: board.total >= 8 ? 0.8 : 0, // so… many… notes…
+      dance: 0.7, highfive: 0.9, // a little dance party, or a high-five up at you
     });
     lastAntic = name;
+    if (name === 'word-glance') return wordGlance();
     switch (name) {
+      case 'dance':
+      case 'highfive':
+        playWith(name, { byUser: false });
+        anticUntil = Date.now() + PLAY_MS[name];
+        break;
+      case 'boardglance':
+        antic(name);
+        cue(1.2, () => Sfx.tool());
+        cue(1.6, () => {
+          express('open', 'flat', 900);
+          if (Math.random() < 0.5) showPop(quip('notesNudge') || 'Psst… your notes!', 1600);
+        });
+        break;
+      case 'notestress':
+        // a full board weighs on it
+        antic('slump');
+        express('dizzy', 'flat', 2200);
+        cue(0.9, () => showPop(quip('notesStress') || 'So… many… notes…', 1800));
+        break;
       case 'look':
         lookAt(rand(-300, 300), rand(-100, 100), 1100);
         setTimeout(() => lookAt(rand(-300, 300), rand(-100, 100), 900), 1100);
@@ -3250,15 +3333,8 @@
       case 'critter': {
         const c = pick(crit);
         antic(c);
-        if (c === 'cat-mug') cue(2.2, () => express('flat', 'flat', 1300));
         if (c === 'robot-antenna') cue(0.6, () => Sfx.boing());
         if (c === 'robot-defrag') express('dizzy', 'flat', 1800);
-        if (c === 'girl-heart') cue(0.5, () => express('happy', 'wide', 1800));
-        if (c === 'girl-hair') express('happy', 'smile', 2800);
-        if (c === 'loopy-pencil') {
-          cue(0.7, () => express('happy', 'chomp', 2400));
-          cue(1.2, () => Sfx.chomp());
-        }
         break;
       }
       case 'pushup':
@@ -3320,15 +3396,7 @@
         cue(7.4, () => express('open', 'flat', 1800));
         break;
       case 'milktea':
-        // a bubble tea pops into its hand; timings match the antic in office3d/antics/awake.js
-        antic(name);
-        cue(0.35, () => Sfx.pop());
-        cue(1.25, () => {
-          express('happy', 'o', 2300);
-          Sfx.slurp();
-        });
-        cue(2.3, () => Sfx.slurp());
-        cue(3.75, () => express('happy', 'smile', 1600));
+        drinkMilkTea();
         break;
       case 'standdesk':
         // timings match the antic in office3d/antics/awake.js
@@ -3467,7 +3535,8 @@
         break;
       }
       case 'jira':
-        antic(name);
+        // (with notes of your own, it juggles those)
+        antic(name, board.items.slice(0, 3).map((n) => n.text).join('|'));
         cue(4.0, () => {
           Sfx.oops();
           express('closed', 'flat', 1000);
@@ -3501,12 +3570,7 @@
         cue(1.0, () => showPop(quip('monday') || '…coffee.', 2000));
         break;
       case 'noodles':
-        antic(name);
-        cue(0.3, () => Sfx.pop());
-        for (const at of [1.5, 2.7, 3.9]) cue(at, () => {
-          Sfx.slurp();
-          express('happy', 'o', 700);
-        });
+        eatNoodles();
         break;
       case 'payday':
         antic(name);
@@ -3536,13 +3600,24 @@
   }
 
   // Asleep: now and then a snot bubble, some sleep-talk, a dream, a big snore…
+  // one of the words you're learning on its monitor; it reads it out (antics/vocab.js word-glance)
+  function wordGlance() {
+    const x = sightWord();
+    if (!x) return;
+    antic('word-glance', `${x.word}|${shortVi(x.vi)}|${x.phrase || ''}`);
+    cue(3.4, () => {
+      express('happy', 'talk', 1600);
+      showPop(`${x.word}… ${shortVi(x.vi)}`, 2800);
+    });
+  }
+
   function asleepAntic() {
     // on the floor there's no chair or keyboard to sleep-type at, slide down or drift round on
     const chair = robot.dataset.sleepStyle !== 'floor' ? 0.8 : 0;
     // ...nor an eye mask to slide up for a sneaky scroll on the phone
     const name = pickAntic({ bubble: 1.2, mumble: 1.2, dream: 1.2, sleeptype: chair, slide: chair, snore: 1.3, drift: chair, drool: 0.7, sleepphone: chair && 1.0,
       nightmare: 0.9, snorebar: 1, ping: 0.9, vacuum: 0.8, burrito: chair ? 0 : 1.2, // the burrito needs the blanket on the floor
-      sleepwalk: wanders() ? 1.2 : 0 });
+      sleepwalk: wanders() ? 0.6 : 0 });
     if (name === 'sleepwalk') return leaveDesk();
     if (name === 'sleepphone') {
       // mask up, eyes open, scroll a bit, mask down, eyes shut (office3d/antics/phone.js)
@@ -3554,10 +3629,16 @@
       return;
     }
     if (name === 'mumble') {
-      antic(name, fill(pick(persona().sleeptalk || ['…mm…'])));
+      const x = Math.random() < 0.5 ? sightWord() : null; // half the time, one of your words
+      antic(name, x ? `…${x.word}… ${shortVi(x.vi)}…` : fill(pick(persona().sleeptalk || ['…mm…'])));
       cue(0.3, () => express('closed', 'talk', 3000));
     }
-    else if (name === 'dream') antic(name, pick(DREAMS[robot.dataset.body] || ['⭐', '🍰', '🌈']));
+    else if (name === 'dream') {
+      // a third of the time it dreams of one of your words (on its monitor), and mumbles it
+      const x = sight.length && Math.random() < 0.35 ? sightWord() : null;
+      antic(name, x ? x.word : pick(DREAMS[robot.dataset.body] || ['⭐', '🍰', '🌈']));
+      if (x) cue(2.5, () => express('closed', 'talk', 1500));
+    }
     else if (name === 'bubble') {
       antic(name, pick(['huh?', 'wha—?', 'mm? huh?']));
       cue(4.4, () => Sfx.pop());
@@ -3688,7 +3769,7 @@
     const head = office.headPosition();
     state.lastCursor = { dx: c.x - head.x, dy: c.y - head.y };
     look();
-    menuCursor(c);
+    propCursor(c);
     if (state.slacking > Date.now() && Math.hypot(state.lastCursor.dx, state.lastCursor.dy) < 200) busted();
   });
 
@@ -3699,7 +3780,850 @@
     syncTabs(c);
   });
 
-  cbot.on('robot:settings', (s) => Sfx.setMuted(s.muted));
+  let muted = false; // the tray's Mute robot sounds (it keeps the word-reading voice quiet too)
+  cbot.on('robot:settings', (s) => {
+    muted = !!s.muted;
+    Sfx.setMuted(s.muted);
+  });
+
+  // ------------------------------------------------------------ English words (main/vocab.js)
+
+  // You select a word anywhere and press the hotkey: the robot nearest the mouse
+  // catches it, leafs through its dictionary while Claude looks it up (the word
+  // card beside it shows the word meanwhile), then says the word, holds up a
+  // flash card of it and pops it into the word box on its desk.
+  const wordOf = (w) => w?.word || w?.text || '';
+  // the words to keep in sight (main: sightWords): [{ id, word, vi, phrase, box }], still-learning first
+  let sight = [];
+  let quizWord = null; // the word on the quiz card it's holding up
+  const shortVi = (vi = '') => vi.split(/[;,(]/)[0].trim();
+  // the first three on sticky notes on its monitor (office3d: data-vocab-stickies)
+  function setSight(words = []) {
+    sight = words;
+    robot.dataset.vocabStickies = JSON.stringify(words.slice(0, 3).map((x) => ({ id: x.id, text: x.word, sub: shortVi(x.vi) })));
+  }
+  // one of them, the ones you're still learning more often
+  function sightWord() {
+    if (!sight.length) return null;
+    const weights = sight.map((x) => 1 / (1 + (x.box || 0)));
+    let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+    for (const [i, wt] of weights.entries()) if ((r -= wt) < 0) return sight[i];
+    return sight[0];
+  }
+  const QUIZ_LINES = ['Pop quiz! 🃏 Remember “{w}”?', "Quick one: what's “{w}”? 🤔", 'Do you still know “{w}”?', 'Word time! “{w}” means…?'];
+  let countLater = null;
+  let leafingSince = 0; // when it opened the dictionary: it reads for a moment even when the answer is quick
+  const READ_AT_LEAST = 2500;
+  const setVocabCount = (n) => (robot.dataset.vocabCount = String(n || 0));
+  // free to act it out (not in the middle of a job)
+  const canAct = () => !state.busy && !helpersOut() && !state.mirroring && !press;
+  // awake enough to show it: a sleeping robot wakes up, its chat staying tucked away
+  function vocabReady() {
+    if (state.away) return false;
+    if (!state.awake) wake({ sayHi: false, tucked: true });
+    state.lastActivity = Date.now();
+    return true;
+  }
+
+  // read a word out with an English voice, the mouth going along
+  function sayWord(text) {
+    if (!text || !window.speechSynthesis || muted) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = speechSynthesis.getVoices();
+    u.voice = voices.find((v) => v.lang === 'en-US' && /natural|aria|jenny|guy/i.test(v.name)) || voices.find((v) => v.lang === 'en-US') || voices.find((v) => v.lang.startsWith('en')) || null;
+    u.lang = 'en-US';
+    u.rate = 0.9;
+    u.onstart = () => express('happy', 'talk', 900);
+    speechSynthesis.speak(u);
+  }
+
+  // "what does meticulous mean?", "define X", "X nghĩa là gì": the word asked about ('' if none)
+  const ASKED = [
+    /\bwhat(?:'s| does| do| is)\s+(?:the\s+(?:word|phrase|term)\s+)?["“'‘]?([a-z][a-z' -]{1,40}?)["”'’]?\s+mean\b/i,
+    /\b(?:meaning of|define|definition of)\s+(?:the\s+(?:word|phrase|term)\s+)?["“'‘]?([a-z][a-z' -]{1,40}?)["”'’]?\s*(?:[?.!]|$)/i,
+    /(?:^|\s)["“'‘]?([a-z][a-z' -]{1,40}?)["”'’]?\s+(?:có\s+)?nghĩa\s+là\s+gì/i,
+  ];
+  // ("what does this error mean?" is about something else)
+  const NOT_A_WORD = /^(this|that|these|those|it|the|a|an|my|your|our|his|her|their)\b/i;
+  function askedWord(text = '') {
+    for (const re of ASKED) {
+      const w = re.exec(text)?.[1]?.trim();
+      if (w && w.split(/\s+/).length <= 4 && !NOT_A_WORD.test(w)) return w;
+    }
+    return '';
+  }
+  // ------------------------------------------------------------ notes
+  // Your notes (main notes.js): the corkboard on the desk shows the open ones
+  // (data-board), the robot pins new ones up and tosses done ones in the bin, holds the
+  // board up for the start- and end-of-day reminders, clocks out after the evening one,
+  // and takes a note on in a chat when you ask Claude about it.
+  let board = { items: [], total: 0 };
+  let shownBoard = board; // what the corkboard shows (behind `board` while the robot's hand is on its way)
+  let lastBoard = { board, before: board, at: 0 }; // the latest change, and the board just before it
+  let holding = 0;
+  function setBoard(b) {
+    board = b || { items: [], total: 0 };
+    lastBoard = { board, before: shownBoard, at: Date.now() };
+    if (!holding) showBoard(board);
+  }
+  function showBoard(b) {
+    shownBoard = b;
+    robot.dataset.board = JSON.stringify(b);
+  }
+  // the board as it was until `sec` from now (the robot's hand is on its way), then the latest.
+  // (main sends the change just before it tells the robot, so a change a moment ago is undone)
+  function holdBoardFor(sec) {
+    clearTimeout(holding);
+    if (Date.now() - lastBoard.at < 600) showBoard(lastBoard.before);
+    holding = setTimeout(() => {
+      holding = 0;
+      showBoard(board);
+    }, sec * 1000);
+  }
+  // free to act it out: awake (or dozing in its chair), at its desk, not working
+  const canActNotes = () => !state.away && !state.busy && !helpersOut() && !state.mirroring && !press && !state.playing;
+
+  function onNotes(ev) {
+    switch (ev.phase) {
+      case 'board':
+        setBoard(ev.board);
+        break;
+      case 'added': {
+        // it writes it on a sticky and pins it up (asleep: half-awake, eyes shut, mumbling)
+        if (!canActNotes()) {
+          if (state.awake && !state.away) showPop(quip('noted') || 'Noted! 📝', 1400);
+          break;
+        }
+        if (!state.awake && robot.dataset.sleepStyle === 'floor') {
+          // asleep on the floor it can't reach the board: it just mumbles it
+          stopAntic();
+          antic('mumble', '…noted…');
+          break;
+        }
+        holdBoardFor(1.25);
+        stopAntic();
+        antic('notepin', state.awake ? '' : '…noted…');
+        if (!state.awake) express('closed', 'talk', 1800);
+        cue(1.25, () => Sfx.pop());
+        if (state.awake) cue(1.4, () => showPop(quip('noted') || 'Noted! 📝', 1500));
+        break;
+      }
+      case 'done': {
+        // it takes that sticky down, crumples it and bins it; the last one: all clear!
+        if (!canActNotes() || !state.awake) break;
+        holdBoardFor(0.6);
+        stopAntic();
+        antic('notetoss', ev.note?.id || '');
+        cue(1.4, () => Sfx.swish());
+        cue(2.1, () => {
+          Sfx.pop();
+          express('happy', 'smile', 900);
+        });
+        if (ev.left === 0) {
+          setTimeout(() => {
+            if (!canActNotes() || !state.awake) return;
+            antic('allclear');
+            Sfx.done();
+            express('happy', 'wide', 1600);
+            showPop(quip('allclear') || 'All clear! ✨', 1800);
+          }, 2900);
+        }
+        break;
+      }
+      case 'opened':
+        if (state.awake && canActNotes()) express('happy', 'smile', 900);
+        break;
+      case 'writing':
+        // you're typing a note: it writes it down on a sticky pad (antics/notes.js notewrite)
+        if (ev.on) {
+          if (!state.awake || !canActNotes() || robot.dataset.antic === 'notewrite') break;
+          stopAntic();
+          antic('notewrite');
+          express('happy', 'smile', 1200);
+        } else if (robot.dataset.antic === 'notewrite') stopAntic();
+        break;
+      case 'remind':
+        remindNotes(ev.kind, ev.info || {});
+        break;
+      case 'clockout':
+        // the end-of-day look is done: a big stretch and a yawn, and off to sleep
+        if (!state.awake || !canActNotes()) break;
+        stopAntic();
+        antic('clockout');
+        cue(0.3, () => express('closed', 'o', 1300));
+        cue(0.6, () => showPop(quip('notesClockout') || 'Good work today! 😴', 1600));
+        cue(2.45, () => sleep());
+        break;
+      case 'ask':
+        askInNewTab(ev.prompt, ev.note?.id || '', { draft: !!ev.draft });
+        break;
+    }
+  }
+
+  // A reminder: it holds its board up and points at you, says so, then the notebook opens.
+  // Out walking it can't: the walker waves and the notebook opens straight away.
+  function remindNotes(kind, info) {
+    const counts = kind === 'morning' ? info.taken || info.open : info.today || info.open;
+    const line = `${quip(kind === 'morning' ? 'notesMorning' : 'notesEvening') || (kind === 'morning' ? 'Morning! Your notes:' : 'Before you go: your notes!')}${info.open ? ` (${info.open} open)` : ''}`;
+    const open = () => cbot.invoke('notes:remind-open', { kind, info: { ...info, line } });
+    if (state.away) {
+      cbot.send('robot:walker', 'wave');
+      return open();
+    }
+    if (!state.awake) wake({ sayHi: false, tucked: true });
+    setTimeout(() => {
+      stopAntic();
+      antic('boardlift');
+      Sfx.ask();
+      cue(0.9, () => {
+        express('open', 'talk', 1400);
+        showPop(line, 2600);
+      });
+      cue(2.6, open);
+      setTimeout(() => state.away || (robot.dataset.antic !== 'boardlift' && open()), 3600); // (if it got cut short)
+    }, state.awake ? 0 : 900);
+    return counts;
+  }
+
+  // Clicked the board (or a sticky on it): the notebook, beside it. The robot glances over.
+  function openNotesFromBoard(hit) {
+    cbot.invoke('notes:open', { focus: hit.kind === 'note' ? hit.id : null });
+    if (state.awake && canActNotes()) lookAt(-260, 40, 1200);
+  }
+
+  // "Ask Claude" about a note, or "Summarise my day": a new chat tab with it, sent straight away
+  // (draft: typed in for you to finish, not sent)
+  async function askInNewTab(prompt, noteId = '', { draft = false } = {}) {
+    if (!prompt) return;
+    if (!state.awake) wake({ sayHi: false });
+    else openChat();
+    const before = activeId;
+    const res = await cbot.invoke('robot:tab-new');
+    if (res.ok) {
+      for (let i = 0; i < 60 && activeId !== res.tabId; i++) await new Promise((r) => setTimeout(r, 50));
+    }
+    const tab = active();
+    if (!res.ok && tab.busy) {
+      showPop(res.error, 2200);
+      if (noteId) cbot.invoke('notes:act', 'working', { id: noteId, working: false });
+      return;
+    }
+    if (!res.ok && activeId === before) addNote('📑 No free tab: asking here.', '', tab);
+    tab.noteId = noteId;
+    input.value = prompt;
+    if (draft) {
+      autosize();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      return;
+    }
+    await submit();
+  }
+
+  // ------------------------------------------------------------ ask about the screen
+  // A box you dragged round part of the screen (main: askScreen): it opens a fresh tab with
+  // the screenshot attached, and offers a few one-click questions above the box, or you type
+  // your own. The chips go once the screenshot's sent or spat out.
+  const SCREEN_ASKS = [
+    ['bulb', 'Explain this', 'Explain what this shows.'],
+    ['wrench', "What's wrong?", "What's wrong here, and how do I fix it?"],
+    ['languages', 'Translate', 'Translate the text in this into Vietnamese.'],
+    ['summary', 'Sum it up', 'Sum this up in a few short bullet points.'],
+  ];
+
+  function renderScreenAsks() {
+    const on = !!screenShot && state.attachments.some((a) => a.path === screenShot.path);
+    if (!on) screenShot = null;
+    input.placeholder = on ? 'Ask about this… (or pick one)' : PLACEHOLDER;
+    if (on === !screenAsks.hidden) return;
+    screenAsks.hidden = !on;
+    screenAsks.innerHTML = '';
+    if (!on) return;
+    const label = document.createElement('span');
+    label.className = 'sa-label';
+    label.textContent = 'Ask';
+    screenAsks.append(label);
+    SCREEN_ASKS.forEach(([icon, text, prompt], i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = Icon(icon, 'sm lead');
+      b.append(text);
+      b.style.animationDelay = `${i * 40}ms`;
+      b.addEventListener('click', () => {
+        if (active().busy) return showPop('One thing at a time! 😅', 1500);
+        const typed = input.value.trim();
+        input.value = [prompt, typed, screenShot?.source ? `(It's from: ${screenShot.source})` : ''].filter(Boolean).join('\n\n');
+        submit();
+      });
+      screenAsks.append(b);
+    });
+  }
+
+  async function onScreen({ file, source = '' }) {
+    if (!file?.path || state.away) return;
+    if (!state.awake) wake({ sayHi: false });
+    else openChat();
+    // a fresh tab, unless the one you're on is new and empty
+    const tab = active();
+    if (tab.busy || tab.log.querySelector('.msg.user')) {
+      const res = await cbot.invoke('robot:tab-new');
+      if (res.ok) for (let i = 0; i < 60 && activeId !== res.tabId; i++) await new Promise((r) => setTimeout(r, 50));
+    }
+    screenShot = { path: file.path, source };
+    state.attachments = [...state.attachments.filter((a) => a.path !== file.path), file].slice(-20);
+    renderAttachments();
+    flash('hop', 600);
+    express('wide', 'o', 900);
+    Sfx.ooh();
+    showPop(pick(['Ooh, let me see! 🔍', 'What have we got here? 👀', 'Show me! 🔍']), 1800);
+    state.lastActivity = Date.now();
+    input.focus();
+  }
+  cbot.on('robot:screen', onScreen);
+
+  // the action menu's hotkey (main: openPalette): it sends its drone off to you with a wave
+  cbot.on('robot:palette', (ev) => {
+    if (ev.phase !== 'launch' || state.away || !state.awake || state.busy) return;
+    strikePose('raise', 700);
+    express('happy', 'o', 700);
+    Sfx.whee();
+  });
+  $('#btn-screen').addEventListener('click', () => cbot.invoke('robot:screen-ask'));
+
+  // ------------------------------------------------------------ the other robots
+  // Robots noticing each other (main social.js decides when; it hears how this one is every
+  // few seconds): it waves at a neighbour, claps when one finishes a task, yawns when one
+  // dozes off, joins a dance, walks over for a visit (the walker does the walking) or, at
+  // its own desk, turns to a visitor and chats back. A visitor that found it asleep leaves a
+  // sticky on its monitor (office3d: data-visit-notes), read out when it wakes.
+  // free for one of these: idle, not in a quiz, a play, a question or a walk
+  function socialFree() {
+    if (state.away || state.leaving || state.mirroring || helpersOut() || state.busy) return false;
+    return state.awake ? !quizWord && !state.playing && !pendingQuestion() : true;
+  }
+  function socialReport(extra) {
+    cbot.send('social:report', extra || {
+      awake: state.awake,
+      busy: !!state.busy || helpersOut() > 0,
+      chat: body.classList.contains('expanded'),
+      idleMs: Date.now() - state.lastActivity,
+      free: socialFree(),
+      away: !!state.away,
+      wanders: wanders(),
+    });
+  }
+  // look over at the robot on that side of the screen
+  const lookSide = (side, ms) => lookAt(side === 'L' ? -420 : 420, -10, ms);
+  let visitFound = '';
+  let deskPlane = null; // a paper plane that landed on its desk: { from, text }, read when it's free
+  let pendingTreat = null; // food or milk tea that came: { kind: 'food' | 'tea', text }
+  // eat it (or drink it): asleep it wakes for it (its chat tucked away); busy, it waits
+  function haveTreat() {
+    if (!pendingTreat || state.away) return;
+    if (!state.awake) return wake({ sayHi: false, tucked: true }); // (eaten on the next look)
+    if (!socialFree() || body.classList.contains('expanded') || Date.now() < anticUntil) return;
+    const t = pendingTreat;
+    pendingTreat = null;
+    stopAntic();
+    showPop(t.text || (t.kind === 'tea' ? 'Milk tea! 🧋' : 'Food! 😋'), 2000);
+    setTimeout(() => (t.kind === 'tea' ? drinkMilkTea() : eatNoodles()), 900);
+  }
+  // a bubble tea pops into its hand; timings match the antic in office3d/antics/awake.js
+  function drinkMilkTea() {
+    antic('milktea');
+    cue(0.35, () => Sfx.pop());
+    cue(1.25, () => {
+      express('happy', 'o', 2300);
+      Sfx.slurp();
+    });
+    cue(2.3, () => Sfx.slurp());
+    cue(3.75, () => express('happy', 'smile', 1600));
+  }
+  // a bowl of noodles at the desk (office3d/antics/calendar.js)
+  function eatNoodles() {
+    antic('noodles');
+    cue(0.3, () => Sfx.pop());
+    for (const at of [1.5, 2.7, 3.9]) cue(at, () => {
+      Sfx.slurp();
+      express('happy', 'o', 700);
+    });
+  }
+  const planeLine = (p) => `From ${p.from}: “${p.text}”`;
+  // read the plane on its desk: picks it up, reads it out, and waves over to whoever threw it
+  function readDeskPlane() {
+    // (not while you're using it: its chat open)
+    if (!deskPlane || !state.awake || !socialFree() || body.classList.contains('expanded') || Date.now() < anticUntil) return;
+    const p = deskPlane;
+    deskPlane = null;
+    stopAntic();
+    antic('plane-read');
+    cue(0.5, () => (robot.dataset.deskPlane = ''));
+    cue(1.0, () => {
+      Sfx.pop();
+      showPop(planeLine(p), 2800);
+      express('happy', 'talk', 1400);
+    });
+    cue(2.4, () => socialReport({ kind: 'plane-read' }));
+  }
+  function onSocial(ev) {
+    const free = socialFree();
+    switch (ev.phase) {
+      case 'wave':
+      case 'wave-back':
+        if (!free || !state.awake) break;
+        stopAntic();
+        antic('turn-to', ev.side);
+        strikePose('wave', 1700);
+        lookSide(ev.side, 2200);
+        express('happy', 'smile', 1600);
+        break;
+      case 'stir': // waved at in its sleep
+        if (!state.awake && !state.away) express('closed', 'o', 700);
+        break;
+      case 'clap':
+        if (!free || !state.awake) break;
+        stopAntic();
+        antic('clap-at', ev.side);
+        lookSide(ev.side, 2000);
+        cue(0.35, () => Sfx.clap());
+        express('happy', 'wide', 1800);
+        if (ev.text) cue(0.5, () => showPop(ev.text, 1800));
+        break;
+      case 'yawn':
+        if (!free || !state.awake) break;
+        stopAntic();
+        strikePose('cheer', 1300); // (a big stretch)
+        express('closed', 'o', 1400);
+        // a while idle already: it nods off soon too
+        if (ev.sleepSoon) state.lastActivity = Math.min(state.lastActivity, Date.now() - (AUTO_SLEEP_MS - 40_000));
+        break;
+      case 'dance':
+        if (free && state.awake) playWith('dance', { byUser: false });
+        break;
+      case 'visit':
+        // off to another robot's desk (main gives the walker its errand)
+        if (!free || !state.awake || !wanders()) {
+          socialReport({ kind: 'decline' });
+          break;
+        }
+        state.visiting = { host: ev.host, mode: ev.mode };
+        leaveDesk();
+        break;
+      case 'visit-over':
+        state.visiting = null;
+        break;
+      case 'go-out': // asked out to lunch (it said yes): off it goes with the other robot
+        if (!free || !state.awake || !wanders()) {
+          socialReport({ kind: 'decline' });
+          break;
+        }
+        state.visiting = { host: ev.with, mode: 'lunch' };
+        leaveDesk();
+        break;
+      case 'treat': // the lunch order or the milk tea came: eaten now if it's free, else when it is
+        pendingTreat = { kind: ev.kind, text: ev.text };
+        haveTreat();
+        break;
+      case 'hosting': // another robot is visiting its desk
+        state.hosting = !!ev.on;
+        break;
+      case 'listen': // a visitor is chatting beside the desk
+        if (!state.awake || state.away || state.busy) break;
+        stopAntic();
+        antic('listen', ev.side);
+        lookSide(ev.side, 9000);
+        break;
+      case 'say':
+        if (!state.awake || state.away) break;
+        showPop(ev.text, 2600);
+        express('happy', 'talk', 1500);
+        break;
+      case 'listen-end':
+        if (robot.dataset.antic === 'listen') stopAntic();
+        if (ev.wave && state.awake && !state.away) strikePose('wave', 1300);
+        break;
+      case 'throw': // a paper plane at the robot on that side (main's plane window flies it)
+        if (!free || !state.awake) break;
+        stopAntic();
+        antic('plane-throw', ev.side);
+        lookSide(ev.side, 2000);
+        express('happy', 'smile', 1800);
+        cue(0.95, () => Sfx.swish());
+        break;
+      case 'catch': // a plane coming its way: a hand up, caught, read out
+        if (!free || !state.awake) {
+          deskPlane = { from: ev.from, text: ev.text };
+          robot.dataset.deskPlane = '1';
+          break;
+        }
+        stopAntic();
+        antic('plane-catch', ev.side);
+        lookSide(ev.side, 1200);
+        cue(0.3, () => {
+          Sfx.pop();
+          express('open', 'o', 500);
+        });
+        cue(0.9, () => {
+          showPop(planeLine(ev), 2800);
+          express('happy', 'talk', 1500);
+        });
+        break;
+      case 'plane-land': // landed on its desk while it was busy or asleep: read later
+        deskPlane = { from: ev.from, text: ev.text };
+        robot.dataset.deskPlane = '1';
+        if (state.awake && !state.away) Sfx.pop();
+        break;
+      case 'oops': // its plane missed and flew off past the desk
+        if (!state.awake || state.away) break;
+        express('flat', 'o', 1300);
+        showPop('Oops! 😅', 1500);
+        break;
+      case 'visit-note': // a visitor found it asleep: a sticky on its monitor
+        robot.dataset.visitNotes = JSON.stringify([{ id: 'visit', text: 'came by 👋', sub: ev.from || '', color: '#ffd1e3' }]);
+        visitFound = ev.found || '';
+        break;
+    }
+  }
+  // awake: the visitor's sticky is read, and taken down a little later
+  function readVisitNote() {
+    if (!robot.dataset.visitNotes) return;
+    const found = visitFound;
+    visitFound = '';
+    if (found) setTimeout(() => showPop(found, 2600), 3400); // (after its wake-up words)
+    setTimeout(() => (robot.dataset.visitNotes = ''), 9000);
+  }
+
+  // ------------------------------------------------------------ messages from other robots
+  // Another robot's Claude asked this one something (main robotLink.js: it flew over as a
+  // paper plane). It takes it on in a tab of its own chat, in its own folder, like any
+  // question (follow-ups in that exchange go to the same tab, so it remembers), and its
+  // answer goes back when the turn's done (linkAnswer, from the done / fail events).
+  function linkAnswer(tab, r) {
+    cbot.send('robots:answer', { reqId: tab.linkReq, ...r });
+    tab.linkReq = '';
+  }
+  async function onLink(ev) {
+    if (ev.phase !== 'incoming') return;
+    const fail = (error) => cbot.send('robots:answer', { reqId: ev.reqId, error });
+    // (out walking: main's calling it back to its desk)
+    for (let i = 0; i < 60 && state.away; i++) await new Promise((r) => setTimeout(r, 100));
+    if (state.away) return fail("it's out for a walk and didn't come back to its desk");
+    if (!state.awake) wake({ sayHi: false, tucked: true }); // (its chat stays tucked away: you see it working)
+    let tab = [...tabs.values()].find((t) => t.exchange === ev.exchange);
+    if (!tab) {
+      const res = await cbot.invoke('robot:tab-new');
+      if (!res.ok) return fail(res.error || 'it has no free tab');
+      for (let i = 0; i < 60 && !tabs.get(res.tabId); i++) await new Promise((r) => setTimeout(r, 50));
+      tab = tabs.get(res.tabId);
+      if (!tab) return fail('its new tab never opened');
+      tab.exchange = ev.exchange;
+    }
+    activateTab(tab.id);
+    tab.linkReq = ev.reqId;
+    if (state.awake) {
+      Sfx.pop();
+      showPop(`📨 ${ev.from} asks…`, 1800);
+    }
+    input.value = ev.text;
+    await submit();
+  }
+
+  // ------------------------------------------------------------ quick actions
+  // Quick actions on text you selected (main quickWindow.js): while Claude refines or sums
+  // it up the robot writes on its pad, while it translates or explains it leafs through
+  // its dictionary; a little hop when the answer goes back into your app. Asleep or out
+  // for a walk, it lets you get on with it.
+  const QUICK_ANTICS = ['notewrite', 'dictionary'];
+  let quickSince = 0;
+  function onQuick(ev) {
+    if (state.away) return;
+    const free = state.awake && canActNotes();
+    switch (ev.phase) {
+      case 'start':
+        if (!free) break;
+        if (!QUICK_ANTICS.includes(robot.dataset.antic)) {
+          stopAntic();
+          antic(ev.action === 'refine' || ev.action === 'summarise' ? 'notewrite' : 'dictionary');
+          quickSince = Date.now();
+        }
+        if (Math.random() < 0.6) showPop(quip('quickStart') || 'On it! ✍️', 1400);
+        break;
+      case 'done':
+      case 'fail':
+        // (it writes for a moment at least, even when the answer is quick)
+        setTimeout(() => {
+          if (QUICK_ANTICS.includes(robot.dataset.antic)) stopAntic();
+          if (!state.awake) return;
+          if (ev.phase === 'done') express('happy', 'smile', 1000);
+          else {
+            express('flat', 'o', 1400);
+            showPop("Hmm, that didn't work.", 1800);
+          }
+        }, Math.max(0, 900 - (Date.now() - quickSince)));
+        break;
+      case 'replaced':
+        if (!free) break;
+        flash('hop', 600);
+        Sfx.done();
+        showPop(quip('quickDone') || 'Done! ✨', 1500);
+        break;
+      case 'copied':
+        if (state.awake) showPop('Copied! 📋', 1200);
+        break;
+    }
+  }
+
+  function tickNoteChip(id) {
+    const b = document.createElement('button');
+    b.className = 'chip save-word';
+    Icon.text(b, '✅ Tick it off my notes');
+    b.addEventListener('click', () => {
+      b.disabled = true;
+      Icon.text(b, '✅ Ticked off');
+      cbot.invoke('notes:act', 'done', { id });
+    });
+    return b;
+  }
+
+  // the mouse over the board, the hammer or the plug: it lights up, and a label by the mouse
+  // says what a click does (drawn here, not a tooltip)
+  const boardLabel = $('#board-label');
+  const propLabel = (kind) =>
+    kind === 'hammer'
+      ? state.away ? '🔨 (out for a walk)' : state.awake ? '🔨 Bonk!' : '🔨 Bonk me awake'
+      : kind === 'plug'
+        ? state.away ? '🔌 (out for a walk)' : '🔌 Charge my battery'
+        : board.total ? `📋 ${board.total} note${board.total === 1 ? '' : 's'}: click to open` : '📋 Notes: all clear (click to add one)';
+  function clearPropHover() {
+    robot.dataset.propHover = '';
+    robot.classList.remove('over-prop');
+    boardLabel.classList.remove('show');
+  }
+  // (Windows may not tell a transparent window the mouse left: robot:cursor is the backstop)
+  function propCursor(c) {
+    if (!robot.dataset.propHover) return;
+    const s = state.scale || 1;
+    if (c.x < -6 || c.y < -6 || c.x > ROBOT_W * s + 6 || c.y > ROBOT_H * s + 6) clearPropHover();
+  }
+  let boardRaf = 0;
+  robot.addEventListener('mousemove', (e) => {
+    if (boardRaf) return;
+    boardRaf = requestAnimationFrame(() => {
+      boardRaf = 0;
+      // a word's sticky note on the monitor: it zooms up to read (office3d scene.js stickies)
+      const note = !press && office.stickyAt?.(e.clientX, e.clientY);
+      robot.dataset.stickyHover = note?.kind === 'vocab' ? note.id : '';
+      robot.classList.toggle('over-sticky', note?.kind === 'vocab');
+      const hit = !press && office.propAt?.(e.clientX, e.clientY);
+      if (!hit) return clearPropHover();
+      const kind = hit.kind === 'note' ? 'board' : hit.kind;
+      robot.dataset.propHover = kind;
+      robot.classList.add('over-prop');
+      const r = robot.getBoundingClientRect();
+      Icon.text(boardLabel, propLabel(kind));
+      boardLabel.style.left = `${e.clientX - r.left}px`;
+      boardLabel.style.top = `${e.clientY - r.top}px`;
+      boardLabel.classList.add('show');
+    });
+  });
+  robot.addEventListener('mouseleave', () => {
+    robot.dataset.stickyHover = '';
+    robot.classList.remove('over-sticky');
+    clearPropHover();
+  });
+
+  function saveWordChip(word) {
+    const b = document.createElement('button');
+    b.className = 'chip save-word';
+    Icon.text(b, `📚 Save “${word}” to my words`);
+    b.addEventListener('click', () => {
+      b.disabled = true;
+      Icon.text(b, `📚 “${word}” saved`);
+      cbot.invoke('robot:vocab-save', word);
+    });
+    return b;
+  }
+
+  function onVocab(ev) {
+    const w = wordOf(ev.word);
+    switch (ev.phase) {
+      case 'count':
+        // a card on its way into the box lands first
+        clearTimeout(countLater);
+        if (robot.dataset.antic === 'word-show') countLater = setTimeout(() => setVocabCount(ev.count), Math.max(0, anticUntil - 300 - Date.now()));
+        else setVocabCount(ev.count);
+        break;
+      case 'empty':
+        if (!vocabReady()) return;
+        express('flat', 'o', 1400);
+        showPop(`Select a word, then ${ev.hotkey}!`, 3000);
+        break;
+      case 'too-long':
+        if (!vocabReady()) return;
+        express('dizzy', 'o', 1400);
+        showPop("Too long! Just a word or two.", 2600);
+        break;
+      case 'catch':
+        if (!vocabReady()) return;
+        Sfx.ooh();
+        flash('hop', 600);
+        express('happy', 'o', 900);
+        showPop(`Ooh, “${w}”!`, 2400);
+        state.news = `📖 Looking up “${w}”…`;
+        renderWorking();
+        if (canAct()) {
+          stopAntic();
+          antic('dictionary', w);
+          leafingSince = Date.now();
+        }
+        break;
+      case 'found':
+      case 'known': {
+        const wait = robot.dataset.antic === 'dictionary' ? READ_AT_LEAST - (Date.now() - leafingSince) : 0;
+        if (wait > 0) return void setTimeout(() => onVocab(ev), wait);
+        state.news = `📚 “${w}” is in your words`;
+        renderWorking();
+        if (!vocabReady()) return;
+        const vi = ev.word?.senses?.[0]?.vi || '';
+        if (canAct()) {
+          antic('word-show', w);
+          cue(0.3, () => Sfx.whee());
+          cue(3.9, () => Sfx.pop());
+        }
+        Sfx.done();
+        sayWord(w);
+        setTimeout(() => showPop(ev.phase === 'known' ? `Already got “${w}”!` : vi ? `${w}: ${vi}` : `Got it: ${w}!`, 4200), 900);
+        break;
+      }
+      case 'failed':
+        state.news = '';
+        renderWorking();
+        if (robot.dataset.antic === 'dictionary') stopAntic();
+        if (!vocabReady()) return;
+        Sfx.oops();
+        express('dizzy', 'flat', 1600);
+        showPop("My dictionary's stuck!", 2600);
+        break;
+      case 'sight':
+        setSight(ev.words);
+        break;
+      case 'reading':
+        // the box you dragged round a word: it squints at it while Claude reads it
+        if (!vocabReady()) return;
+        Sfx.ooh();
+        express('happy', 'o', 1200);
+        showPop('Ooh, let me read that… 🔍', 2400);
+        state.news = '🔍 Reading the word in your box…';
+        renderWorking();
+        if (canAct()) {
+          stopAntic();
+          antic('dictionary', '…');
+        }
+        break;
+      case 'unreadable':
+        state.news = '';
+        renderWorking();
+        if (robot.dataset.antic === 'dictionary') stopAntic();
+        if (!vocabReady()) return;
+        Sfx.oops();
+        express('dizzy', 'flat', 1600);
+        showPop("I can't find a word in there!", 2600);
+        break;
+      case 'quiz':
+        // a reminder (main/reminders.js): it holds up the word, the card asks you
+        if (!vocabReady()) return;
+        quizWord = ev.word;
+        Sfx.ooh();
+        flash('hop', 600);
+        express('happy', 'o', 900);
+        showPop(pick(QUIZ_LINES).replace('{w}', w), 3600);
+        state.news = `🃏 Do you remember “${w}”?`;
+        renderWorking();
+        if (canAct()) {
+          stopAntic();
+          antic('quiz-card', w);
+        }
+        break;
+      case 'answered': {
+        quizWord = null;
+        state.news = '';
+        renderWorking();
+        if (robot.dataset.antic === 'quiz-card') stopAntic();
+        if (!state.awake) return;
+        if (ev.how === 'knew') {
+          Sfx.done();
+          flash('hop', 600);
+          strikePose('cheer', 1400);
+          express('happy', 'smile', 1800);
+          showPop(pick(['Yes! 🎉', 'You got it! ✨', 'Nailed it!', 'Smart cookie! 🍪']), 2200);
+        } else if (ev.how === 'forgot') {
+          express('flat', 'smile', 1600);
+          showPop(pick([`No worries, “${w}” comes back soon!`, `We'll get “${w}” next time!`]), 2600);
+        } else if (ev.how === 'later') {
+          express('happy', 'smile', 1000);
+          showPop('OK, later! ⏰', 1600);
+        }
+        break;
+      }
+      case 'dream': {
+        // a word that's due: it dreams of it (on its monitor) and mumbles it; the dream
+        // bubble beside it shows the meaning and an example
+        if (state.awake || state.away) break;
+        stopAntic();
+        antic('dream', w);
+        cue(1.2, () => express('closed', 'talk', 2200));
+        cue(1.3, () => Sfx.hmm?.());
+        break;
+      }
+      case 'knowit':
+        // ✓ I know this one, from its dream: a sleepy little smile
+        if (!state.awake) express('closed', 'smile', 1800);
+        break;
+      case 'milestone': {
+        // 10 words learnt, a week-long streak…: a dance party, after its reaction to the answer
+        setTimeout(() => {
+          if (!vocabReady()) return;
+          if (canAct()) playWith('dance');
+          setTimeout(() => showPop(ev.learnt ? `🎓 ${ev.learnt} words learnt!` : `🔥 ${ev.streak} days in a row!`, 3000), 600);
+          if (ev.unlocked) setTimeout(() => showPop('New hat in the Workshop! 🎓', 3200), 3800);
+        }, 2600);
+        break;
+      }
+      case 'undone':
+        if (!state.awake) return;
+        express('flat', 'smile', 1200);
+        showPop(`OK, “${w}” is gone.`, 1800);
+        break;
+      case 'ask': {
+        // the card's 💬 Ask more: the question waits in the chat for you to send
+        if (state.away) return awayClick();
+        if (!state.awake) wake({ sayHi: false });
+        else openChat();
+        const vi = ev.word?.senses?.[0]?.vi;
+        const fill = () => {
+          input.value = `Tell me more about the English word “${w}”${vi ? ` (${vi})` : ''}: when and how is it used, its common collocations, and similar words and how they differ. Answer in Vietnamese, with English examples.`;
+          autosize();
+          input.focus();
+        };
+        // in a tab of its own, unless this one is still empty
+        if (active().busy || active().log.querySelector('.msg.user, .msg.bot')) newTab().then(() => setTimeout(fill, 250));
+        else fill();
+        break;
+      }
+    }
+  }
+  cbot.on('robot:vocab', onVocab);
+  cbot.on('robot:notes', onNotes);
+  cbot.on('robot:quick', onQuick);
+  cbot.on('robot:social', onSocial);
+  cbot.on('robot:link', onLink);
+  setInterval(() => {
+    socialReport();
+    readDeskPlane(); // (a plane on its desk, read once it's free)
+    haveTreat(); // (food or milk tea that came, had once it's free)
+  }, 5000);
+  setTimeout(() => socialReport(), 1500);
 
   cbot.on('robot:action', (action) => {
     if (action === 'sleep') sleep();
@@ -3735,7 +4659,11 @@
     state.personalities = init.personalities;
     state.user = init.user;
     Sfx.setMuted(init.settings.muted);
+    muted = !!init.settings.muted;
     applyCharacter(init.character);
+    setVocabCount(init.vocabCount);
+    setSight(init.vocabSight || []);
+    setBoard(init.notesBoard);
     syncTabs(init.character);
     cbot.invoke('robot:expand', false); // every (re)load starts asleep; keep the window in sync
     if (init.character.terminalOpen && tabs.get(init.character.terminalTab)) terminalState('opened', tabs.get(init.character.terminalTab), { quiet: true });

@@ -1,0 +1,156 @@
+/* The app's look, shared by every window. Two themes, picked in Settings > Theme and put on
+   <html> by theme.js: data-theme="future" (a calm sci-fi console: glass panels, pills, a cyan
+   glow) or "vintage" (a paper notebook: cream paper, navy ink, typewriter labels, stamps),
+   each with data-mode="light" | "dark". Every window's stylesheet uses only these tokens; the
+   few decorations each theme adds (tape, ruled lines, scan lines…) are in vintage.css and
+   future.css. A window with a robot sets --paint (its colour), which tints the accent.
+   The robot and its desk are drawn separately (office3d). */
+@import url("future.css");
+@import url("vintage.css");
+
+/* ------------------------------------------------------------- future tech (the default) */
+:root {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; /* titles, the word on a card */
+  --font-mono: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
+
+  --bg: #ffffff;
+  --bg-2: #f3f7fc;
+  --bg-3: #e8eef7;
+  --fg: #0b1426;
+  --fg-2: #2c3a55;
+  --muted: #64748b;
+  --line: rgba(11, 20, 38, 0.09);
+  --line-2: rgba(11, 20, 38, 0.16);
+  --accent: var(--paint, #0891b2);
+  --accent-ink: color-mix(in srgb, var(--accent) 62%, var(--fg));
+  --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent);
+  --on-accent: #ffffff;
+  --btn: var(--accent); /* the main action on a window (send, show the meaning…) */
+  --on-btn: #04222a;
+  --ok: #059669;
+  --warn: #d97706;
+  --danger: #e5484d;
+  --violet: #7c6cf2;
+  --code-bg: #0a1020;
+  --code-fg: #e2e8f0;
+  --glow: color-mix(in srgb, var(--accent) 30%, transparent);
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --r-btn: 999px;
+  --shadow: 0 1px 2px rgba(11, 20, 38, 0.06), 0 4px 14px rgba(11, 20, 38, 0.08);
+  --shadow-pop: 0 2px 6px rgba(11, 20, 38, 0.08), 0 14px 36px rgba(11, 20, 38, 0.18);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  color-scheme: light;
+}
+:root[data-mode="dark"] {
+  --bg: #0e1626;
+  --bg-2: #0a101c;
+  --bg-3: #16213a;
+  --fg: #e6f1ff;
+  --fg-2: #b8c6de;
+  --muted: #7d8ba6;
+  --line: rgba(120, 200, 255, 0.1);
+  --line-2: rgba(120, 200, 255, 0.19);
+  --accent: var(--paint, #22d3ee);
+  --accent-ink: color-mix(in srgb, var(--accent) 75%, var(--fg));
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --on-accent: #04222a;
+  --on-btn: #04222a;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --violet: #a78bfa;
+  --code-bg: #060a12;
+  --glow: color-mix(in srgb, var(--accent) 40%, transparent);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 14px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(34, 211, 238, 0.08);
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------- vintage notebook */
+:root[data-theme="vintage"] {
+  --font-display: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --font-mono: Consolas, "Courier New", ui-monospace, monospace; /* the typewriter */
+
+  --bg: #fbf6ea; /* a page */
+  --bg-2: #f3ebd8; /* the desk blotter under it */
+  --bg-3: #e9dfc6;
+  --fg: #2b3a55; /* navy ink */
+  --fg-2: #46506a;
+  --muted: #7a6a4f; /* sepia pencil */
+  --line: rgba(110, 84, 40, 0.16);
+  --line-2: rgba(110, 84, 40, 0.3);
+  /* the robot's paint, aged: a sepia-toned shade of it */
+  --accent: color-mix(in oklab, var(--paint, #a4472e) 50%, #8a5a2b);
+  --accent-ink: color-mix(in oklab, var(--accent) 55%, var(--fg));
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --on-accent: #fbf6ea;
+  --btn: #2b3a55; /* an ink stamp */
+  --on-btn: #fbf6ea;
+  --stamp: #a4472e; /* rust, for the odd rubber stamp */
+  --tape: rgba(201, 162, 39, 0.5); /* mustard washi tape */
+  --rule: rgba(120, 96, 52, 0.17); /* the ruled lines */
+  --margin: rgba(196, 92, 72, 0.45); /* the red margin line */
+  --ok: #5e7a2e; /* olive */
+  --warn: #a8720c; /* mustard */
+  --danger: #9e2b25;
+  --violet: #75598c; /* faded plum: dreams */
+  --code-bg: #2e2822;
+  --code-fg: #ede3cc;
+  --glow: transparent;
+
+  --r-sm: 2px;
+  --r: 3px;
+  --r-lg: 4px;
+  --r-btn: 3px;
+  --shadow: 0 1px 0 rgba(90, 66, 30, 0.08), 0 2px 6px rgba(90, 66, 30, 0.1);
+  --shadow-pop: 0 1px 2px rgba(70, 50, 20, 0.14), 0 10px 26px rgba(70, 50, 20, 0.2);
+  --ring: 0 0 0 2px color-mix(in srgb, var(--fg) 22%, transparent);
+  color-scheme: light;
+}
+/* leather and lamplight */
+:root[data-theme="vintage"][data-mode="dark"] {
+  --bg: #2b2520;
+  --bg-2: #221d19;
+  --bg-3: #352e27;
+  --fg: #ede3cc; /* cream ink */
+  --fg-2: #d6c9ac;
+  --muted: #a8977a;
+  --line: rgba(237, 227, 204, 0.1);
+  --line-2: rgba(237, 227, 204, 0.19);
+  --accent: color-mix(in oklab, var(--paint, #c9774f) 50%, #c9a46a);
+  --accent-ink: color-mix(in oklab, var(--accent) 60%, var(--fg));
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --on-accent: #221d19;
+  --btn: #e3d2a6; /* a parchment stamp */
+  --on-btn: #2b2520;
+  --stamp: #df8a6a;
+  --tape: rgba(201, 162, 39, 0.35);
+  --rule: rgba(237, 227, 204, 0.08);
+  --margin: rgba(223, 120, 100, 0.35);
+  --ok: #a3b86c;
+  --warn: #d9b44a;
+  --danger: #e0715a;
+  --violet: #b49bd0;
+  --code-bg: #1a1613;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+/* icons */
+.ic { width: 16px; height: 16px; flex: none; display: inline-block; vertical-align: -3px; }
+.ic.sm { width: 12px; height: 12px; vertical-align: -1px; }
+.ic.lead { margin-right: 5px; } /* in front of some words (Icon.text) */
+
+/* a status light */
+.led { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent); }
+
+/* small caps label, like a panel legend */
+.legend { font: 600 10.5px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* thin scrollbars everywhere */
+* { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }

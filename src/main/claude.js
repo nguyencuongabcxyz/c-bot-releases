@@ -7,24 +7,8 @@ const path = require('path');
 
 const isWin = process.platform === 'win32';
 
-// Apps launched from a desktop shortcut / Finder often lack the user's shell
-// PATH, so look in the usual install spots before trusting PATH.
-function findClaude(override) {
-  if (override && fs.existsSync(override)) return override;
-  const home = os.homedir();
-  const exe = isWin ? 'claude.exe' : 'claude';
-  const candidates = [
-    path.join(home, '.local', 'bin', exe),
-    path.join(home, '.claude', 'local', exe),
-    ...(isWin
-      ? [path.join(process.env.APPDATA || '', 'npm', 'claude.cmd')]
-      : ['/opt/homebrew/bin/claude', '/usr/local/bin/claude', '/usr/bin/claude']),
-  ];
-  for (const c of candidates) if (fs.existsSync(c)) return c;
-  const which = spawnSync(isWin ? 'where' : 'which', ['claude'], { encoding: 'utf8' });
-  const hit = (which.stdout || '').split(/\r?\n/).find(Boolean);
-  return hit || null;
-}
+// finding the `claude` command: see findClaude.js
+const { findClaude } = require('./findClaude');
 
 // When C-Bot itself was started from inside a Claude Code session, it inherits
 // that session's private markers. Passed on, they make every robot's `claude`
@@ -85,13 +69,15 @@ function describeTool(name, input = {}) {
     case 'TodoWrite':
       return 'updating the to-do list';
     case 'ToolSearch':
-      return short(String(input.query || '').replace(/^select:/, '').split(',').join(', '));
+      return short(String(input.query || '').replace(/^select:/, '').replace(/mcp__cbot__/g, '').split(',').join(', ')); // (the other robots' tools by their short names)
     case 'TaskCreate':
       return short(input.subject);
     case 'TaskUpdate':
       return `#${input.taskId}${input.status ? ` → ${input.status.replace('_', ' ')}` : ''}`;
     case 'Skill':
       return skillLabel(input.skill || input.name);
+    case 'mcp__cbot__ask_robot': // (robotLink.js: asking another robot)
+      return `${input.robot || ''}: ${short(input.message, 48)}`;
     default:
       return '';
   }
@@ -184,9 +170,11 @@ const TASK_TOOLS = ['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
  * background helper agent finished and it carries on) get an "auto-…" turn id.
  */
 class ClaudeSession extends EventEmitter {
-  constructor({ claudePath, cwd, sessionId, systemPrompt, permissionMode, model, effort, addDirs = [], tools = null }) {
+  // (mcpConfig: an --mcp-config file to add (the other robots' tools), allowedTools: tools it may use
+  // without asking, env: extra environment for Claude Code)
+  constructor({ claudePath, cwd, sessionId, systemPrompt, permissionMode, model, effort, addDirs = [], tools = null, mcpConfig = '', allowedTools = [], env = {} }) {
     super();
-    this.opts = { claudePath, cwd, systemPrompt, permissionMode, model, effort, addDirs: [...addDirs], tools };
+    this.opts = { claudePath, cwd, systemPrompt, permissionMode, model, effort, addDirs: [...addDirs], tools, mcpConfig, allowedTools, env };
     this.sessionId = sessionId || null;
     this.queue = []; // turns waiting: { id, prompt }
     this.turn = null; // the turn being answered
@@ -216,7 +204,7 @@ class ClaudeSession extends EventEmitter {
   }
 
   start() {
-    const { claudePath, cwd, systemPrompt, permissionMode, model, effort, addDirs, tools } = this.opts;
+    const { claudePath, cwd, systemPrompt, permissionMode, model, effort, addDirs, tools, mcpConfig, allowedTools, env } = this.opts;
     // stdin stays open: questions go in as stream-json messages, and tool
     // permission requests come back to us ("stdio") so questions can be answered
     const args = [
@@ -232,13 +220,16 @@ class ClaudeSession extends EventEmitter {
     if (tools?.length) args.push('--tools', [...new Set([...tools, ...TASK_TOOLS])].join(','));
     // folders of files fed to the robot, so Claude Code may read them
     for (const dir of addDirs) args.push('--add-dir', dir);
+    // the other robots' tools (robotLink.js), usable without asking
+    if (mcpConfig) args.push('--mcp-config', mcpConfig);
+    if (allowedTools?.length) args.push('--allowedTools', allowedTools.join(','));
 
     this.stderr = '';
     this.costSoFar = 0;
     this.restartBeforeNext = false;
     let child;
     try {
-      child = spawn(claudePath, args, { cwd, env: cleanEnv(), windowsHide: true, shell: isWin && claudePath.toLowerCase().endsWith('.cmd') });
+      child = spawn(claudePath, args, { cwd, env: { ...cleanEnv(), ...env }, windowsHide: true, shell: isWin && claudePath.toLowerCase().endsWith('.cmd') });
     } catch (err) {
       this._failAll(`Couldn't start Claude Code: ${err.message}`);
       return this;

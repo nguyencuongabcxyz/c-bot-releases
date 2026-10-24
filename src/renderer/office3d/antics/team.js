@@ -385,6 +385,13 @@ const standup = {
 // slaps flat onto its face at 4.0 (the other two drop in its lap), stays there
 // till 5.0, then it peels it off (5.0–5.4) and the lot pop away.
 const NOTES = [['URGENT!', '#ffb347'], ['TODO', '#ff9ec7'], ['BUG-404', '#ffe066']];
+// with notes of your own (robot.js passes up to three titles as "a|b|c" in data-antic-text),
+// it juggles those instead: the first word or two of each
+const shortTitle = (t) => {
+  const words = t.replace(/\s+/g, ' ').trim().split(' ');
+  const two = words.slice(0, 2).join(' ');
+  return (two.length <= 14 ? two : words[0]).slice(0, 14);
+};
 const NOTE = 0.23;
 const T0 = 0.5; // the first throw
 const BEAT = 3.5 / 11; // a throw every beat, two beats in the air: the face one lands at 4.0
@@ -437,7 +444,8 @@ const jira = {
     const sc = scaleOf(c);
     if (!run.notes) {
       run.hb = headBox(c);
-      run.notes = NOTES.map(([text, color]) => buildNote(text, color));
+      const titles = String(c.text || '').split('|').map((t) => t.trim()).filter(Boolean);
+      run.notes = NOTES.map(([text, color], i) => buildNote(titles[i] ? shortTitle(titles[i]) : text, color));
       for (const n of run.notes) c.set.office.add(n);
       run.dropFrom = [];
     }

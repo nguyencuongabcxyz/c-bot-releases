@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+  <title>Notes</title>
+  <link rel="stylesheet" href="../ui/theme.css" />
+  <script src="../ui/theme.js"></script>
+  <link rel="stylesheet" href="notebook.css" />
+</head>
+<body>
+  <main id="book" aria-label="Notes">
+    <header>
+      <h1 data-icon="note">Notes <span id="count" class="count" hidden></span></h1>
+      <div class="actions">
+        <button id="btn-more" title="More" aria-haspopup="menu" data-icon="more"></button>
+        <button id="btn-close" title="Close (Esc)" data-icon="x"></button>
+      </div>
+      <div id="more" class="menu" role="menu" hidden>
+        <button data-act="copy-all" role="menuitem" data-icon="copy">Copy all notes</button>
+        <button data-act="toggle-done" role="menuitem" data-icon="check"><span>Show done notes</span></button>
+        <button data-act="clear-done" role="menuitem" data-icon="broom">Clear done notes</button>
+      </div>
+    </header>
+
+    <!-- the morning / end-of-day reminder -->
+    <section id="reminder" class="reminder" hidden>
+      <p id="reminder-text"></p>
+      <div class="reminder-actions">
+        <button id="btn-summary" class="primary" data-icon="sparkles" hidden>Summarise my day</button>
+        <button id="btn-snooze" data-icon="clock">In 15 min</button>
+        <button id="btn-today" data-icon="thumb">Done for today</button>
+      </div>
+    </section>
+
+    <form id="add" autocomplete="off">
+      <textarea id="add-text" rows="1" placeholder="Add a note…  (! = important)" aria-label="New note"></textarea>
+      <button id="btn-add" type="submit" title="Add (Enter)" data-icon="plus"></button>
+    </form>
+    <input id="filter" type="search" placeholder="Filter notes…" aria-label="Filter notes" hidden />
+
+    <div id="list" role="list"></div>
+    <p id="empty" class="empty" hidden>All clear. Nothing to do!<br /><small>Notes you add show up on the corkboard on the desk.</small></p>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden>
+    <span id="toast-text"></span>
+    <button id="toast-undo">Undo</button>
+  </div>
+
+  <script src="../ui/icons.js"></script>
+  <script src="notebook.js"></script>
+</body>
+</html>

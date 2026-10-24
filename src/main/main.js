@@ -1,10 +1,11 @@
-const { app, BrowserWindow, ipcMain, Menu, Tray, clipboard, dialog, nativeImage, powerMonitor, protocol, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Notification, Tray, clipboard, dialog, globalShortcut, nativeImage, powerMonitor, protocol, screen, shell } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { Store, titleFor } = require('./store');
 const { ClaudeSession, findClaude, describeTool } = require('./claude');
+const { locateClaude, checkClaude } = require('./findClaude');
 const { launchTerminal, TranscriptMirror } = require('./terminal');
 const { listSessions, readSession } = require('./sessions');
 const { PERSONALITIES, systemPromptFor, publicPersonalities } = require('./personalities');
@@ -14,6 +15,19 @@ const { keepOnTop } = require('./topmost');
 const { createWalkers } = require('./walker');
 const { searchFiles, mentionedPaths } = require('./files');
 const mcpApps = require('./mcpApps');
+const capture = require('./capture');
+const { Vocab, lookup, readPicture, HOUR, MIN } = require('./vocab');
+const { createSnipper } = require('./snip');
+const { createReminders, acceptsNotifications } = require('./reminders');
+const { createSocial } = require('./social');
+const { createPlanes } = require('./plane');
+const { createRobotLink, TOOLS: LINK_TOOLS } = require('./robotLink');
+const { createWordCard } = require('./wordCard');
+const { Notes, createNoteReminders, NOTE_DEFAULTS } = require('./notes');
+const { createNotebook } = require('./notebook');
+const { createQuickWindow } = require('./quickWindow');
+const { createPalette } = require('./palette');
+const { createDrone } = require('./drone');
 
 // MCP tool views (e.g. an Excalidraw drawing) are served on their own origin, sandboxed in the chat
 // and local pictures (an SVG Claude made, a chart it saved) are shown through cbot-file:
@@ -50,6 +64,21 @@ let store;
 let tray;
 let managerWin = null;
 let walkers = null; // robots out for a walk round the screen (walker.js)
+let vocab = null; // your English words (vocab.js)
+let wordCard = null; // the card showing a word you just caught (wordCard.js)
+let notes = null; // your notes (notes.js)
+let notebook = null; // the window they're in (notebook.js)
+let noteReminders = null; // the start- and end-of-day reminders about them
+let quickWin = null; // quick actions on selected text (quickWindow.js)
+let social = null; // the robots noticing each other: waves, claps, visits (social.js)
+let planes = null; // the paper planes they throw at each other (plane.js)
+let robotLink = null; // robots asking each other from the chat (robotLink.js)
+let reminders = null; // when a robot quizzes you on a word (reminders.js)
+let snipper = null; // drag a box round a word you can't select (snip.js)
+let palette = null; // the one-hotkey menu of everything (palette.js)
+let drone = null; // the robot's drone, which flies the menu over to you (drone.js)
+let droneOut = false; // it's out, hovering over the menu
+let snipFor = null; // { kind: 'word' | 'ask', robotId, source } while you're dragging that box
 const robots = new Map(); // id -> { win, expanded, anchor, drag, chatW, resize }
 const sessions = new Map(); // "robotId|tabId" -> ClaudeSession
 const terminals = new Map(); // id -> { child, mirror } while the robot's conversation is open in a terminal
@@ -221,7 +250,7 @@ function sendToRobot(id, channel, payload) {
 
 // what a walker needs to look like its robot
 function walkerLook(c) {
-  return c && { name: c.name, color: c.color, body: c.body, glb: c.glb, glbTurn: c.glbTurn, accessory: c.accessory, theme: c.theme, size: c.size };
+  return c && { name: c.name, color: c.color, body: c.body, kit: c.kit, accessory: c.accessory, theme: c.theme, size: c.size };
 }
 
 // Eyes follow the mouse: poll the global cursor and tell each robot where it is
@@ -230,6 +259,7 @@ function startCursorTracking() {
   let last = '';
   setInterval(() => {
     const p = screen.getCursorScreenPoint();
+    walkers?.hover(p); // (every tick: a walker can walk under a still mouse)
     const key = `${p.x},${p.y}`;
     if (key === last) return;
     last = key;
@@ -320,6 +350,9 @@ function closeRobotSessions(id) {
   for (const key of [...sessions.keys()]) if (key.startsWith(`${id}|`)) closeSession(key);
 }
 
+// Its personality, and the other robots it can ask (robotLink.js)
+const promptFor = (c) => [systemPromptFor(c), robotLink?.note(c.id)].filter(Boolean).join('\n');
+
 // The tab's live Claude Code process (started on its first question).
 function sessionFor(id, tabId) {
   const key = runKey(id, tabId);
@@ -331,11 +364,15 @@ function sessionFor(id, tabId) {
     claudePath: findClaude(store.settings.claudePath),
     cwd: c.folder,
     sessionId: tab.sessionId,
-    systemPrompt: systemPromptFor(c),
+    systemPrompt: promptFor(c),
     permissionMode: c.permissionMode,
     model: tab.model ?? c.model ?? '', // '' = Claude Code's default; a tab's choice beats the robot's
     effort: tab.effort || '',
     tools: toolset?.tools || null,
+    // the other robots, to ask (robotLink.js): its tools, usable without asking, and time to wait for an answer
+    mcpConfig: robotLink?.mcpConfigFile(id) || '',
+    allowedTools: robotLink ? LINK_TOOLS : [],
+    env: { MCP_TOOL_TIMEOUT: String(11 * 60_000) },
   });
   sessions.set(key, session);
   const turns = new Map(); // turnId -> { prompt, kind, retried }
@@ -526,7 +563,7 @@ function ask(id, tabId, prompt, { attachments = [], turnId = crypto.randomUUID()
 
   const claudePath = findClaude(store.settings.claudePath);
   if (!claudePath) {
-    return { ok: false, error: "I can't find the `claude` command. Install Claude Code, or set its path in the Robot Workshop settings." };
+    return { ok: false, error: "I can't find Claude Code anywhere on this computer. Install it, then press “Search again” in the Robot Workshop (bottom left), or point me to it there." };
   }
   if (!c.folder || !fs.existsSync(c.folder)) {
     return { ok: false, error: `My folder is missing: ${c.folder || '(none)'}. Point me at a new one in the Robot Workshop.` };
@@ -555,7 +592,7 @@ function ask(id, tabId, prompt, { attachments = [], turnId = crypto.randomUUID()
   }
 
   const session = sessionFor(id, tabId);
-  session.setSystemPrompt(systemPromptFor(c)); // personality changes apply from the next question
+  session.setSystemPrompt(promptFor(c)); // personality changes (and who else is out) apply from the next question
   session.allowDirs(addDirs);
   session.turns.set(turnId, { prompt: fullPrompt, kind });
   const { queued } = session.ask(fullPrompt, turnId);
@@ -725,6 +762,12 @@ function openManager(focusId) {
   managerWin.on('closed', () => (managerWin = null));
 }
 
+// where Claude Code is, for the Workshop: { claudePath, claudeSource }
+function claudeInfo() {
+  const found = locateClaude(store.settings.claudePath);
+  return { claudePath: found?.path || null, claudeSource: found?.source || '' };
+}
+
 function notifyManager() {
   if (managerWin && !managerWin.isDestroyed()) managerWin.webContents.send('mgr:changed');
 }
@@ -734,10 +777,11 @@ function notifyManager() {
 function refreshTray() {
   if (!tray) return;
   const chars = store.list();
+  // a hotkey's line in its feature's menu: what it does, or that another app has it
+  const hotkeyLine = (ok, key, what) => ({ label: ok ? `${key} anywhere: ${what}` : `${key} is taken by another app`, enabled: false });
+  const openNotes = notes?.open().length || 0;
   const menu = Menu.buildFromTemplate([
-    { label: 'New robot…', click: () => openManager('new') },
-    { label: 'Robot Workshop', click: () => openManager() },
-    { type: 'separator' },
+    // your robots: on the desktop or put away, and back from a walk
     ...(chars.length
       ? chars.map((c) => ({
           label: `${PERSONALITIES[c.personality]?.emoji || '🤖'}  ${c.name}`,
@@ -747,23 +791,79 @@ function refreshTray() {
         }))
       : [{ label: 'No robots yet', enabled: false }]),
     ...chars.filter((c) => walkers?.has(c.id)).map((c) => ({ label: `🚶  Call ${c.name} back to the desk`, click: () => walkers.dock(c.id) })),
+    { label: '🛠️ Robot Workshop…', click: () => openManager() },
+    { label: '➕ New robot…', click: () => openManager('new') },
+    { type: 'separator' },
+    // the features
+    paletteHotkeyOk
+      ? { label: `⌨️ All actions… (${paletteHotkey()})`, click: () => openPalette() }
+      : { label: `⌨️ All actions… (${paletteHotkey()} is taken by another app)`, click: () => openPalette() },
+    { label: `🔍 Ask about part of the screen… (${screenHotkey()})`, click: () => askScreen() },
+    {
+      label: '✨ Quick actions',
+      submenu: [
+        { label: `✨ Quick actions on text… (${quickHotkey()})`, click: () => openQuick({ text: clipboard.readText().trim().slice(0, 12000) }) },
+        { type: 'separator' },
+        { label: 'Fast brain (Haiku)', type: 'radio', checked: (store.settings.quickModel || 'haiku') === 'haiku', click: () => setSettings({ quickModel: 'haiku' }) },
+        { label: 'Better writing (Sonnet)', type: 'radio', checked: store.settings.quickModel === 'sonnet', click: () => setSettings({ quickModel: 'sonnet' }) },
+        { type: 'separator' },
+        hotkeyLine(quickHotkeyOk, quickHotkey(), 'select text, then refine, translate or explain it'),
+      ],
+    },
+    {
+      label: `📒 Notes${openNotes ? ` (${openNotes} open)` : ''}`,
+      submenu: [
+        { label: '📒 Open my notebook…', click: () => openNotebook({ focus: null }) },
+        { label: `📝 Take a note… (${noteHotkey()})`, click: () => openNotebook({ focus: 'add' }) },
+        { type: 'separator' },
+        hotkeyLine(noteHotkeyOk, noteHotkey(), 'take a note (with what you selected)'),
+      ],
+    },
+    {
+      label: `📚 English words (${vocab?.count || 0})`,
+      submenu: [
+        { label: '📚 My words…', click: () => openWords() },
+        { label: '🔍 Box a word on screen to save it…', click: () => setTimeout(() => boxWord(), 250) }, // (after the menu has gone)
+        { label: '🃏 Quiz me now', enabled: !!vocab?.ready.length, click: () => reminders.quizNow() || dialog.showMessageBox({ message: 'No robot is free to quiz you right now.' }) },
+        { type: 'separator' },
+        {
+          label: '💭 Dream about my words during the day',
+          type: 'checkbox',
+          checked: store.settings.vocabReminders !== false,
+          click: (item) => setSettings({ vocabReminders: item.checked }),
+        },
+        { type: 'separator' },
+        hotkeyLine(vocabHotkeyOk, vocabHotkey(), 'select a word to save it'),
+      ],
+    },
     { type: 'separator' },
     {
-      label: 'Mute robot sounds',
-      type: 'checkbox',
-      checked: !!store.settings.muted,
-      click: (item) => setSettings({ muted: item.checked }),
+      label: '⚙️ Settings',
+      submenu: [
+        themeMenu(),
+        { label: '🔇 Mute robot sounds', type: 'checkbox', checked: !!store.settings.muted, click: (item) => setSettings({ muted: item.checked }) },
+        {
+          label: '🤝 Robots socialising',
+          submenu: [
+            { label: 'Often', type: 'radio', checked: store.settings.socialising === 'often', click: () => setSettings({ socialising: 'often' }) },
+            { label: 'Sometimes', type: 'radio', checked: !store.settings.socialising || store.settings.socialising === 'sometimes', click: () => setSettings({ socialising: 'sometimes' }) },
+            { label: 'Never', type: 'radio', checked: store.settings.socialising === 'never', click: () => setSettings({ socialising: 'never' }) },
+          ],
+        },
+        { label: '🛸 A drone brings the action menu', type: 'checkbox', checked: store.settings.paletteDrone !== false, click: (item) => setSettings({ paletteDrone: item.checked }) },
+        {
+          label: '🚀 Start with Windows',
+          type: 'checkbox',
+          checked: store.settings.startAtLogin !== false,
+          click: (item) => {
+            setSettings({ startAtLogin: item.checked });
+            applyLoginItem();
+          },
+        },
+        { type: 'separator' },
+        { label: '🗄️ Open backups folder', click: () => shell.openPath(store.backupDir) },
+      ],
     },
-    {
-      label: 'Start with Windows',
-      type: 'checkbox',
-      checked: store.settings.startAtLogin !== false,
-      click: (item) => {
-        setSettings({ startAtLogin: item.checked });
-        applyLoginItem();
-      },
-    },
-    { label: 'Open backups folder', click: () => shell.openPath(store.backupDir) },
     { type: 'separator' },
     // the installed app updates itself from GitHub Releases (see updater.js)
     ...(updateState.ready
@@ -779,13 +879,791 @@ function refreshTray() {
   tray.setContextMenu(menu);
 }
 
+// ---------------------------------------------------------------- theme
+
+// Two looks for every window: Vintage notebook and Future tech, each light or dark (or
+// following Windows). ui/theme.js reads the pick when a window opens and follows changes.
+const THEMES = { vintage: '📜  Vintage notebook', future: '🛰️  Future tech' };
+const THEME_MODES = { auto: 'Follow Windows light / dark', light: 'Always light', dark: 'Always dark' };
+function themeOf() {
+  const { theme, themeMode } = store.settings;
+  return { theme: theme in THEMES ? theme : 'future', mode: themeMode in THEME_MODES ? themeMode : 'auto' };
+}
+ipcMain.on('theme:get', (event) => {
+  event.returnValue = themeOf();
+});
+function themeMenu() {
+  const now = themeOf();
+  return {
+    label: '🎨 Theme',
+    submenu: [
+      ...Object.entries(THEMES).map(([key, label]) => ({ label, type: 'radio', checked: now.theme === key, click: () => setSettings({ theme: key }) })),
+      { type: 'separator' },
+      ...Object.entries(THEME_MODES).map(([key, label]) => ({ label, type: 'radio', checked: now.mode === key, click: () => setSettings({ themeMode: key }) })),
+    ],
+  };
+}
+
 function setSettings(patch) {
   const settings = store.updateSettings(patch);
+  if ('theme' in patch || 'themeMode' in patch) {
+    const pick = themeOf();
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('theme:changed', pick);
+  }
+  // (the notes' own settings: a new hotkey, which robot's board shows them)
+  if (notes && 'noteHotkey' in patch) bindNoteHotkey();
+  if (quickWin && 'quickHotkey' in patch) bindQuickHotkey();
+  if (snipper && 'screenHotkey' in patch) bindScreenHotkey();
+  if (palette && 'paletteHotkey' in patch) bindPaletteHotkey();
+  if (vocab && 'vocabHotkey' in patch) bindVocabHotkey();
+  if (notes && ('notesBoard' in patch || 'notesRobot' in patch)) notesChanged();
   for (const r of robots.values()) if (!r.win.isDestroyed()) r.win.webContents.send('robot:settings', settings);
   refreshTray();
   notifyManager();
   return settings;
 }
+
+// ---------------------------------------------------------------- vocabulary
+
+// English words: select one anywhere and press the hotkey. The robot nearest
+// the mouse catches it and looks it up in its dictionary (Claude, the quick
+// model) while a word card shows it; then the meanings in Vietnamese and the
+// examples fill in, and the card goes in the word box on its desk.
+const VOCAB_HOTKEY = 'Ctrl+Alt+W';
+const vocabHotkey = () => store.settings.vocabHotkey || VOCAB_HOTKEY;
+let vocabHotkeyOk = true;
+
+// the robot at its desk nearest the mouse
+function nearestRobot() {
+  const p = screen.getCursorScreenPoint();
+  let best = null;
+  let bestD = Infinity;
+  for (const [id, r] of robots) {
+    if (r.win.isDestroyed() || !r.win.isVisible() || walkers?.has(id)) continue;
+    const b = r.win.getBounds();
+    const d = Math.hypot(b.x + b.width / 2 - p.x, b.y + b.height / 2 - p.y);
+    if (d < bestD) [best, bestD] = [id, d];
+  }
+  return best;
+}
+
+const tellVocab = (id, payload) => id && sendToRobot(id, 'robot:vocab', payload);
+// the words each robot keeps in sight: on sticky notes on its monitor, on its screen
+// when it's idle, in its sleep talk (the ones you're still learning first)
+const sightWords = () =>
+  vocab.inSight(6).map((w) => ({ id: w.id, word: w.word, vi: w.senses?.[0]?.vi || '', phrase: w.phrases?.[0]?.phrase || '', box: w.review?.step || 0 }));
+function vocabCountChanged() {
+  const words = sightWords();
+  for (const id of robots.keys()) {
+    tellVocab(id, { phase: 'count', count: vocab.count });
+    tellVocab(id, { phase: 'sight', words });
+  }
+  refreshTray();
+  notifyWords();
+}
+
+// ---- the quiz (reminders.js decides when; this decides who and shows it)
+
+let quizzing = null; // { wordId, robotId } while a quiz card is up
+// a robot free to quiz you: the tutor if it's free, else the free robot nearest the mouse
+function freeRobot() {
+  const free = (id) => {
+    const r = robots.get(id);
+    return r && !r.win.isDestroyed() && r.win.isVisible() && !walkers?.has(id) && !robotBusy(id);
+  };
+  if (free(store.settings.vocabTutor)) return store.settings.vocabTutor;
+  const p = screen.getCursorScreenPoint();
+  const ids = [...robots.keys()].filter(free);
+  const dist = (id) => {
+    const b = robots.get(id).win.getBounds();
+    return Math.hypot(b.x + b.width / 2 - p.x, b.y + b.height / 2 - p.y);
+  };
+  return ids.sort((a, b) => dist(a) - dist(b))[0] || null;
+}
+
+// a word to quiz you on when you ask for one: a due one, or else one you're still learning
+const quizPick = () => vocab.nextDue() || vocab.inSight(4).sort(() => Math.random() - 0.5)[0] || null;
+
+// ---- the dream: a sleeping robot dreams of a word that's due, and a dream bubble beside
+// it shows the word, its meaning and an example (reminders.js decides when)
+
+// a robot that's asleep, at its desk or sleepwalking round the screen: the tutor if it is,
+// else the one nearest the mouse
+function sleepingRobot() {
+  const asleep = (id) => {
+    const r = robots.get(id);
+    if (!r || r.win.isDestroyed() || robotBusy(id)) return false;
+    if (walkers?.has(id)) return walkers.isSleepwalking(id);
+    return r.win.isVisible() && !r.expanded && !r.tucked;
+  };
+  if (asleep(store.settings.vocabTutor)) return store.settings.vocabTutor;
+  const p = screen.getCursorScreenPoint();
+  const dist = (id) => {
+    const b = robotRect(id);
+    return b ? Math.hypot(b.x + b.width / 2 - p.x, b.y + b.height / 2 - p.y) : Infinity;
+  };
+  return [...robots.keys()].filter(asleep).sort((a, b) => dist(a) - dist(b))[0] || null;
+}
+
+// (asked: you asked for one from a robot's menu: it shows even if that robot is awake)
+function startDream(word, robotId = sleepingRobot()) {
+  if (!word || !robotId || quizzing) return false;
+  const seen = vocab.dreamt(word.id); // shown: it counts as seen, the next time is further off
+  if (!seen) return false;
+  // sleepwalking: it stops and mumbles it where it is, and the bubble goes there
+  if (walkers?.has(robotId)) walkers.dream(robotId, seen.word);
+  else tellVocab(robotId, { phase: 'dream', word: seen });
+  wordCard.open({ ...seen, dream: true, known: true }, { robotId, paint: store.get(robotId)?.color, near: robotRect(robotId) });
+  vocabCountChanged();
+  return true;
+}
+
+function startQuiz(word, { asked = false, robotId = freeRobot() } = {}) {
+  if (!word || !robotId) return false;
+  if (quizzing) endQuiz('ignored');
+  quizzing = { wordId: word.id, robotId };
+  tellVocab(robotId, { phase: 'quiz', word, asked });
+  wordCard.open({ ...word, quiz: true }, { robotId, paint: store.get(robotId)?.color, bounds: cardBounds(robotId) });
+  return true;
+}
+
+// ---- rewards: a celebration when you've learnt 10, 25, 50… words or kept a streak going,
+// and the 🎓 graduation cap (an accessory) once you've learnt 10
+const LEARNT_MILESTONES = [10, 25, 50, 100, 200, 500, 1000];
+const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100, 365];
+function checkMilestones(robotId) {
+  const st = vocab.stats();
+  const done = store.settings.vocabMilestones || {};
+  const learnt = LEARNT_MILESTONES.filter((n) => st.learnt >= n && n > (done.learnt || 0)).pop() || 0;
+  const streak = STREAK_MILESTONES.filter((n) => st.streak >= n && n > (done.streak || 0)).pop() || 0;
+  if (!learnt && !streak) return;
+  const patch = { vocabMilestones: { learnt: learnt || done.learnt || 0, streak: streak || done.streak || 0 } };
+  const unlocked = learnt >= 10 && !store.settings.vocabRewards?.gradcap ? 'gradcap' : '';
+  if (unlocked) patch.vocabRewards = { ...store.settings.vocabRewards, gradcap: true };
+  setSettings(patch);
+  tellVocab(robotId, { phase: 'milestone', learnt, streak, unlocked });
+  social?.milestone(robotId);
+}
+
+// how the quiz ended: 'knew' / 'forgot' / 'later' (put off for a couple of hours) / 'ignored'
+function endQuiz(how) {
+  if (!quizzing) return null;
+  const { wordId, robotId } = quizzing;
+  quizzing = null;
+  reminders.done();
+  const word =
+    how === 'knew' || how === 'forgot' ? vocab.answer(wordId, how === 'knew') : vocab.later(wordId, how === 'later' ? 2 * HOUR : 30 * MIN);
+  if (word) tellVocab(robotId, { phase: 'answered', how, word, wait: (word.review?.due || 0) - Date.now() });
+  vocabCountChanged(); // (what's in sight changes as you learn)
+  if (how === 'knew' || how === 'forgot') checkMilestones(robotId);
+  return word;
+}
+
+// The word card is as big as a chat (the standard width, however wide you've dragged
+// this robot's) and goes where its chat would (see layoutFor), from the top of the
+// screen to the bottom; with the chat already open there, it takes the robot's other
+// side if that has room.
+function cardBounds(id) {
+  const r = robots.get(id);
+  if (!r || r.win.isDestroyed()) return null;
+  const { anchor, dims } = r;
+  const wa = screen.getDisplayNearestPoint({ x: anchor.x + dims.w / 2, y: anchor.y + dims.h / 2 }).workArea;
+  const want = CHAT.w;
+  const roomLeft = anchor.x - wa.x;
+  const roomRight = wa.x + wa.width - (anchor.x + dims.w);
+  let side = roomLeft >= want || roomLeft >= roomRight ? 'left' : 'right';
+  if (r.expanded) {
+    const other = side === 'left' ? 'right' : 'left';
+    if ((other === 'left' ? roomLeft : roomRight) >= CHAT.min) side = other;
+  }
+  const room = side === 'left' ? roomLeft : roomRight;
+  const width = Math.round(Math.min(want, Math.max(room, CHAT.min), wa.width));
+  const x = Math.round(Math.min(Math.max(side === 'left' ? anchor.x - width : anchor.x + dims.w, wa.x), wa.x + wa.width - width));
+  return { x, y: wa.y, width, height: wa.height };
+}
+
+function showCard(word, robotId) {
+  if (quizzing) endQuiz('ignored'); // a new word takes over the quiz card
+  wordCard.open(word, { robotId, paint: store.get(robotId)?.color, bounds: cardBounds(robotId) });
+}
+
+// the hotkey: whatever's selected in the app in front
+// drag a box round a word on screen, for this robot (its menu; the hotkey with nothing selected)
+function boxWord(robotId = nearestRobot(), source = '') {
+  snipFor = { kind: 'word', robotId, source };
+  return snipper.start().then(
+    () => true,
+    (err) => {
+      console.warn('[snip]', err.message);
+      tellVocab(robotId, { phase: 'unreadable' });
+      snipFor = null;
+      return false;
+    },
+  );
+}
+
+async function captureWord() {
+  const { text, source } = await capture.readSelection({ hotkeyKey: capture.keyCode(vocabHotkey()) });
+  if (text) return catchWord(text, { source, robotId: nearestRobot() });
+  // nothing selected (a word in a picture, a video…): drag a box round it instead
+  boxWord(nearestRobot(), source);
+}
+
+// the box you dragged: Claude reads the word in it (and its sentence), then it's caught as usual
+async function readBoxed(image) {
+  const { robotId, source } = snipFor || { robotId: nearestRobot(), source: '' };
+  snipFor = null;
+  tellVocab(robotId, { phase: 'reading' });
+  try {
+    const found = await readPicture(image.toPNG(), { claudePath: store.settings.claudePath });
+    if (!found.text) return tellVocab(robotId, { phase: 'unreadable' });
+    catchWord(found.text, { source, robotId, context: found.sentence });
+  } catch (err) {
+    console.warn('[snip] reading failed:', err.message);
+    tellVocab(robotId, { phase: 'unreadable' });
+  }
+}
+
+// trims quotes and punctuation round a selection ("meticulous," -> meticulous)
+const EDGES = /^[\s"'“”‘’([{]+|[\s"'“”‘’)\]}.,;:!?]+$/g;
+
+function catchWord(raw, { source = '', robotId = nearestRobot(), context = '' } = {}) {
+  const text = String(raw || '').replace(EDGES, '').trim();
+  if (!text) return tellVocab(robotId, { phase: 'empty', hotkey: vocabHotkey() });
+  if (text.length > 60 || text.split(/\s+/).length > 5) return tellVocab(robotId, { phase: 'too-long' });
+  const known = vocab.find(text);
+  if (known && known.status === 'ready') {
+    // you met it again: it comes up for review sooner
+    vocab.seenAgain(known.id);
+    tellVocab(robotId, { phase: 'known', word: known });
+    showCard({ ...known, known: true }, robotId);
+    return;
+  }
+  const word = known || vocab.add({ text, source, context });
+  tellVocab(robotId, { phase: 'catch', word });
+  showCard(word, robotId);
+  findMeaning(word.id, robotId);
+}
+
+// quiet: a word saved from a card's lists (＋): looked up in the background, no show
+async function findMeaning(id, robotId, { quiet = false } = {}) {
+  const word = vocab.update(id, { status: 'looking', error: '' });
+  if (!word) return;
+  wordCard.update(word);
+  try {
+    // the meaning comes back first: show it while the phrases, synonyms and family are still coming
+    const onCore = (meaning) => {
+      if (!vocab.get(id)) return;
+      const partial = vocab.update(id, meaning); // (still 'looking' until the rest is in)
+      if (partial) wordCard.update(partial);
+    };
+    const found = await lookup(word.text, { context: word.context, claudePath: store.settings.claudePath, onCore });
+    if (!vocab.get(id)) return; // undone while it was looking
+    // "ran" is "run": keep the one you already have
+    const twin = vocab.find(found.word);
+    if (twin && twin.id !== id && twin.status === 'ready') {
+      vocab.remove(id);
+      if (!quiet) {
+        tellVocab(robotId, { phase: 'known', word: twin });
+        showCard({ ...twin, known: true }, robotId);
+      }
+      vocabCountChanged();
+      return;
+    }
+    const done = vocab.update(id, { ...found, status: 'ready' });
+    wordCard.update(done);
+    if (!quiet) {
+      tellVocab(robotId, { phase: 'found', word: done });
+      checkMilestones(robotId); // (a new day's first word can extend the streak)
+    }
+  } catch (err) {
+    const failed = vocab.update(id, { status: 'failed', error: err.message });
+    if (failed) wordCard.update(failed);
+    if (!quiet) tellVocab(robotId, { phase: 'failed', word: failed, error: err.message });
+  }
+  vocabCountChanged();
+}
+
+// the card's buttons
+function onCardAction(action, { word, robotId }, payload) {
+  if (action === 'retry') return findMeaning(word.id, robotId);
+  // the dream bubble: 📖 Details opens the whole card, ✓ I know this one skips it ahead
+  if (action === 'details') {
+    const w = vocab.get(word.id);
+    if (w) wordCard.open({ ...w, known: true }, { robotId, paint: store.get(robotId)?.color, bounds: cardBounds(robotId) });
+    return true;
+  }
+  if (action === 'know') {
+    const w = vocab.knowIt(word.id);
+    if (w) tellVocab(robotId, { phase: 'knowit', word: w });
+    vocabCountChanged();
+    setTimeout(() => wordCard.close(), 900);
+    return w ? { review: w.review } : null;
+  }
+  // the quiz card: ✓ Knew it / ✗ Forgot / ⏰ Later, or left unanswered
+  if (action === 'quiz') {
+    if (!quizzing || quizzing.wordId !== word.id) return null;
+    const how = ['knew', 'forgot', 'later', 'ignored'].includes(payload) ? payload : 'ignored';
+    const done = endQuiz(how);
+    if (how === 'ignored' || how === 'later') setTimeout(() => wordCard.close(), how === 'later' ? 900 : 0);
+    return done ? { review: done.review } : null;
+  }
+  if (action === 'add') {
+    // ＋ by a synonym, an antonym or a family word: saved as a word of its own
+    const text = String(payload || '').replace(EDGES, '').trim().slice(0, 60);
+    if (!text || vocab.find(text)) return false;
+    const added = vocab.add({ text, source: `with “${word.word || word.text}”` });
+    findMeaning(added.id, robotId, { quiet: true });
+    return true;
+  }
+  if (action === 'undo') {
+    vocab.remove(word.id);
+    tellVocab(robotId, { phase: 'undone', word });
+    vocabCountChanged();
+    setTimeout(() => wordCard.close(), 700);
+    return true;
+  }
+  if (action === 'save') {
+    const patch = {};
+    if (Array.isArray(payload?.senses)) patch.senses = payload.senses.slice(0, 5).map((x) => ({ pos: String(x.pos || ''), vi: String(x.vi || '').slice(0, 300), en: String(x.en || '').slice(0, 300) }));
+    if (Array.isArray(payload?.examples)) patch.examples = payload.examples.slice(0, 6).map((e) => ({ en: String(e.en || '').slice(0, 400), vi: String(e.vi || '').slice(0, 400) }));
+    if (Array.isArray(payload?.phrases)) {
+      patch.phrases = payload.phrases.slice(0, 6).map((p) => ({
+        phrase: String(p.phrase || '').slice(0, 80),
+        vi: String(p.vi || '').slice(0, 200),
+        example: String(p.example || '').slice(0, 400),
+        exampleVi: String(p.exampleVi || '').slice(0, 400),
+      }));
+    }
+    if (typeof payload?.tip === 'string') patch.tip = payload.tip.slice(0, 400);
+    const saved = vocab.update(word.id, { ...patch, editedAt: Date.now() });
+    if (saved) wordCard.update(saved);
+    return saved;
+  }
+  if (action === 'ask') {
+    tellVocab(robotId || nearestRobot(), { phase: 'ask', word: vocab.get(word.id) || word });
+    wordCard.close();
+    return true;
+  }
+  return null;
+}
+
+function bindVocabHotkey() {
+  vocabHotkeyOk = capture.register('vocab', vocabHotkey(), () => captureWord());
+  refreshTray();
+}
+
+// a saved word's card again (a sticky note on a monitor, the My words window)
+function openWord(id, robotId = nearestRobot()) {
+  const w = vocab.get(id);
+  if (!w) return false;
+  if (quizzing) endQuiz('ignored');
+  vocab.update(id, { lastSeenAt: Date.now() });
+  wordCard.open({ ...w, known: true }, { robotId, paint: store.get(robotId)?.color, bounds: cardBounds(robotId) });
+  return true;
+}
+
+// ---------------------------------------------------------------- notes
+
+// Your notes (notes.js): one notebook for all your robots. Each robot's desk has a
+// corkboard with the open ones pinned on it; clicking it (or the hotkey, /notes, the
+// menus) opens the notebook (notebook.js) beside that robot, and the robot pins new
+// notes up and tosses done ones in its wastebasket. At the end of your workday, and
+// the first time you're at the PC on a workday, a robot reminds you about them.
+const NOTE_HOTKEY = 'Ctrl+Alt+N';
+const noteHotkey = () => store.settings.noteHotkey || NOTE_HOTKEY;
+let noteHotkeyOk = true;
+const tellNotes = (id, payload) => id && sendToRobot(id, 'robot:notes', payload);
+
+// the robot that reminds you: the one picked in the Workshop if it's out, else the one nearest the mouse
+function notesRobot() {
+  const pick = store.settings.notesRobot;
+  const r = robots.get(pick);
+  if (r && !r.win.isDestroyed() && r.win.isVisible()) return pick;
+  return nearestRobot() || [...robots.keys()].find((id) => robots.get(id).win.isVisible()) || null;
+}
+// what this robot's corkboard shows (every desk has one, or just the reminding robot's when
+// you've picked one in the Workshop)
+const boardFor = (id) =>
+  store.settings.notesBoard === 'one' && robots.has(store.settings.notesRobot) && store.settings.notesRobot !== id ? { items: [], total: 0, hidden: true } : notes.board();
+function notesChanged() {
+  for (const id of robots.keys()) tellNotes(id, { phase: 'board', board: boardFor(id) });
+  refreshTray();
+}
+// a robot's box on screen, where the notebook goes beside it (out walking: where it is)
+function robotRect(id) {
+  const w = walkers?.bounds(id);
+  if (w) return w;
+  const r = robots.get(id);
+  if (!r || r.win.isDestroyed()) return null;
+  return { x: r.anchor.x, y: r.anchor.y, width: r.dims.w, height: r.dims.h };
+}
+function openNotebook({ robotId = nearestRobot() || notesRobot(), ...opts } = {}) {
+  notebook.open({ robotId, near: robotRect(robotId), ...opts });
+  tellNotes(robotId, { phase: 'opened' });
+}
+// the hotkey: the notebook with the add box ready (and whatever's selected, already in it)
+async function captureNote() {
+  const { text, source } = await capture.readSelection({ hotkeyKey: capture.keyCode(noteHotkey()) }).catch(() => ({ text: '', source: '' }));
+  openNotebook({ focus: 'add', text: (text || '').slice(0, 2000), source: text ? source : '' });
+}
+function bindNoteHotkey() {
+  noteHotkeyOk = capture.register('note', noteHotkey(), () => captureNote());
+  refreshTray();
+}
+
+// ---------------------------------------------------------------- ask about the screen
+
+// Drag a box round anything on screen (an error, a chart, a paragraph in another language)
+// and ask about it: the box is saved as a screenshot, and the robot nearest the mouse opens
+// a new tab with it attached and a few one-click questions (explain, fix, translate, sum up),
+// or you type your own. The robots fade out while the screen is captured, so they're not in
+// the way. The same drag-a-box screen as boxing a word (snip.js).
+const SCREEN_HOTKEY = 'Ctrl+Alt+B';
+const screenHotkey = () => store.settings.screenHotkey || SCREEN_HOTKEY;
+let screenHotkeyOk = true;
+
+function askScreen(robotId = nearestRobot(), from = null) {
+  // the app you were in (not when it's one of ours: the menu, the chat button)
+  const source = from ?? (BrowserWindow.getFocusedWindow() ? '' : capture.foregroundTitle() || '');
+  snipFor = { kind: 'ask', robotId, source };
+  const hide = [...robots.values()].map((r) => r.win);
+  return snipper.start({ hint: '🔍 Drag a box round what you want to ask about · Esc to cancel', hide }).then(
+    () => true,
+    (err) => {
+      console.warn('[snip]', err.message);
+      snipFor = null;
+      return false;
+    },
+  );
+}
+// the box you dragged: saved like a pasted screenshot, and handed to a robot at its desk
+function screenShot(image) {
+  const { robotId, source } = snipFor || {};
+  snipFor = null;
+  const file = savePaste(image.toPNG(), 'png');
+  if (!file) return;
+  const atDesk = (id) => id && robots.has(id) && !robots.get(id).win.isDestroyed() && robots.get(id).win.isVisible() && !walkers?.has(id);
+  const id = atDesk(robotId) ? robotId : nearestRobot();
+  if (id) return sendToRobot(id, 'robot:screen', { file, source });
+  // everyone's out for a walk: call one back to its desk first
+  const walker = [...robots.keys()].find((k) => walkers?.has(k));
+  if (walker) {
+    walkers.dock(walker);
+    return setTimeout(() => sendToRobot(walker, 'robot:screen', { file, source }), 2500);
+  }
+  dialog.showMessageBox({ message: 'No robot is out to ask. Show one from the tray menu first.' });
+}
+function bindScreenHotkey() {
+  screenHotkeyOk = capture.register('screen', screenHotkey(), () => askScreen());
+  refreshTray();
+}
+
+// ---------------------------------------------------------------- the action palette
+
+// One hotkey for everything, so there's just one to remember: press it with some text
+// selected and a small menu by the mouse offers what fits (save the word, refine, translate,
+// explain, sum up, note it, ask a robot); with nothing selected, the rest (box part of the
+// screen, box a word, a new note, My words…). Each feature's own hotkey still works too.
+const PALETTE_HOTKEY = 'Ctrl+Alt+C'; // (C for C-Bot; Ctrl+Alt+Space is often taken)
+const paletteHotkey = () => store.settings.paletteHotkey || PALETTE_HOTKEY;
+let paletteHotkeyOk = true;
+
+// With the drone on (the default): the robot nearest the mouse waves its drone off the moment
+// you press the hotkey; once your selection's read and the menu is drawn (hidden), the drone
+// flies over in one smooth arc to just above it and projects it; when the menu goes, it flies home.
+let paletteOpening = false;
+async function openPalette() {
+  if (palette.isOpen()) return palette.close();
+  if (paletteOpening) return;
+  paletteOpening = true;
+  try {
+    const robotId = nearestRobot() || notesRobot();
+    const flying = store.settings.paletteDrone !== false;
+    if (flying && robotId) sendToRobot(robotId, 'robot:palette', { phase: 'launch' });
+    const sel = await capture.readSelection({ hotkeyKey: capture.keyCode(paletteHotkey()), keepLines: true }).catch(() => ({ text: '', source: '', hwnd: 0 }));
+    const text = String(sel.text || '').slice(0, 12000);
+    const box = await palette.stage({ text, source: sel.source || '', hwnd: text ? sel.hwnd : 0, robotId, items: paletteItems(text), projected: flying });
+    if (!box) return; // (closed meanwhile)
+    if (flying) {
+      const r = robotId ? robotRect(robotId) : null;
+      const wa = screen.getDisplayMatching(box).workArea;
+      // from the robot's desk (or, with no robot out, from the tray's corner) to just above the menu
+      const from = r ? { x: r.x + r.width / 2, y: r.y + r.height * 0.3 } : { x: wa.x + wa.width - 40, y: wa.y + wa.height };
+      droneOut = true;
+      await drone.launch({ from, to: { x: box.x + box.width / 2, y: box.y + 6 - 30 }, paint: store.get(robotId)?.color || '#5ac8fa' }).catch(() => {}); // (30: drone.js's hover gap)
+    }
+    palette.reveal();
+  } finally {
+    paletteOpening = false;
+  }
+}
+function paletteItems(text) {
+  const one = text.replace(/\s+/g, ' ').trim();
+  const word = one.replace(EDGES, '');
+  const wordy = word && word.length <= 60 && word.split(' ').length <= 5;
+  if (!one) {
+    return [
+      { id: 'screen', icon: 'scan', label: 'Ask about part of the screen' },
+      { id: 'box-word', icon: 'text-box', label: 'Box a word on screen to save it' },
+      { id: 'new-note', icon: 'note-plus', label: 'New note' },
+      { id: 'quick', icon: 'sparkles', label: 'Quick actions on text…' },
+      { id: 'words', icon: 'book', label: 'My words' },
+      { id: 'notes', icon: 'notebook', label: 'My notes' },
+    ];
+  }
+  return [
+    { heading: 'With what you selected' },
+    ...(wordy ? [{ id: 'word', icon: 'book-plus', label: `Save “${word}” to my words` }] : []),
+    { id: 'refine', icon: 'wand', label: 'Refine it', hint: 'polished, professional…' },
+    { id: 'translate', icon: 'languages', label: 'Translate it' },
+    { id: 'explain', icon: 'bulb', label: 'Explain it' },
+    { id: 'summarise', icon: 'summary', label: 'Sum it up' },
+    { id: 'note', icon: 'note-plus', label: 'Note it down' },
+    { id: 'ask', icon: 'chat-ask', label: 'Ask a robot about it' },
+    { heading: 'Anything' },
+    { id: 'screen', icon: 'scan', label: 'Ask about part of the screen' },
+    { id: 'words', icon: 'book', label: 'My words' },
+  ];
+}
+function onPaletteAction(id, { text = '', source = '', hwnd = 0, robotId = null }) {
+  switch (id) {
+    case 'word':
+      return catchWord(text, { source, robotId });
+    case 'refine':
+    case 'translate':
+    case 'explain':
+    case 'summarise':
+      return openQuick({ text, source, hwnd, robotId, prefs: { action: id } });
+    case 'note':
+      return openNotebook({ robotId, focus: 'add', text: text.slice(0, 2000), source });
+    case 'ask': {
+      // a new chat tab with the text in it, for you to say what you want to know
+      const r = chattyRobot(robotId);
+      if (!r) return;
+      const prompt = [`About this text I selected${source ? ` in ${source}` : ''}:`, '', '---', text, '---', '', ''].join('\n');
+      return setTimeout(() => tellNotes(r, { phase: 'ask', prompt, draft: true }), walkers?.has(r) ? 1800 : 0);
+    }
+    case 'screen':
+      return askScreen(robotId || nearestRobot(), source);
+    case 'box-word':
+      return boxWord(robotId || nearestRobot(), source);
+    case 'new-note':
+      return openNotebook({ robotId, focus: 'add' });
+    case 'quick':
+      return openQuick({ text: clipboard.readText().trim().slice(0, 12000), robotId });
+    case 'words':
+      return openWords();
+    case 'notes':
+      return openNotebook({ robotId, focus: null });
+  }
+}
+// every hotkey, for the Workshop's Settings > Shortcuts: what it does, its keys, its default,
+// whether it works (registered, not taken by another app), and the setting that changes it
+function hotkeyList() {
+  return [
+    { setting: 'paletteHotkey', label: 'Action menu', what: 'Every action in one menu, by the mouse', key: paletteHotkey(), def: PALETTE_HOTKEY, ok: paletteHotkeyOk },
+    { setting: 'screenHotkey', label: 'Ask about part of the screen', what: 'Drag a box round anything and ask a robot', key: screenHotkey(), def: SCREEN_HOTKEY, ok: screenHotkeyOk },
+    { setting: 'quickHotkey', label: 'Quick actions', what: 'Refine, translate or explain the text you selected', key: quickHotkey(), def: QUICK_HOTKEY, ok: quickHotkeyOk },
+    { setting: 'vocabHotkey', label: 'Save a word', what: 'The word you selected goes into My words', key: vocabHotkey(), def: VOCAB_HOTKEY, ok: vocabHotkeyOk },
+    { setting: 'noteHotkey', label: 'Take a note', what: 'The notebook, with what you selected in it', key: noteHotkey(), def: NOTE_HOTKEY, ok: noteHotkeyOk },
+  ];
+}
+
+function bindPaletteHotkey() {
+  paletteHotkeyOk = capture.register('palette', paletteHotkey(), () => openPalette());
+  refreshTray();
+}
+
+// ---------------------------------------------------------------- quick actions
+
+// Select some text anywhere and press the hotkey: the Quick actions window opens beside the
+// robot nearest the mouse with it, and refines it in a style you pick (polished, professional,
+// polite…), translates it, explains it or sums it up (quick.js, Claude's quick model). Replace
+// puts the answer back over your selection. The robot writes on its pad while it works.
+const QUICK_HOTKEY = 'Ctrl+Alt+R';
+const quickHotkey = () => store.settings.quickHotkey || QUICK_HOTKEY;
+let quickHotkeyOk = true;
+const tellQuick = (id, payload) => id && sendToRobot(id, 'robot:quick', payload);
+
+function openQuick({ text = '', source = '', hwnd = 0, robotId = nearestRobot() || notesRobot(), prefs = null } = {}) {
+  quickWin.open({ text, source, hwnd, robotId, prefs, near: robotId ? robotRect(robotId) : null, paint: store.get(robotId)?.color || '#5ac8fa' });
+}
+async function captureQuick() {
+  const sel = await capture.readSelection({ hotkeyKey: capture.keyCode(quickHotkey()), keepLines: true }).catch(() => ({ text: '', source: '', hwnd: 0 }));
+  openQuick({ text: sel.text, source: sel.text ? sel.source : '', hwnd: sel.text ? sel.hwnd : 0 });
+}
+function bindQuickHotkey() {
+  quickHotkeyOk = capture.register('quick', quickHotkey(), () => captureQuick());
+  refreshTray();
+}
+
+// what the window's buttons do beyond itself, and the robot's reactions
+async function onQuickAction(action, ctx, p = {}) {
+  const id = ctx.robotId;
+  switch (action) {
+    case 'start':
+    case 'done':
+    case 'fail':
+    case 'copied':
+      return tellQuick(id, { phase: action, action: p.action });
+    case 'replace': {
+      const ok = await capture.pasteInto(ctx.hwnd, p.text);
+      if (!ok) clipboard.writeText(String(p.text || '')); // (that window's gone: it's on the clipboard instead)
+      tellQuick(id, { phase: ok ? 'replaced' : 'copied', action: p.action });
+      return ok;
+    }
+    case 'ask': {
+      // talk it over with the robot: a new chat tab with the text (and the answer so far)
+      const robotId = chattyRobot(id);
+      if (!robotId) return false;
+      const what = { refine: `refine it (${p.style || 'polished'})`, translate: 'translate it', explain: 'explain it', summarise: 'summarise it' }[p.action] || 'help with it';
+      const prompt = [`I selected this text and asked you to ${what}.`, '', '---', p.text, '---', ...(p.result ? ['', 'Your answer was:', '---', p.result, '---'] : []), '', "Let's go over it together: "].join('\n');
+      quickWin.close();
+      setTimeout(() => tellNotes(robotId, { phase: 'ask', prompt, draft: true }), walkers?.has(robotId) ? 1800 : 0);
+      return true;
+    }
+    default:
+      return null;
+  }
+}
+
+// A daily reminder is due: a robot holds up its corkboard and the notebook opens (robot.js
+// asks for it). It waits while that robot's busy; with no robot out, a Windows notification.
+function remindNotes(kind, info) {
+  const id = notesRobot();
+  const summary = { today: info.today, open: info.open, taken: info.taken };
+  if (!id) {
+    if (!Notification.isSupported()) return false;
+    const n = new Notification({
+      title: kind === 'morning' ? '🌅 Your notes from yesterday' : '🌇 Before you go: your notes',
+      body: info.notes.slice(0, 4).map((x) => `${x.doneAt ? '✓' : '•'} ${x.text.split('\n')[0]}`).join('\n'),
+      silent: false,
+    });
+    n.on('click', () => openNotebook({ focus: null, reminder: { kind, info: summary } }));
+    n.show();
+    return true;
+  }
+  if (robotBusy(id)) return false; // tried again on the next check
+  tellNotes(id, { phase: 'remind', kind, info: summary });
+  return true;
+}
+
+// what the notebook passes on (notebook.js onAction)
+function onNotebookAction(action, ctx, p = {}) {
+  const robotId = ctx.robotId;
+  switch (action) {
+    case 'added':
+      return tellNotes(robotId, { phase: 'added', note: p.note });
+    case 'done':
+      return tellNotes(robotId, { phase: 'done', note: p.note, left: p.left });
+    case 'undone':
+      return null;
+    case 'typing':
+      // you're writing a note: the robot writes it down too (robot.js notewrite)
+      return tellNotes(robotId, { phase: 'writing', on: !!p.on });
+    case 'ask':
+      return askAboutNote(String(p.id), robotId);
+    case 'summary':
+      return summariseDay(robotId);
+    case 'snooze':
+      noteReminders.snooze(ctx.reminder?.kind || 'evening', Number(p.minutes) || 15);
+      notebook.clearReminder();
+      return notebook.close();
+    case 'done-for-today': {
+      const evening = ctx.reminder?.kind === 'evening';
+      noteReminders.doneForToday();
+      notebook.clearReminder();
+      notebook.close();
+      if (evening) tellNotes(robotId, { phase: 'clockout' });
+      return true;
+    }
+    default:
+      return null;
+  }
+}
+
+// a robot that can chat about a note: this one, unless it's out walking (then it's called back)
+function chattyRobot(id) {
+  if (!id || !robots.has(id)) id = notesRobot();
+  if (id && walkers?.has(id)) walkers.dock(id);
+  return id;
+}
+// "Ask Claude" on a note: the robot takes it on in a new chat tab (robot.js), the note
+// shows 🔧 on the board while it's being worked on
+function askAboutNote(noteId, robotId) {
+  const note = notes.get(noteId);
+  const id = chattyRobot(robotId);
+  if (!note || !id) return false;
+  notes.update(noteId, { working: true });
+  notebook.close();
+  const prompt = `Here's a note from my notebook. Help me get it done (look into it in this folder if that's useful):\n\n${note.text}`;
+  setTimeout(() => tellNotes(id, { phase: 'ask', note, prompt }), walkers?.has(id) ? 1800 : 0);
+  return true;
+}
+// "Summarise my day": the robot asks Claude for a short recap of today's notes, to paste into a stand-up
+function summariseDay(robotId) {
+  const id = chattyRobot(robotId);
+  if (!id) return false;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const today = notes.list().filter((n) => n.createdAt >= start.getTime() || (n.doneAt && n.doneAt >= start.getTime()));
+  const open = notes.open().filter((n) => !today.includes(n));
+  if (!today.length && !open.length) return false;
+  const line = (n) => `- ${n.doneAt ? '[done] ' : ''}${n.important ? '(important) ' : ''}${n.text.replace(/\n+/g, ' ')}`;
+  const prompt = [
+    'Summarise my day from my notebook, as a short update I can paste into a stand-up or a report:',
+    'a few bullet points (done, in progress, next), plain and friendly, no preamble. Just the notes, no need to look at files.',
+    '',
+    "Today's notes:",
+    ...today.map(line),
+    ...(open.length ? ['', 'Still open from before:', ...open.map(line)] : []),
+  ].join('\n');
+  notebook.close();
+  setTimeout(() => tellNotes(id, { phase: 'ask', prompt, summary: true }), walkers?.has(id) ? 1800 : 0);
+  return true;
+}
+
+// ---- the My words window: every word, a search box, click one to see its card
+
+let wordsWin = null;
+function openWords() {
+  if (wordsWin && !wordsWin.isDestroyed()) {
+    wordsWin.show();
+    wordsWin.focus();
+    return;
+  }
+  wordsWin = new BrowserWindow({
+    width: 560,
+    height: 720,
+    minWidth: 420,
+    minHeight: 420,
+    title: 'My words — C-Bot',
+    autoHideMenuBar: true,
+    backgroundColor: '#f1f3f9',
+    webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  wordsWin.loadFile(path.join(__dirname, '..', 'renderer', 'words', 'index.html'));
+  guardNavigation(wordsWin);
+  wordsWin.on('closed', () => (wordsWin = null));
+}
+function notifyWords() {
+  if (wordsWin && !wordsWin.isDestroyed()) wordsWin.webContents.send('words:changed');
+}
+// what the window lists: the card's main points and how well you know each word
+const wordRow = (w) => ({
+  id: w.id,
+  word: w.word,
+  ipa: w.ipa,
+  vi: w.senses?.map((s) => s.vi).join('; ') || '',
+  pos: [...new Set((w.senses || []).map((s) => s.pos))].join(', '),
+  status: w.status,
+  addedAt: w.addedAt,
+  box: w.review?.step || 0, // (times seen)
+  seen: w.review?.seen || 0,
+  right: w.review?.right || 0,
+  due: w.review?.due || 0,
+});
 
 // ---------------------------------------------------------------- IPC
 
@@ -832,6 +1710,28 @@ function idFromSender(event) {
 
 function registerIpc() {
   // robot windows
+  // notes: the corkboard was clicked (or /notes), /note …, and the chat's side of "Ask Claude"
+  ipcMain.handle('notes:open', (event, { focus = null } = {}) => openNotebook({ robotId: idFromSender(event), focus }));
+  ipcMain.handle('notes:add', (event, text) => {
+    const note = notes.add({ text: String(text || ''), source: 'chat' });
+    if (note) tellNotes(idFromSender(event), { phase: 'added', note, quiet: true });
+    return note;
+  });
+  ipcMain.handle('notes:act', (event, action, p = {}) => {
+    if (action === 'working') return notes.update(String(p.id), { working: !!p.working });
+    if (action === 'done') {
+      const note = notes.setDone(String(p.id), true);
+      if (note) tellNotes(idFromSender(event), { phase: 'done', note, left: notes.open().length });
+      return note;
+    }
+    if (action === 'remind-shown') return true;
+    return null;
+  });
+  // the reminder's moment is over (the robot held up its board): open the notebook with the banner
+  ipcMain.handle('quick:open-blank', (event, { text = '' } = {}) => openQuick({ text: String(text).slice(0, 12000), robotId: idFromSender(event) }));
+  ipcMain.handle('notes:remind-open', (event, { kind, info } = {}) =>
+    openNotebook({ robotId: idFromSender(event), focus: null, reminder: { kind, info }, activate: false }));
+
   ipcMain.handle('robot:init', (event) => {
     const id = idFromSender(event);
     const c = store.get(id);
@@ -841,8 +1741,65 @@ function registerIpc() {
       personalities: publicPersonalities(),
       settings: store.settings,
       user: os.userInfo().username,
+      vocabCount: vocab.count,
+      vocabSight: sightWords(),
+      vocabHotkey: vocabHotkey(),
+      notesBoard: boardFor(id),
+      noteHotkey: noteHotkey(),
     };
   });
+  // 📚 Save this word (offered under an answer about what a word means)
+  ipcMain.handle('robot:vocab-save', (event, text) => catchWord(String(text || ''), { robotId: idFromSender(event) }));
+  // a sticky note on its monitor clicked; slapped mid-quiz (skip it) or a hint wanted
+  ipcMain.handle('robot:vocab-open', (event, id) => openWord(String(id || ''), idFromSender(event)));
+  ipcMain.handle('robot:vocab-quiz', (event, how) => (quizzing?.robotId === idFromSender(event) ? (wordCard.close(), !!endQuiz(how === 'later' ? 'later' : 'ignored')) : false));
+  ipcMain.handle('robot:vocab-quiz-me', () => reminders.quizNow());
+  ipcMain.handle('robot:vocab-words', () => openWords());
+  ipcMain.handle('robot:vocab-dream', (event) => startDream(quizPick(), idFromSender(event)));
+  ipcMain.handle('robot:vocab-box', (event) => boxWord(idFromSender(event)));
+  ipcMain.handle('robot:screen-ask', (event) => askScreen(idFromSender(event)));
+  // the My words window
+  ipcMain.handle('words:list', () => ({
+    words: vocab.list().map(wordRow),
+    stats: vocab.stats(),
+    hotkey: vocabHotkey(),
+    reminders: store.settings.vocabReminders !== false,
+    hours: store.settings.vocabHours || [9, 18],
+  }));
+  ipcMain.handle('words:settings', (_e, patch = {}) => {
+    const out = {};
+    if (typeof patch.reminders === 'boolean') out.vocabReminders = patch.reminders;
+    const h = patch.hours;
+    if (Array.isArray(h) && h.length === 2 && h.every((x) => Number.isInteger(x) && x >= 0 && x <= 24) && h[0] < h[1]) out.vocabHours = h;
+    setSettings(out);
+    return true;
+  });
+  // a CSV for Anki or Quizlet: word, meaning, pronunciation, a phrase and its example
+  ipcMain.handle('words:export', async () => {
+    const res = await dialog.showSaveDialog(wordsWin || undefined, {
+      title: 'Export my words',
+      defaultPath: path.join(app.getPath('documents'), `my-english-words-${new Date().toISOString().slice(0, 10)}.csv`),
+      filters: [{ name: 'CSV (Anki, Quizlet, Excel)', extensions: ['csv'] }],
+    });
+    if (res.canceled || !res.filePath) return null;
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = [['Word', 'Meaning (Vietnamese)', 'IPA', 'Part of speech', 'Phrase', 'Example', 'Example (Vietnamese)', 'Synonyms']];
+    for (const w of vocab.list().filter((x) => x.status === 'ready')) {
+      const p = w.phrases?.[0] || {};
+      const ex = p.example ? { en: p.example, vi: p.exampleVi } : w.examples?.[0] || {};
+      rows.push([w.word, (w.senses || []).map((x) => x.vi).join('; '), w.ipa, [...new Set((w.senses || []).map((x) => x.pos))].join(', '), p.phrase || '', ex.en || '', ex.vi || '', (w.synonyms || []).map((x) => x.word).join(', ')]);
+    }
+    fs.writeFileSync(res.filePath, '\ufeff' + rows.map((r) => r.map(cell).join(',')).join('\r\n'), 'utf8'); // (BOM: Excel reads the Vietnamese right)
+    shell.showItemInFolder(res.filePath);
+    return res.filePath;
+  });
+  ipcMain.handle('words:open', (_e, id) => openWord(String(id || '')));
+  ipcMain.handle('words:delete', (_e, id) => {
+    const ok = vocab.remove(String(id || ''));
+    if (ok) vocabCountChanged();
+    return ok;
+  });
+  ipcMain.handle('words:quiz', () => reminders.quizNow());
 
   ipcMain.handle('robot:ask', (event, tabId, prompt, attachments, turnId, kind) =>
     ask(idFromSender(event), String(tabId), String(prompt || '').trim(), {
@@ -1038,8 +1995,20 @@ function registerIpc() {
   // it gets up and goes for a walk round the screen (asleep: it sleepwalks)
   ipcMain.handle('robot:wander-prep', (event, { asleep } = {}) => !!walkers.prepare(idFromSender(event), { asleep: !!asleep }));
   ipcMain.handle('robot:wander', (event, { asleep, feet } = {}) => {
+    const id = idFromSender(event);
     const at = feet && Number.isFinite(feet.x) && Number.isFinite(feet.y) ? { x: feet.x, y: feet.y } : undefined;
-    return !!walkers.go(idFromSender(event), { asleep: !!asleep, feet: at });
+    // (off to visit another robot's desk: social.js has its errand)
+    return !!walkers.go(id, { asleep: !!asleep, feet: at, errand: social?.errandFor(id) });
+  });
+  // a robot's answer to another robot's message (robot.js; robotLink.js hands it back)
+  ipcMain.on('robots:answer', (event, r = {}) => {
+    const id = idFromSender(event);
+    if (id && robotLink?.isFor(String(r.reqId), id)) robotLink.answer(String(r.reqId), { text: String(r.text || ''), error: r.error ? String(r.error) : '' });
+  });
+  // how a robot is (and what just happened to it), for the robots noticing each other
+  ipcMain.on('social:report', (event, r) => {
+    const id = idFromSender(event);
+    if (id && r && typeof r === 'object') social?.report(id, r);
   });
   ipcMain.on('robot:walker', (event, what) => {
     const id = idFromSender(event);
@@ -1057,15 +2026,76 @@ function registerIpc() {
     const r = robots.get(id);
     if (!c || !r) return;
     const say = (action) => r.win.webContents.send('robot:action', action);
+    // grouped by feature: the everyday things at the top, each feature in a submenu
+    const notesMenu = {
+      label: `📒 Notes${notes.open().length ? ` (${notes.open().length} open)` : ''}`,
+      submenu: [
+        { label: '📒 Open my notebook…', click: () => openNotebook({ robotId: id, focus: null }) },
+        { label: '📝 Take a note…', click: () => openNotebook({ robotId: id, focus: 'add' }) },
+        { type: 'separator' },
+        {
+          label: '🔔 This robot reminds me about my notes',
+          type: 'checkbox',
+          checked: store.settings.notesRobot === id,
+          click: (item) => setSettings({ notesRobot: item.checked ? id : '' }),
+        },
+      ],
+    };
+    const wordsMenu = {
+      label: `📚 English words (${vocab.count})`,
+      submenu: [
+        { label: '📚 My words…', click: () => openWords() },
+        { label: '🔍 Box a word on screen to save it…', click: () => setTimeout(() => boxWord(id), 250) }, // (after the menu has gone)
+        { label: '💭 Show me one of my words', enabled: vocab.ready.length > 0, click: () => startDream(quizPick(), id) },
+        { label: '🃏 Quiz me on a word', enabled: vocab.ready.length > 0, click: () => startQuiz(quizPick(), { asked: true, robotId: id }) },
+        { type: 'separator' },
+        {
+          label: '🎓 This robot is my word tutor',
+          type: 'checkbox',
+          checked: store.settings.vocabTutor === id,
+          click: (item) => setSettings({ vocabTutor: item.checked ? id : '' }),
+        },
+      ],
+    };
+    const settingsMenu = {
+      label: '⚙️ Settings',
+      submenu: [
+        {
+          label: '😄 Personality',
+          submenu: Object.entries(PERSONALITIES).map(([key, p]) => ({
+            label: `${p.emoji}  ${p.label}`,
+            type: 'radio',
+            checked: c.personality === key,
+            click: () => updateCharacter(id, { personality: key }),
+          })),
+        },
+        {
+          label: '🔐 Permissions',
+          submenu: Object.entries(PERMISSION_MODES).map(([key, label]) => ({
+            label,
+            type: 'radio',
+            checked: c.permissionMode === key,
+            click: () => updateCharacter(id, { permissionMode: key }),
+          })),
+        },
+        { label: '🔇 Mute sounds', type: 'checkbox', checked: !!store.settings.muted, click: (i) => setSettings({ muted: i.checked }) },
+        themeMenu(),
+        { type: 'separator' },
+        { label: '🛠️ Customize in the Workshop…', click: () => openManager(id) },
+      ],
+    };
     if (away) {
       Menu.buildFromTemplate([
         { label: `${c.name} is out for a walk`, enabled: false },
         { type: 'separator' },
         { label: '🚶 Call back to the desk', click: () => walkers.dock(id) },
-        { label: 'Open folder', click: () => shell.openPath(c.folder) },
-        { label: 'Customize…', click: () => openManager(id) },
+        { label: '📁 Open folder', click: () => shell.openPath(c.folder) },
         { type: 'separator' },
-        { label: 'Put away (hide)', click: () => hideRobot(id) },
+        notesMenu,
+        wordsMenu,
+        { type: 'separator' },
+        settingsMenu,
+        { label: '🙈 Put away (hide)', click: () => hideRobot(id) },
       ]).popup({ window: r.win });
       return;
     }
@@ -1073,37 +2103,30 @@ function registerIpc() {
     Menu.buildFromTemplate([
       { label: `${c.name} — ${path.basename(c.folder) || c.folder}`, enabled: false },
       { type: 'separator' },
-      awake ? { label: 'Go to sleep', click: () => say('sleep') } : { label: 'Wake up', click: () => say('wake') },
-      { label: terminals.has(id) ? 'Terminal is open' : 'Open in terminal (full Claude Code)', enabled: !terminals.has(id), click: () => say('terminal') },
+      awake ? { label: '💤 Go to sleep', click: () => say('sleep') } : { label: '☀️ Wake up', click: () => say('wake') },
+      { type: 'separator' },
+      // the chat and Claude Code
+      { label: '💬 New tab', click: () => say('new-tab') },
+      { label: '🕘 Past conversations…', click: () => say('history') },
       { label: canPaste ? '📋 Paste screenshot / file from clipboard' : '📋 Paste (copy a screenshot or file first)', enabled: canPaste, click: () => say('paste') },
-      { label: 'New tab', click: () => say('new-tab') },
-      { label: '🔨 Bonk with the squeaky hammer (wake up / hurry up)', click: () => say('bonk') },
-      { label: awake ? '🚶 Go for a walk' : '🚶 Sleepwalk', click: () => say('wander') },
-      { label: 'Past conversations…', click: () => say('history') },
-      { label: 'Open folder', click: () => shell.openPath(c.folder) },
+      { label: `🔍 Ask about part of the screen… (${screenHotkey()})`, click: () => askScreen(id) },
+      { label: terminals.has(id) ? '⌨️ Terminal is open' : '⌨️ Open in terminal (full Claude Code)', enabled: !terminals.has(id), click: () => say('terminal') },
+      { label: '📁 Open folder', click: () => shell.openPath(c.folder) },
       { type: 'separator' },
+      // the features
+      { label: `✨ Quick actions on text… (${quickHotkey()})`, click: () => openQuick({ text: clipboard.readText().trim().slice(0, 12000), robotId: id }) },
+      notesMenu,
+      wordsMenu,
       {
-        label: 'Personality',
-        submenu: Object.entries(PERSONALITIES).map(([key, p]) => ({
-          label: `${p.emoji}  ${p.label}`,
-          type: 'radio',
-          checked: c.personality === key,
-          click: () => updateCharacter(id, { personality: key }),
-        })),
+        label: '🎮 Play',
+        submenu: [
+          { label: '🔨 Bonk with the squeaky hammer (wake up / hurry up)', click: () => say('bonk') },
+          { label: awake ? '🚶 Go for a walk' : '🚶 Sleepwalk', click: () => say('wander') },
+        ],
       },
-      {
-        label: 'Permissions',
-        submenu: Object.entries(PERMISSION_MODES).map(([key, label]) => ({
-          label,
-          type: 'radio',
-          checked: c.permissionMode === key,
-          click: () => updateCharacter(id, { permissionMode: key }),
-        })),
-      },
-      { label: 'Customize…', click: () => openManager(id) },
       { type: 'separator' },
-      { label: 'Mute sounds', type: 'checkbox', checked: !!store.settings.muted, click: (i) => setSettings({ muted: i.checked }) },
-      { label: 'Put away (hide)', click: () => hideRobot(id) },
+      settingsMenu,
+      { label: '🙈 Put away (hide)', click: () => hideRobot(id) },
     ]).popup({ window: r.win });
   });
 
@@ -1113,7 +2136,9 @@ function registerIpc() {
     personalities: Object.fromEntries(Object.entries(PERSONALITIES).map(([k, p]) => [k, { label: p.label, emoji: p.emoji }])),
     permissionModes: PERMISSION_MODES,
     settings: store.settings,
-    claudePath: findClaude(store.settings.claudePath),
+    ...claudeInfo(),
+    notes: { hotkey: noteHotkey(), hotkeyOk: noteHotkeyOk, defaults: NOTE_DEFAULTS },
+    hotkeys: hotkeyList(),
   }));
 
   ipcMain.handle('mgr:pick-folder', async (_e, current) => {
@@ -1126,30 +2151,6 @@ function registerIpc() {
   });
 
   // your own character model: copied into <userData>/models, served back to the 3D view
-  ipcMain.handle('mgr:pick-model', async () => {
-    const res = await dialog.showOpenDialog(managerWin, {
-      title: 'Pick your character (.glb or .vrm)',
-      filters: [{ name: '3D model (glTF binary or VRM)', extensions: ['glb', 'vrm'] }],
-      properties: ['openFile'],
-    });
-    if (res.canceled) return null;
-    const src = res.filePaths[0];
-    const { size } = await fs.promises.stat(src);
-    if (size > MAX_MODEL_BYTES) return { error: `That model is ${Math.round(size / 1e6)} MB; the limit is ${MAX_MODEL_BYTES / 1e6} MB.` };
-    const fd = await fs.promises.open(src, 'r');
-    const magic = Buffer.alloc(4);
-    await fd.read(magic, 0, 4, 0);
-    await fd.close();
-    if (magic.toString() !== 'glTF') return { error: "That file isn't a .glb or .vrm model." };
-    const glb = `${crypto.randomUUID()}.glb`;
-    await fs.promises.mkdir(modelsDir(), { recursive: true });
-    await fs.promises.copyFile(src, path.join(modelsDir(), glb));
-    return { glb, glbName: path.basename(src) };
-  });
-  ipcMain.handle('model:data', (_e, glb) => {
-    if (!MODEL_FILE.test(glb)) throw new Error('Bad model name');
-    return fs.promises.readFile(path.join(modelsDir(), glb));
-  });
 
   ipcMain.handle('mgr:create', (_e, fields) => {
     const c = store.create(sanitize(fields));
@@ -1172,23 +2173,52 @@ function registerIpc() {
   ipcMain.handle('mgr:visible', (_e, id, visible) => (visible ? showRobot(id) : hideRobot(id)));
   ipcMain.handle('mgr:reset', (_e, id) => resetConversation(id));
   ipcMain.handle('mgr:settings', (_e, patch) => setSettings(patch));
+  // pick claude by hand (opens where the installer puts it), and check it really is Claude Code
   ipcMain.handle('mgr:pick-claude', async () => {
-    const res = await dialog.showOpenDialog(managerWin, { title: 'Locate the claude executable', properties: ['openFile'] });
-    return res.canceled ? null : res.filePaths[0];
+    const bin = path.join(os.homedir(), '.local', 'bin');
+    const res = await dialog.showOpenDialog(managerWin, {
+      title: 'Locate Claude Code (claude)',
+      defaultPath: fs.existsSync(bin) ? bin : os.homedir(),
+      properties: ['openFile'],
+      filters: process.platform === 'win32' ? [{ name: 'Claude Code', extensions: ['exe', 'cmd'] }, { name: 'All files', extensions: ['*'] }] : [],
+    });
+    if (res.canceled) return { ok: false };
+    const file = res.filePaths[0];
+    const check = await checkClaude(file);
+    if (!check.ok) return check;
+    setSettings({ claudePath: file });
+    return { ok: true, path: file, version: check.version };
+  });
+  // look again everywhere (just installed it, or it moved); a picked path that's gone is forgotten
+  ipcMain.handle('mgr:find-claude', () => {
+    if (store.settings.claudePath && !fs.existsSync(store.settings.claudePath)) store.updateSettings({ claudePath: '' });
+    locateClaude(store.settings.claudePath, { fresh: true });
+    notifyManager();
+    return claudeInfo();
   });
 }
 
-const MAX_MODEL_BYTES = 200e6;
-const MODEL_FILE = /^[\w-]+\.glb$/;
-const modelsDir = () => path.join(app.getPath('userData'), 'models');
-
-// models picked in the Workshop but never saved, or no longer used by any robot
-function removeUnusedModels() {
-  const used = new Set(store.list().map((c) => c.glb).filter(Boolean));
-  fs.readdir(modelsDir(), (err, files) => {
-    if (err) return;
-    for (const f of files) if (MODEL_FILE.test(f) && !used.has(f)) fs.unlink(path.join(modelsDir(), f), () => {});
-  });
+// The characters there used to be (Loopy, the cat, the nerd, the girl, the classic robot and
+// your own .glb model), as robots built from parts that look like them (office3d/kit3d.js).
+const OLD_LOOKS = {
+  robot: {},
+  custom: {},
+  loopy: { head: 'ball', face: 'cute', top: 'ears', body: 'egg', arms: 'mitten', finish: 'glossy', second: '#f4c7d4', accent: '#ff8fb1' },
+  cat: { head: 'ball', face: 'cute', top: 'ears', body: 'egg', arms: 'mitten', finish: 'glossy', second: '#f4d7b8', accent: '#ff8fb1' },
+  nerd: { face: 'visor', top: 'spiky', body: 'slim', specs: 'round', clothes: 'tshirt', hair: '#3a2a1e' },
+  girl: { face: 'cute', top: 'pigtails', body: 'slim', clothes: 'dress', neck: 'bow', hair: '#6b3e26' },
+};
+function kitLike(body, color) {
+  const kit = { ...(OLD_LOOKS[body] || {}) };
+  if (kit.clothes && /^#[0-9a-f]{6}$/i.test(color || '')) kit.cloth = color; // (their hoodie or sweater was the paint colour)
+  return kit;
+}
+// at start: any robot that's still an old character becomes a build like it
+function migrateLooks() {
+  for (const c of store.list()) {
+    if (c.body === 'kit' && c.kit) continue;
+    store.update(c.id, { body: 'kit', kit: c.kit || kitLike(c.body, c.color), glb: undefined, glbName: undefined, glbTurn: undefined });
+  }
 }
 
 function sanitize(fields = {}) {
@@ -1200,12 +2230,18 @@ function sanitize(fields = {}) {
   if (typeof fields.color === 'string' && /^#[0-9a-f]{6}$/i.test(fields.color)) out.color = fields.color;
   if (typeof fields.model === 'string') out.model = fields.model.trim();
   if (typeof fields.accessory === 'string') out.accessory = fields.accessory;
-  if (['loopy', 'cat', 'nerd', 'girl', 'robot', 'custom'].includes(fields.body)) out.body = fields.body;
+  // every robot is one you build (the old characters' names still come in: as a build like them)
+  if (fields.body === 'kit' || fields.body in OLD_LOOKS) out.body = 'kit';
+  if (fields.body in OLD_LOOKS && !fields.kit) out.kit = kitLike(fields.body, fields.color);
+  // a robot built from parts: a part name per slot and its colours (office3d/kit3d.js knows the parts)
+  if (fields.kit && typeof fields.kit === 'object') {
+    const kit = {};
+    for (const slot of ['head', 'face', 'top', 'body', 'arms', 'base', 'finish', 'clothes', 'neck', 'extra', 'specs']) if (/^[a-z]{1,16}$/.test(fields.kit[slot] || '')) kit[slot] = fields.kit[slot];
+    for (const c of ['second', 'accent', 'eye', 'cloth', 'hair']) if (/^#[0-9a-f]{6}$/i.test(fields.kit[c] || '')) kit[c] = fields.kit[c];
+    out.kit = kit;
+  }
   if (['classic', 'sioux'].includes(fields.theme)) out.theme = fields.theme;
   if (fields.size in SIZES) out.size = fields.size;
-  if (typeof fields.glb === 'string' && (fields.glb === '' || MODEL_FILE.test(fields.glb))) out.glb = fields.glb;
-  if (typeof fields.glbName === 'string') out.glbName = fields.glbName.slice(0, 120);
-  if ([0, 1, 2, 3].includes(fields.glbTurn)) out.glbTurn = fields.glbTurn;
   if (fields.clickOpens === 'chat' || fields.clickOpens === 'terminal') out.clickOpens = fields.clickOpens;
   if (typeof fields.wanders === 'boolean') out.wanders = fields.wanders;
   return out;
@@ -1267,9 +2303,99 @@ app.whenReady().then(() => {
   protocol.handle('cbot-app', mcpApps.servePage);
   localFiles.setAllowedRoots(() => [os.homedir(), os.tmpdir(), path.join(app.getPath('userData'), 'attachments'), ...store.list().map((c) => c.folder)]);
   protocol.handle('cbot-file', localFiles.serveImage);
-  walkers = createWalkers({ robots, sizeOf: (id) => SIZES[store.get(id)?.size] || 1, preload, guardNavigation, onChange: () => refreshTray() });
+  walkers = createWalkers({
+    robots,
+    sizeOf: (id) => SIZES[store.get(id)?.size] || 1,
+    preload,
+    guardNavigation,
+    onChange: () => refreshTray(),
+    onClick: (id) => !!social?.clicked(id),
+    onHeld: (id) => social?.held(id),
+    onGone: (id) => social?.gone(id),
+  });
+  vocab = new Vocab();
+  wordCard = createWordCard({ preload, guardNavigation, onAction: onCardAction, onClosed: () => quizzing && endQuiz('ignored') });
+  snipper = createSnipper({
+    preload,
+    guardNavigation,
+    onShot: (image) => (snipFor?.kind === 'ask' ? screenShot(image) : readBoxed(image)),
+    onCancel: () => (snipFor = null),
+  });
+  reminders = createReminders({ vocab, settings: () => store.settings, dream: (word) => startDream(word), quiz: (word, opts) => !quizzing && startQuiz(word, opts) });
+  setInterval(vocabCountChanged, HOUR).unref?.(); // what's in sight moves on as words come due
+  notes = new Notes();
+  notebook = createNotebook({
+    preload,
+    guardNavigation,
+    notes,
+    settings: () => store.settings,
+    saveSize: (size) => store.updateSettings({ notebookSize: size }),
+    onAction: onNotebookAction,
+    // closed after the end-of-day reminder (you've had your look): the robot clocks out
+    onClosed: (ctx) => ctx.reminder?.kind === 'evening' && tellNotes(ctx.robotId, { phase: 'clockout' }),
+  });
+  notes.onChange(() => notesChanged());
+  noteReminders = createNoteReminders({ notes, settings: () => store.settings, remind: remindNotes });
+  quickWin = createQuickWindow({ preload, guardNavigation, settings: () => store.settings, saveSettings: (patch) => store.updateSettings(patch), onAction: onQuickAction });
+  planes = createPlanes({ preload, guardNavigation });
+  robotLink = createRobotLink({
+    dir: path.join(app.getPath('userData'), 'robot-link'),
+    robots,
+    store,
+    statusOf: (id) => (walkers.has(id) ? 'out for a walk' : robotBusy(id) ? 'busy working' : social?.peek(id)?.awake === false ? 'asleep' : 'awake'),
+    // the message flies over as a paper plane; the asked robot takes it on in a tab of its own chat
+    onAsk: ({ from, to, reqId, exchange, first, text }) => {
+      const hand = (id, up) => {
+        const r = robotRect(id);
+        return r && { x: r.x + r.width / 2, y: r.y + r.height * (up ? 0.3 : 0.42) };
+      };
+      const deliver = () => sendToRobot(to, 'robot:link', { phase: 'incoming', reqId, exchange, first, from: store.get(from)?.name || '', text });
+      if (walkers.has(to)) walkers.dock(to); // (out walking: back to its desk first)
+      const a = hand(from, false);
+      const b = hand(to, true);
+      if (a && b && planes) planes.fly({ from: a, to: b, onLand: deliver });
+      else deliver();
+    },
+    onAnswered: ({ from, to }) => {
+      const r1 = robotRect(to);
+      const r2 = robotRect(from);
+      if (r1 && r2 && planes) planes.fly({ from: { x: r1.x + r1.width / 2, y: r1.y + r1.height * 0.42 }, to: { x: r2.x + r2.width / 2, y: r2.y + r2.height * 0.3 } });
+    },
+  });
+  social = createSocial({
+    robots,
+    store,
+    walkers,
+    planes,
+    personalityOf: (id) => PERSONALITIES[store.get(id)?.personality] || Object.values(PERSONALITIES)[0],
+    nameOf: (id) => store.get(id)?.name || '',
+    sendToRobot,
+    robotRect,
+    deskRect: (id) => {
+      const r = robots.get(id);
+      return r && !r.win.isDestroyed() ? { x: r.anchor.x, y: r.anchor.y, width: r.dims.w, height: r.dims.h } : null;
+    },
+    // (you're working with C-Bot: a card, the notebook or Quick actions is open)
+    appBusy: () => !!(notebook?.isOpen() || quickWin?.isOpen() || wordCard?.showing()),
+    acceptsNotifications,
+  });
+  if (process.env.CBOT_TEST) global.cbotSocial = social; // (the tests start visits themselves)
+  drone = createDrone({ preload, guardNavigation });
+  palette = createPalette({
+    preload,
+    guardNavigation,
+    onPick: onPaletteAction,
+    // the drone hovers over the menu's top edge while it's open, and flies home after
+    onShown: (b) => droneOut && drone.hover({ x: b.x + b.width / 2, y: b.y + 6, width: b.width - 12 }),
+    onHidden: () => {
+      if (!droneOut) return;
+      droneOut = false;
+      drone.recall();
+    },
+  });
+  setTimeout(() => (palette.prepare(), drone.prepare()), 4000); // (ready before the first hotkey, without slowing the start)
   registerIpc();
-  removeUnusedModels();
+  migrateLooks();
 
   tray = new Tray(trayIcon());
   tray.setToolTip('C-Bot');
@@ -1277,15 +2403,25 @@ app.whenReady().then(() => {
   refreshTray();
 
   store.list().forEach((c, i) => c.visible && createRobotWindow(c, i));
-  keepOnTop(() => [...[...robots.values()].map((r) => r.win), ...walkers.windows()]);
+  keepOnTop(() => [...[...robots.values()].map((r) => r.win), ...walkers.windows(), ...wordCard.windows(), ...notebook.windows(), ...quickWin.windows()]);
+  bindVocabHotkey();
+  bindNoteHotkey();
+  bindQuickHotkey();
+  bindScreenHotkey();
+  bindPaletteHotkey();
   if (!store.list().length) openManager('new');
   startCursorTracking();
 
   // the taskbar moved or a screen changed size: re-fit the open chats
+  // after a sleep, an unlock or a change of screens, robots out for a walk come back where you can reach them
+  for (const ev of ['resume', 'unlock-screen']) powerMonitor.on(ev, () => setTimeout(() => walkers?.recover(), 1500));
+  screen.on('display-added', () => walkers?.recover());
   screen.on('display-metrics-changed', () => {
+    walkers?.recover();
     for (const id of robots.keys()) applyLayout(id);
   });
   screen.on('display-removed', () => {
+    walkers?.recover();
     for (const [id, r] of robots) {
       r.anchor = clampAnchor(r.anchor, r.dims);
       applyLayout(id);
@@ -1298,7 +2434,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  notes?.flush();
   for (const s of sessions.values()) s.close();
   for (const t of terminals.values()) t.mirror.stop(); // terminal windows stay open on their own
   store?.flush();
+  vocab?.flush();
 });
+
+app.on('will-quit', () => globalShortcut.unregisterAll());

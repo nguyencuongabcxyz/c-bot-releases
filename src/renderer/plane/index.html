@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+  <title>Paper plane</title>
+  <style>
+    /* a paper plane flying between two robots' desks (main plane.js moves the window) */
+    html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+    #plane { position: absolute; left: 50%; top: 50%; width: 64px; height: 40px; margin: -20px 0 0 -32px; transition: opacity 0.6s; }
+    #plane.landed { transition: transform 0.25s ease-out, opacity 0.6s; }
+    #plane.fade { opacity: 0; }
+  </style>
+</head>
+<body>
+  <!-- the plane: nose to the right; drawn like the robots, with an ink outline -->
+  <svg id="plane" viewBox="0 0 64 40" aria-hidden="true">
+    <g stroke="#1d2235" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M62 18 L3 4 L18 20 Z" fill="#ffffff" />
+      <path d="M62 18 L18 20 L10 34 Z" fill="#e6e9f2" />
+      <path d="M62 18 L18 20 L22 26 Z" fill="#cfd5e6" />
+    </g>
+  </svg>
+  <script src="plane.js"></script>
+</body>
+</html>

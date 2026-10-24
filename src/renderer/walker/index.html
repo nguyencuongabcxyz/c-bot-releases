@@ -11,6 +11,14 @@
     body.dragging #walker { cursor: grabbing; }
     #bot-host, #bot-host canvas { display: block; width: 190px; height: 250px; }
     #bot-host { transform: scale(var(--s)); transform-origin: 0 0; }
+    /* what it says visiting another robot's desk (cartoon, like the robot's own bubble) */
+    #say {
+      position: absolute; left: 50%; top: 2px; z-index: 2; width: max-content; max-width: calc(100% - 8px);
+      background: #fff; color: #1d2235; border: 2.5px solid #1d2235; border-radius: 12px; padding: 3px 8px;
+      font: 700 11.5px/1.25 "Segoe UI", sans-serif; text-align: center; overflow-wrap: anywhere; pointer-events: none;
+      opacity: 0; transform: translateX(-50%) scale(0.6); transition: opacity 0.16s, transform 0.22s cubic-bezier(.3,1.6,.5,1);
+    }
+    #say.show { opacity: 1; transform: translateX(-50%) scale(1); }
   </style>
 </head>
 <body class="awake">
@@ -18,6 +26,7 @@
   <div id="walker">
     <div id="bot-host"></div>
   </div>
+  <div id="say" aria-live="polite"></div>
   <script src="../office3d.bundle.js"></script>
   <script src="walker.js"></script>
 </body>

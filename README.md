@@ -9,7 +9,9 @@ Give each robot a name, a personality and a home folder, stick it anywhere on sc
 1. Install the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) and sign in, so `claude` works in a terminal. The robots run your own Claude Code.
 2. Download **C-Bot-Setup-x.y.z.exe** from the [latest release](https://github.com/nguyencuongabcxyz/c-bot-releases/releases/latest) and run it. It installs just for you, no admin rights needed, with Start-menu and desktop shortcuts. Until the app is code-signed, Windows may say *"Windows protected your PC"*: click **More info → Run anyway**.
 
-C-Bot then **updates itself**: it checks for a new version at start and every few hours, downloads it in the background and installs it the next time it restarts. Right-click the tray icon to see the version, check now, or **Restart to update** straight away. Updates never touch your robots or chats; they live in `%APPDATA%\C-Bot`. The free characters aren't in the installer, to keep it small: download the ones you like from [`characters/`](characters/CREDITS.md) and pick them in the Workshop's **📦 My model**.
+C-Bot **finds Claude Code by itself**. It looks in every usual install spot first: the Claude Code installer's `~\.local\bin`, npm, nvm, Volta, pnpm, Yarn, Scoop, WinGet and Bun. Next it tries your PATH as it is now (read fresh, so a Claude Code you installed after signing in to Windows still counts). Last, it uses the copy the Claude desktop app keeps for itself. The Robot Workshop's bottom-left corner shows which one it's using. If it says *not found*, install Claude Code (the command to copy is right there) and press **Search again**, or **Locate it myself…** to pick the file; it checks that the file really is Claude Code.
+
+C-Bot then **updates itself**: it checks for a new version at start and every few hours, downloads it in the background and installs it the next time it restarts. Right-click the tray icon to see the version, check now, or **Restart to update** straight away. Updates never touch your robots or chats; they live in `%APPDATA%\C-Bot`.
 
 ## Run it from source
 
@@ -33,26 +35,71 @@ The **Release** GitHub Action ([.github/workflows/release.yml](.github/workflows
 
 C-Bot lives in the system tray. The first launch opens the **Robot Workshop**, where you build your first robot.
 
+The tray menu is grouped like a robot's right-click menu: your robots (tick to show, untick to put away; walkers can be called back) with the Workshop and New robot; then the features (⌨️ All actions, 🔍 Ask about part of the screen, ✨ Quick actions, 📒 Notes, 📚 English words, each a submenu with its hotkey); then ⚙️ Settings (Theme, Mute, Start with Windows, backups); then the version and Quit.
+
 Your robots survive restarts:
 - **Start with Windows** (tray menu, on by default) brings C-Bot and its robots back after a reboot. Robots you **Put away** stay hidden until you tick them in the tray menu.
 - **Saving is power-cut safe:** each save goes to disk before it replaces the old file, and Windows shutting down or signing out triggers a save straight away.
-- **A daily backup** of the robots goes to `<userData>/backups/` (14 days kept; the tray's **Open backups folder** opens it).
+- **A daily backup** of the robots goes to `<userData>/backups/` (14 days kept; the tray's **⚙️ Settings → Open backups folder** opens it).
 - **A damaged save file is never replaced by an empty one.** It's set aside as `c-bot.broken-….json`, and the robots come back from the newest backup, with a message saying so.
 - **Closed tabs can come back:** **Undo** right after closing one, then **↺** next to ＋ or **Ctrl+Shift+T** (the last 10 per robot).
 
-In the Workshop, **Character** picks who sits at the desk: **🦫 Loopy** (the default, the pink beaver; she always stays pink), a cute **🐱 Cat** (its fur takes the paint job, its eyes the brain's colour, and its tail swishes while it thinks), an IT **🤓 Nerd** (messy hair with a cowlick that wiggles while he thinks, taped-up glasses, a hoodie in the paint colour with a `</>` logo, headphones round his neck), his desk mate the **👧 Girl** (chestnut pigtails with pink scrunchies, an ahoge that wiggles while she thinks, a glowing heart hair clip, a sweater in the paint colour with a bow and a plaid skirt; she twirls a pigtail or makes a finger heart when idle) or the original **🤖 Robot**. They all act out everything below, and wear the same hats.
+### Build your own robot
 
-**Size** makes a robot 🐭 Small (70%), 🙂 Normal, 🦒 Large (135%) or 🐘 Huge (170%); it grows or shrinks around its feet, so it stays where you put it, and its speech bubbles keep a readable size.
+Every robot is one you build. The Workshop's editor starts with its **name** and **home folder**, always at the top. Below them are three tabs:
 
-**Theme** dresses the whole workstation: **🎨 Classic** (the wooden desk), or **⛺ Sioux Connect**, styled after the Sioux Connect employee portal: a white desk with charcoal legs, the portal's tent logo and "SIOUX CONNECT" wordmark on the monitor (on its blue-grey-peach backdrop), an orange boot splash, the brand orange on every screen, a logo nameplate on the desk, a logo mug, the logo on the back of the chair, an orange status light and an ID badge with the logo on a cyan lanyard. Picking it also paints the robot Sioux orange (change the paint afterwards if you like). The themes live in `src/renderer/office3d/themes.js`, so adding one for another project is one entry there.
+- **Look:** the robot itself
+- **Mind:** personality, brain, what it may do, what a click opens; at the bottom, Forget conversation (**Delete robot** is in the bottom bar on every tab, and beside each robot in the list)
+- **Habits:** whether it wanders off
 
-Or bring your own: **📦 My model** takes any `.glb` 3D model, or a `.vrm` avatar (VRoid Hub, Open Source Avatars). To get one of your exact character, upload a picture of it to an image-to-3D tool (Meshy, Tripo, Rodin…), turn on auto-rigging if it offers it, and download the result as `.glb`. C-Bot copies the file into its own data folder and:
+The preview faces you. Hold and drag it to turn it round, to see a cape or wings on its back; its chair gets out of the way, and when you let go it turns back to face you. Picking something worn on its back shows it from behind for a moment.
 
-- **with a skeleton** (bones named the usual ways: Mixamo, Meshy, Tripo, Unreal, VRM…) sits it in the chair and drives its spine, head, arms and legs, so it types, waves, cheers, sleeps and gets bonked like the others;
-- **without one** stands it on the seat like a plush toy and moves it as a whole;
-- uses the model's own blink / mouth-open / smile shapes for its face, if it has any.
+**Look** has the presets, **Surprise me** and **Undo** at the top, then its own tabs:
 
-Press **↻ Turn** (a quarter turn each time) until it faces you. Ready-made free animal characters (a tiger, cats, teddies, a fox, a squirrel, a shark, a panda…) are in [`characters/`](characters/CREDITS.md). The Workshop says what it found (skeleton, face shapes) under the picker.
+- **Shape:** a row of parts per slot, scrolling sideways
+- **Colours:** the paint, the other colours, the finish
+- **Outfit**
+- **Size and desk**
+
+Click a part to try it; the preview changes straight away. Robots made before this, as Loopy, the cat, the nerd, the girl, the classic robot or your own 3D model, were turned into builds that look like them the first time C-Bot started.
+
+- **Head:** rounded box, ball, dome, capsule, old TV, bucket
+- **Face:** classic, cute (big shiny eyes, rosy cheeks), visor, cyclops (one big eye that follows the mouse), pixel (chunky pixels)
+- **On top:** antenna, twin antennas, cat ears, a propeller that turns, a dish, a light bulb, or nothing
+- **Body:** box, barrel, egg, slim, chunky
+- **Arms:** classic, noodle, mittens, claws
+- **Stands on:** legs, a wheel, treads, a jet, a spring
+- **Finish:** matte, glossy, metal, painted wood
+- **Colours:** the main colour is the **Paint job**; then one for the arms and legs, one for the lights (antenna, chest light, cat-ear glow), and one for the eyes (or **Like its brain**, as the classic robot does)
+
+Start from a preset (**Classic bot, Cat-bot, Nerd-bot, Cutie-bot, Rover, Retro TV**). Or press **Surprise me** for a random robot, or **Shuffle this part** to try another part in the slot you're on. **Undo** steps back through your changes. Every combination does everything the other characters do: poses, idle antics, dreams, the hats. With legs it walks when it goes off round the screen; on a wheel, treads, a jet or a spring it hops along, balancing. It's `src/renderer/office3d/kit3d.js` (the parts) and `kitface.js` (the faces).
+
+### Outfits and hats
+
+The builder's **Outfit** tab dresses up a robot you built.
+
+- **Themed looks**, each with a boy's and a girl's version:
+  - **Christmas:** Santa; Elf
+  - **Halloween:** Vampire; Witch
+  - **Beach:** Surfer; Beach day
+  - **Party:** Gentleman; Princess
+  - **Winter:** Snow day; Snow day
+- **What a look does:** it puts on the hat, the clothes and the extras in one click. A girl's look also does her hair (pigtails, a ponytail or curls) unless it's already done. **Take it all off** clears the outfit. **Shuffle this part** on the Outfit tab picks a random look.
+- **Or mix your own:**
+  - **Clothes:** T-shirt, Hawaiian shirt, suit, Santa suit, elf tunic, vampire, witch dress, dress, swimsuit, tutu
+  - **Round its neck:** scarf, tie, bow, pearls, flower lei
+  - **Holding, or on its back:** a present, candy cane, pumpkin bucket, ice cream, balloon, cape, fairy wings, bat wings, surfboard, backpack. It holds things in its left hand, as its right is busy with its phone and mug.
+  - **Glasses:** sunglasses, heart shades, round glasses, star glasses, eye patch
+- **On top** also has hairstyles: pigtails, ponytail, spiky, curly.
+- **Colours** has a **Clothes** colour (for the T-shirt, dress, swimsuit…) and a **Hair** colour.
+- Clothes are cut to its body shape and sleeves move with its arms. Dressed up, it takes its ID badge off.
+
+**Hat** (on the Outfit tab) has, besides the hard hat, glasses, bow tie, top hat, crown, headphones, flower, pirate hat and graduation cap: Santa hat, elf hat, reindeer antlers, witch hat, devil horns, sun hat, straw hat, party hat, tiara, hair bow, beanie. The clothes are in `src/renderer/office3d/kitwear.js`, the hats in `robot3d.js`.
+
+
+On **Size and desk**, **Size** makes a robot 🐭 Small (70%), 🙂 Normal, 🦒 Large (135%) or 🐘 Huge (170%); it grows or shrinks around its feet, so it stays where you put it, and its speech bubbles keep a readable size.
+
+**Desk** dresses the whole workstation: **🎨 Classic** (the wooden desk), or **⛺ Sioux Connect**, styled after the Sioux Connect employee portal: a white desk with charcoal legs, the portal's tent logo and "SIOUX CONNECT" wordmark on the monitor (on its blue-grey-peach backdrop), an orange boot splash, the brand orange on every screen, a logo nameplate on the desk, a logo mug, the logo on the back of the chair, an orange status light and an ID badge with the logo on a cyan lanyard. Picking it also paints the robot Sioux orange (change the paint afterwards if you like). The themes live in `src/renderer/office3d/themes.js`, so adding one for another project is one entry there.
 
 ## Playing with your robots
 
@@ -63,7 +110,8 @@ Press **↻ Turn** (a quarter turn each time) until it faces you. Ready-made fre
 | Type and press Enter | watches you type, thinks (antenna spins, thought bubble shows 📖 🔍 ⚙️ ✏️ for each tool), then talks while the answer streams in |
 | Send a question | the chat stays open and the answer streams in while the robot works at its desk |
 | 🔽 | tucks the chat away so you can watch it work: a little status bubble above the robot (below it, if the robot sits at the top of the screen; never over the desk) says what it's doing ("📖 Reading main.js…", "💬 Writing it up…"). Click the bubble or the robot to bring the chat back. It stays tucked away until you do: when the task is done the bubble says "✅ Done! Click to read the answer", and when Claude has a question for you it says "✋ I have a question for you" |
-| Hover over the robot | a little menu pops up at its feet: 🔨 bonk it (wakes it if asleep), 🔋 charge its battery (a battery over its head fills red → green while bolts crackle), 🤭 tickle it (it wriggles and giggles), ✋ high-five it, or 💃 throw a dance party (disco screen, disco lamp, a little tune). Apart from the bonk they play on a sleeping robot without waking it, and the menu stays open so you can keep playing |
+| Click the squeaky hammer on the floor by the desk | bonks the robot (wakes it if it's asleep). Hover it and it lights up |
+| Click the plug in the power strip under the desk | charges its battery: the plug buzzes, its light goes green and a battery over the robot's head fills red → green while bolts crackle. It doesn't wake a sleeping robot |
 | Click an awake robot | gets poked. Poke it too often and it gets grumpy or dizzy |
 | Double-click its monitor | crashes the computer: a blue screen, and it turns round to you, hand on its heart, betrayed |
 | Drag it | swings around and yells "wheee". Drag it around too much and it gets dizzy |
@@ -156,6 +204,31 @@ A view's own fullscreen button (Excalidraw's **Edit ⤢**), or **⤢** on the ca
 
 Drag files, folders or screenshots onto the robot (asleep or awake), or paste them: **Ctrl+V** anywhere in the open chat, or right-click the robot → **📋 Paste screenshot / file from clipboard**, which works even while it sleeps. A snip from the Snipping Tool (Win+Shift+S) pastes straight in, saved as "Screenshot <date> <time>.png". It leans out with its mouth open, chomps them (a page flies in, crumbs fly out), and they show up as chips above the chat box, images with a little preview. They go along with your next question: their paths are added to the prompt, and folders outside the robot's own get `--add-dir` so Claude Code may read them. Press ✕ on a chip to spit it back out. Send with no text and it asks "Take a look at this."
 
+### One hotkey for everything
+
+You only need to remember **Ctrl+Alt+C** (C for C-Bot). Press it anywhere and a small menu opens by the mouse with what you can do right now:
+
+- **With some text selected:** 📚 Save “word” to my words (for a word or a short phrase), ✨ Refine it, 🌐 Translate it, 💡 Explain it, 📝 Sum it up, 📒 Note it down, 💬 Ask a robot about it (a new chat tab with the text in it, for you to add your question), then 🔍 Ask about part of the screen and 📖 My words.
+- **With nothing selected:** 🔍 Ask about part of the screen, 📚 Box a word on screen, 📒 New note, ✨ Quick actions, 📖 My words and 🗒️ My notes.
+
+**The drone.** The menu is delivered: when you press the hotkey, the robot nearest the mouse raises its arm and sends off its little drone. The drone flies over to you in an arc, tilting into the turn, hovers just above where the menu opens and projects it with a beam of light: the menu unrolls down from its top edge with a scan line running down it. When the menu goes, the drone flies home and fades out. It's a sleek dark drone with a cyan beam in Future and a brass one with a warm lamp in Vintage, with a stripe in the robot's paint. It takes off once your selection is read and the menu's spot is known, so it's one smooth flight: the menu is up about 0.3 s after the key with text selected, about 0.5 s with nothing selected. Turn it off in the tray, **⚙️ Settings → 🛸 A drone brings the action menu**, and the menu just pops up. With Windows animations off it skips the flight. It's `src/main/drone.js` and `src/renderer/drone/`.
+
+Pick one with its number key (1–9), the arrow keys and Enter, or the mouse. Esc or clicking away closes the menu. It follows the theme. The tray has it too (**⌨️ All actions…**). Each feature's own hotkey (Ctrl+Alt+W, N, R, B) still works if you know it. Change the hotkey in the Workshop: **Settings → Shortcuts**. The menu is `src/main/palette.js` and `src/renderer/palette/`.
+
+### Settings
+
+The Workshop's **Settings** button (bottom of the sidebar) opens the app's settings in place of the robot editor. Above the button, the sidebar always shows where Claude Code (`claude`) was found, with **Search again** and **Change…**, and the action menu's hotkey (click it to go to Shortcuts).
+
+- **Shortcuts:** every hotkey (action menu, ask about part of the screen, quick actions, save a word, take a note), with what it does and whether it works or another app has it. Click one and press the new keys (with Ctrl or Alt; Esc cancels). ↺ puts it back to its default.
+- **Look and sound:** app theme, light or dark, mute robot sounds, and whether a drone brings the action menu.
+- **Notes and reminders:** the reminders, the workdays, who reminds you, where the corkboard goes.
+
+### Ask about part of the screen
+
+Press **Ctrl+Alt+B** anywhere (or the 🔍 button left of the chat box, right-click a robot → **🔍 Ask about part of the screen…**, the tray menu, or `/screen` in a chat). Then drag a box round anything: an error dialog, a chart, a paragraph in another language, part of a web page. Esc or a right-click cancels.
+
+The robots fade out while the screen is captured, so they aren't in the way. The box is saved like a pasted screenshot, and the robot nearest the mouse opens a fresh tab with it attached. Above the chat box it offers **💡 Explain this**, **🛠️ What's wrong?**, **🌐 Translate** (into Vietnamese) and **📝 Sum it up**. Click one, or type your own question and send. With the hotkey, the one-click questions also tell Claude which app the box came from. If every robot is out for a walk, one is called back to its desk first. Change the hotkey in the Workshop: **Settings → Shortcuts**.
+
 ### Past conversations
 
 🕘 in the bubble header (or `/resume`, or right-click → Past conversations…) lists every Claude Code conversation in the robot's folder, newest first. That includes the robot's own chats and sessions you ran in a terminal in the same folder. Search them, open one to read the transcript, and press **Resume** to make it the robot's current conversation. Its next answer continues from there (`claude --resume`). Conversations still open in another Claude Code window are marked 🟢 and ask before resuming.
@@ -204,7 +277,7 @@ The monitor casts its colour onto the robot and desk. Poke it for hearts; it som
 
 ### Left to its own devices
 
-Leave it alone and it finds things to do. Awake and idle, it looks around, waves, spins in its chair, sips its coffee (sometimes the mug is empty), pumps a dumbbell (three curls, the last one a real struggle, then a 💪 flex), hums, sneezes, rocks back on two chair legs and nearly falls ("…nobody saw that"), throws paper balls at the wastebasket by the desk, flicks the desk lamp, watches the bouncing-logo screensaver (and cheers if it hits the corner), or leans back with its hands behind its head until your mouse comes near, when it spins round and types furiously. The longer you ignore it, the bigger it gets: it talks to itself in its personality's voice, then sighs, drums its fingers and waves at you. Each character has its own too: the cat chases its tail or pushes the mug toward the edge while staring at you, Loopy gnaws a pencil, the nerd pushes up his glasses or plays air guitar, the robot flicks its antenna or defragments.
+Leave it alone and it finds things to do. Awake and idle, it looks around, waves, spins in its chair, throws itself a little dance party (disco screen, disco lamp, a little tune), holds a hand up for a high-five, sips its coffee (sometimes the mug is empty), pumps a dumbbell (three curls, the last one a real struggle, then a 💪 flex), hums, sneezes, rocks back on two chair legs and nearly falls ("…nobody saw that"), throws paper balls at the wastebasket by the desk, flicks the desk lamp, watches the bouncing-logo screensaver (and cheers if it hits the corner), or leans back with its hands behind its head until your mouse comes near, when it spins round and types furiously. The longer you ignore it, the bigger it gets: it talks to itself in its personality's voice, then sighs, drums its fingers and waves at you. It has its own fidgets too: it flicks its antenna or defragments.
 
 It also lives the office life: it explains its bug to a rubber duck until the duck squeaks and it goes "OH!", glares at a frozen monitor and turns it off and on again, Ctrl+C / Ctrl+V's an answer off Stack Overflow and looks round guiltily, yanks a cable under the desk (the whole desk jolts), shakes the crumbs (once in a while a whole cookie) out of its keyboard, holds its head at a screen full of merge conflicts and then meditates, gives its daily stand-up ("Yesterday: stuff. Today: more stuff. Blockers: you."), juggles Jira tickets until one sticks to its face, hugs its monitor because it works on its machine, and chugs three coffees and types at warp speed.
 
@@ -214,17 +287,129 @@ Asleep, every 30–60 seconds: a snot bubble that pops and half-wakes it ("huh?"
 
 ### Wandering off
 
-Leave it alone for a couple of minutes and it may get up and go for a walk round your screen (asleep, it sleepwalks: arms out, eyes shut). It steps out of its desk window into a little window of its own and strolls from place to place, stopping to look around, wave or sit down for a bit. Its desk stands empty with a **BRB** note on the monitor, and the chat tucks away: clicking the empty desk just makes it wave at you from wherever it is.
+Leave it alone for a few minutes and it may get up and go for a walk round your screen (asleep, it sleepwalks: arms out, eyes shut). It steps out of its desk window into a little window of its own and strolls from place to place, stopping to look around, wave or sit down for a bit. Its desk stands empty with a **BRB** note on the monitor, and the chat tucks away: clicking the empty desk just makes it wave at you from wherever it is.
 
 To use it again, **drag it back onto its desk**: pick it up (it dangles and kicks), carry it over the desk (the desk lights up) and let go. It hops back into its chair, awake or asleep as it was. Put it down anywhere else and it carries on walking. If it's somewhere you can't reach, the tray menu (and the empty desk's right-click menu) can call it back. In the Workshop, **Wanders off → 🪑 Stays at its desk** turns this off for a robot.
 
 The walking happens in `src/main/walker.js` (the window and its route) and `src/renderer/walker/` (the page); the standing, walking character is office3d's solo mode (`walker3d.js`).
+
+### Robots asking each other
+
+In a robot's chat, ask it to ask another robot: *"Ask Sunny which port her API runs on and which header the token goes in"*. Your robot's Claude sends Sunny a message; Sunny works on it in a tab of her own chat (titled with the message, in her own folder, with her own tools, personality and permissions; her chat stays tucked away so you see her working) and her answer goes back. Your robot decides by itself whether that's enough: it follows up as many times as it takes (the follow-ups go to the same tab, so Sunny remembers the conversation), then answers you, saying what it found out from whom. Each question flies over as a paper plane, and the answer flies back.
+
+More than two at once works too:
+
+- **One robot asks several** at the same time ("ask Sunny for the port and Captain for the staging host, then give me the full URL"): each answers in parallel and your robot puts it together.
+- **A robot is asked by several**: a tab for each, answered in parallel.
+- **Chains**: a robot answering one can ask another to find out (Grumbo asks Captain, who asks Sunny), up to four robots in a chain. It can never ask back up its own chain (the robot waiting on it), so they can't go round in circles.
+
+Guards: a robot can't ask itself or a robot that's put away (it's told who is on the desktop); at most 12 messages in 10 minutes per robot (then it's told to answer with what it has); and an answer that hasn't come after 10 minutes (say the other robot is waiting on you in its chat) comes back as "couldn't answer". The asked robot follows its own **What may it do?** setting from the Workshop: reading and searching its files always works, while running commands may need a permission it doesn't have.
+
+Under the hood every robot's Claude Code gets two tools, `ask_robot` and `list_robots`, from a tiny MCP server C-Bot starts with each conversation (`src/main/robotsMcp.js`, run by C-Bot's own executable); it reaches the app over a private local pipe, where `src/main/robotLink.js` finds the robot, hands it the message (it takes it on in robot.js like any question) and returns its answer. Each robot's system prompt names the others it can ask.
+
+### Robots together
+
+With two or more robots out, they notice each other:
+
+- **Waves:** two idle robots on the same screen: one turns in its chair and waves at the other, which waves back (asleep, it just stirs).
+- **Claps:** when a robot finishes a task, the idle ones turn to it and clap, sometimes with a line ("Nice one, Culi! 🎉").
+- **Contagious yawns:** when a robot dozes off, idle neighbours stretch and yawn; one that's been idle a while may nod off soon after.
+- **Group dance:** at a vocab milestone every free robot dances, not just the one that caught the word.
+- **Visits:** a robot bored for a minute or so may get up and walk over to another desk. What happens depends on the host:
+  - awake and free: they **chat**, three lines in their own personalities (a Grumpy one visiting a Cheerful one: "Sunny. You look busy. Good." / "Hi hi! Nice to see you!" / "Don't follow me."). The host turns to listen.
+  - working on a task: the visitor **watches over its shoulder** and cheers it on ("You got this! 💪"), then claps and goes home when the task is done.
+  - asleep: it **tiptoes** over and leaves a pink "came by 👋" sticky on the sleeper's monitor; when the sleeper wakes it reads it ("Aww, Grumbo came by! 💕").
+- **Paper planes:** a bored robot folds a paper plane and throws it at another one; the plane flies across your screen from desk to desk. If the other robot is free it catches it and reads it out ("From Grumbo: 'who took my mug?'"), then waves over and gets a wave back. If it's busy or asleep, the plane lands on top of its monitor and gets read once it's free (or wakes up). Each personality has its own notes ("is it Friday yet? 😄", "you dropped this: 🐛", "HELP! The build is ON FIRE! 🔥"). Once in a while one misses, sails past the desk, lies on your desktop for a moment and fades ("Oops! 😅").
+- **Office life**, once a day each on workdays, at the right time:
+  - **Lunch order** (10:30–11:40): a robot walks over: "Lunch order? I'm getting cơm tấm 🍚" / "Yes! Bún chả for me, please 🍜" / "Ordered! 20 minutes 🛵". A few minutes later the food comes to both desks ("Food's here! 😋") and they eat.
+  - **Lunch out** (11:40–12:30): "Lunch time! Wanna go out? 🍜" / "Yes! I'm starving!": both get up, walk to a spot between their desks, sit side by side chatting ("This bún bò is so good!" / "Same place tomorrow?") and walk back. Their desks say they're out for lunch together; click either one and both head back.
+  - **Milk tea round** (14:00–16:00): one robot goes desk to desk taking orders ("Brown sugar pearls, less ice!"), or "I'll get you the usual" for one that's busy, then "Ordered for everyone! 🛵". A few minutes later everyone's milk tea comes and they drink it.
+
+  An order that comes while a robot is busy waits till its task is done; a sleeping robot wakes up for it (its chat stays tucked away). Every line is in the robot's own personality (a Grumpy one: "Ordering lunch. You want something or not?" / "Busy? I'm getting you the usual.").
+
+A visit never gets in your way. Click the visitor and it says "Gotta go!" and hurries home; start using the host, give the visitor a task or press a hotkey that needs it, and it heads back (or is called back at once). Its empty desk says who it's visiting. Only one visit (and one plane) happens at a time, each robot visits or throws at most every ten minutes or so, and nothing social happens while you're using a robot (its chat, a card, the notebook, Quick actions), while you're away, the screen is locked or Windows says you're busy (a meeting, presenting, fullscreen, Focus). A robot set to **🪑 Stays at its desk** in the Workshop doesn't visit, but can be visited. **⚙️ Settings → 🤝 Robots socialising** in the tray: Often, Sometimes (the default) or Never.
+
+`src/main/social.js` decides who does what (each robot reports how it is every few seconds); the visit walks are errands of the walker (`walker.js`), the flying plane is `src/main/plane.js` and `src/renderer/plane/`, the desk animations (wave, clap, listen, throw, catch, read) are in `office3d/antics/social.js` with the paper plane model in `office3d/plane3d.js`, the walking ones (talk, tiptoe, clap) in `walker3d.js`, and the lines and plane notes in each personality's `social` (`personalities.js`).
+
+### Learning English words
+
+Select a word (or a short phrase) anywhere, in a browser, Word, a PDF, Teams, and press **Ctrl+Alt+W**. The robot nearest the mouse catches it ("Ooh, *meticulous*!"), pulls out a dictionary and leafs through it while its monitor searches for the word, then reads the word out, holds up a flash card of it and pops it into the **word box** on its desk (it fills up with cards as you collect words). Asleep, it wakes up for it, its chat staying tucked away.
+
+Next to it a **word card** shows the word straight away and fills in as Claude (the quick Haiku model) answers, in three tabs:
+- **📖 Meaning**: the pronunciation, the meanings in **Vietnamese** (with a short English definition; the one that fits first), for a verb **all its forms** (*go · goes · went · gone · going*, marked when irregular; click one to hear it), the **common phrases** it's used in (*tackle a problem*, *tackle a task*…), each with an example sentence and its translation, and a usage tip.
+- **🔁 Similar**: synonyms and antonyms for that meaning, each with a note on how it differs (stronger, more formal, only for things…).
+- **🌳 Family**: the other words built on it (*diligence*, *diligently*), each with an example.
+
+🔊 reads the word or an example aloud; ＋ by a synonym or a family word saves it as a word of its own (looked up in the background); **✏️ Edit** fixes a meaning or an example; **↩️ Undo** throws the word away; **💬 Ask more** opens a chat tab with a question about the word ready to send. Catching a word you already have shows its card instead, and it comes up for review sooner. Ask a robot *"what does X mean?"* (or *"X nghĩa là gì?"*) in a chat and its answer offers **📚 Save "X" to my words**.
+
+**A word you can't select** (in a picture, a video, a scanned PDF): press **Ctrl+Alt+W** with nothing selected (or pick **🔍 Box a word on screen** in a robot's right-click menu) and the screen dims: drag a box round the word. Claude reads the word in the box (and the sentence round it, so the meaning that fits comes first), and the robot catches it as usual. Esc or a right-click cancels.
+
+**Seeing your words again**, the more often the better:
+- **Sticky notes** on the left edge of each robot's monitor show the three words you're still learning (click one for its card).
+- When it's idle, a robot sometimes swivels round to its monitor, which shows one of your words as a flash card, and reads it out (*"tackle… giải quyết"*). Asleep, it mutters your words in its sleep.
+- **Dreams**: when a word is due, a **sleeping** robot dreams of it (at its desk the word glows on its monitor and it mumbles it; sleepwalking round the screen it stops where it is and mumbles it) and a **dream bubble** beside it shows the word, its meaning and an example sentence (a different common phrase each time it comes back), with **📖 Details** (the whole card) and **✓ I know this one** (it comes back much later). Nothing to answer: the bubble fades after 20 seconds (not while the mouse is on it) and the word counts as seen.
+- **When each word comes back**: the first dream 30 minutes after you save it, then 2 hours later, 6 hours, a day, 2 days, 4 days, a week, 2 weeks, and a month from then on, so a new word shows 3–4 times on its first day and less and less after. ✓ I know this one skips it two steps ahead; catching it again (you met it somewhere) puts it back to "2 hours". The most overdue word goes first (a tie: the newer one), never the same word twice in a row. Seen six times, it counts as learnt.
+- **How often**: one dream every 20 minutes at most, 12 a day, during your hours (9:00–18:00 by default), only while you're at the PC (not away, locked or presenting) and only from a sleeping robot (your word tutor if it's asleep); with none asleep, the word waits for the next nap. **💭 Show me one of my words** (a robot's right-click menu) shows one straight away.
+- **🃏 Quiz me** (the tray, a robot's menu, My words) tests you when you want it: the card shows the word, 💡 Hint shows a phrase it's used in, 👀 Show the meaning turns it over; then **✓ Knew it** (a step ahead), **✗ Forgot** (back to the start) or **⏰ Later**. A bonk (the hammer) skips it.
+
+**📚 My words** (tray menu, or a robot's right-click menu) lists them all, **sorted and grouped** your way: 🆕 Newest (Today / Yesterday / This week / This month / Earlier), 🔤 A–Z (by letter), 💭 Next dream (Due now / Later today / This week / Later) or 🌱 Progress (New / Learning / Learnt); click a heading to fold it. Search by word or Vietnamese meaning (accents optional), filter the due / learning / learnt ones (each filter shows how many), and see each word's main meaning, how many times you've seen it (the bar and the coloured edge) and when its next dream is; click one for its card, 🗑️ to delete it. Up top: words, learnt, learning, due now and your **daily streak** 🔥; **🃏 Quiz me now**; at the bottom the dreams switch and your hours, and **⬇️ Export** (a CSV for Anki, Quizlet or Excel). **🎓 This robot is my word tutor** (a robot's right-click menu) picks which robot dreams of your words and quizzes you.
+
+**Rewards**: a dance party at 10, 25, 50, 100… words learnt and at 3, 7, 14, 30… days in a row; at 10 learnt, the **🎓 Graduation cap** appears in the Workshop's accessories.
+
+C-Bot copies the selection the way you would (Ctrl+C) and puts your clipboard back afterwards. Only the word (or the box you drag) goes to Claude. Your words are kept in `vocab.json` in C-Bot's data folder (saved power-cut safe, backed up daily with the robots), with their review state. `src/main/capture.js` is the hotkey and copy-the-selection part (other features can register hotkeys of their own); `vocab.js` keeps the words, their schedule and stats and looks them up; `reminders.js` decides when to quiz; `snip.js` and `src/renderer/snip/` are the drag-a-box screen; `wordCard.js` and `src/renderer/card/` the card; `src/renderer/words/` the My words window; the antics are in `office3d/antics/vocab.js`, the sticky notes in `office3d/scene.js` (`set.stickies`, shared with other features: words on the monitor's left edge, the right edge is free).
+
+### Notes and daily reminders
+
+A **corkboard** stands on the left end of every desk with your open notes pinned to it as little stickies (up to five, then a "+3" pin; important ones are red, ones older than a few days go yellow; nothing open: *✓ all clear*). Hover it and it lights up and says how many; **click it** (or a sticky) and your **notebook** opens beside the robot. It works with the robot awake, asleep or out for a walk.
+
+In the notebook, type in the box and press Enter (start with **!** for an important one). Notes are grouped **Important / Today / Yesterday / Earlier**, with the done ones folded away at the bottom. Tick one off, double-click it to edit, or use its **⋯** menu: **🤖 Ask Claude** (a new chat tab works on it, a 🔧 shows on its sticky meanwhile, and the answer ends with **✅ Tick it off my notes**), copy, or delete (with Undo). The filter box searches them; the header's ⋯ copies them all or clears the done ones. Esc or clicking away closes it.
+
+**Other ways to take a note:**
+- **Ctrl+Alt+N** anywhere: the notebook opens with what you had selected already in the box (and where it came from).
+- **/note buy milk** in a chat (**/notes** opens the notebook), or a robot's right-click menu or the tray.
+
+**The robot joins in:** it writes a new note on a sticky and pins it up ("Noted! 📝"; asleep, it half-wakes and mumbles "…noted…"); tick one off and it takes that sticky down, crumples it and bins it, with a happy spin when the board is all clear. When idle it sometimes glances over at the board and straightens a pin, juggles your actual notes instead of Jira tickets, and with eight or more open it gets a little overwhelmed.
+
+**Reminders:**
+- At the **end of the day** (17:30 on workdays) and the **first time you're at your PC in the morning** (after 6:00), a robot holds its corkboard up, points at you and the notebook opens with what you noted (the morning one: since your last workday, plus everything still open).
+- The banner has **⏰ In 15 min** and **👍 Done for today**, and in the evening **✨ Summarise my day** (Claude writes a short summary in a new tab). After the evening one the robot clocks out and goes to sleep.
+- It waits while the robot is busy and only when you're there (not locked, not away). Out for a walk, the robot waves and the notebook opens; with no robot out, you get a Windows notification. A reminder you missed isn't shown late, the next one covers it.
+
+In the Workshop, **Settings → Notes and reminders** sets the reminders (on/off, end-of-day time, mornings, workdays, every open note or just yesterday's), which robot reminds you (also in a robot's right-click menu) and whether the corkboard is on every desk or only on that robot's.
+
+Notes are kept in `notes.json` in C-Bot's data folder (backed up daily); done notes are cleared after 30 days. `src/main/notes.js` keeps them and decides when to remind you; `notebook.js` and `src/renderer/notebook/` are the notebook; the corkboard is `office3d/board.js` and its antics `office3d/antics/notes.js`.
+
+### Quick actions on selected text
+
+Select some text anywhere (an email you're writing, a Teams message, an error, some code) and press **Ctrl+Alt+R**. The **Quick actions** window opens beside the robot nearest the mouse with your text in it (line breaks kept; you can edit it), and runs the action you used last:
+
+- **Refine text** rewrites it in a style: **Polished** (correct and natural, your own voice), **Professional**, **Polite**, **Friendly**, **Formal**, **Concise**, **Simple** (plain English) or **Grammar only**. Add your own instruction too ("sound more confident"). Under the answer, **What changed** lists the main fixes, the original crossed out, the fix and why ("*inform* needs a person as its object"), so you learn as you go.
+- **Translate**: English ↔ Vietnamese. It works out the direction from the text; ⟳ swaps it.
+- **Explain**: what it means. For code, what it does; for an error, what went wrong and how to fix it; for an idiom, its meaning. Answers in English or Tiếng Việt.
+- **Summarise**: 3 to 5 bullet points, in English or Tiếng Việt.
+
+The answer streams in as Claude writes it. **Replace** (Ctrl+Enter) puts it back over your selection in the app it came from; **Copy** (Ctrl+Shift+C) copies it; **Again** runs it again; **Ask more** opens a chat tab with the text and the answer, ready for your question. Switching back to a style you already tried is instant. Esc closes it. Your clipboard is put back as it was after grabbing the text and after Replace.
+
+With nothing selected (or from the tray's **✨ Quick actions → Quick actions on text…**, a robot's right-click menu, or **/refine some text** in a chat) the box opens empty (or with what's on your clipboard) for you to paste or type into. While it works, the robot writes on its sticky pad (refine, summarise) or leafs through its dictionary (translate, explain), and gives a little hop when your text goes back. The tray's **✨ Quick actions** submenu picks the model: **Fast brain (Haiku)**, the default, or **Better writing (Sonnet)**. Change the hotkey in the Workshop: **Settings → Shortcuts**.
+
+Only the text you selected (or typed) goes to Claude. `src/main/quick.js` holds the prompts and runs Claude Code; `quickWindow.js` and `src/renderer/quick/` are the window; `capture.js` grabs the selection and pastes the answer back.
 
 The 3D side lives in `src/renderer/office3d/antics/` (`index.js` explains how an antic is written); `robot.js` decides when they play and adds the sounds and words.
 
 The 3D scene (Three.js, toon-shaded with ink outlines) lives in `src/renderer/office3d/` and is bundled by esbuild into `src/renderer/office3d.bundle.js`. `npm start` builds it automatically; run `npm run build` after editing it.
 
 Personalities: 😄 Cheerful, 😒 Grumpy, 🏴‍☠️ Pirate, 🧘 Zen, 🎭 Dramatic. They change both the canned reactions and the tone of Claude's answers (through `--append-system-prompt`).
+
+### Themes
+
+Every window (chat, word card, My words, notebook, Workshop) comes in two looks, each light or dark:
+
+- **🛰️ Future tech**: a calm sci-fi console. Rounded glass panels with a thin glowing line along the top, pill buttons and tabs, a soft cyan glow, slim glowing progress bars, and a shimmer when a dream appears.
+- **📜 Vintage notebook**: paper and navy ink. Square corners, typewriter labels, ink-stamp buttons, washi tape on the word card, examples on ruled lines in an italic serif, My words as index cards, and the notebook as a ruled page with a red margin.
+
+Pick one in **⚙️ Settings → 🎨 Theme** (in the tray menu, or a robot's right-click menu), or in the Workshop (**Settings → Look and sound**). Light or dark follows Windows unless you choose *Always light* or *Always dark*. It changes every open window at once. The robot's paint colour tints the accent (in Vintage, as an aged, sepia-toned shade of it).
+
+The tokens (colours, fonts, corners) are in `src/renderer/ui/theme.css`, and each theme's touches are in `ui/future.css` and `ui/vintage.css`. `ui/theme.js` puts `data-theme` and `data-mode` on each window before it draws.
 
 ## Permissions
 

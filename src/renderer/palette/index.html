@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+  <title>C-Bot</title>
+  <link rel="stylesheet" href="../ui/theme.css" />
+  <script src="../ui/theme.js"></script>
+  <link rel="stylesheet" href="palette.css" />
+</head>
+<body>
+  <main id="pal" aria-label="What to do">
+    <div id="sel">
+      <div class="legend" id="sel-label">Selected</div>
+      <p id="sel-text"></p>
+    </div>
+    <div id="list" role="listbox" aria-label="Actions"></div>
+    <footer><span><kbd>1</kbd>–<kbd>9</kbd> or <kbd>↑</kbd><kbd>↓</kbd> <kbd>Enter</kbd></span><span><kbd>Esc</kbd> closes</span></footer>
+  </main>
+  <script src="../ui/icons.js"></script>
+  <script src="palette.js"></script>
+</body>
+</html>

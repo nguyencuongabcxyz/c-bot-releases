@@ -2,24 +2,26 @@ import * as THREE from 'three';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { buildOffice, LAYOUT } from './scene.js';
 import { themeOf } from './themes.js';
-import { buildRobot, POSES } from './robot3d.js';
-import { buildLoopy } from './loopy3d.js';
-import { buildCat } from './cat3d.js';
-import { buildNerd } from './nerd3d.js';
-import { buildGirl } from './girl3d.js';
-import { loadModel, buildCustom } from './custom3d.js';
+import { POSES } from './robot3d.js';
+import { buildKit } from './kit3d.js';
 import { buildHammer, HAMMER } from './hammer.js';
 import { createMinis } from './minibots.js';
 import { buildBattery } from './battery.js';
 import { drawScreen, SCREEN_LIGHT } from './screens.js';
 import { spriteTexture, badgeTexture } from './materials.js';
+import { buildBoard } from './board.js';
+import { buildProps } from './props.js';
+import { buildPaperPlane } from './plane3d.js';
 import { createAntics, wearTick } from './antics/index.js';
 import { createBed } from './bed.js';
 import { createWalker, frameSolo, AWAY_TURN } from './walker3d.js';
 
 // The 3D workstation is a pure "view" of the robot's state. It reads what the page
 // already tracks on every frame:
-//   stateEl.dataset  screen, pose, eyes, mouth, acc, name, body (loopy | cat | nerd | girl | robot | custom), glb, glbTurn,
+//   stateEl.dataset  screen, pose, eyes, mouth, acc, name, kit (the robot's parts: JSON, see kit3d.js),
+//                    vocabCount (English words collected: the word box on the desk),
+//                    vocabStickies (JSON [{ id, text, sub }]: words on sticky notes on the monitor),
+//                    stickyHover (the id of the word note under the mouse: it zooms up),
 //                    helpers (how many helper agents are at work: little bots circle the desk),
 //                    theme (the desk, screen and badge style: classic | sioux),
 //                    antic, anticSeq, anticText, nightcap (idle antics: see antics/index.js)
@@ -39,10 +41,8 @@ import { createWalker, frameSolo, AWAY_TURN } from './walker3d.js';
 //     data-speed     walking pace (1 = about two steps a second)
 
 const ROBOT_SCALE = 0.82;
-// who sits at the desk; both share one rig (see robot3d.js)
-const BODIES = { loopy: buildLoopy, cat: buildCat, nerd: buildNerd, girl: buildGirl, robot: buildRobot };
-// (charge, tickle, highfive, dance: from the robot's hover menu)
-const REACTIONS = ['hop', 'squish', 'shake', 'spin', 'idea', 'chomp', 'bonk', 'helper-step', 'charge', 'tickle', 'highfive', 'dance'];
+// (charge: the plug by the desk; highfive, dance: by itself now and then)
+const REACTIONS = ['hop', 'squish', 'shake', 'spin', 'idea', 'chomp', 'bonk', 'helper-step', 'charge', 'highfive', 'dance'];
 // the squeaky-hammer bonk, in seconds: pops in, winds up, strikes, rebounds, shrinks away
 // (the hit time is mirrored by BONK_HIT_MS in robot.js, which lands the sound and reaction)
 const BONK = { appear: 0.18, windup: 0.34, hit: 0.42, leave: 0.72, end: 1.02, scale: 0.8 };
@@ -106,6 +106,22 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   // (solo: no desk, just the character on an invisible ground)
   let set = solo ? null : buildOffice(theme);
   if (set) world.add(set.office);
+  // ---- the corkboard with your notes, on the desk's left end (board.js; robot.js: data-board),
+  // standing on the desk top so it rises with the standing desk; set.board for the antics
+  let board = null;
+  let boardKey = null; // the notes it shows, as drawn (data-board, JSON)
+  function addBoard() {
+    if (!set) return;
+    board = buildBoard(theme);
+    (set.desk?.top || set.office).add(board.group);
+    set.board = board;
+    boardKey = null; // (pin them up again)
+    // the squeaky hammer and the charger's power strip by the desk: click them to play (props.js)
+    props = buildProps(theme);
+    set.office.add(props.hammer, props.floor);
+  }
+  let props = null;
+  addBoard();
   // a new theme: rebuild the workstation around the robot
   function dress(key) {
     themeKey = key;
@@ -116,6 +132,9 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     const old = set;
     set = buildOffice(theme);
     world.add(set.office);
+    board?.dispose();
+    props?.dispose();
+    addBoard();
     if (robot) {
       old.swivel.remove(robot.root);
       set.swivel.add(robot.root);
@@ -125,7 +144,8 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   }
   let robot = null;
   let body = null;
-  function seat(kind, build = BODIES[kind]) {
+  // the robot, built from its parts (kit3d.js); key: what it's built from, so a change rebuilds it
+  function seat(kind, build) {
     if (robot) robot.root.removeFromParent(); // off the chair, or off the floor if it was asleep there
     body = kind;
     robot = build({ color: paint || '#5ac8fa', name: name || '' });
@@ -143,7 +163,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   const minis = solo ? null : createMinis(world);
   const charger = solo ? null : buildBattery();
   if (charger) world.add(charger.battery);
-  const play = { nextBolt: 0, nextHa: 0, nextNote: 0, burstFor: null, fiveFor: null };
+  const play = { nextBolt: 0, nextNote: 0, burstFor: null, fiveFor: null };
 
   // ---- particles
   const particles = [];
@@ -189,32 +209,16 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   let paint = '';
   let acc = null;
   let name = null;
-  seat('loopy');
-  // your own model (.glb): loads in the background, the old body stays until it's ready.
-  // The page hears how it went through a 'character-status' event on stateEl.
-  let loading = null;
-  const failed = new Map();
-  function loadCustom(key, file, turn) {
-    const report = (detail) => stateEl.dispatchEvent(new CustomEvent('character-status', { detail }));
-    if (failed.has(key)) return;
-    loading = key;
-    report({ loading: true });
-    loadModel(file)
-      .then((gltf) => {
-        if (loading !== key) return;
-        loading = null;
-        seat(key, () => buildCustom(gltf, { turn }));
-        report({ ok: true, ...robot.status });
-      })
-      .catch((err) => {
-        console.error('Could not load the character model', err);
-        failed.set(key, err);
-        if (loading === key) loading = null;
-        report({ ok: false, error: String(err?.message || err) });
-      });
-  }
+  seat('kit:{}', (o) => buildKit({}, { ...o, standing: solo }));
   let lights = 1;
   let night = 0; // 0..1, up past 10 pm (data-late-night)
+  let shownWords = -1; // the word box shows this many (and wordsSet is the desk it's on)
+  let wordsSet = null;
+  let shownStickies = '';
+  let deskPlane = null; // a paper plane that landed on the desk (data-desk-plane)
+  let shownVisit = ''; // the visitor's sticky (data-visit-notes), and the desk it's on
+  let visitSet = null;
+  let stickiesMoving = false; // a sticky note zooming up or back (scene.js stickies.update)
   let nextZ = 0;
   let nextSteam = 0;
   let nextSweat = 0;
@@ -238,7 +242,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     // full frame rate only while something is really moving; idle and asleep tick slower
     const lively = solo
       ? walker.lively || dragging || particles.length > 0
-      : dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics.active || REACTIONS.some((r) => stateEl.classList.contains(r));
+      : dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics.active || !!stateEl.dataset.propHover || !!stateEl.dataset.stickyHover || stickiesMoving || REACTIONS.some((r) => stateEl.classList.contains(r));
     const fps = lively ? 30 : awake ? 20 : 8;
     if ((document.hidden && !solo) || now - lastFrame < 1000 / fps - 2) return; // (a walker draws while still hidden, to take over seamlessly)
     lastFrame = now;
@@ -257,10 +261,10 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
       screenStart = t;
     }
     if ((d.theme || 'classic') !== themeKey) dress(d.theme || 'classic');
-    const want = d.body === 'custom' && d.glb ? `custom:${d.glb}:${d.glbTurn || 0}` : BODIES[d.body] ? d.body : 'loopy';
-    if (want !== body && want !== loading) {
-      if (want.startsWith('custom:')) loadCustom(want, d.glb, Number(d.glbTurn) || 0);
-      else seat(want);
+    // (its parts are in data-kit; any change rebuilds it)
+    const want = `kit:${d.kit || '{}'}`;
+    if (want !== body) {
+      seat(want, (o) => buildKit(d.kit, { ...o, standing: solo }));
     }
     if (d.acc !== acc) {
       acc = d.acc;
@@ -301,7 +305,18 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
 
     // ---- chair swivel target (+ a full spin for the "spin" reaction)
     const k = ease(dt, 5);
-    cur.yaw = gone ? awayYaw : mix(cur.yaw, YAW[pose] ?? camYaw, k);
+    // (the Workshop's preview: data-facing 'camera' keeps it facing you; a number turns it that
+    // far round from there, in radians, as you drag it, quickly)
+    const turned = d.facing === 'camera' ? 0 : parseFloat(d.facing);
+    const facing = Number.isFinite(turned) ? camYaw + turned : null;
+    // (the short way round to where it's turned)
+    const toward = facing === null ? null : cur.yaw + Math.atan2(Math.sin(facing - cur.yaw), Math.cos(facing - cur.yaw));
+    cur.yaw = gone ? awayYaw : mix(cur.yaw, toward ?? YAW[pose] ?? camYaw, d.facingDrag ? ease(dt, 18) : k);
+    // (turned round, the chair's back would hide the robot's: it goes while you look)
+    if (facing !== null && !solo) {
+      const away = Math.abs(Math.atan2(Math.sin(cur.yaw - camYaw), Math.cos(cur.yaw - camYaw)));
+      for (const o of set.swivel.children) if (o !== robot.root) o.visible = away < 1.25;
+    }
     const sSpin = since('spin');
     const spinExtra = sSpin < 0.9 ? Math.PI * 2 * (1 - (1 - sSpin / 0.9) ** 3) : 0;
 
@@ -338,21 +353,12 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     } else if (pose === 'thinking') {
       armR[2] += Math.sin(t * 4) * 0.08;
     }
-    // tickled: the arms flail
-    const sTickle = since('tickle');
-    if (sTickle < 1.6) {
-      const k = 1 - sTickle / 1.6;
-      armL[1] += Math.sin(t * 28) * 0.5 * k;
-      armR[1] += Math.sin(t * 28 + 1.6) * 0.5 * k;
-      armL[2] -= Math.abs(Math.sin(t * 22)) * 0.6 * k;
-      armR[2] -= Math.abs(Math.sin(t * 22 + 1)) * 0.6 * k;
-    }
     // dancing: the chair sways
     const sDance = since('dance');
     const dancing = sDance < 4.2;
     const danceSway = dancing ? Math.sin(sDance * Math.PI * 2) * 0.45 : 0;
     // idle antics (sipping coffee, snot bubbles…) play on top of the pose
-    const A = { lean: cur.lean, head: [...cur.head], armL, armR, yaw: 0, tip: 0, rootY: 0, rootZ: 0, mug: new THREE.Vector3(), mugTilt: 0, lamp: 1, screen: null, screenDim: 0, shake: 0, reachL: 1, reachR: 1, antenna: 0 };
+    const A = { lean: cur.lean, head: [...cur.head], armL, armR, yaw: 0, tip: 0, rootY: 0, rootZ: 0, mug: new THREE.Vector3(), mugTilt: 0, lamp: 1, screen: null, screenDim: 0, shake: 0, reachL: 1, reachR: 1, antenna: 0, boardLift: 0 };
     antics.update({ t, dt, d, pose, robot, set, curYaw: cur.yaw, A, bubbleAt, bed, away: gone });
     set.swivel.rotation.order = 'YXZ';
     set.swivel.rotation.y = cur.yaw + spinExtra + A.yaw + danceSway;
@@ -392,9 +398,9 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     const cheerBounce = pose === 'cheer' ? Math.abs(Math.sin(t * 8)) * 0.06 : 0;
     robot.root.position.y = 0.09 + hop + cheerBounce + A.rootY;
     robot.root.position.z = 0.04 + A.rootZ;
-    // dancing bobs up and down and rocks; a tickle wriggles
+    // dancing bobs up and down and rocks
     if (dancing) robot.root.position.y += Math.abs(Math.sin(sDance * Math.PI * 4)) * 0.07;
-    robot.root.rotation.z = (sTickle < 1.6 ? Math.sin(t * 40) * 0.07 * (1 - sTickle / 1.6) : 0) + (dancing ? Math.sin(sDance * Math.PI * 2) * 0.1 : 0);
+    robot.root.rotation.z = dancing ? Math.sin(sDance * Math.PI * 2) * 0.1 : 0;
     const sSquish = since('squish');
     const sq = sSquish < 0.5 ? Math.sin((sSquish / 0.5) * Math.PI * 3) * 0.14 * (1 - sSquish / 0.5) : 0;
     robot.root.scale.set(ROBOT_SCALE * (1 + sq), ROBOT_SCALE * (1 - sq), ROBOT_SCALE * (1 + sq));
@@ -465,7 +471,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     robot.head.scale.set(1 + squash * 0.45, 1 - squash, 1 + squash * 0.45);
     if (dancing) robot.head.rotation.z += Math.sin(sDance * Math.PI * 4) * 0.15; // head bob
 
-    // ---- play (the hover menu)
+    // ---- play (the plug by the desk; a dance or a high-five by itself)
     // charge: a battery over its head fills red -> green while bolts crackle, then a burst
     const sCharge = since('charge');
     if (sCharge < 2.6) {
@@ -490,11 +496,6 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
         }
       }
     } else charger.battery.visible = false;
-    // tickle: giggles pop out
-    if (sTickle < 1.5 && t > play.nextHa) {
-      play.nextHa = t + 0.28;
-      emit('haha', worldPoint(robot.head, (Math.random() - 0.5) * 0.6, 0.55, 0.1), { life: 0.9, vel: new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.45, 0), size: 0.2, spin: 2 });
-    }
     // high-five: sparkles where the hands meet
     const sFive = since('highfive');
     if (sFive >= 0.45 && sFive < 1 && play.fiveFor !== react.highfive) {
@@ -542,7 +543,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
       set.screen.ctx.fillRect(0, 0, set.screen.canvas.width, set.screen.canvas.height);
     }
     set.screen.tex.needsUpdate = true;
-    const glowColor = SCREEN_LIGHT[shown.startsWith('dream:') ? 'dream' : shown] || (A.screen ? '#9fb0ff' : null);
+    const glowColor = SCREEN_LIGHT[shown.split(':')[0]] || (A.screen ? '#9fb0ff' : null);
     // (the BRB note glows softly in a dark room, so the desk still reads asleep)
     const glow = glowColor ? 1.4 * (1 - A.screenDim) * (gone ? mix(0.35, 1, lights) : 1) : 0;
     set.screen.light.intensity = mix(set.screen.light.intensity, glow + 1.6 * night, ease(dt, 6));
@@ -550,9 +551,74 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     set.screen.led.material.color.set(screen === 'off' ? (Math.sin(t * 2.5) > 0 ? '#ffb347' : '#5a4630') : '#7bed9f');
 
     // ---- antenna + chest light
-    const lightCol = thinking ? new THREE.Color().setHSL((t * 0.8) % 1, 0.85, 0.62) : new THREE.Color(awake || working ? theme.robot?.light || '#ff5e62' : '#8a90a6');
+    const lightCol = thinking ? new THREE.Color().setHSL((t * 0.8) % 1, 0.85, 0.62) : new THREE.Color(awake || working ? robot.light || theme.robot?.light || '#ff5e62' : '#8a90a6'); // (robot.light: the lights colour of a robot you built)
     robot.antennaBall.color.copy(lightCol);
     robot.chest.material.color.copy(thinking ? new THREE.Color('#4de1ff') : lightCol);
+
+    // ---- the English word box on the desk (robot.js: data-vocab-count), and the words
+    // you're learning on sticky notes on the monitor (data-vocab-stickies: JSON [{ id, text, sub }])
+    const words = Number(d.vocabCount) || 0;
+    const stickyJson = d.vocabStickies || '';
+    if (words !== shownWords || set !== wordsSet || stickyJson !== shownStickies) {
+      shownWords = words;
+      wordsSet = set;
+      shownStickies = stickyJson;
+      set.wordBox?.setCount(words);
+      let notes = [];
+      try {
+        notes = stickyJson ? JSON.parse(stickyJson) : [];
+      } catch {}
+      set.stickies?.set('vocab', notes);
+    }
+    // a visitor found it asleep: a "came by" sticky on the monitor's other edge (robot.js:
+    // data-visit-notes, JSON [{ id, text, sub, color }])
+    if ((d.visitNotes || '') !== shownVisit || set !== visitSet) {
+      shownVisit = d.visitNotes || '';
+      visitSet = set;
+      let notes = [];
+      try {
+        notes = shownVisit ? JSON.parse(shownVisit) : [];
+      } catch {}
+      set.stickies?.set('note', notes);
+    }
+    // a paper plane another robot threw, landed (on top of its monitor, in sight whether it
+    // sits or sleeps in the chair or on the floor) while it was busy or asleep
+    // (robot.js: data-desk-plane '1'; it picks it up and reads it when it's free)
+    const top = set.desk?.top || set.office;
+    if (d.deskPlane === '1' && deskPlane?.parent !== top) {
+      deskPlane ||= buildPaperPlane();
+      deskPlane.position.set(-0.36, 1.83, -1.19);
+      deskPlane.rotation.set(0.04, 0.55, 0.12);
+      deskPlane.scale.setScalar(1.6);
+      top.add(deskPlane);
+    } else if (d.deskPlane !== '1' && deskPlane?.parent) deskPlane.removeFromParent();
+    // the word note under the mouse pops up bigger (robot.js: data-sticky-hover)
+    set.stickies?.hover(d.stickyHover ? 'vocab' : '', d.stickyHover || '');
+    stickiesMoving = !!set.stickies?.update(dt);
+
+    // ---- the corkboard: your open notes (data-board: JSON { items, total, hidden }), lit up
+    // while the mouse is on it (data-board-hover), held up for a reminder (A.boardLift)
+    if (board) {
+      const json = d.board || '';
+      if (json !== boardKey) {
+        boardKey = json;
+        let b = { items: [], total: 0 };
+        try {
+          if (json) b = JSON.parse(json);
+        } catch {}
+        board.group.visible = !b.hidden;
+        board.setNotes(b.items || [], b.total || 0);
+      }
+      board.setHover(d.propHover === 'board');
+      board.setLift(A.boardLift || 0);
+      board.update(t, dt);
+    }
+    // ---- the hammer and the plug: lit up under the mouse (data-prop-hover), the hammer
+    // picked up while it bonks, the plug buzzing while it charges
+    if (props) {
+      props.setHover(d.propHover);
+      props.update(t, dt, { bonking: toy?.hammer.visible, charging: since('charge') < 2.2 });
+    }
 
     // ---- lighting: bright while awake, dimmed and bluish while asleep
     lights = mix(lights, awake || working ? 1 : 0, ease(dt, 3));
@@ -662,7 +728,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     wearTick(wear);
     robot.headband.visible = d.effort === 'xhigh' || d.effort === 'max';
     drawFaceNow(d, t, !awake, look[0], look[1]);
-    robot.antennaBall.color.set(awake ? theme.robot?.light || '#ff5e62' : '#8a90a6');
+    robot.antennaBall.color.set(awake ? robot.light || theme.robot?.light || '#ff5e62' : '#8a90a6');
     robot.chest.material.color.copy(robot.antennaBall.color);
     robot.antenna.rotation.z = Math.sin(t * 2) * 0.05;
     // it steps out of its desk lit as it was there (dimmed, asleep), then brightens up as it
@@ -691,6 +757,42 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
       if (solo) frameSolo(camera, soloView(h));
     },
     // Is this point (client px) on the monitor's screen? (double-clicking it crashes the computer)
+    // the sticky note under a page point (CSS px): { kind, id } or null (scene.js stickies)
+    stickyAt(clientX, clientY) {
+      if (solo || !set?.stickies?.objects.length) return null;
+      const r = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, 1 - ((clientY - r.top) / r.height) * 2);
+      const ray = new THREE.Raycaster();
+      camera.updateMatrixWorld();
+      ray.setFromCamera(ndc, camera);
+      const hit = ray.intersectObjects([set.office, robot.root], true).find((h) => robot.root.visible || !isUnder(h.object, robot.root));
+      return hit ? set.stickies.lookup(hit.object) : null;
+    },
+    // What you can click round the desk under a page point (CSS px), nearest first:
+    // { kind: 'note', id } | { kind: 'board' } (the corkboard) | { kind: 'hammer' } | { kind: 'plug' }
+    // | null (also when the robot's in front of it)
+    propAt(clientX, clientY) {
+      if (solo || !set) return null;
+      const r = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, 1 - ((clientY - r.top) / r.height) * 2);
+      const ray = new THREE.Raycaster();
+      camera.updateMatrixWorld();
+      ray.setFromCamera(ndc, camera);
+      let best = props?.hit(ray) || null;
+      const onBoard = board?.group.visible && ray.intersectObject(board.group, true)[0];
+      if (onBoard && (!best || onBoard.distance < best.distance)) best = { ...board.hit(ray), distance: onBoard.distance };
+      if (!best) return null;
+      const inFront = robot.root.visible && ray.intersectObject(robot.root, true)[0];
+      if (inFront && inFront.distance < best.distance) return null;
+      const { distance, ...hit } = best;
+      void distance;
+      return hit;
+    },
+    // (the corkboard only)
+    boardAt(clientX, clientY) {
+      const hit = this.propAt(clientX, clientY);
+      return hit && (hit.kind === 'note' || hit.kind === 'board') ? hit : null;
+    },
     hitsMonitor(clientX, clientY) {
       if (solo) return false;
       const r = renderer.domElement.getBoundingClientRect();

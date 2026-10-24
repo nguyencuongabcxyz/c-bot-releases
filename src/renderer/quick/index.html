@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+  <title>Quick actions</title>
+  <link rel="stylesheet" href="../ui/theme.css" />
+  <script src="../ui/theme.js"></script>
+  <link rel="stylesheet" href="quick.css" />
+</head>
+<body>
+  <main id="qa" aria-label="Quick actions">
+    <header>
+      <h1 data-icon="sparkles">Quick actions</h1>
+      <span id="source" class="source" hidden></span>
+      <button id="btn-close" class="icon-btn" title="Close (Esc)" data-icon="x"></button>
+    </header>
+
+    <!-- what to do with the text -->
+    <nav id="actions" role="tablist" aria-label="Action">
+      <button role="tab" data-action="refine" data-icon="edit">Refine text</button>
+      <button role="tab" data-action="translate" data-icon="globe">Translate</button>
+      <button role="tab" data-action="explain" data-icon="help">Explain</button>
+      <button role="tab" data-action="summarise" data-icon="plan">Summarise</button>
+    </nav>
+
+    <!-- the text you selected (you can edit it, or paste some) -->
+    <section id="input">
+      <textarea id="text" rows="3" spellcheck="true" placeholder="Paste or type some text, then pick an action…" aria-label="Your text"></textarea>
+      <span id="count" class="count"></span>
+    </section>
+
+    <!-- the action's options -->
+    <section id="opts">
+      <div class="opt" data-for="refine">
+        <div id="styles" class="chips" role="radiogroup" aria-label="Style"></div>
+        <input id="custom" type="text" placeholder="Your own instruction (optional): e.g. sound more confident" aria-label="Your own instruction" />
+      </div>
+      <div class="opt" data-for="translate">
+        <div class="dir"><span id="dir-from"></span><button id="btn-swap" class="icon-btn" title="Translate the other way" data-icon="refresh"></button><span id="dir-to"></span></div>
+      </div>
+      <div class="opt" data-for="explain summarise">
+        <div class="chips" id="langs" role="radiogroup" aria-label="Answer in">
+          <span class="legend">Answer in</span>
+          <button data-lang="en" role="radio">English</button>
+          <button data-lang="vi" role="radio">Tiếng Việt</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- the answer, as it streams in -->
+    <section id="result">
+      <div class="result-head"><span class="legend" id="result-label">Result</span><span id="status" class="status"></span></div>
+      <div id="out" class="out" tabindex="0"></div>
+      <details id="changes" hidden>
+        <summary><span class="legend">What changed</span> <span id="changes-n" class="n"></span></summary>
+        <ul id="changes-list"></ul>
+      </details>
+    </section>
+
+    <footer>
+      <button id="btn-replace" class="primary" title="Put it back over your selection (Ctrl+Enter)" data-icon="check">Replace</button>
+      <button id="btn-copy" title="Copy the result (Ctrl+Shift+C)" data-icon="copy">Copy</button>
+      <button id="btn-again" title="Run it again" data-icon="refresh">Again</button>
+      <button id="btn-ask" title="Talk it over with the robot in a chat" data-icon="chat">Ask more</button>
+    </footer>
+  </main>
+
+  <script src="../../../node_modules/marked/marked.min.js"></script>
+  <script src="../../../node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="../ui/icons.js"></script>
+  <script src="quick.js"></script>
+</body>
+</html>

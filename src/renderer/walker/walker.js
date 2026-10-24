@@ -23,7 +23,7 @@
     office.setScale(k);
     stateEl.style.setProperty('--paint', c.color || '#5ac8fa');
     Object.assign(stateEl.dataset, {
-      body: c.body || 'loopy', glb: c.glb || '', glbTurn: String(c.glbTurn || 0), acc: c.accessory || 'none', name: c.name || '', theme: c.theme || 'classic',
+      body: 'kit', kit: JSON.stringify(c.kit || {}), acc: c.accessory || 'none', name: c.name || '', theme: c.theme || 'classic',
     });
     document.title = `${c.name} (out for a walk)`;
   }
@@ -133,6 +133,21 @@
   box.addEventListener('pointerup', endPress);
   box.addEventListener('pointercancel', endPress);
 
+  // dreaming of one of your words, mid-sleepwalk (main walker.js dream): it mumbles it
+  cbot.on('walker:dream', () => {
+    express('closed', 'talk', 2400);
+    setTimeout(() => express('closed', 'talk', 1600), 3600);
+  });
+  // a word bubble, visiting another robot (main social.js): it talks while it shows
+  const sayEl = document.querySelector('#say');
+  cbot.on('walker:say', ({ text, ms = 2600 }) => {
+    clearTimeout(sayEl.t);
+    sayEl.textContent = text;
+    sayEl.classList.toggle('show', !!text);
+    if (!text) return;
+    if (!asleep) express('happy', 'talk', Math.min(ms, 1800));
+    sayEl.t = setTimeout(() => sayEl.classList.remove('show'), ms);
+  });
   cbot.on('walker:state', setState);
   cbot.on('walker:character', look);
 
@@ -140,13 +155,7 @@
     const init = await cbot.invoke('walker:init');
     look(init.character);
     setState(init);
-    // drawn as itself (a model of your own loads first): it can take over from the desk now
-    if (stateEl.dataset.body === 'custom' && stateEl.dataset.glb) {
-      await new Promise((r) => {
-        stateEl.addEventListener('character-status', (e) => !e.detail?.loading && r(), { once: false });
-        setTimeout(r, 4000);
-      });
-    }
+    // drawn as itself: it can take over from the desk now
     // (a hidden window may get only a frame a second: one drawn frame, then a moment, is enough)
     const frames = (n) => new Promise((r) => (n ? requestAnimationFrame(() => frames(n - 1).then(r)) : r()));
     await frames(1);

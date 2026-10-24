@@ -1,0 +1,100 @@
+/* The notebook. Colours, fonts and icons: ../ui/theme.css and ../ui/icons.js. */
+:root { --done: var(--muted); }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; } /* (over the display: flex below) */
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { font: 13.5px/1.45 var(--font-ui); color: var(--fg); padding: 8px 8px 14px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.ic { width: 15px; height: 15px; }
+
+#book {
+  height: calc(100vh - 22px); display: flex; flex-direction: column; gap: 10px;
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow-pop);
+  padding: 0 14px 12px; overflow: hidden;
+  animation: pop-in 0.22s ease-out;
+}
+@keyframes pop-in { from { transform: scale(0.97) translateY(6px); opacity: 0; } }
+
+/* the title bar is where you drag the window from */
+header {
+  position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; -webkit-app-region: drag; user-select: none;
+  margin: 0 -14px; padding: 9px 8px 9px 14px; border-bottom: 1px solid var(--line);
+}
+h1 { margin: 0; font-family: var(--font-display); font-size: 14px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+h1 .ic { color: var(--accent); }
+.count { font: 600 10.5px/1.6 var(--font-mono); background: var(--accent-soft); color: var(--accent-ink); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 5px; padding: 0 6px; }
+.actions { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+.actions button { width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); display: grid; place-items: center; padding: 0; }
+.actions button:hover { background: var(--bg-2); color: var(--fg); }
+.menu {
+  position: absolute; right: 36px; top: 38px; z-index: 5; display: flex; flex-direction: column; min-width: 200px;
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow-pop); padding: 4px; -webkit-app-region: no-drag;
+}
+.menu button, .note-menu button { display: flex; align-items: center; gap: 9px; text-align: left; border: 0; background: transparent; padding: 6px 10px; border-radius: 7px; font-size: 12.5px; color: var(--fg-2); }
+.menu button .ic, .note-menu button .ic { width: 14px; height: 14px; color: var(--muted); }
+.menu button:hover, .menu button:focus-visible, .note-menu button:hover { background: var(--bg-2); color: var(--fg); outline: none; }
+
+/* the reminder banner */
+.reminder {
+  background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-left: 3px solid var(--accent);
+  border-radius: 9px; padding: 9px 11px;
+}
+.reminder p { margin: 0 0 8px; font-weight: 600; font-size: 13px; }
+.reminder-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.reminder-actions button {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line-2); border-radius: 7px; background: var(--bg); padding: 3px 10px; font-size: 12px; font-weight: 500; color: var(--fg-2);
+}
+.reminder-actions button .ic { width: 14px; height: 14px; color: var(--muted); }
+.reminder-actions button:hover { background: var(--bg-2); color: var(--fg); }
+.reminder-actions button.primary { background: var(--btn); color: var(--on-btn); border-color: transparent; }
+.reminder-actions button.primary .ic { color: inherit; }
+.reminder-actions button.primary:hover { filter: brightness(1.07); }
+
+/* adding one */
+#add {
+  display: flex; gap: 6px; align-items: flex-end; padding: 4px 4px 4px 2px;
+  background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 10px; transition: border-color 0.15s, box-shadow 0.15s;
+}
+#add:focus-within { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg); }
+#add-text { flex: 1; font: inherit; color: inherit; background: transparent; border: 0; padding: 6px 8px; resize: none; max-height: 120px; overflow-y: hidden; outline: none; }
+#add-text::placeholder, #filter::placeholder { color: var(--muted); }
+#filter { font: inherit; color: inherit; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 10px; outline: none; }
+#filter:focus { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg); }
+#btn-add { width: 30px; height: 30px; border: 0; border-radius: 7px; background: var(--btn); color: var(--on-btn); display: grid; place-items: center; padding: 0; flex: none; }
+#btn-add .ic { width: 16px; height: 16px; stroke-width: 2.4; }
+#btn-add:hover { filter: brightness(1.07); }
+
+/* the list */
+#list { flex: 1; overflow-y: auto; margin: 0 -8px; padding: 0 8px; }
+.group { margin: 12px 0 4px; font: 600 10.5px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.group button { border: 0; background: transparent; color: var(--muted); font: inherit; letter-spacing: inherit; text-transform: inherit; padding: 0; }
+.group button:hover { color: var(--fg); }
+.note { position: relative; display: flex; gap: 9px; align-items: flex-start; padding: 7px 6px; border-radius: 8px; border: 1px solid transparent; }
+.note:hover { background: var(--bg-2); border-color: var(--line); }
+.note.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { 0%, 40% { background: var(--accent-soft); } }
+.note input[type=checkbox] { margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--ok); flex: none; cursor: pointer; }
+.body { flex: 1; min-width: 0; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
+.note.important .text { font-weight: 600; }
+.note.important::before { content: ""; position: absolute; left: -1px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--danger); }
+.note.done .text { text-decoration: line-through; text-decoration-color: var(--line-2); color: var(--done); }
+.meta { font: 10.5px/1.6 var(--font-mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 0 10px; }
+.meta .old { color: var(--warn); font-weight: 600; }
+.meta .work { color: var(--accent-ink); font-weight: 600; }
+.note textarea { width: 100%; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 3px 6px; resize: none; outline: none; box-shadow: var(--ring); }
+.more { flex: none; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); opacity: 0; display: grid; place-items: center; padding: 0; }
+.note:hover .more, .more:focus-visible, .note.menu-open .more { opacity: 1; }
+.more:hover { background: var(--bg-3); color: var(--fg); }
+.note-menu { position: absolute; right: 4px; top: 32px; z-index: 4; display: flex; flex-direction: column; padding: 4px; min-width: 190px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow-pop); }
+.note-menu button.danger, .note-menu button.danger .ic { color: var(--danger); }
+.note-menu button.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.empty { margin: 28px 0; text-align: center; color: var(--muted); font-weight: 500; }
+.empty small { font-weight: 400; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center;
+  background: var(--fg); color: var(--bg); border-radius: 9px; padding: 5px 5px 5px 12px; font-size: 12.5px; box-shadow: var(--shadow-pop);
+}
+.toast button { border: 0; border-radius: 6px; background: var(--btn); color: var(--on-btn); font-weight: 600; padding: 3px 10px; }

@@ -29,7 +29,8 @@ export const SOLO = { feet: 0.9 };
 const HEADINGS = { toward: 0, left: -1.0, right: 1.0, away: Math.PI };
 // out walking, the empty chair is turned this far from the desk towards you (index.js, antics/walk.js)
 export const AWAY_TURN = 0.45;
-const GAITS = new Set(['stand', 'walk', 'sleepwalk', 'wave', 'look', 'sit', 'dangle', 'land']);
+// (talk, tiptoe, clap: visiting another robot's desk, main social.js)
+const GAITS = new Set(['stand', 'walk', 'sleepwalk', 'wave', 'look', 'sit', 'dangle', 'land', 'talk', 'tiptoe', 'clap']);
 const BLEND = 0.25; // seconds to switch gaits
 const LAND = 0.4; // the squash on being put down
 
@@ -379,6 +380,38 @@ export function createWalker({ world, emit, worldPoint, scale: deskScale }) {
         o.y += 0.012 * Math.abs(Math.sin(t * 5.5));
         break;
       }
+      case 'talk': {
+        // chatting at another robot's desk: hands talking, head bobbing along
+        standPose(o, rig, t);
+        const g = Math.sin(t * 3.2);
+        arm(o.armR, -0.9 + 0.35 * g, 0.35, -1.1 + 0.25 * Math.sin(t * 4.1));
+        arm(o.armL, -0.35 + 0.2 * Math.sin(t * 2.3 + 1), 0.2, -0.6);
+        o.head[0] = 0.05 * Math.sin(t * 5.3);
+        o.head[2] = 0.08 * Math.sin(t * 1.4);
+        o.tilt = 0.03 * g;
+        break;
+      }
+      case 'tiptoe': {
+        // creeping past a sleeping robot: small high steps on its toes, hands up by its chest
+        if (rig.plush) hopPose(o, rig, phase);
+        else stridePose(o, rig, phase);
+        o.y += 0.025 + 0.01 * Math.abs(Math.sin(phase));
+        arm(o.armL, -1.1, 0.25, -1.6);
+        arm(o.armR, -1.1, 0.25, -1.6);
+        o.lean = 0.12;
+        o.head[0] = 0.1;
+        break;
+      }
+      case 'clap': {
+        // cheering on a robot at work: little claps in front, a bounce
+        standPose(o, rig, t);
+        const c = Math.abs(Math.sin(t * 7));
+        arm(o.armL, -1.25, 0.18 + 0.32 * c, -1.0);
+        arm(o.armR, -1.25, 0.18 + 0.32 * c, -1.0);
+        o.y += 0.01 * c;
+        o.head[0] = -0.05;
+        break;
+      }
       case 'look': {
         // a hand shading its eyes, scanning the horizon left and right
         standPose(o, rig, t);
@@ -458,7 +491,7 @@ export function createWalker({ world, emit, worldPoint, scale: deskScale }) {
       const next = GAITS.has(d.gait) ? d.gait : 'stand';
       if (next !== gait) {
         copyPose(from, out);
-        const walking = gait === 'walk' || gait === 'sleepwalk';
+        const walking = gait === 'walk' || gait === 'sleepwalk' || gait === 'tiptoe';
         gait = next;
         blend = 0;
         changedAt = t;
@@ -469,6 +502,7 @@ export function createWalker({ world, emit, worldPoint, scale: deskScale }) {
       const speed = pose(want, t, d);
       if (gait === 'walk') phase += dt * Math.PI * 2 * speed; // a cycle is two steps: 2 steps/s at speed 1
       else if (gait === 'sleepwalk') phase += dt * Math.PI * 2 * 0.5 * speed;
+      else if (gait === 'tiptoe') phase += dt * Math.PI * 2 * 0.6 * speed;
       mixPose(out, from, want, smooth(blend));
       if (gait === 'land') {
         // put down: squash on touching down, spring back up and settle (on top of the blend,

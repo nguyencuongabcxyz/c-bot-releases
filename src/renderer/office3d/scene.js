@@ -120,6 +120,11 @@ export function buildOffice(theme = THEMES.classic) {
   monitor.add(screenLight);
   top.add(monitor);
 
+  // ---- sticky notes on the monitor's frame, shared by the features that put things
+  // in sight: each kind has its own edge (English words on the left, notes on the right),
+  // up to three notes stacked down it
+  const stickies = buildStickies(monitor, office);
+
   // ---- keyboard + mouse
   const keyboard = new THREE.Group();
   keyboard.position.copy(LAYOUT.keyboard);
@@ -166,6 +171,50 @@ export function buildOffice(theme = THEMES.classic) {
   lampLight.position.set(0.2, 0.3, 0.15);
   lamp.add(lampLight);
   top.add(lamp);
+
+  // ---- the word box: an index-card box between the monitor and the mug, filling
+  // up with cards as you collect English words (hidden until the first one)
+  const wordBox = new THREE.Group();
+  wordBox.position.set(0.0, deskTop, -1.24);
+  wordBox.rotation.y = -0.25;
+  const boxMat = toon('#7fb7e6');
+  const boxDark = toon('#4f86b8');
+  wordBox.add(mesh(new THREE.BoxGeometry(0.17, 0.012, 0.11), boxDark, 0, 0.006, 0));
+  for (const [w, d, x, z] of [[0.17, 0.012, 0, 0.049], [0.17, 0.012, 0, -0.049], [0.012, 0.11, 0.079, 0], [0.012, 0.11, -0.079, 0]]) {
+    wordBox.add(mesh(new THREE.BoxGeometry(w, 0.07, d), boxMat, x, 0.035, z));
+  }
+  const tag = canvasTexture(96, 40, (ctx) => {
+    ctx.fillStyle = '#fffdf5';
+    roundRect(ctx, 4, 4, 88, 32, 8);
+    ctx.fill();
+    ctx.fillStyle = '#1d2235';
+    ctx.font = '800 22px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ABC', 48, 21);
+  });
+  const tagMesh = mesh(new THREE.PlaneGeometry(0.07, 0.03), noOutline(new THREE.MeshToonMaterial({ map: tag.tex, transparent: true })), 0, 0.04, 0.0562);
+  wordBox.add(tagMesh);
+  const cardMat = toon('#fffdf5');
+  const cardTip = toon('#ff8fab');
+  const cards = [];
+  for (let i = 0; i < 10; i++) {
+    const card = new THREE.Group();
+    card.position.set(0, 0.05 + (i % 3) * 0.006, -0.04 + i * 0.009);
+    card.rotation.x = -0.18 + (i % 2) * 0.08;
+    card.add(mesh(new THREE.BoxGeometry(0.15, 0.09, 0.003), cardMat));
+    card.add(mesh(new THREE.BoxGeometry(0.15, 0.012, 0.0035), cardTip, 0, 0.039, 0));
+    card.visible = false;
+    wordBox.add(card);
+    cards.push(card);
+  }
+  wordBox.visible = false;
+  top.add(wordBox);
+  // how many words there are: one card showing for each, up to ten
+  const setWordCount = (n) => {
+    wordBox.visible = n > 0;
+    cards.forEach((card, i) => (card.visible = i < n));
+  };
 
   // ---- swivel chair: the base stays put, the top (seat + back + robot) spins
   const chair = new THREE.Group();
@@ -255,7 +304,145 @@ export function buildOffice(theme = THEMES.classic) {
     },
     screen: { ...screen, material: screenMat, light: screenLight, led },
     lamp: { group: lamp, light: lampLight, bulb: bulbMat },
+    // the English word box: setCount(n) shows it with a card for each word (up to ten)
+    wordBox: { group: wordBox, setCount: setWordCount },
+    stickies, // sticky notes on the monitor: see buildStickies
     mug,
     keyboard,
+  };
+}
+
+// ---------------------------------------------------------------- sticky notes
+
+// Sticky notes on the monitor's frame, one edge per kind of thing (STICKY_SIDES),
+// up to three down each edge, half on the frame and half hanging off it.
+//   stickies.set(kind, items)  items [{ id, text, sub?, color? }]: what that edge shows
+//   stickies.objects           the meshes, for a raycast (index.js stickyAt)
+//   stickies.lookup(mesh)      -> { kind, id } for one of them (or null)
+//   stickies.peel(kind, id)    takes that note off the frame and returns it (a Group in
+//                              office space, where it was) for an antic to fling; it's the
+//                              antic's to dispose of. The edge closes up at the next set().
+//   stickies.hover(kind, id)   the note under the mouse ('' for none): it pops up bigger,
+//                              straightens and comes in towards the screen's middle
+//   stickies.update(dt)        every frame (the zoom springs); true while something's moving
+const STICKY_SIDES = { vocab: -1, note: 1 };
+const STICKY = { size: 0.19, slots: 3, colors: { vocab: '#bfe7ff', note: '#fff2a8' } };
+const ZOOM = { scale: 2.6, inward: 0.2, out: 0.08, stiff: 260, damp: 17 }; // hovered: how big, how far in and out, its spring
+function stickyTexture(text, sub, color) {
+  return canvasTexture(160, 160, (ctx, w, h) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.07)'; // the sticky strip along the top
+    ctx.fillRect(0, 0, w, 26);
+    ctx.fillStyle = '#1d2235';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let size = 34;
+    ctx.font = `800 ${size}px "Segoe UI", sans-serif`;
+    while (size > 14 && ctx.measureText(text).width > w - 16) {
+      size -= 2;
+      ctx.font = `800 ${size}px "Segoe UI", sans-serif`;
+    }
+    ctx.fillText(text, w / 2, sub ? 66 : 84);
+    if (!sub) return;
+    ctx.fillStyle = 'rgba(29,34,53,0.75)';
+    ctx.font = '600 17px "Segoe UI", sans-serif';
+    const words = sub.split(' ');
+    const lines = [];
+    let line = '';
+    for (const part of words) {
+      const next = line ? `${line} ${part}` : part;
+      if (ctx.measureText(next).width > w - 18 && line) {
+        lines.push(line);
+        line = part;
+      } else line = next;
+    }
+    if (line) lines.push(line);
+    lines.slice(0, 3).forEach((l, i) => ctx.fillText(i === 2 && lines.length > 3 ? l + '…' : l, w / 2, 104 + i * 20));
+  });
+}
+function buildStickies(monitor, office) {
+  const rack = new THREE.Group();
+  rack.position.set(0, 0.68, 0.034); // the frame's face (see the monitor above)
+  monitor.add(rack);
+  const shown = {}; // kind -> [{ id, group, mesh, base: { x, y, z, rz }, zoom, vel, side }]
+  const objects = [];
+  const owner = new Map(); // mesh -> { kind, id }
+  let hovered = { kind: '', id: '' };
+  function clear(kind) {
+    for (const n of shown[kind] || []) {
+      n.group.removeFromParent();
+      n.mesh.material.map.dispose();
+      n.mesh.material.dispose();
+      n.mesh.geometry.dispose();
+      owner.delete(n.mesh);
+      objects.splice(objects.indexOf(n.mesh), 1);
+    }
+    shown[kind] = [];
+  }
+  return {
+    objects,
+    set(kind, items = []) {
+      const side = STICKY_SIDES[kind];
+      if (!side) return;
+      const list = items.slice(0, STICKY.slots);
+      const key = JSON.stringify(list.map((x) => [x.id, x.text, x.sub, x.color]));
+      if (shown[kind]?.key === key) return;
+      clear(kind);
+      shown[kind].key = key;
+      list.forEach((item, i) => {
+        const group = new THREE.Group();
+        // stacked down the edge, each a little askew, half over the frame
+        group.position.set(side * (0.49 + STICKY.size * 0.1), 0.2 - i * (STICKY.size + 0.015), 0.002 + i * 0.001);
+        group.rotation.z = side * (0.06 + 0.05 * ((i * 7) % 3)) * (i % 2 ? -1 : 1);
+        const base = { x: group.position.x, y: group.position.y, z: group.position.z, rz: group.rotation.z };
+        const tex = stickyTexture(String(item.text || ''), String(item.sub || ''), item.color || STICKY.colors[kind]);
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(STICKY.size, STICKY.size), glow('#ffffff', { map: tex.tex, side: THREE.DoubleSide })); // lit: readable in a dark room too
+        mesh.castShadow = true;
+        group.add(mesh);
+        rack.add(group);
+        shown[kind].push({ id: item.id, group, mesh, base, side, zoom: 0, vel: 0 });
+        objects.push(mesh);
+        owner.set(mesh, { kind, id: item.id });
+      });
+    },
+    lookup(mesh) {
+      return owner.get(mesh) || null;
+    },
+    hover(kind = '', id = '') {
+      hovered = { kind, id };
+    },
+    update(dt) {
+      let moving = false;
+      const step = Math.min(dt, 1 / 30);
+      for (const [kind, list] of Object.entries(shown)) {
+        for (const n of list) {
+          const want = hovered.kind === kind && hovered.id === n.id ? 1 : 0;
+          // a springy pop: it overshoots a little and settles
+          n.vel += ((want - n.zoom) * ZOOM.stiff - n.vel * ZOOM.damp) * step;
+          n.zoom += n.vel * step;
+          if (Math.abs(want - n.zoom) < 0.001 && Math.abs(n.vel) < 0.001) {
+            n.zoom = want;
+            n.vel = 0;
+          } else moving = true;
+          const z = n.zoom;
+          n.group.scale.setScalar(1 + (ZOOM.scale - 1) * Math.max(0, z));
+          n.group.position.set(n.base.x - n.side * ZOOM.inward * z, n.base.y - 0.05 * z, n.base.z + ZOOM.out * z);
+          n.group.rotation.z = n.base.rz * (1 - Math.min(1, Math.max(0, z)));
+          n.mesh.renderOrder = z > 0.01 ? 5 : 0; // over the rest of the desk while it's up
+        }
+      }
+      return moving;
+    },
+    peel(kind, id) {
+      const n = (shown[kind] || []).find((x) => x.id === id);
+      if (!n) return null;
+      office.attach(n.group); // keeps it where it is, now in office space
+      owner.delete(n.mesh);
+      objects.splice(objects.indexOf(n.mesh), 1);
+      shown[kind] = shown[kind].filter((x) => x !== n);
+      shown[kind].key = ''; // the next set() lays the edge out again
+      return n.group;
+    },
   };
 }

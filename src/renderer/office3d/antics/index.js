@@ -12,6 +12,9 @@ import { PRANKS } from './pranks.js';
 import { SLEEPY } from './sleepy.js';
 import { NIGHT } from './night.js';
 import { WALK } from './walk.js';
+import { NOTES } from './notes.js';
+import { VOCAB } from './vocab.js';
+import { SOCIAL } from './social.js';
 
 // Antics: the little things a robot does when nobody's asking it anything
 // (sipping coffee, sneezing, snoring a snot bubble…). The page starts one by
@@ -46,7 +49,7 @@ import { WALK } from './walk.js';
 // The standing desk's height lives outside antics (awake.js liftTick): an antic
 // sets c.set.office.userData.lift.deskTo / seatTo and the desk motors there.
 // Modules may also export tick(c) for things that live outside one antic (the nightcap).
-const HANDLERS = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS, ...SLEEPY, ...NIGHT, ...WALK };
+const HANDLERS = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS, ...SLEEPY, ...NIGHT, ...WALK, ...VOCAB, ...NOTES, ...SOCIAL };
 const TICKS = [awakeTick, asleepTick, critterTick, calendarTick].filter(Boolean);
 
 const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
@@ -197,7 +200,7 @@ export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }) {
       if (run && (away || run.asleep !== asleep || run.robot !== robot)) finish();
 
       const c = {
-        t, dt, body: d.body || 'loopy', robot, set, emit, worldPoint, mix, toward, THREE,
+        t, dt, body: 'kit', robot, set, emit, worldPoint, mix, toward, THREE,
         antic: run?.name || '', // what's playing (ticks use it, e.g. the standing desk comes down otherwise)
         camYaw, monitorYaw, curYaw, mugHome, lampHome, asleep, nightcap: d.nightcap === '1',
         lateNight: d.lateNight === '1', // awake past 10 pm: hood up (calendar.js)

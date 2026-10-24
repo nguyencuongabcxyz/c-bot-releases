@@ -1,0 +1,167 @@
+/* The word card. Colours, fonts and icons: ../ui/theme.css and ../ui/icons.js; the accent
+   is the robot's paint (set by card.js). */
+:root {
+  --paint: #5ac8fa; /* (the accent is this, as the theme tones it: ../ui/theme.css) */
+  --surface-2: var(--bg-2);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: transparent; overflow: hidden; }
+body { font: 14px/1.5 var(--font-ui); color: var(--fg); padding: 8px 8px 14px; } /* as the chat panel sits in its window */
+
+#card {
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+  animation: pop-in 0.22s ease-out;
+  user-select: text; position: relative;
+  height: calc(100vh - 22px); overflow-y: auto; /* as tall as the window, like the chat */
+  display: flex; flex-direction: column; padding: 16px 20px 12px;
+}
+/* a thin strip of the robot's paint along the top */
+#card::before { content: ""; position: sticky; top: -16px; display: block; height: 3px; margin: -16px -20px 13px; background: var(--accent); border-radius: 14px 14px 0 0; flex: none; z-index: 2; }
+@keyframes pop-in { from { transform: scale(0.97) translateY(6px); opacity: 0; } }
+header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+h1 { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+h2 { margin: 14px 0 4px; font: 600 10.5px/1.3 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+button { font: inherit; color: inherit; cursor: pointer; }
+.icon { background: none; border: 0; padding: 4px; border-radius: 7px; color: var(--muted); display: inline-grid; place-items: center; line-height: 1; }
+.icon:hover { background: var(--bg-2); color: var(--fg); }
+#ipa { color: var(--muted); font: 13px var(--font-mono); min-height: 1em; margin-top: 2px; }
+
+#loading { margin: 12px 0 4px; color: var(--muted); font: 12px var(--font-mono); animation: blink 1.2s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: 0.45; } }
+#card:not(.looking):not(.more) #loading { display: none; }
+/* the meaning is in and the rest is coming: no editing until it's all there */
+#card.more footer #edit, #card.more footer #ask { display: none; }
+#card.looking #examples-box, #card.looking footer #edit, #card.looking footer #ask { display: none; }
+#card.failed #examples-box, #card.failed #senses { display: none; }
+#failed p { margin: 8px 0; color: var(--danger); }
+
+#senses { margin: 10px 0 0; padding-left: 22px; }
+#senses li { margin: 5px 0; }
+#senses li::marker { color: var(--muted); font: 12px var(--font-mono); }
+.pos { display: inline-block; font: 10.5px var(--font-mono); color: var(--muted); margin-right: 5px; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; vertical-align: 1px; }
+.vi { font-weight: 600; }
+.en { display: block; color: var(--muted); font-size: 12.5px; }
+#examples { margin: 0; padding-left: 18px; }
+#examples li { margin: 6px 0; }
+.ex-vi { display: block; color: var(--muted); font-size: 12.5px; font-style: italic; }
+mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+.mini { font-size: 11px; padding: 1px 3px; opacity: 0.6; }
+.mini:hover { opacity: 1; }
+#tip { margin: 12px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); border-left: 2px solid var(--accent); font-size: 13px; }
+#tip:empty { display: none; }
+#found { margin: 8px 0 0; font: 11px var(--font-mono); color: var(--muted); }
+#found:empty { display: none; }
+
+footer {
+  display: flex; align-items: center; gap: 6px; margin-top: auto; flex-wrap: wrap; /* at the bottom of the card */
+  position: sticky; bottom: -12px; background: var(--bg); padding: 10px 0 4px; border-top: 1px solid var(--line); /* in view on a long card */
+}
+footer button, #older button, #refresh, #retry {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 7px; padding: 4px 10px; font-size: 12.5px; font-weight: 500; color: var(--fg-2);
+}
+footer button .ic, #older button .ic { width: 14px; height: 14px; color: var(--muted); }
+footer button:hover, #older button:hover, #retry:hover { background: var(--bg-2); border-color: color-mix(in srgb, var(--accent) 60%, var(--line-2)); color: var(--fg); }
+#note { margin-left: auto; font: 11px var(--font-mono); color: var(--muted); }
+
+.editing [contenteditable] { outline: 1px dashed color-mix(in srgb, var(--accent) 80%, var(--line-2)); border-radius: 4px; outline-offset: 2px; }
+#card.removed { opacity: 0.5; transition: opacity 0.3s; }
+
+/* tabs: the meaning, similar & opposite words, the word family (a segmented control) */
+#tabs { display: inline-flex; gap: 2px; margin: 14px 0 2px; padding: 3px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; align-self: flex-start; }
+#tabs button {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 0; border-radius: 6px; padding: 3px 10px; font-size: 12.5px; font-weight: 500; color: var(--muted);
+}
+#tabs button .ic { width: 14px; height: 14px; }
+#tabs button:hover { color: var(--fg); }
+#tabs button.on { color: var(--fg); background: var(--bg); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 0 0 1px var(--line); }
+#tabs .n { font: 10.5px var(--font-mono); opacity: 0.7; }
+#card.looking #tabs, #card.failed #tabs, #card.looking .pane, #card.failed .pane { display: none; }
+
+/* the common phrases, each with its example */
+#phrases { margin: 0; padding-left: 18px; }
+#phrases li { margin: 8px 0; }
+#phrases li::marker { color: var(--accent); }
+.phrase { font-weight: 600; }
+.ph-vi { color: var(--muted); font-size: 12.5px; }
+.ph-ex { display: block; margin-top: 2px; }
+#forms-box:not(.has), #phrases-box:not(.has), #examples-box:not(.has) { display: none; }
+.dash { color: var(--muted); }
+
+.words { list-style: none; margin: 2px 0 6px; padding: 0; }
+.words li { padding: 7px 0; border-bottom: 1px solid var(--line); }
+.words li:last-child { border-bottom: 0; }
+.words .w { display: flex; align-items: center; gap: 4px; }
+.words b { font-size: 14.5px; font-weight: 600; }
+.words .pos { margin-left: 4px; }
+.words .vi { font-weight: 600; font-size: 13px; }
+.words .note, .words .ex { color: var(--muted); font-size: 12.5px; }
+.words .ex { font-style: italic; }
+.words .none { color: var(--muted); font-size: 12.5px; border: 0; }
+.add { margin-left: auto; font-weight: 700; border: 1px solid var(--line-2) !important; min-width: 22px; height: 22px; }
+.add.done { opacity: 1; color: var(--ok); cursor: default; border-color: color-mix(in srgb, var(--ok) 40%, transparent) !important; }
+#older { margin: 10px 0 0; padding: 9px 11px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); font-size: 13px; }
+#older p { margin: 0 0 6px; color: var(--muted); }
+
+/* a verb's forms: five tiles, each says its form when clicked */
+#forms { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 4px; }
+.form {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 4px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; min-width: 0;
+}
+.form:hover { border-color: color-mix(in srgb, var(--accent) 70%, var(--line-2)); background: var(--accent-soft); }
+.form-w { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; text-align: center; }
+.form-l { font: 10px var(--font-mono); color: var(--muted); text-align: center; }
+.badge { margin-left: 6px; padding: 0 6px; border-radius: 4px; font: 600 10px/1.6 var(--font-mono); letter-spacing: 0.06em; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); vertical-align: 1px; }
+
+/* the quiz: the word first (front), the whole card once you ask for the meaning (back) */
+#quiz-top, #quiz-front, .quiz-btn { display: none; }
+#card.quiz #quiz-top, #card.dream #dream-top {
+  display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font: 600 10.5px/1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-ink);
+}
+#card.quiz #quiz-top::before, #card.dream #dream-top::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: blink 1.4s ease-in-out infinite; }
+#card.quiz-front #quiz-front { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; flex: 1; margin: 12px 0 18vh; }
+#card.quiz-front header, #card.quiz-front #ipa { align-self: center; text-align: center; }
+#card.quiz-front header { margin-top: 14vh; }
+#card.quiz-front h1 { font-size: 38px; }
+#card.quiz-front #tabs, #card.quiz-front .pane, #card.quiz-front #older, #card.quiz-front #found,
+#card.quiz footer #ask, #card.quiz footer #edit, #card.quiz footer #undo, #card.quiz footer #save, #card.quiz #note { display: none !important; }
+#card.quiz-front footer .quiz-btn#later, #card.quiz-back .quiz-btn { display: inline-flex; }
+#reveal {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 600; padding: 9px 20px; border-radius: 9px; border: 0;
+  background: var(--btn); color: var(--on-btn); box-shadow: var(--shadow);
+}
+#reveal:hover { filter: brightness(1.06); }
+#reveal:active { transform: translateY(1px); }
+#hint { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--muted); font-size: 12.5px; }
+#hint:hover { color: var(--fg); }
+#hint .ic { width: 14px; height: 14px; }
+#quiz-hint { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); font-style: italic; text-align: center; max-width: 100%; }
+#knew { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); font-weight: 600; }
+#knew:hover { background: color-mix(in srgb, var(--ok) 10%, transparent); }
+#forgot { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); font-weight: 600; }
+#forgot:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+#quiz-result { margin: 12px 0 0; padding: 8px 12px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); font-weight: 500; text-align: center; }
+
+/* a dream (a sleeping robot dreams of one of your words): a small card with the word,
+   its meaning and one example; Details opens the whole card */
+#dream-top, #dream-box, #details, #knowit { display: none; }
+#card.dream { height: auto; max-height: calc(100vh - 22px); }
+#card.dream::before { background: var(--violet); }
+#card.dream #dream-top { color: var(--violet); }
+#card.dream #dream-top::before { background: var(--violet); box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 18%, transparent); }
+#card.dream #dream-box { display: block; }
+#card.dream #tabs, #card.dream .pane, #card.dream #older, #card.dream #found, #card.dream #loading,
+#card.dream footer #ask, #card.dream footer #edit, #card.dream footer #undo, #card.dream footer #save, #card.dream #note { display: none !important; }
+#card.dream footer #details, #card.dream footer #knowit { display: inline-flex; }
+#card.dream footer { margin-top: 12px; }
+#dream-vi { margin: 10px 0 8px; font-size: 16px; font-weight: 600; }
+#dream-ex { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line); }
+#dream-ex .ex-vi { margin-top: 2px; }
+#details { background: var(--btn) !important; color: var(--on-btn) !important; border-color: transparent !important; font-weight: 600 !important; }
+#details .ic { color: inherit !important; }
+#card.known-it #knowit { opacity: 0.6; pointer-events: none; }

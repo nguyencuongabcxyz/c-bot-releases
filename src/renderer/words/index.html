@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>My words — C-Bot</title>
+  <link rel="stylesheet" href="../ui/theme.css" />
+  <script src="../ui/theme.js"></script>
+  <link rel="stylesheet" href="words.css" />
+</head>
+<body>
+  <header>
+    <h1 data-icon="book">My words</h1>
+    <button id="quiz" class="primary" title="A robot quizzes you on a word now" data-icon="cards">Quiz me now</button>
+  </header>
+  <section id="stats" aria-label="How it's going"></section>
+  <div id="tools">
+    <input id="search" type="search" placeholder="Search a word or a meaning…" autocomplete="off" />
+    <label class="sort">Sort
+      <select id="sort">
+        <option value="newest">Newest</option>
+        <option value="az">A–Z</option>
+        <option value="next">Next dream</option>
+        <option value="progress">Progress</option>
+      </select>
+    </label>
+  </div>
+  <div id="filters" role="radiogroup">
+    <button data-filter="all" class="on">All <span class="n"></span></button>
+    <button data-filter="due" data-icon="clock">Due <span class="n"></span></button>
+    <button data-filter="learning" data-icon="sprout">Learning <span class="n"></span></button>
+    <button data-filter="learnt" data-icon="check">Learnt <span class="n"></span></button>
+  </div>
+  <ul id="list"></ul>
+  <p id="empty" hidden></p>
+  <footer>
+    <label class="switch"><input id="reminders" type="checkbox" /> Dream about my words during the day</label>
+    <label>from <select id="from"></select></label>
+    <label>to <select id="to"></select></label>
+    <span class="grow"></span>
+    <button id="export" title="A CSV file you can import into Anki or Quizlet" data-icon="download">Export</button>
+  </footer>
+  <script src="../ui/icons.js"></script>
+  <script src="words.js"></script>
+</body>
+</html>
