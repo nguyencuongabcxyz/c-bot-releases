@@ -530,7 +530,7 @@
       el.prepend(box);
     }
     if (tools?.length || asides?.length) {
-      const row = toolChips(tools || []);
+      const row = toolChips(tools || [], tab);
       for (const a of asides || []) row.appendChild(asideChip(a));
       el.prepend(row);
     }
@@ -541,12 +541,16 @@
     return el;
   }
 
-  // compact chips for a finished turn: "📖 Read ×3"
-  function toolChips(tools) {
+  // the steps of a finished turn: one chip each (click for the details); older history kept just
+  // their names, as compact chips: "📖 Read ×3"
+  function toolChips(tools, tab) {
     const row = document.createElement('div');
     row.className = 'tools';
     const counts = new Map();
-    for (const t of tools) counts.set(t, (counts.get(t) || 0) + 1);
+    for (const t of tools) {
+      if (t && typeof t === 'object') row.appendChild(callChip({ ...t, running: false }, tab));
+      else counts.set(t, (counts.get(t) || 0) + 1);
+    }
     for (const [entry, n] of counts) {
       // "Skill(anthropic-skills:pptx)" -> 🎓 Skill: pptx (anthropic-skills)
       const [, name, detail] = entry.match(/^(\w+)\((.+)\)$/) || [null, entry, ''];
@@ -559,6 +563,33 @@
       row.appendChild(chip);
     }
     return row;
+  }
+
+  // a tool step's look: "mcp__claude_ai_Excalidraw__create_view" -> 🧩 Excalidraw: create_view
+  function toolLook(name, detail) {
+    const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
+    const [emoji, verb, activity] = TOOLS[name] || (mcp ? ['🧩', `${serverLabel(mcp[1])}: ${mcp[2]}`, 'run'] : ['🛠️', `Using ${name}`, 'run']);
+    const text = `${verb}${detail ? ' ' + detail : ''}`;
+    return { emoji, verb, activity, mcp: !!mcp, text, label: `${emoji} ${text}` };
+  }
+  // a step's chip: clicking it shows what it was called with and what it gave back (a helper
+  // agent's opens the helper instead)
+  function callChip(call, tab) {
+    const look = toolLook(call.name, call.detail);
+    const chip = document.createElement('span');
+    chip.className = 'tool clickable';
+    chip.dataset.kind = look.activity;
+    if (call.id) chip.dataset.call = call.id;
+    if (call.isError) chip.classList.add('failed');
+    chip.innerHTML = `${Icon(TOOL_ICONS[look.activity] || (look.mcp ? 'plug' : 'wrench'))}<span></span>`;
+    chip.lastChild.textContent = look.text;
+    chip.title = `${look.label} (click for the details)`;
+    chip.tabIndex = 0;
+    chip.setAttribute('role', 'button');
+    const open = () => ((call.name === 'Agent' || call.name === 'Task') && tab?.agents?.has(call.id) ? openHelper(tab, call.id) : openToolView(tab, call));
+    chip.addEventListener('click', open);
+    chip.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open()));
+    return chip;
   }
 
   // A file Claude Code changed, shown the way its terminal does: the file, +/- counts,
@@ -1077,21 +1108,14 @@
 
       case 'tool': {
         if (!cur) return;
-        // "mcp__claude_ai_Excalidraw__create_view" -> 🧩 Excalidraw: create_view
-        const mcp = /^mcp__(.+?)__(.+)$/.exec(ev.name);
-        const [emoji, verb, activity] = TOOLS[ev.name] || (mcp ? ['🧩', `${serverLabel(mcp[1])}: ${mcp[2]}`, 'run'] : ['🛠️', `Using ${ev.name}`, 'run']);
-        const label = `${emoji} ${verb}${ev.detail ? ' ' + ev.detail : ''}`;
-        const chip = document.createElement('span');
-        chip.className = 'tool';
-        // (the chip: a line icon for the kind of step, then what it did; the status line keeps the emoji)
-        chip.dataset.kind = activity;
-        chip.innerHTML = `${Icon(TOOL_ICONS[activity] || (mcp ? 'plug' : 'wrench'))}<span></span>`;
-        chip.lastChild.textContent = `${verb}${ev.detail ? ' ' + ev.detail : ''}`;
-        chip.title = label;
+        const { label, activity } = toolLook(ev.name, ev.detail);
+        // (the chip: a line icon for the kind of step, then what it did; click it for the details)
+        const call = { id: ev.id, name: ev.name, detail: ev.detail, args: ev.args, running: true };
+        if (ev.id) (tab.calls ||= new Map()).set(ev.id, call);
+        const chip = callChip(call, tab);
         if ((ev.name === 'Agent' || ev.name === 'Task') && ev.id) {
           chip.classList.add('agent-chip');
           chip.title = `${label} (click to watch it work)`;
-          chip.addEventListener('click', () => openHelper(tab, ev.id));
         }
         cur.tools.appendChild(chip);
         cur.toolStatus = label;
@@ -1106,6 +1130,16 @@
           Sfx.tool();
         }
         scrollDown(tab);
+        break;
+      }
+
+      case 'tool-output': {
+        // what a step gave back: on its chip (an error shows), and in its details if they're open
+        const call = tab.calls?.get(ev.id);
+        if (!call) break;
+        Object.assign(call, { output: ev.text, isError: ev.isError, running: false });
+        for (const chip of tab.log.querySelectorAll('.tool[data-call]')) if (chip.dataset.call === ev.id) chip.classList.toggle('failed', !!ev.isError);
+        if (helperView.call === call) renderToolView();
         break;
       }
 
@@ -1430,7 +1464,7 @@
     if (!menuEl.hidden) closeMenu();
     else if (!paletteEl.hidden) hidePalette();
     else if (history.isOpen()) history.escape();
-    else if (helperView.id) closeHelper();
+    else if (helperView.id || helperView.call) closeHelper();
     else if (active()?.busy) stopTab(active()); // like Claude Code: Esc interrupts
     else sleep();
   });
@@ -2117,7 +2151,7 @@
   // Helper agents (sub-agents) Claude Code sends out, each with its own card:
   // what it's doing right now, how far it got, and its report when it's back.
   const helpersEl = $('#helpers');
-  const helperView = { id: null, tab: null, timer: 0 };
+  const helperView = { id: null, call: null, tab: null, timer: 0 }; // (call: a tool step's details instead)
   const AGENT_ICON = { completed: 'check', failed: 'alert', killed: 'stop', stopped: 'stop' };
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const elapsed = (a) => {
@@ -2263,9 +2297,93 @@
     helperView.timer = setInterval(() => helperView.tab?.agents?.get(helperView.id)?.status === 'running' && renderHelperView(), 1000);
   }
 
+  // One tool step up close (the same panel as a helper): what it was called with, field by
+  // field, and what it gave back. Asking another robot shows the whole question and answer.
+  function openToolView(tab, call) {
+    if (history.isOpen()) history.close();
+    clearInterval(helperView.timer);
+    helperView.id = null;
+    helperView.call = call;
+    helperView.tab = tab;
+    document.body.classList.add('helper-open');
+    $('#helper-view').hidden = false;
+    renderToolView();
+    $('#hv-body').scrollTop = 0;
+  }
+  // (the fields that are prose: shown as markdown)
+  const PROSE = new Set(['message', 'details', 'prompt', 'description', 'question', 'title']);
+  function renderToolView() {
+    const c = helperView.call;
+    if (!c) return closeHelper();
+    const look = toolLook(c.name, c.detail);
+    Icon.text($('#hv-title'), look.label);
+    const bodyEl = $('#hv-body');
+    const status = c.running ? 'running' : c.isError ? 'failed' : 'completed';
+    const missing = c.trimmed ? 'Not kept in the saved history (it was too big).' : 'Not recorded for this step.';
+    bodyEl.innerHTML = `
+      <div class="hv-meta"><span class="pill-${status}"></span><span class="hv-kind"></span></div>
+      <div class="tv-head"><h4>Input</h4><button type="button" class="tv-copy" data-copy="args" data-icon="copy">Copy</button></div>
+      <div class="tv-args"></div>
+      <div class="tv-head"><h4>${c.isError ? 'Error' : 'Result'}</h4><button type="button" class="tv-copy" data-copy="output" data-icon="copy" hidden>Copy</button></div>
+      <div class="tv-out"></div>`;
+    Icon.text(bodyEl.querySelector(`.pill-${status}`), { running: '⏳ Working', failed: '⚠️ Error', completed: '✅ Done' }[status]);
+    bodyEl.querySelector('.hv-kind').textContent = c.name;
+    // the input, field by field
+    const argsEl = bodyEl.querySelector('.tv-args');
+    const args = c.args && typeof c.args === 'object' ? c.args : null;
+    if (!args) argsEl.innerHTML = `<p class="hv-empty">${missing}</p>`;
+    else if (!Object.keys(args).length) argsEl.innerHTML = '<p class="hv-empty">(none)</p>';
+    else {
+      for (const [k, v] of Object.entries(args)) {
+        const row = document.createElement('div');
+        row.className = 'tv-field';
+        const key = document.createElement('div');
+        key.className = 'tv-key';
+        key.textContent = k.replace(/_/g, ' ');
+        const val = document.createElement('div');
+        if (typeof v === 'string' && PROSE.has(k) && v.length > 40) {
+          val.className = 'tv-val hv-words';
+          val.innerHTML = md(v);
+        } else if (typeof v !== 'object' && String(v).length <= 120 && !String(v).includes('\n')) {
+          val.className = 'tv-val inline';
+          val.textContent = String(v);
+        } else {
+          val.className = 'tv-val block';
+          val.textContent = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+        }
+        row.append(key, val);
+        argsEl.appendChild(row);
+      }
+    }
+    // what it gave back
+    const outEl = bodyEl.querySelector('.tv-out');
+    if (c.running) outEl.innerHTML = '<p class="hv-empty">Still working on it…</p>';
+    else if (c.output === undefined || c.output === null) outEl.innerHTML = `<p class="hv-empty">${missing}</p>`;
+    else if (!c.output) outEl.innerHTML = '<p class="hv-empty">(nothing)</p>';
+    else {
+      bodyEl.querySelector('[data-copy="output"]').hidden = false;
+      // another robot's answer reads as its message; everything else as the tool gave it
+      if (/^mcp__cbot__/.test(c.name) && !c.isError) {
+        outEl.className = 'tv-out hv-words';
+        outEl.innerHTML = md(c.output);
+      } else {
+        outEl.className = `tv-out block${c.isError ? ' error' : ''}`;
+        outEl.textContent = c.output;
+      }
+    }
+    for (const b of bodyEl.querySelectorAll('.tv-copy')) {
+      b.addEventListener('click', () => {
+        const text = b.dataset.copy === 'args' ? JSON.stringify(c.args ?? {}, null, 2) : String(c.output ?? '');
+        navigator.clipboard.writeText(text).then(() => showPop('Copied! 📋', 1200), () => {});
+      });
+    }
+    Icon.fill(bodyEl);
+  }
+
   function closeHelper() {
     clearInterval(helperView.timer);
     helperView.id = null;
+    helperView.call = null;
     helperView.tab = null;
     $('#helper-view').hidden = true;
     document.body.classList.remove('helper-open');
@@ -2609,7 +2727,7 @@
     renderTabs();
     renderTodo();
     renderHelpers();
-    if (helperView.id && helperView.tab !== next) closeHelper();
+    if ((helperView.id || helperView.call) && helperView.tab !== next) closeHelper();
     renderBrain();
     loadBrain(next);
     scrollDown(next);

@@ -342,6 +342,11 @@ body.busy .who::before { background: var(--accent); box-shadow: 0 0 0 3px var(--
 .tool[data-kind="agent"] .ic { color: var(--violet); }
 .tool[data-kind="plan"] .ic { color: var(--ok); }
 .tool.aside { font: italic 12px/1.4 var(--font-ui); color: var(--fg-2); border-style: dashed; white-space: normal; }
+/* a step you can click for its details (robot.js callChip) */
+.tool.clickable { cursor: pointer; }
+.tool.clickable:hover, .tool.clickable:focus-visible { background: var(--bg-3); border-color: var(--line-2); color: var(--fg); outline: none; }
+.tool.failed { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
+.tool.failed .ic { color: var(--danger); }
 .denied { font-size: 12px; color: var(--danger); margin-top: 6px; }
 
 /* local files in answers: pictures show, paths and links open the file */
@@ -602,6 +607,23 @@ body.helper-open #helpers, body.helper-open #attachments { display: none; }
 .hv-empty { color: var(--muted); font-style: italic; font-size: 12.5px; }
 .hv-words { font-size: 13px; }
 .hv-words > :first-child { margin-top: 0; }
+/* one tool step up close (robot.js renderToolView): its input field by field, and its result */
+.tv-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tv-head .tv-copy { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: 11px var(--font-ui); padding: 1px 7px; cursor: pointer; }
+.tv-head .tv-copy:hover { background: var(--bg-2); color: var(--fg); }
+.tv-head .tv-copy .ic { width: 12px; height: 12px; }
+.tv-field { display: grid; grid-template-columns: minmax(70px, max-content) 1fr; gap: 2px 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.tv-field:last-child { border-bottom: 0; }
+.tv-key { font: 600 11px/1.9 var(--font-mono); color: var(--muted); }
+.tv-val { min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.tv-val.inline { font: 12px/1.9 var(--font-mono); color: var(--fg); }
+.tv-val.block, .tv-out.block {
+  font: 12px/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 9px; max-height: 340px; overflow-y: auto;
+}
+.tv-val.hv-words { background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.tv-out.block { max-height: none; }
+.tv-out.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
 
 /* ------------------------------------------------------------- brain bar */
 

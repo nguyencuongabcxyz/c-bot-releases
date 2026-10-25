@@ -166,6 +166,7 @@ const TASK_TOOLS = ['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
  *   status(text) · task({op, id, subject, activeForm, status}) · question({requestId, questions})
  *   edit({id, file, created, added, removed, hunks: [{oldStart, newStart, lines}], truncated})
  *   tool-result({id, result: {content, structuredContent, isError}}) for MCP tools (whose tool event carries input)
+ *   tool-output({id, text, isError}) for every tool (whose tool event carries args): what it gave back
  *   compact({phase, pre, post}) · commands([{name, description}]) · tools({version, tools})
  *   done({turnId, text, asides, costUsd, isError, interrupted, denials, sessionId}) · fail({turnId, message, sessionMissing})
  * and exit() when the process goes away. Turns Claude Code starts by itself (a
@@ -529,7 +530,7 @@ class ClaudeSession extends EventEmitter {
             // MCP tools also pass their input on: some come with a view that draws from it
             const mcp = block.name.startsWith('mcp__');
             if (mcp) (this.mcpToolIds ||= new Set()).add(block.id);
-            this.emit('tool', { name: block.name, detail: describeTool(block.name, block.input), id: block.id, ...(mcp ? { input: block.input || {} } : {}) });
+            this.emit('tool', { name: block.name, detail: describeTool(block.name, block.input), id: block.id, args: block.input || {}, ...(mcp ? { input: block.input || {} } : {}) });
           } else if (block.type === 'text' && !this.streamedMessages?.has(m.id)) {
             // Fallback when partial messages aren't streamed.
             this._separate();
@@ -542,6 +543,8 @@ class ClaudeSession extends EventEmitter {
         for (const block of Array.isArray(msg.message?.content) ? msg.message.content : []) {
           if (block.type !== 'tool_result') continue;
           this._toolResult(block);
+          // what the tool gave back, as Claude read it (the chat shows it when you click the step)
+          this.emit('tool-output', { id: block.tool_use_id, text: outputText(block.content), isError: !!block.is_error });
           // a file it changed: show the diff, like Claude Code's terminal
           const diff = block.is_error ? null : editDiff(msg.tool_use_result);
           if (diff) this.emit('edit', { id: block.tool_use_id, ...diff });
@@ -669,6 +672,13 @@ class ClaudeSession extends EventEmitter {
     this.turn = null;
     for (const t of turns) this.emit('fail', { turnId: t.id, message, ...extra });
   }
+}
+
+// a tool result's content as text: its text parts, a mark for each picture, the tools it loaded
+function outputText(content) {
+  if (typeof content === 'string') return content;
+  const part = (x) => (x.type === 'text' ? x.text || '' : x.type === 'image' ? '[picture]' : x.type === 'tool_reference' ? `Loaded the tool ${x.tool_name || x.name || ''}`.trim() : x.type ? `[${x.type}]` : '');
+  return (content || []).map(part).filter(Boolean).join('\n');
 }
 
 function resultText(content) {

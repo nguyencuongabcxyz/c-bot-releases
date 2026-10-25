@@ -456,8 +456,11 @@ function sessionFor(id, tabId) {
   session.on('aside', (text) => tell(id, tabId, { type: 'aside', text }));
   session.on('question', (q) => tell(id, tabId, { type: 'question', ...q }));
   session.on('thinking', () => tell(id, tabId, { type: 'thinking' }));
-  session.on('tool', ({ input, ...tool }) => {
-    tell(id, tabId, { type: 'tool', ...tool });
+  session.on('tool', ({ input, args, ...tool }) => {
+    // what it was called with (click the step in the chat to see it), and a smaller copy kept with the answer
+    tell(id, tabId, { type: 'tool', ...tool, args: clip(args, CALL_LIVE) });
+    const kept = (session.turnCalls ||= []);
+    if (kept.length < CALL_KEEP.calls) kept.push({ id: tool.id, name: tool.name, detail: tool.detail, args: clip(args, CALL_KEEP) });
     if (!input) return;
     // an MCP tool: if it comes with its own view (an MCP App), show it in the chat
     const call = { name: tool.name, input };
@@ -468,6 +471,12 @@ function sessionFor(id, tabId) {
       call.view = view;
       if (session.mcpCalls.get(tool.id) === call) tell(id, tabId, { type: 'app', id: tool.id, ...view, input, result: call.result });
     });
+  });
+  // what a tool gave back: to the chat (its step shows it), and trimmed with the answer
+  session.on('tool-output', ({ id: callId, text, isError }) => {
+    tell(id, tabId, { type: 'tool-output', id: callId, text: cut(text, CALL_LIVE.output), isError });
+    const call = session.turnCalls?.find((c) => c.id === callId);
+    if (call) Object.assign(call, { output: cut(text, CALL_KEEP.output), isError: isError || undefined });
   });
   session.on('tool-result', ({ id: callId, result }) => {
     const call = session.mcpCalls?.get(callId);
@@ -521,6 +530,7 @@ function sessionFor(id, tabId) {
     const edits = session.turnEdits?.length ? session.turnEdits : undefined;
     session.turnEdits = [];
     const apps = takeApps(session);
+    const tools = takeCalls(session);
     const images = takeImages(session);
     const cur = store.get(id);
     if (!cur) return;
@@ -528,7 +538,7 @@ function sessionFor(id, tabId) {
       const ev = session.lastCompact || {};
       store.pushHistory(id, tabId, { role: 'note', text: ev.pre ? `🗜️ Compacted my memory: ${Math.round(ev.pre / 1000)}k → ${Math.round(ev.post / 1000)}k tokens` : '🗜️ Compacted my memory' });
     } else {
-      store.pushHistory(id, tabId, { role: 'assistant', text: result.text, asides: result.asides, isError: result.isError, denials: result.denials, interrupted: result.interrupted, edits, apps, images });
+      store.pushHistory(id, tabId, { role: 'assistant', text: result.text, asides: result.asides, isError: result.isError, denials: result.denials, interrupted: result.interrupted, edits, apps, images, tools });
     }
     if (result.sessionId) store.updateTab(id, tabId, { sessionId: result.sessionId });
     store.update(id, { stats: { ...cur.stats, costUsd: (cur.stats?.costUsd || 0) + result.costUsd } });
@@ -549,8 +559,9 @@ function sessionFor(id, tabId) {
     const edits = session.turnEdits?.length ? session.turnEdits : undefined;
     session.turnEdits = [];
     const apps = takeApps(session);
+    const tools = takeCalls(session);
     const images = takeImages(session);
-    if (!err.cancelled) store.pushHistory(id, tabId, { role: 'assistant', text: err.message, isError: true, edits, apps, images });
+    if (!err.cancelled) store.pushHistory(id, tabId, { role: 'assistant', text: err.message, isError: true, edits, apps, images, tools });
     tell(id, tabId, { type: 'fail', ...err });
   });
   return session;
@@ -570,6 +581,37 @@ function takeApps(session) {
 }
 
 // Pictures MCP tools returned this turn (already capped when they arrived).
+// Each step's input and output: shown when you click it in the chat. Live they're cut at
+// CALL_LIVE; kept with the answer in history, smaller (CALL_KEEP), so the store file stays light.
+const CALL_LIVE = { text: 20000, output: 40000 };
+const CALL_KEEP = { text: 1500, output: 2500, calls: 60, total: 40000 };
+const cut = (s, n) => {
+  s = String(s ?? '');
+  return s.length > n ? `${s.slice(0, n)}\n… (${(s.length - n).toLocaleString('en')} more characters)` : s;
+};
+// a tool's arguments with every long string cut
+function clip(v, limits, depth = 0) {
+  if (typeof v === 'string') return cut(v, limits.text);
+  if (!v || typeof v !== 'object' || depth > 6) return v;
+  if (Array.isArray(v)) return v.slice(0, 200).map((x) => clip(x, limits, depth + 1));
+  return Object.fromEntries(Object.entries(v).slice(0, 100).map(([k, x]) => [k, clip(x, limits, depth + 1)]));
+}
+function takeCalls(session) {
+  const calls = session.turnCalls || [];
+  session.turnCalls = [];
+  // (over the budget, the latest steps lose their output first, then their input)
+  let size = JSON.stringify(calls).length;
+  for (let i = calls.length - 1; i >= 0 && size > CALL_KEEP.total; i--) {
+    for (const k of ['output', 'args']) {
+      if (calls[i][k] === undefined || size <= CALL_KEEP.total) continue;
+      size -= JSON.stringify(calls[i][k]).length;
+      calls[i][k] = undefined;
+      calls[i].trimmed = true;
+    }
+  }
+  return calls.length ? calls : undefined;
+}
+
 function takeImages(session) {
   const kept = session.turnImages || [];
   session.turnImages = [];
