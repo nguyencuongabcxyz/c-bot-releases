@@ -78,6 +78,8 @@ function describeTool(name, input = {}) {
       return skillLabel(input.skill || input.name);
     case 'mcp__cbot__ask_robot': // (robotLink.js: asking another robot)
       return `${input.robot || ''}: ${short(input.message, 48)}`;
+    case 'mcp__cbot__hand_off_task': // (robotLink.js: handing another robot some work)
+      return `${input.robot || ''}: ${short(input.title, 48)}`;
     default:
       return '';
   }
@@ -171,10 +173,10 @@ const TASK_TOOLS = ['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
  */
 class ClaudeSession extends EventEmitter {
   // (mcpConfig: an --mcp-config file to add (the other robots' tools), allowedTools: tools it may use
-  // without asking, env: extra environment for Claude Code)
-  constructor({ claudePath, cwd, sessionId, systemPrompt, permissionMode, model, effort, addDirs = [], tools = null, mcpConfig = '', allowedTools = [], env = {} }) {
+  // without asking, env: extra environment for Claude Code, extraArgs: more command-line flags)
+  constructor({ claudePath, cwd, sessionId, systemPrompt, permissionMode, model, effort, addDirs = [], tools = null, mcpConfig = '', allowedTools = [], env = {}, extraArgs = [] }) {
     super();
-    this.opts = { claudePath, cwd, systemPrompt, permissionMode, model, effort, addDirs: [...addDirs], tools, mcpConfig, allowedTools, env };
+    this.opts = { claudePath, cwd, systemPrompt, permissionMode, model, effort, addDirs: [...addDirs], tools, mcpConfig, allowedTools, env, extraArgs };
     this.sessionId = sessionId || null;
     this.queue = []; // turns waiting: { id, prompt }
     this.turn = null; // the turn being answered
@@ -204,7 +206,7 @@ class ClaudeSession extends EventEmitter {
   }
 
   start() {
-    const { claudePath, cwd, systemPrompt, permissionMode, model, effort, addDirs, tools, mcpConfig, allowedTools, env } = this.opts;
+    const { claudePath, cwd, systemPrompt, permissionMode, model, effort, addDirs, tools, mcpConfig, allowedTools, env, extraArgs } = this.opts;
     // stdin stays open: questions go in as stream-json messages, and tool
     // permission requests come back to us ("stdio") so questions can be answered
     const args = [
@@ -223,6 +225,7 @@ class ClaudeSession extends EventEmitter {
     // the other robots' tools (robotLink.js), usable without asking
     if (mcpConfig) args.push('--mcp-config', mcpConfig);
     if (allowedTools?.length) args.push('--allowedTools', allowedTools.join(','));
+    if (extraArgs?.length) args.push(...extraArgs);
 
     this.stderr = '';
     this.costSoFar = 0;

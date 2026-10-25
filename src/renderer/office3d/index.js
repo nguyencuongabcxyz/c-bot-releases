@@ -248,7 +248,8 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     const lively = solo
       ? walker.lively || dragging || particles.length > 0
       : dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics.active || !!stateEl.dataset.propHover || !!stateEl.dataset.stickyHover || stickiesMoving || REACTIONS.some((r) => stateEl.classList.contains(r));
-    const fps = lively ? 30 : awake ? 12 : 6;
+    // (its robot's in the group chat's meeting room: the empty desk needs only the odd frame)
+    const fps = stateEl.dataset.meeting === '1' && !dragging ? 2 : lively ? 30 : awake ? 12 : 6;
     if ((document.hidden && !solo) || now - lastFrame < 1000 / fps - 2) return; // (a walker draws while still hidden, to take over seamlessly)
     lastFrame = now;
     // the shadows follow every frame while something moves; sitting or sleeping, twice a second

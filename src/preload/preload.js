@@ -7,7 +7,7 @@ const INVOKE = new Set([
   'robot:unqueue', 'robot:send-now', 'robot:brain', 'robot:set-brain', 'robot:compact',
   'robot:app-view', 'robot:app-page', 'robot:app-call', 'robot:open-link', 'robot:app-window', 'appview:init', 'robot:open-file',
   'robot:wander', 'robot:wander-prep', 'walker:init',
-  'robot:vocab-save', 'robot:vocab-open', 'robot:vocab-quiz', 'robot:vocab-quiz-me', 'robot:vocab-words', 'robot:vocab-dream', 'robot:vocab-box', 'robot:screen-ask', 'palette:init', 'palette:pick', 'palette:close', 'card:init', 'card:act',
+  'robot:vocab-save', 'robot:tasks', 'robot:vocab-open', 'robot:vocab-quiz', 'robot:vocab-quiz-me', 'robot:vocab-words', 'robot:vocab-dream', 'robot:vocab-box', 'robot:screen-ask', 'palette:init', 'palette:pick', 'palette:close', 'card:init', 'card:act',
   'snip:init', 'snip:done', 'snip:cancel',
   'notes:open', 'notes:add', 'notes:act', 'notes:remind-open', 'notebook:init', 'notebook:act',
   'quick:init', 'quick:run', 'quick:act', 'quick:open-blank',
@@ -20,7 +20,7 @@ const LISTEN = new Set([
   'mgr:changed', 'mgr:focus', 'walker:state', 'walker:character', 'walker:cursor', 'walker:dream', 'robot:vocab', 'card:word', 'words:changed',
   'robot:notes', 'notebook:notes', 'notebook:open', 'theme:changed', 'robot:screen', 'palette:open', 'drone:cmd', 'robot:palette',
   'quick:open', 'quick:text', 'robot:quick',
-  'robot:social', 'walker:say', 'plane:pose', 'robot:link',
+  'robot:social', 'walker:say', 'plane:pose', 'robot:link', 'robot:tasks',
 ]);
 
 contextBridge.exposeInMainWorld('cbot', {

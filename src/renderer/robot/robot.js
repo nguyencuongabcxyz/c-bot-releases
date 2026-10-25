@@ -53,6 +53,7 @@
     // asking another robot (main robotLink.js)
     mcp__cbot__ask_robot: ['🤖', 'Asking', 'agent'],
     mcp__cbot__list_robots: ['🤖', 'Looking for the other robots', 'agent'],
+    mcp__cbot__hand_off_task: ['📋', 'Handing off', 'agent'],
   };
   // a tool chip's line icon, by the kind of step (../ui/icons.js)
   const TOOL_ICONS = { read: 'file', search: 'search', run: 'terminal', edit: 'edit', web: 'globe', agent: 'bot', plan: 'plan', ask: 'help', think: 'wrench' };
@@ -3194,12 +3195,54 @@
     }
   }
 
+  // ---- the group chat's meeting room (main groupChat.js / meeting.js)
+  // It gets up from its chair and leaves (it rolls into the meeting room's window there); the
+  // desk stands empty, drawn only now and then (office3d: data-meeting). When the chat's over
+  // it's straight back in its chair, ready for work.
+  const MEETING_NOTE = '👥 In the meeting room (group chat)';
+  function toMeeting(tries = 0) {
+    if (state.meeting) return;
+    // (out for a walk: main's calling it back first)
+    if (state.away || state.leaving) return void (tries < 24 && setTimeout(() => toMeeting(tries + 1), 500));
+    state.meeting = true;
+    stopAntic();
+    const leave = () => {
+      if (!state.meeting) return;
+      stopAntic();
+      state.away = true;
+      robot.dataset.away = '1';
+      robot.dataset.meeting = '1';
+      state.news = state.awayNews = MEETING_NOTE;
+      renderWorking();
+    };
+    // up out of the chair and turned to go, then gone (straight away if it's in the middle of work)
+    if (state.busy || helpersOut() || state.mirroring) return leave();
+    antic('stepout');
+    setTimeout(leave, 900);
+  }
+  function fromMeeting() {
+    if (!state.meeting) return;
+    state.meeting = false;
+    robot.dataset.meeting = '';
+    stopAntic(); // (still getting up)
+    if (state.away) {
+      state.away = false;
+      robot.dataset.away = '';
+      awayNote.classList.remove('show');
+      if (state.news === MEETING_NOTE) state.news = '';
+      renderWorking();
+    }
+    state.lastActivity = Date.now();
+  }
+
   // the empty desk was clicked: it waves from wherever it is
   const awayNote = $('#away-note');
   function awayClick() {
-    cbot.send('robot:walker', 'wave');
     const name = state.character?.name || 'Your robot';
-    awayNote.textContent = state.visiting?.mode === 'lunch'
+    if (!state.meeting) cbot.send('robot:walker', 'wave');
+    awayNote.textContent = state.meeting
+      ? `👥 ${name} is in the meeting room for the group chat. It's back at its desk as soon as the chat ends.`
+      : state.visiting?.mode === 'lunch'
       ? `🍜 ${name} is out for lunch with ${state.visiting.host}. Click ${name} to call it back, or drag it here.`
       : state.visiting
       ? `🚶 ${name} is visiting ${state.visiting.host}. Click ${name} to call it back, or drag it here.`
@@ -3698,7 +3741,8 @@
       cue(0.3, () => express('closed', 'o', 1400));
       cue(2.2, () => showPop(quip('eyebreak') || '20-20-20!', 2000));
     } else if (idleAwake() && boredFor > 6000 && Date.now() > anticUntil && Math.random() < 0.9) awakeAntic(boredFor);
-    if (state.awake && !state.busy && !helpersOut() && !state.mirroring && !input.value && boredFor > AUTO_SLEEP_MS) {
+    // (never while its chat is open: you may be reading it, or about to type)
+    if (state.awake && state.collapsed && !state.busy && !helpersOut() && !state.mirroring && !input.value && boredFor > AUTO_SLEEP_MS) {
       stopAntic();
       showPop(pick(persona().sleepy), 1500);
       express('closed', 'o', 1500);
@@ -4003,7 +4047,7 @@
         antic('clockout');
         cue(0.3, () => express('closed', 'o', 1300));
         cue(0.6, () => showPop(quip('notesClockout') || 'Good work today! 😴', 1600));
-        cue(2.45, () => sleep());
+        cue(2.45, () => state.collapsed && sleep()); // (with its chat open it stays up)
         break;
       case 'ask':
         askInNewTab(ev.prompt, ev.note?.id || '', { draft: !!ev.draft });
@@ -4357,8 +4401,9 @@
     if (ev.phase !== 'incoming') return;
     const fail = (error) => cbot.send('robots:answer', { reqId: ev.reqId, error });
     // (out walking: main's calling it back to its desk)
-    for (let i = 0; i < 60 && state.away; i++) await new Promise((r) => setTimeout(r, 100));
-    if (state.away) return fail("it's out for a walk and didn't come back to its desk");
+    // (in the group chat's meeting room it still answers, from its chat)
+    for (let i = 0; i < 60 && state.away && !state.meeting; i++) await new Promise((r) => setTimeout(r, 100));
+    if (state.away && !state.meeting) return fail("it's out for a walk and didn't come back to its desk");
     if (!state.awake) wake({ sayHi: false, tucked: true }); // (its chat stays tucked away: you see it working)
     let tab = [...tabs.values()].find((t) => t.exchange === ev.exchange);
     if (!tab) {
@@ -4371,13 +4416,64 @@
     }
     activateTab(tab.id);
     tab.linkReq = ev.reqId;
+    if (ev.task) {
+      tab.task = ev.task.id; // (its desk tag opens this tab)
+      cbot.invoke('robot:tab-rename', tab.id, `📋 ${ev.task.title}`);
+    }
     if (state.awake) {
       Sfx.pop();
-      showPop(`📨 ${ev.from} asks…`, 1800);
+      showPop(ev.task ? `📋 ${ev.from} handed me a task!` : `📨 ${ev.from} asks…`, 1800);
     }
     input.value = ev.text;
     await submit();
   }
+
+  // ------------------------------------------------------------ handed-off tasks
+  // Work one robot handed another (main robotLink.js hand_off_task): a tag on both desks.
+  // Here, "⏳ From Lead: Add /orders"; on Lead's desk, "⏳ To BE: Add /orders" (✅ when done).
+  // A click opens the chat (the task's own tab, on the robot doing it). A finished task's
+  // tag stays a little while (main drops it), and the one who handed it off says so.
+  const tasksEl = $('#tasks');
+  const TASK_STATE = { sent: ['✈️', 'on its way'], working: ['⏳', 'working'], done: ['✅', 'done'], failed: ['⚠️', "couldn't do it"], cancelled: ['✖️', 'cancelled'] };
+  let shownTasks = new Map(); // id -> status, to notice a change
+  function renderTasks(list = []) {
+    tasksEl.replaceChildren();
+    const next = new Map();
+    for (const t of list.slice(-3)) {
+      next.set(t.id, t.status);
+      const [icon, word] = TASK_STATE[t.status] || TASK_STATE.sent;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = `task-chip ${t.status}${t.mine ? ' mine' : ''}`;
+      chip.textContent = `${icon} ${t.mine ? 'From' : 'To'} ${t.other}: ${t.title}`;
+      chip.title = `${t.mine ? `A task from ${t.other}` : `Handed to ${t.other}`}: ${t.title} (${word})${t.report && t.status !== 'working' ? `\n\n${t.report}` : ''}`;
+      chip.addEventListener('pointerdown', (e) => e.stopPropagation()); // (not a drag or a poke)
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTask(t);
+      });
+      tasksEl.appendChild(chip);
+      // the one who handed it off hears how it went
+      const was = shownTasks.get(t.id);
+      if (!t.mine && was && was !== t.status && state.awake && !state.away) {
+        if (t.status === 'done') {
+          Sfx.done();
+          showPop(`✅ ${t.other} finished: ${t.title}`, 2600);
+        } else if (t.status === 'failed') showPop(`⚠️ ${t.other} couldn't finish: ${t.title}`, 2600);
+      }
+    }
+    shownTasks = next;
+    tasksEl.hidden = !list.length;
+  }
+  function openTask(t) {
+    if (state.away) return awayClick();
+    const tab = t.mine ? [...tabs.values()].find((x) => x.task === t.id) : null;
+    if (!state.awake) wake({ sayHi: false });
+    else openChat();
+    if (tab) activateTab(tab.id);
+  }
+  cbot.on('robot:tasks', renderTasks);
+  cbot.invoke('robot:tasks').then(renderTasks, () => {});
 
   // ------------------------------------------------------------ quick actions
   // Quick actions on text you selected (main quickWindow.js): while Claude refines or sums
@@ -4678,6 +4774,9 @@
   cbot.on('robot:action', (action) => {
     if (action === 'sleep') sleep();
     else if (action === 'wake') wake();
+    else if (action === 'wake-tucked') wake({ sayHi: false, tucked: true }); // (main groupChat.js: the chat stays put away)
+    else if (action === 'meeting') toMeeting();
+    else if (action === 'meeting-end') fromMeeting();
     else if (action === 'reset') cbot.invoke('robot:reset', activeId);
     else if (action === 'new-tab') {
       if (!state.awake) wake({ sayHi: false });

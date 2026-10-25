@@ -97,6 +97,21 @@ body.asleep #pop { display: none; }
 #away-note.show { opacity: 1; transform: translateX(-50%) scale(1); }
 body.dragging #nametag { opacity: 0; }
 
+/* work handed between robots: small tags at the top of the robot box (they show asleep too) */
+#tasks { position: absolute; left: 6px; right: 6px; top: 4px; z-index: 6; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; pointer-events: none; }
+#tasks[hidden] { display: none; }
+.task-chip {
+  pointer-events: auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+  font: 600 11px/1.3 var(--font-mono, monospace); color: var(--fg); background: var(--bg); padding: 3px 9px;
+  border: 1.5px solid var(--line-2); border-radius: 999px; box-shadow: var(--shadow);
+}
+.task-chip:hover { border-color: var(--accent); }
+.task-chip.working { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.task-chip.done { border-color: var(--ok); }
+.task-chip.failed { border-color: var(--danger); }
+.task-chip.cancelled { opacity: 0.6; }
+body.dragging #tasks { opacity: 0; }
+
 /* thought bubble for the robot's running commentary (cartoon, like the robot) */
 #aside {
   position: absolute; z-index: 6; max-width: 220px; width: max-content;

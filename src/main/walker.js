@@ -22,6 +22,10 @@ const PAUSES = {
   awake: [['stand', 1.5, 3.5], ['look', 2.5, 4], ['wave', 1.6, 2.2], ['sit', 5, 9]],
   asleep: [['stand', 2.5, 5], ['sit', 6, 11]],
 };
+// a stroll lasts this long (seconds), then it walks back to its desk by itself
+// (put down somewhere else, it gets a fresh stroll from there)
+const ROAM = [120, 240];
+const BACK_LINES = ['Back to work! 💼', 'Break over!', 'Better get back to my desk…', 'OK, back to it! 💻'];
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -92,6 +96,15 @@ function createWalkers({ robots, sizeOf, preload, guardNavigation, onChange, onC
     if (w.win.isDestroyed()) return close(w.id);
     if (w.held) return;
     const now = Date.now();
+    // the stroll's over: it heads back to its desk (not while on an errand or standing for one)
+    if (w.roamUntil && now > w.roamUntil && !w.errand && w.pauseUntil !== Infinity) {
+      w.roamUntil = 0;
+      const feet = homeFeet(w);
+      if (feet) {
+        if (!w.asleep) send(w, 'walker:say', { text: pick(BACK_LINES), ms: 2200 });
+        errandTo(w, feet, { onArrive: () => dock(w.id) });
+      }
+    }
     if (w.pauseUntil) {
       if (now < w.pauseUntil) return;
       w.pauseUntil = 0;
@@ -210,6 +223,7 @@ function createWalkers({ robots, sizeOf, preload, guardNavigation, onChange, onC
     const wa = area(w);
     w.target = { x: Math.min(w.x + rand(260, 520) * w.k, wa.x + wa.width - w.box.w), y: Math.min(Math.max(w.y + rand(-60, 60), wa.y), wa.y + wa.height - w.box.h) };
     if (errand?.to) errandTo(w, errand.to, errand);
+    w.roamUntil = errand ? 0 : Date.now() + rand(...ROAM) * 1000; // (an errand's own code sends it home)
     if (w.ready) takeOver(w);
     else w.handoff = setTimeout(() => takeOver(w), 3000); // (if the page never says it's ready)
     return w;
@@ -320,6 +334,7 @@ function createWalkers({ robots, sizeOf, preload, guardNavigation, onChange, onC
         setGait(w, 'land', 'toward');
         w.target = { x: w.x, y: w.y };
         w.pauseUntil = Date.now() + 1500;
+        w.roamUntil = Date.now() + rand(...ROAM) * 1000; // (a fresh stroll from where it was put)
       }
     });
     // a click (no drag): it waves at you

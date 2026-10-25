@@ -21,13 +21,14 @@ const { createSnipper } = require('./snip');
 const { createReminders, acceptsNotifications } = require('./reminders');
 const { createSocial } = require('./social');
 const { createPlanes } = require('./plane');
-const { createRobotLink, TOOLS: LINK_TOOLS } = require('./robotLink');
+const { createRobotLink, TASK_TIMEOUT, TOOLS: LINK_TOOLS } = require('./robotLink');
 const { createWordCard } = require('./wordCard');
 const { Notes, createNoteReminders, NOTE_DEFAULTS } = require('./notes');
 const { createNotebook } = require('./notebook');
 const { createQuickWindow } = require('./quickWindow');
 const { createPalette } = require('./palette');
 const { createDrone } = require('./drone');
+const { createGroupChat } = require('./groupChat');
 
 // MCP tool views (e.g. an Excalidraw drawing) are served on their own origin, sandboxed in the chat
 // and local pictures (an SVG Claude made, a chart it saved) are shown through cbot-file:
@@ -77,6 +78,7 @@ let reminders = null; // when a robot quizzes you on a word (reminders.js)
 let snipper = null; // drag a box round a word you can't select (snip.js)
 let palette = null; // the one-hotkey menu of everything (palette.js)
 let drone = null; // the robot's drone, which flies the menu over to you (drone.js)
+let groupChat = null; // robots talking a topic over together (groupChat.js)
 let droneOut = false; // it's out, hovering over the menu
 let snipFor = null; // { kind: 'word' | 'ask', robotId, source } while you're dragging that box
 const robots = new Map(); // id -> { win, expanded, anchor, drag, chatW, resize }
@@ -418,7 +420,7 @@ function sessionFor(id, tabId) {
     // the other robots, to ask (robotLink.js): its tools, usable without asking, and time to wait for an answer
     mcpConfig: robotLink?.mcpConfigFile(id) || '',
     allowedTools: robotLink ? LINK_TOOLS : [],
-    env: { MCP_TOOL_TIMEOUT: String(11 * 60_000) },
+    env: { MCP_TOOL_TIMEOUT: String(TASK_TIMEOUT + 60_000) }, // (a handed-off task may take a while)
   });
   sessions.set(key, session);
   const turns = new Map(); // turnId -> { prompt, kind, retried }
@@ -839,6 +841,7 @@ function refreshTray() {
     ...chars.filter((c) => walkers?.has(c.id)).map((c) => ({ label: `🚶  Call ${c.name} back to the desk`, click: () => walkers.dock(c.id) })),
     { label: '🛠️ Robot Workshop…', click: () => openManager() },
     { label: '➕ New robot…', click: () => openManager('new') },
+    { label: '👥 Robot group chat…', enabled: chars.filter((c) => c.visible).length >= 2, click: () => groupChat.open({ hostId: nearestRobot(), size: store.settings.groupChatSize }) },
     { type: 'separator' },
     // the features
     paletteHotkeyOk
@@ -2048,6 +2051,9 @@ function registerIpc() {
     // (off to visit another robot's desk: social.js has its errand)
     return !!walkers.go(id, { asleep: !!asleep, feet: at, errand: social?.errandFor(id) });
   });
+  // the tasks a robot handed off or was handed (robotLink.js), for its desk after a reload
+  ipcMain.handle('robot:tasks', (event) => robotLink?.tasksFor(idFromSender(event)) || []);
+
   // a robot's answer to another robot's message (robot.js; robotLink.js hands it back)
   ipcMain.on('robots:answer', (event, r = {}) => {
     const id = idFromSender(event);
@@ -2162,6 +2168,11 @@ function registerIpc() {
       { label: '📁 Open folder', click: () => shell.openPath(c.folder) },
       { type: 'separator' },
       // the features
+      {
+        label: groupChat.inChat(id) ? '👥 Group chat (in it now)…' : '👥 Start a group chat…',
+        enabled: store.list().filter((o) => o.visible).length >= 2,
+        click: () => groupChat.open({ hostId: id, size: store.settings.groupChatSize }),
+      },
       { label: `✨ Quick actions on text… (${quickHotkey()})`, click: () => openQuick({ text: clipboard.readText().trim().slice(0, 12000), robotId: id }) },
       notesMenu,
       wordsMenu,
@@ -2392,12 +2403,15 @@ app.whenReady().then(() => {
     store,
     statusOf: (id) => (walkers.has(id) ? 'out for a walk' : robotBusy(id) ? 'busy working' : social?.peek(id)?.awake === false ? 'asleep' : 'awake'),
     // the message flies over as a paper plane; the asked robot takes it on in a tab of its own chat
-    onAsk: ({ from, to, reqId, exchange, first, text }) => {
+    onAsk: ({ from, to, reqId, exchange, first, text, task }) => {
       const hand = (id, up) => {
         const r = robotRect(id);
         return r && { x: r.x + r.width / 2, y: r.y + r.height * (up ? 0.3 : 0.42) };
       };
-      const deliver = () => sendToRobot(to, 'robot:link', { phase: 'incoming', reqId, exchange, first, from: store.get(from)?.name || '', text });
+      const deliver = () => {
+        sendToRobot(to, 'robot:link', { phase: 'incoming', reqId, exchange, first, from: store.get(from)?.name || '', text, task });
+        robotLink.started(reqId); // (a task: it's being worked on now)
+      };
       if (walkers.has(to)) walkers.dock(to); // (out walking: back to its desk first)
       const a = hand(from, false);
       const b = hand(to, true);
@@ -2408,6 +2422,10 @@ app.whenReady().then(() => {
       const r1 = robotRect(to);
       const r2 = robotRect(from);
       if (r1 && r2 && planes) planes.fly({ from: { x: r1.x + r1.width / 2, y: r1.y + r1.height * 0.42 }, to: { x: r2.x + r2.width / 2, y: r2.y + r2.height * 0.3 } });
+    },
+    // a handed-off task changed: both robots' desks show it
+    onTasks: (ids) => {
+      for (const id of new Set(ids)) sendToRobot(id, 'robot:tasks', robotLink.tasksFor(id));
     },
   });
   social = createSocial({
@@ -2424,10 +2442,29 @@ app.whenReady().then(() => {
       return r && !r.win.isDestroyed() ? { x: r.anchor.x, y: r.anchor.y, width: r.dims.w, height: r.dims.h } : null;
     },
     // (you're working with C-Bot: a card, the notebook or Quick actions is open)
-    appBusy: () => !!(notebook?.isOpen() || quickWin?.isOpen() || wordCard?.showing()),
+    appBusy: () => !!(notebook?.isOpen() || quickWin?.isOpen() || wordCard?.showing() || groupChat?.isOpen()),
     acceptsNotifications,
   });
   if (process.env.CBOT_TEST) global.cbotSocial = social; // (the tests start visits themselves)
+  groupChat = createGroupChat({
+    preload,
+    guardNavigation,
+    store,
+    visible: (id) => {
+      const r = robots.get(id);
+      return !!(r && !r.win.isDestroyed() && r.win.isVisible());
+    },
+    isAsleep: (id) => social?.peek(id)?.awake === false,
+    personalityOf: (id) => PERSONALITIES[store.get(id)?.personality] || Object.values(PERSONALITIES)[0],
+    systemPromptFor,
+    robotRect,
+    sendToRobot,
+    walkers,
+    planes,
+    addNote: (text) => notes.add({ text, source: 'Robot group chat' }),
+    saveSize: (size) => store.updateSettings({ groupChatSize: size }),
+  });
+  if (process.env.CBOT_TEST) global.cbotGroupChat = groupChat; // (the tests drive it)
   drone = createDrone({ preload, guardNavigation });
   palette = createPalette({
     preload,

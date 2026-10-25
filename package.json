@@ -1,10 +1,10 @@
 {
   "name": "c-bot",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Cartoon desktop robots that are secretly Claude Code",
   "main": "src/main/main.js",
   "scripts": {
-    "build": "esbuild src/renderer/office3d/index.js --bundle --format=iife --minify --sourcemap --outfile=src/renderer/office3d.bundle.js",
+    "build": "esbuild src/renderer/office3d/index.js --bundle --format=iife --minify --sourcemap --outfile=src/renderer/office3d.bundle.js && esbuild src/renderer/office3d/meeting.js --bundle --format=iife --minify --sourcemap --outfile=src/renderer/meeting3d.bundle.js",
     "prestart": "npm run build",
     "start": "electron .",
     "dist": "npm run build && electron-builder --win",

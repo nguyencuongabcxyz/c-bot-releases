@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: https:" />
+  <title>Robot group chat</title>
+  <link rel="stylesheet" href="../ui/theme.css" />
+  <script src="../ui/theme.js"></script>
+  <link rel="stylesheet" href="groupchat.css" />
+</head>
+<body>
+  <main id="book" aria-label="Robot group chat">
+    <header>
+      <h1 data-icon="chat">Group chat <span id="topic-chip" class="count" hidden></span></h1>
+      <div class="actions">
+        <button id="btn-min" title="Minimise" class="min" aria-label="Minimise"></button>
+        <button id="btn-close" title="Close (ends the chat)" data-icon="x"></button>
+      </div>
+    </header>
+
+    <!-- picking the topic and the robots -->
+    <form id="setup" autocomplete="off">
+      <label class="field">
+        <span class="label">What should they talk about?</span>
+        <textarea id="topic" rows="3" placeholder="e.g. Should our projects share one login library? Which of our test setups works best?"></textarea>
+      </label>
+      <div class="field">
+        <span class="label">Who joins <small id="host-line"></small></span>
+        <div id="pick" class="pick"></div>
+      </div>
+      <div class="opts">
+        <div class="field">
+          <span class="label">Style</span>
+          <div id="styles" class="seg">
+            <button type="button" data-v="free" class="on" title="Like a chat app: everyone sees every message and speaks up when they have something to add">Free chat</button>
+            <button type="button" data-v="turns" title="One at a time: each robot speaks once per round">Take turns</button>
+          </div>
+        </div>
+        <div class="field" id="messages-field">
+          <span class="label" title="The most messages the robots may post before the host sums up">Length</span>
+          <div id="messages" class="seg"></div>
+        </div>
+        <div class="field" id="rounds-field" hidden>
+          <span class="label" title="In a round, each robot speaks once">Rounds</span>
+          <div id="rounds" class="seg"></div>
+        </div>
+        <div class="field">
+          <span class="label" title="The most the whole chat may cost in Claude usage; reaching it ends the chat with a summary">Cost cap</span>
+          <div id="caps" class="seg"></div>
+        </div>
+        <div class="field">
+          <span class="label" title="Everyone leaves their desk and sits round one table in a meeting room while the chat's on">Meeting room</span>
+          <div id="meetings" class="seg">
+            <button type="button" data-v="on" class="on" title="They meet round one table in a small meeting room window, and are back at their desks the moment it ends">On</button>
+            <button type="button" data-v="off" title="They stay at their desks (uses the least CPU)">Off</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Brains</span>
+          <div id="brains" class="seg">
+            <button type="button" data-v="own" class="on" title="Each robot uses its own model">Their own</button>
+            <button type="button" data-v="fast" title="Everyone uses Haiku: quicker and cheaper">Fast</button>
+          </div>
+        </div>
+      </div>
+      <p id="plan" class="plan"></p>
+      <p class="hint">Each robot talks in its own personality, from what it knows of its own folder. They can read their files but not change anything or run commands. You can chime in any time.</p>
+      <p id="setup-error" class="error" hidden></p>
+      <button id="btn-start" class="primary" type="submit" data-icon="sparkles">Start the chat</button>
+    </form>
+
+    <!-- the chat -->
+    <section id="live" hidden>
+      <div id="status">
+        <p id="topic-line"></p>
+        <div class="status-row">
+          <div id="faces" class="faces"></div>
+          <span id="meter" class="meter"></span>
+        </div>
+      </div>
+      <div id="log" role="log" aria-live="polite"></div>
+      <div id="typing" class="typing" aria-live="polite" hidden></div>
+      <div id="bar" class="acts"></div>
+      <form id="composer" autocomplete="off">
+        <div id="mention" class="mention" role="listbox" aria-label="Mention a robot" hidden></div>
+        <textarea id="say" rows="1" placeholder="Chime in…  (type @ to ask one of them)" aria-label="Your message"></textarea>
+        <button id="send" type="submit" title="Send (Enter)" data-icon="send"></button>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="../../../node_modules/marked/marked.min.js"></script>
+  <script src="../../../node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="../ui/icons.js"></script>
+  <script src="groupchat.js"></script>
+</body>
+</html>
