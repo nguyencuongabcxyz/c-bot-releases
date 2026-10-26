@@ -29,7 +29,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMyQzk2NUVBNDAzNUUyM0QKUldROTRqVkE2bVhKd25JT0NEYU9DSHBlN3YreGFQZmtCZkFuajZuSXNSZGc2ajlTTldxNC9YeTEK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3NjEyNUNBMjIyRkZGNzgKUldSNC95OGl5aVZobDVtYVhaMk9jR081OGdJUGxaR1MrZzNPdDcxbG5EQmRRMDJNMU0xeXZoNDUK",
       "endpoints": ["https://github.com/nguyencuongabcxyz/c-bot-releases/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "quiet"
