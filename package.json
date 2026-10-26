@@ -1,72 +1,29 @@
 {
   "name": "c-bot",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Cartoon desktop robots that are secretly Claude Code",
-  "main": "src/main/main.js",
+  "type": "module",
   "scripts": {
-    "build": "esbuild src/renderer/office3d/index.js --bundle --format=iife --minify --sourcemap --outfile=src/renderer/office3d.bundle.js && esbuild src/renderer/office3d/meeting.js --bundle --format=iife --minify --sourcemap --outfile=src/renderer/meeting3d.bundle.js",
-    "prestart": "npm run build",
-    "start": "electron .",
-    "dist": "npm run build && electron-builder --win",
-    "release": "npm run build && electron-builder --win --publish always"
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p . && tsc -p tsconfig.node.json",
+    "start": "tauri dev",
+    "dist": "tauri build",
+    "tauri": "tauri"
   },
   "license": "MIT",
   "private": true,
-  "devDependencies": {
-    "electron": "^38.8.6",
-    "electron-builder": "^25.1.8",
-    "esbuild": "^0.24.2",
-    "three": "^0.170.0"
-  },
   "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
     "dompurify": "^3.4.17",
-    "electron-updater": "^6.8.9",
-    "koffi": "3.3.2",
-    "marked": "^15.0.12"
+    "marked": "^18.1.1"
   },
-  "productName": "C-Bot",
-  "build": {
-    "appId": "com.cbot.desktop",
-    "productName": "C-Bot",
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "src/**/*",
-      "package.json",
-      "!src/**/*.map",
-      "!src/renderer/office3d/**/*"
-    ],
-    "electronLanguages": [
-      "en-US"
-    ],
-    "compression": "maximum",
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "build/icon.png"
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "createDesktopShortcut": true,
-      "shortcutName": "C-Bot",
-      "artifactName": "C-Bot-Setup-${version}.${ext}"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "nguyencuongabcxyz",
-        "repo": "c-bot-releases",
-        "releaseType": "release"
-      }
-    ]
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
+    "@types/node": "^24.19.2",
+    "@types/three": "^0.186.0",
+    "three": "^0.186.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
   }
 }

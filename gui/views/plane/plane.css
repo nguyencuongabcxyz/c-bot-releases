@@ -1,0 +1,5 @@
+/* a paper plane flying between two robots' desks (main plane.js moves the window) */
+html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+#plane { position: absolute; left: 50%; top: 50%; width: 64px; height: 40px; margin: -20px 0 0 -32px; transition: opacity 0.6s; }
+#plane.landed { transition: transform 0.25s ease-out, opacity 0.6s; }
+#plane.fade { opacity: 0; }

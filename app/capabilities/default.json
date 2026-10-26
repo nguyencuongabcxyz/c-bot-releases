@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Every C-Bot page: its own window's events and the cbot command",
+  "windows": ["*"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,5 @@
+html, body { margin: 0; height: 100%; background: #fff; font: 14px "Segoe UI", system-ui, sans-serif; color: #1d2235; }
+@media (prefers-color-scheme: dark) { html, body { background: #121212; color: #eef1ff; } }
+iframe { display: block; width: 100%; height: 100%; border: 0; }
+#note { position: absolute; inset: 0; display: grid; place-items: center; color: #6b7189; font-style: italic; }
+#note[hidden] { display: none; }
