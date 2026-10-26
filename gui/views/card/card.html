@@ -1,0 +1,74 @@
+<article id="card" class="looking">
+  <div id="quiz-top">Do you remember this word?</div>
+  <div id="dream-top">Dreaming of a word…</div>
+  <header>
+    <div class="head">
+      <h1 id="word"></h1>
+      <button id="say" class="icon" title="Say it" data-icon="sound"></button>
+    </div>
+    <button id="close" class="icon" title="Close (Esc)" data-icon="x"></button>
+  </header>
+  <div id="ipa"></div>
+  <div id="quiz-front">
+    <p id="quiz-hint" hidden></p>
+    <button id="reveal" data-icon="eye">Show the meaning</button>
+    <button id="hint" data-icon="bulb">Hint</button>
+  </div>
+  <p id="quiz-result" hidden></p>
+  <div id="dream-box">
+    <p id="dream-vi"></p>
+    <p id="dream-ex"></p>
+  </div>
+  <div id="loading">Looking it up…</div>
+  <div id="failed" hidden>
+    <p id="failed-why"></p>
+    <button id="retry">Try again</button>
+  </div>
+  <nav id="tabs" role="tablist">
+    <button data-tab="meaning" role="tab" data-icon="book">Meaning</button>
+    <button data-tab="similar" role="tab" data-icon="refresh">Similar <span class="n" id="n-similar"></span></button>
+    <button data-tab="family" role="tab" data-icon="sprout">Family <span class="n" id="n-family"></span></button>
+  </nav>
+  <div class="pane" data-pane="meaning">
+    <ol id="senses"></ol>
+    <section id="forms-box">
+      <h2>Verb forms <span id="irregular" class="badge" hidden>irregular</span></h2>
+      <div id="forms"></div>
+    </section>
+    <section id="phrases-box">
+      <h2>Common phrases</h2>
+      <ul id="phrases"></ul>
+    </section>
+    <section id="examples-box">
+      <h2>Examples</h2>
+      <ul id="examples"></ul>
+    </section>
+    <p id="tip"></p>
+  </div>
+  <div class="pane" data-pane="similar" hidden>
+    <h2>≈ Synonyms</h2>
+    <ul id="synonyms" class="words"></ul>
+    <h2>≠ Antonyms</h2>
+    <ul id="antonyms" class="words"></ul>
+  </div>
+  <div class="pane" data-pane="family" hidden>
+    <ul id="family" class="words"></ul>
+  </div>
+  <div id="older" hidden>
+    <p>Saved before C-Bot learned synonyms and word families.</p>
+    <button id="refresh" data-icon="refresh">Look it up again</button>
+  </div>
+  <p id="found"></p>
+  <footer>
+    <button id="knew" class="quiz-btn" title="You remembered it: it comes back later" data-icon="check">Knew it</button>
+    <button id="forgot" class="quiz-btn" title="It comes back soon" data-icon="x">Forgot</button>
+    <button id="later" class="quiz-btn" title="Not now: ask me again in a couple of hours" data-icon="clock">Later</button>
+    <button id="details" title="The whole card: phrases, similar words, the word family" data-icon="book">Details</button>
+    <button id="knowit" title="You'll see it less often" data-icon="check">I know this one</button>
+    <button id="ask" title="Ask the robot more about this word in a chat" data-icon="chat">Ask more</button>
+    <button id="edit" title="Fix the meaning or the examples" data-icon="edit">Edit</button>
+    <button id="save" data-icon="save" hidden>Save</button>
+    <button id="undo" title="Don't keep this word" data-icon="undo">Undo</button>
+    <span id="note">saved to my words</span>
+  </footer>
+</article>

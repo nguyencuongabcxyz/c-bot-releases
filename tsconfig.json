@@ -1,0 +1,21 @@
+{
+  // The windows' pages (gui/). Vite builds them; tsc only checks: bun run typecheck
+  // (vite.config.ts runs in Node: tsconfig.node.json)
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    // `?raw` imports (a view's markup) and plain CSS imports
+    "types": ["vite/client"],
+    "paths": { "@/*": ["./gui/*"] }
+  },
+  "include": ["gui/**/*"]
+}

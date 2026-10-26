@@ -1,7 +1,5 @@
 node_modules/
-out/
 dist/
-src/renderer/office3d.bundle.js
-src/renderer/office3d.bundle.js.map
-src/renderer/meeting3d.bundle.js
-src/renderer/meeting3d.bundle.js.map
+app/target/
+app/gen/
+app/generation/

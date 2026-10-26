@@ -1,0 +1,290 @@
+import * as THREE from 'three';
+import { canvasTexture, roundRect } from '@/office3d/materials';
+import { AWAKE, tick as awakeTick } from './awake';
+import { ASLEEP, tick as asleepTick } from './asleep';
+import { CRITTERS, tick as critterTick } from './critters';
+import { PHONE } from './phone';
+import { PUSHUP } from './pushup';
+import { DESK } from './desk';
+import { TEAM } from './team';
+import { CALENDAR, tick as calendarTick } from './calendar';
+import { PRANKS } from './pranks';
+import { SLEEPY } from './sleepy';
+import { NIGHT } from './night';
+import { WALK } from './walk';
+import { NOTES } from './notes';
+import { VOCAB } from './vocab';
+import { SOCIAL } from './social';
+import { MAID } from './maid';
+import type { Antic, AnticCtx, AnticPlay, AnticPose, AnticScratch, AnticTick, Emit, TickCtx, WearCtx } from './types';
+import type { Bed, OfficeSet, Rig } from '@/office3d/types';
+
+// Antics: the little things a robot does when nobody's asking it anything
+// (sipping coffee, sneezing, snoring a snot bubble…). The page starts one by
+// setting on stateEl
+//   data-antic       its name (a key of AWAKE / ASLEEP / CRITTERS)
+//   data-antic-seq   a fresh value each time, so the same antic can play twice in a row
+//   data-antic-text  optional words for it (a mumble, a dream emoji)
+//   data-late-night  '1' while it's up past 10 pm (c.lateNight)
+// and the 3D view plays it for its `dur` seconds. It's dropped as soon as the
+// robot wakes up or falls asleep (or gets a new body, or goes out for a walk:
+// data-away), so it never fights the real work; none start while it's away.
+//
+// A handler is { dur, fadeIn?, fadeOut?, update(c, A), end?(c), place?(c), bubbleAt?(c) }.
+//   place runs after the frame has posed and seated the robot, so it can move the
+//   whole robot (c.robot.root) somewhere else; bubbleAt says where its bubble floats then.
+//   c  what it may use: t, dt, s (seconds in), p (s / dur), w (0..1 weight that
+//      eases in and out), dur, text, body, robot, set, emit, worldPoint, hand(side),
+//      mugHome, lampHome, say(text, kind), toward(arr, target, k), mix, THREE,
+//      camYaw, monitorYaw, curYaw, nightcap, asleep, plus `run`, a scratch object
+//      for the handler's own state (meshes it added, "already emitted" flags…)
+//   A  the pose being drawn this frame; change it in place:
+//      lean, head[3], armL[3], armR[3]  (absolute, as in robot3d POSES)
+//      yaw    extra chair swivel (radians)
+//      tip    chair tipped back (radians, + leans back)
+//      rootY, rootZ  the robot slides in its seat (+z is towards its knees)
+//      mug    Vector3 offset of the mug from where it sits (office space); mugTilt
+//      lamp   desk-lamp brightness factor (1 = as normal, 0 = off)
+//      screen a monitor scene to show instead (drawn with time = s), screenDim 0..1
+//      shake  desk shake strength (0..1)
+//      reachL, reachR  cartoon arm stretch (1 = normal length; 1.5 reaches much further)
+//      antenna  extra sideways swing of the antenna (the cat's tail, the nerd's cowlick)
+// The standing desk's height lives outside antics (awake.js liftTick): an antic
+// sets c.set.office.userData.lift.deskTo / seatTo and the desk motors there.
+// Modules may also export tick(c) for things that live outside one antic (the nightcap).
+const HANDLERS: Partial<Record<string, Antic>> = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS, ...SLEEPY, ...NIGHT, ...WALK, ...VOCAB, ...NOTES, ...SOCIAL, ...MAID };
+const TICKS: AnticTick[] = [awakeTick, asleepTick, critterTick, calendarTick].filter(Boolean);
+
+const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+const mix = (a: number, b: number, k: number) => a + (b - a) * k;
+function toward<T extends number[]>(arr: T, target: readonly number[], k: number): T {
+  for (let i = 0; i < arr.length; i++) arr[i] = mix(arr[i], target[i], k);
+  return arr;
+}
+
+/** What a frame has for the ticks; an antic playing adds its AnticPlay fields to it. */
+type FrameCtx = TickCtx & Partial<AnticPlay>;
+/** What the bubble's asked to say this frame. */
+type BubbleWant = { text: string; kind: 'speech' | 'thought' };
+type Bubble = { want: BubbleWant | null; update(dt: number, at: THREE.Vector3): void };
+/** The antic playing: its handler, when it started, and what it was started for. */
+type Run = { name: string; h: Antic; start: number; text: string; asleep: boolean; robot: Rig; scratch: AnticScratch };
+
+/** What createAntics() needs from the 3D view (index.ts). */
+export type AnticsOptions = {
+  world: THREE.Object3D;
+  emit: Emit;
+  worldPoint: TickCtx['worldPoint'];
+  camYaw: number;
+  monitorYaw: number;
+};
+
+/** What the frame hands the antics each frame (update). */
+export type AnticsFrame = {
+  t: number;
+  dt: number;
+  d: DOMStringMap; // stateEl.dataset: antic, anticSeq, anticText, nightcap, lateNight, sleepStyle
+  pose: string;
+  robot: Rig;
+  set: OfficeSet;
+  curYaw: number;
+  A: AnticPose;
+  bubbleAt?: () => THREE.Vector3 | null; // where the bubble floats (lying in bed), or null: over its head
+  bed: Bed | null;
+  away?: boolean;
+};
+
+// One speech / thought bubble drawn in the 3D scene, so it shows even while
+// the robot window is just the robot (asleep).
+function makeBubble(world: THREE.Object3D): Bubble {
+  const W = 320;
+  const H = 150;
+  const { ctx, tex } = canvasTexture(W, H);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
+  mat.userData.outlineParameters = { visible: false };
+  const sprite = new THREE.Sprite(mat);
+  sprite.renderOrder = 10;
+  sprite.visible = false;
+  world.add(sprite);
+  let drawn = '';
+  let alpha = 0;
+  function draw(text: string, kind: BubbleWant['kind']) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#1d2235';
+    ctx.fillStyle = '#fff';
+    const emojiOnly = !/[a-z0-9]/i.test(text);
+    ctx.font = emojiOnly ? '64px "Segoe UI Emoji", "Segoe UI", sans-serif' : '700 30px "Segoe UI", sans-serif';
+    // wrap to at most two lines
+    const words = text.split(/\s+/);
+    const lines = [''];
+    for (const w of words) {
+      const next = lines[lines.length - 1] ? `${lines[lines.length - 1]} ${w}` : w;
+      if (ctx.measureText(next).width > W - 60 && lines[lines.length - 1] && lines.length < 2) lines.push(w);
+      else lines[lines.length - 1] = next;
+    }
+    const tw = Math.min(W - 24, Math.max(...lines.map((l) => ctx.measureText(l).width)) + 40);
+    const th = emojiOnly ? 92 : lines.length * 34 + 26;
+    const x = (W - tw) / 2;
+    const y = 8;
+    if (kind === 'thought') {
+      // a cloud, with two little puffs trailing down to the head
+      roundRect(ctx, x, y, tw, th, th / 2);
+      ctx.fill();
+      ctx.stroke();
+      for (const [cx, cy, r] of [[x + 26, y + th + 14, 10], [x + 10, y + th + 32, 6]]) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else {
+      roundRect(ctx, x, y, tw, th, 18);
+      ctx.fill();
+      ctx.stroke();
+      // the tail, pointing down-left at the head
+      ctx.beginPath();
+      ctx.moveTo(x + 26, y + th - 3);
+      ctx.lineTo(x + 14, y + th + 26);
+      ctx.lineTo(x + 50, y + th - 3);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillRect(x + 24, y + th - 6, 30, 6);
+    }
+    ctx.fillStyle = '#1d2235';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    lines.forEach((l, i) => ctx.fillText(l, W / 2, y + th / 2 + (i - (lines.length - 1) / 2) * 34));
+    tex.needsUpdate = true;
+  }
+  return {
+    want: null,
+    update(dt: number, at: THREE.Vector3) {
+      if (this.want) {
+        const key = `${this.want.kind}|${this.want.text}`;
+        if (key !== drawn) {
+          drawn = key;
+          draw(this.want.text, this.want.kind);
+        }
+        alpha = Math.min(1, alpha + dt * 6);
+        sprite.position.copy(at);
+      } else alpha = Math.max(0, alpha - dt * 5);
+      sprite.visible = alpha > 0.01;
+      mat.opacity = alpha;
+      const pop = 0.75 + 0.25 * smooth(alpha);
+      sprite.scale.set(1.1 * pop, (1.1 * H * pop) / W, 1);
+      this.want = null;
+    },
+  };
+}
+
+/** What it wears without a desk round it (walker3d.js, out for a walk): the nightcap and the
+ *  late-night hood. c = { robot, t, dt, nightcap, lateNight, asleep } */
+export function wearTick(c: WearCtx) {
+  asleepTick(c);
+  calendarTick(c);
+}
+
+export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }: AnticsOptions) {
+  const bubble = makeBubble(world);
+  let run: Run | null = null; // { name, h, start, text, asleep, robot, scratch }
+  let lastSeq = '';
+  let lastCtx: FrameCtx | null = null;
+  const mugHome = new THREE.Vector3();
+  const lampHome = new THREE.Vector3();
+  let homesOf: OfficeSet | null = null;
+
+  function finish() {
+    if (!run) return;
+    try {
+      // (lastCtx is set by now: a run only starts in update(), which sets it)
+      run.h.end?.({ ...(lastCtx as FrameCtx), run: run.scratch, robot: run.robot });
+    } catch (err) {
+      console.error(`antic ${run.name} end failed`, err);
+    }
+    run = null;
+  }
+
+  return {
+    get active() {
+      return !!run;
+    },
+    get name() {
+      return run?.name || '';
+    },
+    // when the playing antic started (its borrowed monitor scene runs from there)
+    get startedAt() {
+      return run?.start ?? 0;
+    },
+    mugHome,
+    /** Called every frame, after the pose is worked out and before it's applied. */
+    update({ t, dt, d, pose, robot, set, curYaw, A, bubbleAt, bed, away = false }: AnticsFrame) {
+      if (homesOf !== set) {
+        // a new desk (theme change): remember where its mug and lamp sit
+        homesOf = set;
+        mugHome.copy(set.mug.position);
+        lampHome.copy(set.lamp.group.position);
+      }
+      const asleep = pose === 'sleep';
+      const seq = d.anticSeq || '';
+      if (seq !== lastSeq) {
+        lastSeq = seq;
+        finish();
+        const h = HANDLERS[d.antic ?? ''];
+        if (h && seq && !away) run = { name: d.antic ?? '', h, start: t, text: d.anticText || '', asleep, robot, scratch: {} };
+      }
+      if (run && (away || run.asleep !== asleep || run.robot !== robot)) finish();
+
+      const c: FrameCtx = {
+        t, dt, body: 'kit', robot, set, emit, worldPoint, mix, toward, THREE,
+        antic: run?.name || '', // what's playing (ticks use it, e.g. the standing desk comes down otherwise)
+        camYaw, monitorYaw, curYaw, mugHome, lampHome, asleep, nightcap: d.nightcap === '1',
+        lateNight: d.lateNight === '1', // awake past 10 pm: hood up (calendar.js)
+        sleepStyle: d.sleepStyle || 'chair', // asleep in the chair (eye mask) or on the floor (blanket)
+        bed, // the floor bed (bed.js): pillow, blanket, where it lies
+        hand: (side = 'R') => worldPoint(robot.arms[side === 'L' ? 'armL' : 'armR'].elbow, 0, -0.24, 0),
+        say: (text, kind = 'speech') => {
+          if (text) bubble.want = { text, kind };
+        },
+      };
+      lastCtx = c;
+      for (const tick of TICKS) tick(c, A);
+      if (run) {
+        const { h } = run;
+        const s = t - run.start;
+        if (s >= h.dur) finish();
+        else {
+          const fadeIn = h.fadeIn ?? 0.3;
+          const fadeOut = h.fadeOut ?? 0.35;
+          Object.assign(c, {
+            s, p: s / h.dur, dur: h.dur, text: run.text, run: run.scratch,
+            w: smooth(fadeIn ? s / fadeIn : 1) * smooth(fadeOut ? (h.dur - s) / fadeOut : 1),
+          });
+          try {
+            h.update(c as AnticCtx, A); // (its play fields are on it now: just above)
+          } catch (err) {
+            console.error(`antic ${run.name} failed`, err);
+            finish();
+          }
+        }
+      }
+      // lying on the floor the head is on its side: float the bubble above it in the room instead
+      // (an antic that takes it out of the chair says where, with its own bubbleAt)
+      // (c.run is there only when the antic played this frame, with the rest of its play fields)
+      const at = (run?.h.bubbleAt && c.run && run.h.bubbleAt(c as AnticCtx)) || bubbleAt?.();
+      bubble.update(dt, at || worldPoint(robot.head, 0.62, robot.headTop ?? 0.6, 0));
+    },
+    /** Called every frame after the robot has been posed and seated: an antic with
+     *  place(c) may then put it somewhere else (down on the floor doing push-ups). */
+    place() {
+      if (!run?.h.place || !lastCtx?.run) return;
+      try {
+        run.h.place(lastCtx as AnticCtx); // (it has run: it played, so it has all its play fields)
+      } catch (err) {
+        console.error(`antic ${run.name} place failed`, err);
+        finish();
+      }
+    },
+  };
+}
+export type Antics = ReturnType<typeof createAntics>;

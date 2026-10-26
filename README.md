@@ -14,9 +14,11 @@ Each robot sits at its own little 3D desk, with a name, a personality and a proj
 ## Install (Windows)
 
 1. Install the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) and sign in, so `claude` works in a terminal.
-2. Download **C-Bot-Setup-x.y.z.exe** from the [latest release](https://github.com/nguyencuongabcxyz/c-bot-releases/releases/latest) and run it. No admin rights needed. If Windows says *"Windows protected your PC"*, click **More info → Run anyway**.
+2. Download **C-Bot_x.y.z_x64-setup.exe** from the [latest release](https://github.com/nguyencuongabcxyz/c-bot-releases/releases/latest) and run it. It's a few MB, needs no admin rights, and runs on Windows 10 and 11 (it uses the WebView2 that comes with Windows). If Windows says *"Windows protected your PC"*, click **More info → Run anyway**.
 
-C-Bot starts in the system tray and opens the **Robot Workshop** so you can build your first robot. It finds Claude Code by itself and updates itself in the background. Your robots and chats are kept in `%APPDATA%\C-Bot` and backed up daily.
+C-Bot starts in the system tray and opens the **Robot Workshop** so you can build your first robot. It finds Claude Code by itself and updates itself in the background. Your robots and chats are kept in `%APPDATA%\com.cbot.desktop` and backed up daily.
+
+**Coming from 0.4.0 or older?** That version can't update itself to this one: uninstall it (Windows Settings → Apps), then install the new one. Your robots, chats, words and notes are copied over from `%APPDATA%\C-Bot` the first time it starts.
 
 ## Features
 
@@ -74,56 +76,66 @@ Contributions are welcome: open an issue to report a bug or suggest an idea, or 
 
 ### Run from source
 
-Requires Windows, Node 18+ and the Claude Code CLI.
+Requires Windows, [Bun](https://bun.sh), [Rust](https://rustup.rs) (stable) and the Claude Code CLI.
 
 ```bash
-npm install
-npm start
+bun install
+bun start
 ```
 
-`npm start` bundles the 3D scene first. After editing anything in `src/renderer/office3d/`, run `npm run build` (or restart with `npm start`).
+`bun start` is `tauri dev`: Vite serves the pages (they reload as you edit them) and the Rust side is built and run. `bun run typecheck` checks the pages' TypeScript; `cargo test` in `app/` runs the Rust tests.
 
 ### How it fits together
 
-It's an Electron app. Each robot is a frameless, transparent, always-on-top window, and each chat tab keeps a `claude -p --input-format stream-json --output-format stream-json` process running in the robot's folder. Stream events drive the animation: text makes it talk, tool calls become chips and monitor screens, and questions come back through `--permission-prompt-tool stdio`. Robots reach each other through a small MCP server C-Bot gives every conversation (`ask_robot`, `hand_off_task`, `list_robots`).
+It's a [Tauri 2](https://tauri.app) app: the main process is Rust, and every window is a TypeScript page in WebView2. Each robot is a frameless, transparent, always-on-top window, and each chat tab keeps a `claude -p --input-format stream-json --output-format stream-json` process running in the robot's folder. Stream events drive the animation: text makes it talk, tool calls become chips and monitor screens, and questions come back through `--permission-prompt-tool stdio`. Robots reach each other through a small MCP server C-Bot gives every conversation (`ask_robot`, `hand_off_task`, `list_robots`), run by C-Bot's own executable.
 
-```
-src/
-  main/               Electron main process
-    main.js           windows, tray, layout, IPC
-    claude.js         runs Claude Code and parses its event stream
-    findClaude.js     finds the claude binary
-    personalities.js  system-prompt flavour and lines per personality
-    sessions.js       past conversations from ~/.claude/projects
-    terminal.js       full Claude Code in a terminal, mirrored onto the robot
-    robotsMcp.js      the MCP server robots use to ask each other
-    robotLink.js      delivers those messages between robots
-    groupChat.js      group chats; meeting.js is the meeting room window
-    quick.js          quick actions; capture.js grabs selections and hotkeys
-    vocab.js          English words; notes.js notes and reminders
-    walker.js         robots away from their desks (with social.js, maid.js)
-    store.js          saving in %APPDATA%\C-Bot
-    updater.js        auto-updates
-  preload/            IPC bridges for the windows
-  renderer/
+```text
+app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml)
+  src/
+    main.rs           starts the app, and lists every command the pages can call
+    robot_ipc.rs      a robot window's commands about itself (each module has its own)
+    robots.rs         the robot windows: layout, drag, resize, click-through
+    chat.rs           a robot's tabs; claude.rs runs Claude Code and parses its stream
+    find_claude.rs    finds the claude binary
+    transcripts.rs    past conversations from ~/.claude/projects
+    terminal.rs       full Claude Code in a terminal, mirrored onto the robot
+    robots_mcp.rs     the MCP server robots use to ask each other
+    robotlink.rs      delivers those messages between robots
+    groupchat.rs      group chats and the meeting room window
+    quick.rs          quick actions; capture.rs grabs selections, hub.rs the hotkeys
+    vocab.rs          English words; notes.rs notes and reminders
+    walkers.rs        robots away from their desks (with social.rs, maid.rs)
+    store.rs          saving in %APPDATA%\com.cbot.desktop
+    updater.rs        auto-updates
+    tray.rs           the tray icon and its menus; win.rs and friends talk to Windows
+gui/                  the pages (TypeScript, built by Vite into dist/)
+  ipc/                main, through @tauri-apps/api: a typed function per command, events
+  views/
     robot/            the robot window: chat, tabs, moods, sounds
-    office3d/         the 3D desk and robot (Three.js, bundled with esbuild)
-      antics/         idle animations; index.js explains how to write one
-      kit3d.js        robot parts; kitwear.js clothes; themes.js desk styles
     manager/          the Robot Workshop
-    ui/               shared themes (theme.css, future.css, vintage.css)
     …                 one folder per other window (card, words, notebook, quick, groupchat, …)
+  office3d/           the 3D desk and robot (Three.js)
+    antics/           idle animations; index.ts explains how to write one
+    kit3d.ts          robot parts; kitwear.ts clothes; themes.ts desk styles
+  ui/                 shared themes (theme.css, future.css, vintage.css) and icons
+  types/              the model, and every event main sends
+shared/
+  personalities.json  system-prompt flavour and lines per personality
 ```
+
+A page calls main as `ipc.robotAsk(tabId, prompt, …)` (`import * as ipc from '@/ipc'`): that's `invoke('robot_ask', { tabId, prompt, … })`, which Tauri hands to `#[tauri::command] fn robot_ask(…, tab_id: String, prompt: String, …)` in `app/src/robot_ipc.rs`. A new command is a function in its module, its name in `generate_handler!` in `main.rs`, and its typed function in `gui/ipc/commands.ts`.
 
 ### Pull requests
 
 - Keep each PR to one change, and describe what a user will see.
-- Try it in the running app (`npm start`), including both themes if you touch the UI.
+- Try it in the running app (`bun start`), including both themes if you touch the UI.
 - Don't change `version` in `package.json`; releases are cut by the maintainer.
 
 ### Releases (maintainer)
 
-Bumping `version` in `package.json` and pushing to `main` releases it: the [Release](.github/workflows/release.yml) action builds the installer with [electron-builder](https://www.electron.build) and publishes `vX.Y.Z` to GitHub Releases, and every installed copy updates to it. `npm run dist` builds the installer into `dist/` locally without publishing. If the first local build fails with *"Cannot create symbolic link"*, turn on Windows Developer Mode.
+Bumping `version` in `package.json` and pushing to `main` releases it: the [Release](.github/workflows/release.yml) action builds the installer with [tauri-action](https://github.com/tauri-apps/tauri-action), signs the update, and publishes `vX.Y.Z` with its `latest.json` to GitHub Releases, and every installed copy updates to it. It needs the `TAURI_SIGNING_PRIVATE_KEY` secret: the updater's private key, whose public half is in `app/tauri.conf.json`. Keep it safe; installed copies only take updates signed with it.
+
+`bun run dist` builds the installer into `app/target/release/bundle/nsis/` locally without publishing (set `TAURI_SIGNING_PRIVATE_KEY` too, or the build stops at signing the update).
 
 ## License
 

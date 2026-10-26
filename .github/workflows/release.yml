@@ -1,7 +1,12 @@
 # Build the Windows installer and publish it as a GitHub release whenever main gets a
 # version (package.json) that hasn't been released yet. Installed copies of C-Bot update
-# themselves from these releases (src/main/updater.js). Pushes that don't change the
-# version just check and stop. Uses the workflow's own GITHUB_TOKEN: no secrets to set up.
+# themselves from these releases (app/src/updater.rs reads the latest.json uploaded
+# here). Pushes that don't change the version just check and stop.
+#
+# One secret to set up (Settings > Secrets and variables > Actions):
+#   TAURI_SIGNING_PRIVATE_KEY: the updater's private key (the public half is in
+#   app/tauri.conf.json). Without it the build fails: installed copies only take
+#   updates signed with it.
 name: Release
 
 on:
@@ -38,19 +43,37 @@ jobs:
             echo "new=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
+        if: steps.version.outputs.new == 'true'
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.version.outputs.new == 'true'
+
+      - uses: Swatinem/rust-cache@v2
         if: steps.version.outputs.new == 'true'
         with:
-          node-version: 20
-          cache: npm
+          workspaces: app
 
       - name: Install
         if: steps.version.outputs.new == 'true'
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build and publish
         if: steps.version.outputs.new == 'true'
-        run: npm run release
+        uses: tauri-apps/tauri-action@v0
         env:
-          GH_TOKEN: ${{ github.token }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false' # not code-signed (yet)
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        with:
+          tauriScript: bun tauri
+          tagName: v__VERSION__
+          releaseName: C-Bot v__VERSION__
+          releaseBody: |
+            Download **C-Bot_${{ steps.version.outputs.version }}_x64-setup.exe** below and run it.
+
+            Coming from C-Bot 0.4.0 or older? That version can't update itself to this one:
+            uninstall it (Settings > Apps), then install this. Your robots, chats, words and
+            notes are copied over the first time the new one starts.
+          releaseDraft: false
+          prerelease: false
