@@ -44,9 +44,39 @@ pub fn clean_env() -> Vec<(String, String)> {
     std::env::vars().filter(|(k, _)| !host_session_var().is_match(k)).collect()
 }
 
-/// Ends a process and everything it started.
+/// Ends a process and everything it started. Only while its Child is still held: once that's
+/// dropped, Windows may give the id to another program. From another thread, use a Killer.
 pub fn kill_tree(pid: u32) {
     let _ = Command::new("taskkill").args(["/pid", &pid.to_string(), "/T", "/F"]).creation_flags(NO_WINDOW).output();
+}
+
+/// Ends a child process and everything it started, from any thread, but only while it's still
+/// running. The thread waiting on it calls gone() as soon as it has exited, before it drops
+/// the Child: the process stays held until then, so its id can't have gone to another program,
+/// and a kill that's under way keeps it held until it's done.
+#[derive(Clone)]
+pub struct Killer {
+    pid: u32,
+    gone: Arc<Mutex<bool>>,
+}
+
+impl Killer {
+    pub fn new(pid: u32) -> Killer {
+        Killer { pid, gone: Arc::new(Mutex::new(false)) }
+    }
+
+    /// End it, unless it has exited already.
+    pub fn kill(&self) {
+        let gone = self.gone.lock().unwrap_or_else(|e| e.into_inner());
+        if !*gone {
+            kill_tree(self.pid);
+        }
+    }
+
+    /// It has exited (call it before dropping the Child).
+    pub fn gone(&self) {
+        *self.gone.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    }
 }
 
 // ---------------------------------------------------------------- describing steps
@@ -183,6 +213,36 @@ pub fn strip_asides(s: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"(^|\n)[ \t]*<aside>(?s:.*?)</aside>[ \t]*(?:\n|$)").unwrap());
     re.replace_all(s, "$1").into_owned()
+}
+
+#[cfg(test)]
+mod killer_tests {
+    use super::*;
+
+    fn sleeper() -> std::process::Child {
+        Command::new("cmd").args(["/c", "ping -n 30 127.0.0.1 >nul"]).creation_flags(NO_WINDOW).spawn().unwrap()
+    }
+
+    #[test]
+    fn kills_only_while_it_runs() {
+        // once it's said to be gone, its id is left alone (it may be another program's by now)
+        let mut a = sleeper();
+        let k = Killer::new(a.id());
+        k.gone();
+        k.kill();
+        thread::sleep(Duration::from_millis(300));
+        assert!(a.try_wait().unwrap().is_none(), "killed after it was gone");
+        kill_tree(a.id());
+        let _ = a.wait();
+        // still running: it's ended, with what it started
+        let mut b = sleeper();
+        Killer::new(b.id()).kill();
+        let ended = (0..50).any(|_| {
+            thread::sleep(Duration::from_millis(100));
+            b.try_wait().unwrap().is_some()
+        });
+        assert!(ended, "not killed while running");
+    }
 }
 
 #[cfg(test)]
@@ -402,7 +462,7 @@ struct Turn {
 
 struct Proc {
     generation: u64,
-    pid: u32,
+    killer: Killer,
     stdin: Option<ChildStdin>,
     stderr: Arc<Mutex<String>>,
 }
@@ -743,7 +803,8 @@ impl Session {
         let generation = i.generation;
         let stderr = Arc::new(Mutex::new(String::new()));
         let (stdout, err_pipe) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
-        i.proc = Some(Proc { generation, pid: child.id(), stdin: child.stdin.take(), stderr: stderr.clone() });
+        let killer = Killer::new(child.id());
+        i.proc = Some(Proc { generation, killer: killer.clone(), stdin: child.stdin.take(), stderr: stderr.clone() });
 
         thread::spawn(move || {
             let mut err_pipe = err_pipe;
@@ -763,6 +824,8 @@ impl Session {
                 session.line(line);
             }
             let code = child.wait().ok().and_then(|s| s.code());
+            killer.gone();
+            drop(child);
             if let Some(session) = me.upgrade() {
                 session.closed(generation, code);
             }
@@ -841,10 +904,10 @@ impl Session {
     fn restart(&self, i: &mut Inner) {
         if let Some(mut old) = i.proc.take() {
             old.stdin.take(); // (its input closes: it finishes and goes)
-            let pid = old.pid;
+            let killer = old.killer;
             thread::spawn(move || {
                 thread::sleep(Duration::from_secs(3));
-                kill_tree(pid);
+                killer.kill(); // (if it hasn't gone by itself)
             });
         }
         self.start(i);
@@ -979,12 +1042,12 @@ impl Session {
         let busy = i.turn.is_some();
         let Some(p) = i.proc.as_mut() else { return };
         p.stdin.take();
-        let pid = p.pid;
+        let killer = p.killer.clone();
         thread::spawn(move || {
             if !busy {
                 thread::sleep(Duration::from_secs(3));
             }
-            kill_tree(pid);
+            killer.kill(); // (if it hasn't gone by itself)
         });
     }
 

@@ -110,6 +110,29 @@ fn tmp_of(file: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// Copy the old app's robots into `dir`: c-bot.json, the temp file a save cut short may have
+/// left, and the daily backups (theirs, and vocab's and notes'), so that a damaged c-bot.json
+/// is recovered from them as one of ours would be, instead of starting fresh.
+fn bring_over(from: &Path, dir: &Path) {
+    let backups = dir.join("backups");
+    if fs::create_dir_all(&backups).is_err() {
+        return;
+    }
+    for name in ["c-bot.json", "c-bot.json.tmp"] {
+        let src = from.join(name);
+        if src.is_file() {
+            let _ = fs::copy(&src, dir.join(name));
+        }
+    }
+    let Ok(old) = fs::read_dir(from.join("backups")) else { return };
+    for e in old.flatten() {
+        let to = backups.join(e.file_name());
+        if e.path().extension().is_some_and(|x| x == "json") && e.path().is_file() && !to.exists() {
+            let _ = fs::copy(e.path(), to);
+        }
+    }
+}
+
 /// Where the robots came back from when c-bot.json couldn't be read.
 pub struct Recovered {
     pub from: Option<PathBuf>,
@@ -126,15 +149,14 @@ pub struct Store {
 }
 
 impl Store {
-    /// The store in `dir`. On a first run (nothing there yet) it starts from a copy of
-    /// `import` (the Electron app's c-bot.json), which is left as it is.
+    /// The store in `dir`. On a first run (nothing there yet) it starts from a copy of what's
+    /// in `import` (the Electron app's data folder, which is left as it is).
     pub fn open(dir: &Path, import: Option<PathBuf>) -> Store {
         let file = dir.join("c-bot.json");
         if !file.exists() && !tmp_of(&file).exists()
-            && let Some(src) = import.filter(|p| p.exists())
+            && let Some(from) = import.filter(|d| d.is_dir())
         {
-            let _ = fs::create_dir_all(dir);
-            let _ = fs::copy(src, &file);
+            bring_over(&from, dir);
         }
         let mut store = Store {
             backup_dir: dir.join("backups"),
@@ -433,5 +455,56 @@ impl Store {
             history.drain(..extra);
         }
         self.save();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("cbot-store-{name}-{}-{}", std::process::id(), now_ms()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn robots(names: &[&str]) -> String {
+        let list: Vec<Value> = names.iter().map(|n| json!({ "id": n, "name": n })).collect();
+        json!({ "characters": list, "settings": {} }).to_string()
+    }
+
+    fn names(store: &Store) -> Vec<String> {
+        store.list().iter().map(|c| str_of(c, "name").to_string()).collect()
+    }
+
+    #[test]
+    fn first_run_brings_the_old_apps_robots_over() {
+        let (old, new) = (scratch("old"), scratch("new"));
+        fs::write(old.join("c-bot.json"), robots(&["Bo", "Sunny"])).unwrap();
+        let store = Store::open(&new, Some(old.clone()));
+        assert_eq!(names(&store), ["Bo", "Sunny"]);
+        assert!(store.recovered.is_none());
+        // the next start keeps its own, never the old app's again
+        fs::write(old.join("c-bot.json"), robots(&["Other"])).unwrap();
+        assert_eq!(names(&Store::open(&new, Some(old.clone()))), ["Bo", "Sunny"]);
+        let _ = (fs::remove_dir_all(old), fs::remove_dir_all(new));
+    }
+
+    #[test]
+    fn a_damaged_old_file_comes_back_from_the_old_apps_backups() {
+        let (old, new) = (scratch("old-broken"), scratch("new-broken"));
+        fs::write(old.join("c-bot.json"), "{ \"characters\": [ { \"id\": ").unwrap();
+        fs::create_dir_all(old.join("backups")).unwrap();
+        fs::write(old.join("backups").join("c-bot-2026-10-20.json"), robots(&["Older"])).unwrap();
+        fs::write(old.join("backups").join("c-bot-2026-10-25.json"), robots(&["Bo", "Sunny"])).unwrap();
+        fs::write(old.join("backups").join("vocab-2026-10-25.json"), "{\"words\":[]}").unwrap();
+        let store = Store::open(&new, Some(old.clone()));
+        assert_eq!(names(&store), ["Bo", "Sunny"], "the newest backup");
+        let r = store.recovered.as_ref().expect("said it was recovered");
+        assert!(r.from.as_ref().is_some_and(|f| f.ends_with("c-bot-2026-10-25.json")));
+        assert!(new.join("backups").join("vocab-2026-10-25.json").exists(), "the other backups came too");
+        assert!(old.join("c-bot.json").exists(), "the old app's files are left as they were");
+        let _ = (fs::remove_dir_all(old), fs::remove_dir_all(new));
     }
 }

@@ -15,7 +15,7 @@ use std::time::Duration;
 use base64::Engine;
 use serde_json::{json, Map, Value};
 
-use crate::claude::{clean_env, kill_tree};
+use crate::claude::{clean_env, Killer};
 use crate::find_claude::NO_WINDOW;
 
 use super::words::norm;
@@ -213,7 +213,7 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
         .creation_flags(NO_WINDOW)
         .spawn()
         .map_err(|e| format!("Couldn't start Claude Code: {e}"))?;
-    let pid = child.id();
+    let killer = Killer::new(child.id());
     let mut stdin = child.stdin.take();
     let message = json!({ "type": "user", "message": { "role": "user", "content": content } });
     if let Some(i) = stdin.as_mut() {
@@ -229,6 +229,7 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
         buf
     });
     let (tx, rx) = mpsc::channel();
+    let waiter = killer.clone();
     thread::spawn(move || {
         if let Some(out) = stdout {
             for line in BufReader::new(out).lines() {
@@ -239,6 +240,8 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
             }
         }
         let code = child.wait().ok().and_then(|s| s.code()).map_or("null".to_string(), |c| c.to_string());
+        waiter.gone();
+        drop(child);
         let err = err_reader.join().unwrap_or_default();
         let err: String = err.chars().take(200).collect();
         let _ = tx.send(Err(format!("Claude Code stopped ({code}): {}", if err.is_empty() { "no answer" } else { &err })));
@@ -246,7 +249,7 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
     let answer = match rx.recv_timeout(LOOKUP_TIMEOUT) {
         Ok(a) => a,
         Err(_) => {
-            kill_tree(pid);
+            killer.kill();
             Err("Claude Code took too long".into())
         }
     };

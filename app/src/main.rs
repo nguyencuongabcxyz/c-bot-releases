@@ -174,7 +174,7 @@ fn main() {
                 Some(d) => PathBuf::from(d),
                 None => app.path().app_data_dir()?,
             };
-            let store = Store::open(&dir, electron_data_dir().map(|d| d.join("c-bot.json")));
+            let store = Store::open(&dir, electron_data_dir());
             if let Some(r) = &store.recovered {
                 eprintln!("[store] recovered from {:?}; the damaged file was kept as {}", r.from, r.broken.display());
             }

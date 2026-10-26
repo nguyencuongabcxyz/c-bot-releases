@@ -15,7 +15,7 @@ use std::time::Duration;
 use regex::Regex;
 use serde_json::{json, Value};
 
-use crate::claude::{clean_env, kill_tree};
+use crate::claude::{clean_env, Killer};
 use crate::find_claude::{self, NO_WINDOW};
 
 const TIMEOUT: Duration = Duration::from_secs(90);
@@ -179,14 +179,14 @@ pub fn shown_part<'a>(action: &str, so_far: &'a str) -> &'a str {
 #[derive(Clone, Default)]
 pub struct Handle {
     cancelled: Arc<AtomicBool>,
-    pid: Arc<Mutex<Option<u32>>>,
+    killer: Arc<Mutex<Option<Killer>>>,
 }
 
 impl Handle {
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
-        if let Some(pid) = *self.pid.lock().unwrap_or_else(|e| e.into_inner()) {
-            kill_tree(pid);
+        if let Some(k) = self.killer.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            k.kill(); // (nothing if it has finished: Stop pressed after the answer came)
         }
     }
 
@@ -239,16 +239,19 @@ pub fn run(job: &Job, handle: &Handle, mut on_text: impl FnMut(&str)) -> Result<
         .creation_flags(NO_WINDOW)
         .spawn();
     let mut child = spawned.map_err(|e| Failed::Error(format!("Couldn't start Claude Code: {e}")))?;
-    *handle.pid.lock().unwrap_or_else(|e| e.into_inner()) = Some(child.id());
+    let killer = Killer::new(child.id());
+    *handle.killer.lock().unwrap_or_else(|e| e.into_inner()) = Some(killer.clone());
     if handle.is_cancelled() {
-        kill_tree(child.id()); // (stopped while it was starting)
+        killer.kill(); // (stopped while it was starting)
     }
     // the prompt on stdin, so no quoting can mangle it
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(prompt.as_bytes());
     }
     let (Some(stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        kill_tree(child.id());
+        killer.kill();
+        let _ = child.wait();
+        killer.gone();
         return Err(Failed::Error("Couldn't start Claude Code".into()));
     };
     let err_text = thread::spawn(move || {
@@ -259,11 +262,11 @@ pub fn run(job: &Job, handle: &Handle, mut on_text: impl FnMut(&str)) -> Result<
     // too long: it's stopped
     let (finished, watch) = mpsc::channel::<()>();
     let timed_out = Arc::new(AtomicBool::new(false));
-    let (pid, flag) = (child.id(), timed_out.clone());
+    let (watchdog, flag) = (killer.clone(), timed_out.clone());
     thread::spawn(move || {
         if let Err(mpsc::RecvTimeoutError::Timeout) = watch.recv_timeout(TIMEOUT) {
             flag.store(true, Ordering::SeqCst);
-            kill_tree(pid);
+            watchdog.kill();
         }
     });
 
@@ -281,6 +284,7 @@ pub fn run(job: &Job, handle: &Handle, mut on_text: impl FnMut(&str)) -> Result<
         }
     }
     let code = child.wait().ok().and_then(|s| s.code());
+    killer.gone();
     let _ = finished.send(());
     let err_text = err_text.join().unwrap_or_default();
     if handle.is_cancelled() {

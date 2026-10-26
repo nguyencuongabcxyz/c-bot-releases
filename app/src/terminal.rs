@@ -41,19 +41,17 @@ fn cmd_safe(s: &str) -> String {
 /// Terminal, when that's the default terminal) and only returns when Claude Code in it
 /// ends, so the launcher's exit says the terminal was closed.
 fn command_line(claude_path: &str, folder: &str, session_id: &str, model: &str, permission_mode: &str, title: &str) -> String {
-    let mut args: Vec<&str> = vec![];
-    if !session_id.is_empty() {
-        args.extend(["--resume", session_id]);
-    }
-    if !model.is_empty() {
-        args.extend(["--model", model]);
-    }
-    if !permission_mode.is_empty() && permission_mode != "default" {
-        args.extend(["--permission-mode", permission_mode]);
-    }
-    // ids, aliases and modes only
-    let safe: Vec<&str> = args.into_iter().filter(|a| !a.is_empty() && a.chars().all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c))).collect();
-    format!("/d /s /c \"start \"{}\" /WAIT /D \"{}\" \"{}\" {}\"", cmd_safe(title), cmd_safe(folder), cmd_safe(claude_path), safe.join(" "))
+    let mode = if permission_mode == "default" { "" } else { permission_mode };
+    // ids, model names and aliases (opus[1m]) and modes only: a value with anything else in it
+    // is left out together with its flag, so Claude Code still starts (on its own default)
+    let fits = |v: &str| !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || "_.:-[]".contains(c));
+    let args: Vec<String> = [("--resume", session_id), ("--model", model), ("--permission-mode", mode)]
+        .into_iter()
+        .filter(|(_, v)| fits(v))
+        .map(|(flag, v)| format!("{flag} {v}"))
+        .collect();
+    let args = if args.is_empty() { String::new() } else { format!(" {}", args.join(" ")) };
+    format!("/d /s /c \"start \"{}\" /WAIT /D \"{}\" \"{}\"{}\"", cmd_safe(title), cmd_safe(folder), cmd_safe(claude_path), args)
 }
 
 fn launch(claude_path: &str, folder: &str, session_id: &str, model: &str, permission_mode: &str, title: &str) -> std::io::Result<Child> {
@@ -328,9 +326,14 @@ mod tests {
             line,
             "/d /s /c \"start \"C-Bot - Bo  co\" /WAIT /D \"C:\\work\\my app\" \"C:\\Users\\me\\claude.exe\" --resume 0f1e2d3c-aaaa-bbbb-cccc-123456789012 --model opus --permission-mode acceptEdits\""
         );
-        // the default mode and anything odd in an argument are left out
+        // the default mode is left out, and a value with anything odd in it goes with its flag
         let line = command_line("claude", "C:\\w", "", "my model; rm", "default", "t");
-        assert_eq!(line, "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\" --model\"");
+        assert_eq!(line, "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\"\"");
+        let line = command_line("claude", "C:\\w", "s1", "x&y", "plan", "t");
+        assert_eq!(line, "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\" --resume s1 --permission-mode plan\"");
+        // a model alias with a context size, as Claude Code takes it
+        let line = command_line("claude", "C:\\w", "", "opus[1m]", "", "t");
+        assert_eq!(line, "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\" --model opus[1m]\"");
     }
 
     #[test]
