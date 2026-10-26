@@ -42,16 +42,46 @@ Ask one robot to ask another (*"Ask Sunny which port her API runs on"*) or to ha
 
 ### Everyday helpers
 
-Press **Ctrl+Alt+C** anywhere for the action menu, or use the shortcuts:
+Your robots help outside the code too, in any app. Remember one hotkey, **Ctrl+Alt+C**: it opens a menu of everything below.
 
-| Keys | Does |
-| --- | --- |
-| **Ctrl+Alt+R** | **Quick actions** on selected text: refine, translate (English ↔ Vietnamese), explain, sum up. **Replace** puts the result back. |
-| **Ctrl+Alt+B** | **Ask about part of the screen:** drag a box round anything and ask about it. |
-| **Ctrl+Alt+W** | **Save an English word** you selected; robots help you review it later. |
-| **Ctrl+Alt+N** | **Take a note.** Robots remind you of open notes each morning and evening. |
+<table>
+<tr>
+<td width="50%" valign="top">
 
-<img src="docs/screenshots/quick-actions.png" alt="Quick actions" width="340">
+**✨ Polish any text** · `Ctrl+Alt+R`<br>
+Select text anywhere to refine it, translate it (English ↔ Vietnamese), explain it or sum it up, then put the result straight back.
+
+<img src="docs/screenshots/quick-actions.png" alt="Refining a sentence with Quick actions" width="300">
+
+</td>
+<td width="50%" valign="top">
+
+**🔍 Ask about the screen** · `Ctrl+Alt+B`<br>
+Drag a box round an error, a chart or a foreign paragraph, and a robot tells you what it means or what's wrong.
+
+<img src="docs/screenshots/screen-ask.png" alt="A robot explaining a git error from a screen box">
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**📚 Learn English words** · `Ctrl+Alt+W`<br>
+Select a word to get its Vietnamese meaning, phrases and examples. Your robots bring it back now and then until it sticks.
+
+<img src="docs/screenshots/word-card.png" alt="A word card for 'meticulous'" width="300">
+
+</td>
+<td valign="top">
+
+**📒 Notes and reminders** · `Ctrl+Alt+N`<br>
+Jot something down from anywhere. Notes pin to each desk's corkboard, and a robot reminds you each morning and evening.
+
+<img src="docs/screenshots/notes.png" alt="The notebook beside a robot's corkboard">
+
+</td>
+</tr>
+</table>
 
 Change the shortcuts in the Workshop under **Settings → Shortcuts**.
 
