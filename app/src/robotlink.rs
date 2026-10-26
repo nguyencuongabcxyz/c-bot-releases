@@ -15,6 +15,8 @@
 //! cancelled) that both robots show on their desks (robot:tasks, tasks_for), waits up to
 //! TASK_TIMEOUT, and is cancelled if the robot that handed it off stops waiting (its Claude
 //! was stopped: the tool server hangs up the line).
+//! The same tools reach the user's own things too: their saved English words (list_words,
+//! save_words: vocab.rs) and their notebook (list_notes, add_note: notes.rs).
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -31,7 +33,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::store::now_ms;
 use crate::util::text;
-use crate::{hub, planes, robots, social, walkers, win, with};
+use crate::{hub, notes, planes, robots, social, vocab, walkers, win, with};
 
 const ANSWER_TIMEOUT_MS: u64 = 10 * 60_000;
 const EXCHANGE_KEEP_MS: i64 = 30 * 60_000; // a follow-up within this long goes to the same tab
@@ -43,8 +45,18 @@ const TASK_SHOWN: Duration = Duration::from_secs(90); // a finished task stays o
 /// How long a handed-off task may take (ms): Claude Code's MCP_TOOL_TIMEOUT is set past it.
 pub const TASK_TIMEOUT_MS: u64 = 45 * 60 * 1000;
 
-/// The other robots' tools, as Claude Code names them.
-const TOOLS: [&str; 3] = ["mcp__cbot__ask_robot", "mcp__cbot__list_robots", "mcp__cbot__hand_off_task"];
+/// The other robots' tools, and the words' and notes', as Claude Code names them.
+const TOOLS: [&str; 7] = [
+    "mcp__cbot__ask_robot", "mcp__cbot__list_robots", "mcp__cbot__hand_off_task",
+    "mcp__cbot__list_words", "mcp__cbot__save_words", "mcp__cbot__list_notes", "mcp__cbot__add_note",
+];
+
+/// What every robot's Claude should know about the user's words and notebook.
+const DESK_NOTE: &str = concat!(
+    "The user keeps a list of English words they're learning and a notebook of notes in C-Bot. ",
+    "When they ask what words they've saved (or to review or quiz them), use list_words; when they ask you to save or remember a word, use save_words. ",
+    "When they ask about their notes or to-dos, use list_notes; when they ask you to note something down, use add_note."
+);
 
 #[derive(Clone)]
 struct Task {
@@ -183,6 +195,34 @@ fn err(text: impl Into<String>) -> Value {
     json!({ "text": text.into(), "isError": true })
 }
 
+/// The user's words and notes (no other robot involved): None if it's not one of those tools.
+fn desk_tool(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Option<Value> {
+    let answer = match tool {
+        "list_words" => {
+            let limit = args["limit"].as_u64().map_or(50, |n| n.clamp(1, 300) as usize);
+            json!({ "text": vocab::list_for_chat(app, &text(&args["query"]), limit) })
+        }
+        "save_words" => {
+            let list: Vec<String> = match &args["words"] {
+                Value::Array(a) => a.iter().map(text).collect(),
+                Value::String(s) => vec![s.clone()], // (a single word, not in a list)
+                _ => vec![],
+            };
+            if list.iter().all(|w| w.trim().is_empty()) {
+                return Some(err("There was no word to save."));
+            }
+            json!({ "text": vocab::save_for_chat(app, from, &list, text(&args["context"]).trim()) })
+        }
+        "list_notes" => json!({ "text": notes::list_for_chat(app, args["include_done"].as_bool() == Some(true)) }),
+        "add_note" => match notes::add_for_chat(app, from, &text(&args["text"]), args["important"].as_bool() == Some(true)) {
+            Ok(said) => json!({ "text": said }),
+            Err(e) => err(e),
+        },
+        _ => return None,
+    };
+    Some(answer)
+}
+
 /// One call from robots_mcp.rs: { token, from, tool, args }. Returns the answer right away,
 /// or waits for the other robot (ask_robot, hand_off_task) and returns that.
 fn handle(app: &AppHandle, req: &Value, conn: u64) -> Value {
@@ -201,6 +241,9 @@ fn handle(app: &AppHandle, req: &Value, conn: u64) -> Value {
         }
         let lines: Vec<String> = list.iter().map(|(id, n, f)| format!("- {n}: looks after {f} ({})", status_of(app, id))).collect();
         return json!({ "text": lines.join("\n") });
+    }
+    if let Some(answer) = desk_tool(app, &from, tool, &args) {
+        return answer;
     }
     if tool != "ask_robot" && tool != "hand_off_task" {
         return err(format!("No tool {tool}."));
@@ -447,9 +490,11 @@ fn connection(app: &AppHandle, mut sock: TcpStream, conn: u64) {
 
 // ---------------------------------------------------------------- for the others
 
-/// What this robot's Claude should know about the others (added to its system prompt).
+/// What this robot's Claude should know about the others, and the user's words and notes
+/// (added to its system prompt).
 pub fn note(app: &AppHandle, id: &str) -> Option<String> {
-    Some(note_for(&others(app, id))).filter(|n| !n.is_empty())
+    let others = note_for(&others(app, id));
+    Some(if others.is_empty() { DESK_NOTE.to_string() } else { format!("{others}\n{DESK_NOTE}") })
 }
 
 /// The --mcp-config file giving this robot's Claude Code the other-robots tools (written
@@ -561,7 +606,10 @@ mod tests {
     }
 
     #[test]
-    fn the_tools_are_the_three_cbot_ones() {
-        assert_eq!(allowed_tools(), ["mcp__cbot__ask_robot", "mcp__cbot__list_robots", "mcp__cbot__hand_off_task"]);
+    fn the_tools_are_the_cbot_ones() {
+        assert_eq!(
+            allowed_tools(),
+            ["mcp__cbot__ask_robot", "mcp__cbot__list_robots", "mcp__cbot__hand_off_task", "mcp__cbot__list_words", "mcp__cbot__save_words", "mcp__cbot__list_notes", "mcp__cbot__add_note"]
+        );
     }
 }

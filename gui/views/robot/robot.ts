@@ -10,6 +10,7 @@ import markup from './robot.html?raw';
 import '@/ui/theme.css';
 import './robot.css';
 import type { McpAppHostHandle } from '@/mcp/appHost';
+import type { Office3DView } from '@/office3d/index';
 import type {
   AppCall,
   AppViewCall,
@@ -194,6 +195,7 @@ type RobotState = {
   lastBonk?: number;
   slacking?: number;
   claudeCommands?: ClaudeCommand[];
+  peek?: boolean;
 };
 
 showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
@@ -254,6 +256,11 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     mcp__cbot__ask_robot: ['🤖', 'Asking', 'agent'],
     mcp__cbot__list_robots: ['🤖', 'Looking for the other robots', 'agent'],
     mcp__cbot__hand_off_task: ['📋', 'Handing off', 'agent'],
+    // your words and notebook
+    mcp__cbot__list_words: ['📚', 'Checking your words', 'read'],
+    mcp__cbot__save_words: ['📚', 'Saving the words', 'edit'],
+    mcp__cbot__list_notes: ['🗒️', 'Reading your notes', 'read'],
+    mcp__cbot__add_note: ['🗒️', 'Noting down', 'edit'],
   };
   // a tool chip's line icon, by the kind of step (../ui/icons.js)
   const TOOL_ICONS: Record<string, string> = { read: 'file', search: 'search', run: 'terminal', edit: 'edit', web: 'globe', agent: 'bot', plan: 'plan', ask: 'help', think: 'wrench' };
@@ -465,6 +472,8 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     // nodding off: in the chair with an eye mask, or on the floor under a blanket (a coin toss each time)
     if (pose === 'sleep' && robot.dataset.pose !== 'sleep') robot.dataset.sleepStyle = Math.random() < 0.5 ? 'chair' : 'floor';
     robot.dataset.pose = pose;
+    peekEl.classList.toggle('dozing', pose === 'sleep');
+    peekFace();
     nightcap();
     look();
   }
@@ -478,6 +487,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   }
 
   function look() {
+    if (state.peek) return; // (peeking from the edge: peekLook has its eyes)
     let { dx, dy } = state.lastCursor;
     const pose = robot.dataset.pose;
     let follow = pose === 'idle' || pose === 'talking' || pose === 'wave' || pose === 'cheer' || pose === 'eager';
@@ -536,6 +546,10 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     robot.dataset.theme = c.theme || 'classic';
     robot.dataset.name = c.name;
     document.title = c.name;
+    if (peekView) {
+      peekDress(); // (dressed up in the Workshop while it peeks)
+      peekView.setScale(k);
+    }
   }
 
   function renderHistory(tab: ChatTab = active()!) {
@@ -552,6 +566,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   function wake({ sayHi = true, tucked = false } = {}) {
     if (state.away) return awayClick(); // it's out: drag it back first
     if (state.awake) return;
+    unpeek(); // (hidden at the edge: it comes back out first)
     state.awake = true;
     stopAntic();
     state.lastActivity = Date.now();
@@ -661,6 +676,105 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     renderFace();
     socialReport({ kind: 'slept' });
   }
+
+  // ---- hiding at the screen's edge
+  // Out of your way: the desk goes and just its head peeks out at the bottom of the screen
+  // (or the top), eyes following the mouse, z's while it naps, a "!" when it has news. A
+  // click on it (or anything that wakes it) brings it back. Its window is laid out for it
+  // by main (body.peek comes with that layout); the 3D desk stops drawing meanwhile, and
+  // the robot itself is drawn on its own (office3d's solo mode, as out for a walk).
+  const peekEl = $('#peek');
+  const peekBot = $('#peek-bot'); // (the solo view reads its dataset and --paint)
+  const peekMood = document.createElement('div'); // (its awake / asleep: not the desk's)
+  let peekView: Office3DView | null = null;
+  function peekDress() {
+    const c = state.character;
+    if (!c) return;
+    peekBot.style.setProperty('--paint', c.color || '#5ac8fa');
+    Object.assign(peekBot.dataset, { body: 'kit', kit: JSON.stringify(c.kit || {}), acc: c.accessory || 'none', name: c.name, theme: c.theme || 'classic' });
+  }
+  function peekShow() {
+    if (peekView) return;
+    peekDress();
+    Object.assign(peekBot.dataset, { gait: 'stand', heading: 'toward', speed: '1' });
+    peekView = Office3D.mount(peekBot, { stateEl: peekBot, moodEl: peekMood, width: 190, height: 250, solo: true });
+    peekView.setScale(state.scale || 1);
+    peekFace();
+    peekBlink();
+  }
+  function peekGone() {
+    peekView?.dispose();
+    peekView = null;
+    clearTimeout(peekBlink.t);
+  }
+  // napping: eyes shut (a nightcap after 10 pm); hover: eyes open, "oh!" and a wave;
+  // working or with news: eyes open
+  function peekFace() {
+    if (!peekView) return;
+    const d = peekBot.dataset;
+    const hover = peekEl.matches(':hover');
+    const news = body.classList.contains('has-badge');
+    const dozing = peekEl.classList.contains('dozing') && !hover && !news;
+    peekMood.className = dozing ? 'asleep' : 'awake';
+    d.eyes = dozing ? 'closed' : news ? 'happy' : 'open';
+    d.mouth = dozing ? 'flat' : hover ? 'o' : news ? 'smile' : 'flat';
+    d.gait = hover ? 'wave' : 'stand';
+    const h = new Date().getHours();
+    d.nightcap = dozing && (h >= 22 || h < 6) ? '1' : '';
+  }
+  function peekBlink() {
+    clearTimeout(peekBlink.t);
+    if (!peekView) return;
+    peekFace(); // (also picks up news that came meanwhile)
+    if (peekMood.className === 'awake') {
+      peekBot.dataset.eyes = 'closed';
+      setTimeout(peekFace, 140);
+    }
+    peekBlink.t = setTimeout(peekBlink, rand(2200, 5000));
+  }
+  peekBlink.t = 0;
+  peekEl.addEventListener('mouseenter', peekFace);
+  peekEl.addEventListener('mouseleave', peekFace);
+  function peek() {
+    if (state.peek || state.away || state.leaving || state.mirroring) return;
+    if (state.awake) {
+      sleep(); // (busy, it keeps working down there)
+      return void setTimeout(() => state.awake || peek(), PANEL_OUT + 60);
+    }
+    state.peek = true;
+    stopAntic();
+    Sfx.swish();
+    robot.dataset.peek = '1';
+    peekShow();
+    ipc.robotPeek(true);
+    socialReport();
+  }
+  function unpeek() {
+    if (!state.peek) return;
+    state.peek = false;
+    robot.dataset.peek = '';
+    peekGone();
+    ipc.robotPeek(false);
+    Sfx.pop();
+    setTimeout(() => flash('hop', 600), 120);
+  }
+  // its eyes on the mouse (c: robot:cursor, from where its desk was: robotX/Y put that here)
+  function peekLook(c: Point) {
+    const top = state.placement === 'peek-top'; // (upside down: so is everything)
+    const eyeY = 36 * (state.scale || 1); // (its face: 36px from the edge, #peek-bot)
+    const dx = (c.x + state.robotX - innerWidth / 2) * (top ? -1 : 1);
+    const dy = top ? eyeY - (c.y + state.robotY) : c.y + state.robotY - (innerHeight - eyeY);
+    const dist = Math.hypot(dx, dy) || 1;
+    const reach = Math.min(1, dist / 120);
+    const root = document.documentElement.style;
+    root.setProperty('--look-x', `${((dx / dist) * 6 * reach).toFixed(2)}px`);
+    root.setProperty('--look-y', `${((dy / dist) * 4 * reach).toFixed(2)}px`);
+  }
+  peekEl.addEventListener('click', () => unpeek());
+  peekEl.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    ipc.robotMenu({ awake: state.awake, away: !!state.away });
+  });
 
   function greet() {
     active()!.log.querySelectorAll('.greet').forEach((el) => el.remove());
@@ -1799,6 +1913,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 
   function terminalState(s: 'opened' | 'closed', tab: ChatTab, { quiet = false } = {}) {
     if (s === 'opened') {
+      unpeek();
       state.mirroring = true;
       tab.terminal = true;
       renderTabs();
@@ -3593,8 +3708,8 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     return options[0]?.[0];
   }
 
-  const idleAwake = () => state.awake && !state.busy && !helpersOut() && !state.mirroring && !press && !state.away;
-  const idleAsleep = () => !state.awake && !state.busy && !helpersOut() && !state.mirroring && !press && !state.away;
+  const idleAwake = () => state.awake && !state.busy && !helpersOut() && !state.mirroring && !press && !state.away && !state.peek;
+  const idleAsleep = () => !state.awake && !state.busy && !helpersOut() && !state.mirroring && !press && !state.away && !state.peek;
 
   // after 10 pm it sleeps in a nightcap, or, still up, codes with its hood up in the monitor's glow
   function nightcap() {
@@ -3612,7 +3727,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   const AWAY_NOTE = '🚶 Out for a walk: drag me back to my desk!';
 
   function leaveDesk() {
-    if (state.away || state.busy || helpersOut() || state.mirroring) return;
+    if (state.away || state.busy || helpersOut() || state.mirroring || state.peek) return;
     if (state.hosting && !state.visiting) return; // (a visitor's at its desk: it stays put)
     stopAntic();
     if (state.awake) collapse(); // the chat tucks away: it can't chat from out there
@@ -4297,7 +4412,9 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     body.classList.toggle('tuck-above', l.placement === 'tuck-above');
     body.classList.toggle('tuck-below', l.placement === 'tuck-below');
     body.classList.toggle('tuck-left', l.side === 'left'); // (which side the chat opens on: the strip lines up with the robot on that side)
-    if (l.placement === 'none') setClickThrough(false);
+    body.classList.toggle('peek', l.placement.startsWith('peek'));
+    body.classList.toggle('peek-top', l.placement === 'peek-top');
+    if (l.placement === 'none' || l.placement.startsWith('peek')) setClickThrough(false);
     if (l.expanded) scrollDown();
     laidOut(l);
   });
@@ -4331,6 +4448,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 
   // cursor position arrives relative to the robot box; aim from the robot's head
   ipc.on('robot:cursor', (c) => {
+    if (state.peek) return peekLook(c);
     const head = office.headPosition();
     state.lastCursor = { dx: c.x - head.x, dy: c.y - head.y };
     look();
@@ -4668,7 +4786,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   // sticky on its monitor (office3d: data-visit-notes), read out when it wakes.
   // free for one of these: idle, not in a quiz, a play, a question or a walk
   function socialFree() {
-    if (state.away || state.leaving || state.mirroring || helpersOut() || state.busy) return false;
+    if (state.away || state.leaving || state.mirroring || state.peek || helpersOut() || state.busy) return false;
     return state.awake ? !quizWord && !state.playing && !pendingQuestion() : true;
   }
   function socialReport(extra?: SocialReport) {
@@ -4689,7 +4807,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   let pendingTreat: { kind: 'food' | 'tea'; text: string } | null = null; // food or milk tea that came: { kind: 'food' | 'tea', text }
   // eat it (or drink it): asleep it wakes for it (its chat tucked away); busy, it waits
   function haveTreat() {
-    if (!pendingTreat || state.away) return;
+    if (!pendingTreat || state.away || state.peek) return; // (hidden at the edge: it saves it for later)
     if (!state.awake) return wake({ sayHi: false, tucked: true }); // (eaten on the next look)
     if (!socialFree() || body.classList.contains('expanded') || Date.now() < anticUntil) return;
     const t = pendingTreat;
@@ -5284,6 +5402,8 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   ipc.on('robot:action', (action) => {
     if (action === 'sleep') sleep();
     else if (action === 'wake') wake();
+    else if (action === 'peek') peek();
+    else if (action === 'unpeek') unpeek();
     else if (action === 'wake-tucked') wake({ sayHi: false, tucked: true }); // (main groupChat.js: the chat stays put away)
     else if (action === 'meeting') toMeeting();
     else if (action === 'meeting-end') fromMeeting();
@@ -5324,6 +5444,12 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     setSight(init.vocabSight || []);
     setBoard(init.notesBoard);
     syncTabs(init.character);
+    if (init.character.peek) {
+      // (hidden at the edge when it was last closed: main lays it out so again)
+      state.peek = true;
+      robot.dataset.peek = '1';
+      peekShow();
+    }
     ipc.robotExpand(false); // every (re)load starts asleep; keep the window in sync
     if (init.character.terminalOpen && tabs.get(init.character.terminalTab!)) terminalState('opened', tabs.get(init.character.terminalTab!)!, { quiet: true });
     setActivity('off');

@@ -8,6 +8,10 @@
 //!                 own folder, in a tab of its own chat). Call it again to follow up.
 //!   hand_off_task give one of them a piece of work to do in its project (tracked as a task
 //!                 on both desks); resolves to its report once it's done, or why it couldn't.
+//!   list_words    the English words the user saved (vocab.rs), newest first, or a search
+//!   save_words    save words to that list; they're looked up as with the word hotkey
+//!   list_notes    the notes in the user's notebook (notes.rs): the open ones, maybe done ones
+//!   add_note      put a note in the notebook (the robot pins it on its board)
 //! Each call goes to the running C-Bot over a private local socket (127.0.0.1:<port>, with the
 //! token from CBOT_TOKEN as its password), which does the asking (robotlink.rs).
 
@@ -24,7 +28,7 @@ pub const FLAG: &str = "--robots-mcp";
 /// The tools, as tools/list gives them. readOnlyHint: Claude Code runs a tool's calls one
 /// after another unless the tool says it's read-only, so without it asking two robots in one
 /// turn waited for the first answer before even sending the second. Asking doesn't change
-/// anything here, so they can all go at once.
+/// anything here, so they can all go at once (and saving words or notes is safe in parallel).
 pub fn tools() -> Value {
     let at_once = json!({ "readOnlyHint": true });
     json!([
@@ -70,6 +74,65 @@ pub fn tools() -> Value {
                     "details": { "type": "string", "description": "What to do, with the context and values it needs, and what done looks like." },
                 },
                 "required": ["robot", "title", "details"],
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
+            "name": "list_words",
+            "description": concat!(
+                "List the English words and phrases the user has saved to learn (their \"My words\" list in C-Bot), newest first, with how they sound, their meanings (Vietnamese, then English) and whether they're learnt. ",
+                "Use it when the user asks what words they've saved, to review or quiz them on their words, or whether a word is in their list (pass query to search)."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Only words matching this (in the word or a meaning). Leave out for all of them." },
+                    "limit": { "type": "integer", "description": "At most this many (default 50, up to 300)." },
+                },
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
+            "name": "save_words",
+            "description": concat!(
+                "Save English words or short phrases (up to 5 words each, up to 10 at a time) to the user's \"My words\" list in C-Bot, as their word hotkey does: each is looked up (meanings in Vietnamese, phrases, examples) and comes back in reviews and quizzes. ",
+                "Use it when the user asks you to save, remember or add a word to their vocabulary. Save the word in its base form (\"run\", not \"ran\") unless they want the exact phrase."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "words": { "type": "array", "items": { "type": "string" }, "description": "The words or phrases to save." },
+                    "context": { "type": "string", "description": "The sentence they came from, if there is one: it helps pick the right meaning." },
+                },
+                "required": ["words"],
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
+            "name": "list_notes",
+            "description": "List the notes in the user's C-Bot notebook (shared by all their robots): the open ones, important first, with when each was noted. Set include_done to also see the ones ticked off lately. Use it when the user asks about their notes, to-dos or what they noted down.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "include_done": { "type": "boolean", "description": "Also list the notes ticked off lately." },
+                },
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
+            "name": "add_note",
+            "description": "Add a note to the user's C-Bot notebook (it is pinned on the robots' corkboards and comes up in the daily reminders). Use it when the user asks you to note, jot down or remember something, or to add a to-do. One note per thing to remember.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "The note, in the user's words where possible." },
+                    "important": { "type": "boolean", "description": "Mark it important (⭐: it goes to the top of the board)." },
+                },
+                "required": ["text"],
                 "additionalProperties": false,
             },
             "annotations": at_once,
@@ -232,10 +295,10 @@ mod tests {
     }
 
     #[test]
-    fn it_lists_the_three_tools_all_read_only() {
+    fn it_lists_the_tools_all_read_only() {
         let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": "a", "method": "tools/list" })) else { panic!() };
         let names: Vec<&str> = r["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["list_robots", "ask_robot", "hand_off_task"]);
+        assert_eq!(names, ["list_robots", "ask_robot", "hand_off_task", "list_words", "save_words", "list_notes", "add_note"]);
         assert!(r["result"]["tools"].as_array().unwrap().iter().all(|t| t["annotations"]["readOnlyHint"] == true));
     }
 

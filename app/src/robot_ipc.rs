@@ -42,6 +42,13 @@ pub fn robot_expand(app: AppHandle, window: WebviewWindow, expanded: bool, opts:
     Ok(())
 }
 
+/// Hidden at the screen's edge, peeking out, or back at its desk.
+#[tauri::command(async)]
+pub fn robot_peek(app: AppHandle, window: WebviewWindow, peek: bool) -> Result<(), String> {
+    robots::set_peek(&app, &sender(&window)?, peek);
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub fn robot_drag(app: AppHandle, window: WebviewWindow, step: Value) -> Result<(), String> {
     robots::drag(&app, &sender(&window)?, &step);

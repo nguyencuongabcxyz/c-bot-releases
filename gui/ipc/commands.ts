@@ -22,6 +22,7 @@ export const robotAnswer = (tabId: string, requestId: string, answers: Record<st
 export const robotBrain = (tabId: string) => invoke<{ models: ModelChoice[]; model: string; effort: string; context: ContextUse | null } | null>('robot_brain', { tabId });
 export const robotSetBrain = (tabId: string, patch: { model?: string; effort?: string }) => invoke<{ ok: boolean; error?: string }>('robot_set_brain', { tabId, patch });
 export const robotExpand = (expanded: boolean, opts?: { focus?: boolean; tucked?: boolean }) => invoke<void>('robot_expand', { expanded, opts });
+export const robotPeek = (peek: boolean) => invoke<void>('robot_peek', { peek });
 export const robotPoke = () => invoke<number>('robot_poke');
 export const robotReset = (tabId?: string) => invoke<void>('robot_reset', { tabId });
 export const robotMenu = (state: { awake: boolean; away?: boolean }) => invoke<void>('robot_menu', { state });

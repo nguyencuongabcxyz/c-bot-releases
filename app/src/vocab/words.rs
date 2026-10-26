@@ -363,6 +363,43 @@ pub fn word_row(w: &Value) -> Value {
     })
 }
 
+/// It, for a query a robot's chat asked with (list_words): in the word, or in a meaning.
+pub fn matches(w: &Value, query: &str) -> bool {
+    let q = norm(query);
+    if q.is_empty() {
+        return true;
+    }
+    let english = w["senses"].as_array().map(|s| s.iter().map(|x| crate::util::text(&x["en"])).collect::<Vec<_>>().join(" ")).unwrap_or_default();
+    [str_of(w, "word"), str_of(w, "text"), &meanings_vi(w), &english].iter().any(|t| norm(t).contains(&q))
+}
+
+/// One line about it for a robot's chat (list_words): the word, how it sounds, what it
+/// means, and how far along you are with it.
+pub fn chat_line(w: &Value) -> String {
+    let word = if str_of(w, "word").is_empty() { str_of(w, "text") } else { str_of(w, "word") };
+    let mut line = format!("- **{word}**");
+    if !str_of(w, "ipa").is_empty() {
+        line.push_str(&format!(" /{}/", str_of(w, "ipa").trim_matches('/')));
+    }
+    let pos = parts_of_speech(w);
+    if !pos.is_empty() {
+        line.push_str(&format!(" ({pos})"));
+    }
+    let english = crate::util::text(&w["senses"][0]["en"]);
+    match (meanings_vi(w), english.is_empty()) {
+        (vi, _) if !vi.is_empty() => line.push_str(&format!(": {vi}{}", if english.is_empty() { String::new() } else { format!(" — {english}") })),
+        (_, false) => line.push_str(&format!(": {english}")),
+        _ => {}
+    }
+    line.push_str(match str_of(w, "status") {
+        "ready" if step_of(w) >= LEARNT_STEP => " · learnt",
+        "ready" => "",
+        "failed" => " · couldn't be looked up",
+        _ => " · still being looked up",
+    });
+    line
+}
+
 /// The words looked up, as a CSV for Anki or Quizlet: word, meaning, pronunciation, a phrase
 /// and its example (main.js words:export). With a BOM, so Excel reads the Vietnamese right.
 pub fn csv(words: &[Value]) -> String {
@@ -576,5 +613,18 @@ mod tests {
         assert_eq!(lines[0], "\"Word\",\"Meaning (Vietnamese)\",\"IPA\",\"Part of speech\",\"Phrase\",\"Example\",\"Example (Vietnamese)\",\"Synonyms\"");
         assert_eq!(lines[1], "\"run\",\"chạy; cuộc chạy; điều hành\",\"/rʌn/\",\"verb, noun\",\"run a \"\"business\"\"\",\"She runs a shop.\",\"Cô ấy mở cửa hàng.\",\"sprint, dash\"");
         assert_eq!(lines[2], "\"go\",\"\",\"\",\"\",\"\",\"Go!\",\"Đi!\",\"\"");
+    }
+
+    #[test]
+    fn a_chat_reads_and_searches_your_words() {
+        let mut v = Vocab::from(None);
+        let id = ready_word(&mut v, "meticulous", T0);
+        v.update(&id, crate::util::patch(vec![("ipa", json!("/məˈtɪkjələs/"))]));
+        let w = v.get(&id).unwrap().clone();
+        assert_eq!(chat_line(&w), "- **meticulous** /məˈtɪkjələs/ (adj): tỉ mỉ — careful");
+        assert!(matches(&w, "") && matches(&w, "METIC") && matches(&w, "tỉ mỉ") && matches(&w, "careful"));
+        assert!(!matches(&w, "run"));
+        let looking = v.add("serendipity", "", "", T0);
+        assert_eq!(chat_line(&looking), "- **serendipity** · still being looked up");
     }
 }

@@ -168,6 +168,7 @@ export type Character = {
   tabs: Tab[];
   activeTab: string;
   visible: boolean;
+  peek?: boolean; // hidden at the screen's edge, just its head peeking out
   position: Point | null;
   stats: { questions: number; pokes: number; costUsd: number };
   createdAt: number;
@@ -203,7 +204,7 @@ export type Layout = {
   bounds: Box;
   robotX: number;
   robotY: number;
-  placement: 'none' | 'left' | 'right' | 'tuck-above' | 'tuck-below';
+  placement: 'none' | 'left' | 'right' | 'tuck-above' | 'tuck-below' | 'peek-top' | 'peek-bottom';
   side?: 'left' | 'right'; // (tucked away: the side the chat opens on)
   panel?: { x: number; w: number };
   maxChatW?: number;

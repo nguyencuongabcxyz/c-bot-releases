@@ -122,7 +122,7 @@ fn distance(r: Rect, (cx, cy): (i32, i32)) -> f64 {
 
 /// A robot free to quiz you: the tutor if it's free, else the free robot nearest the mouse.
 fn free_robot(app: &AppHandle) -> Option<String> {
-    let free = |id: &str| robots::hwnd_of(app, id).is_some_and(win::is_visible) && !walkers::has(app, id) && !hub::robot_busy(app, id);
+    let free = |id: &str| robots::is_showing(app, id) && !walkers::has(app, id) && !hub::robot_busy(app, id);
     let tutor = settings(app)["vocabTutor"].as_str().unwrap_or("").to_string();
     if !tutor.is_empty() && free(&tutor) {
         return Some(tutor);
@@ -140,14 +140,13 @@ fn free_robot(app: &AppHandle) -> Option<String> {
 /// else the one nearest the mouse.
 fn sleeping_robot(app: &AppHandle) -> Option<String> {
     let asleep = |id: &str| {
-        let Some(hwnd) = robots::hwnd_of(app, id) else { return false };
-        if hub::robot_busy(app, id) {
+        if robots::hwnd_of(app, id).is_none() || hub::robot_busy(app, id) {
             return false;
         }
         if walkers::has(app, id) {
             return walkers::is_sleepwalking(app, id);
         }
-        win::is_visible(hwnd) && !robots::is_awake(app, id)
+        robots::is_showing(app, id) && !robots::is_awake(app, id)
     };
     let tutor = settings(app)["vocabTutor"].as_str().unwrap_or("").to_string();
     if !tutor.is_empty() && asleep(&tutor) {
@@ -724,6 +723,85 @@ pub fn quiz_now(app: &AppHandle) -> bool {
 /// A word card is up.
 pub fn card_showing(app: &AppHandle) -> bool {
     card::shown(app).is_some()
+}
+
+/// Your words, for a robot's chat (its list_words tool): the newest first, only those
+/// matching query if there is one, at most limit.
+pub fn list_for_chat(app: &AppHandle, query: &str, limit: usize) -> String {
+    let Some((all, learnt)) = words(app, |w| {
+        let all = w.vocab.list();
+        let learnt = all.iter().filter(|x| x["status"] == "ready" && words::step_of(x) >= words::LEARNT_STEP).count();
+        (all, learnt)
+    }) else {
+        return "Your word list isn't loaded yet.".into();
+    };
+    if all.is_empty() {
+        return format!("You haven't saved any English words yet. Select one anywhere and press {} to catch it, or ask me to save it.", hotkey(app));
+    }
+    let found: Vec<&Value> = all.iter().filter(|w| words::matches(w, query)).collect();
+    let q = query.trim();
+    if found.is_empty() {
+        return format!("None of your {} saved words matches \"{q}\".", all.len());
+    }
+    let shown: Vec<String> = found.iter().take(limit).map(|w| words::chat_line(w)).collect();
+    let head = if q.is_empty() {
+        format!("You have {} saved words ({learnt} learnt).", all.len())
+    } else {
+        format!("{} of your {} saved words match \"{q}\".", found.len(), all.len())
+    };
+    let more = if found.len() > shown.len() { format!("\n…and {} more (newest shown first).", found.len() - shown.len()) } else { String::new() };
+    format!("{head}\n{}{more}", shown.join("\n"))
+}
+
+/// Words to save, asked for in a robot's chat (its save_words tool). One word is caught as
+/// with the hotkey (the robot shows its card); several are looked up quietly, as a card's ＋
+/// does. What happened to each, for the chat.
+pub fn save_for_chat(app: &AppHandle, robot_id: &str, list: &[String], context: &str) -> String {
+    const SOURCE: &str = "C-Bot chat";
+    let wanted: Vec<String> = list.iter().map(|w| trim_edges(w).trim().to_string()).filter(|w| !w.is_empty()).collect();
+    if wanted.is_empty() {
+        return "There was no word to save.".into();
+    }
+    let too_long = |w: &str| w.encode_utf16().count() > 60 || w.split_whitespace().count() > 5;
+    if let [one] = wanted.as_slice() {
+        if too_long(one) {
+            return format!("\"{one}\" is too long to save: a word or a short phrase (up to 5 words) only.");
+        }
+        let known = words(app, |w| w.vocab.find(one).is_some_and(|k| k["status"] == "ready")).unwrap_or(false);
+        catch(app, one, SOURCE, Some(robot_id.to_string()), context);
+        return if known {
+            format!("\"{one}\" was already in your words: its card is up again, and it'll come up for review sooner.")
+        } else {
+            format!("Saved \"{one}\" to your words. Its meaning is being looked up now and will be on its card in a moment.")
+        };
+    }
+    let t = now();
+    let mut lines = vec![];
+    let mut added = vec![];
+    for one in wanted.iter().take(10) {
+        if too_long(one) {
+            lines.push(format!("- \"{one}\": too long (a word or a phrase of up to 5 words)"));
+            continue;
+        }
+        let new = words(app, |w| if w.vocab.find(one).is_some() { None } else { Some(w.vocab.add(one, context, SOURCE, t)) }).flatten();
+        match new {
+            Some(word) => {
+                added.push(text(&word["id"]));
+                lines.push(format!("- \"{one}\": saved, being looked up"));
+            }
+            None => lines.push(format!("- \"{one}\": already in your words")),
+        }
+    }
+    if wanted.len() > 10 {
+        lines.push(format!("- (the other {} weren't saved: up to 10 at a time)", wanted.len() - 10));
+    }
+    if !added.is_empty() {
+        count_changed(app);
+    }
+    for id in added {
+        find_meaning(app, id, Some(robot_id.to_string()), true);
+    }
+    lines.join("\n")
 }
 
 // ---------------------------------------------------------------- commands

@@ -287,7 +287,8 @@ function mount(host: HTMLElement, { stateEl, moodEl, width, height, solo = false
       : dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics!.active || !!stateEl.dataset.propHover || !!stateEl.dataset.stickyHover || stickiesMoving || stateEl.dataset.tidy === '1' || REACTIONS.some((r) => stateEl.classList.contains(r));
     // (its robot's in the group chat's meeting room: the empty desk needs only the odd frame)
     const fps = stateEl.dataset.meeting === '1' && !dragging ? 2 : lively ? 30 : awake ? 12 : 6;
-    if ((document.hidden && !solo) || now - lastFrame < 1000 / fps - 2) return; // (a walker draws while still hidden, to take over seamlessly)
+    // (hidden at the screen's edge, data-peek: only its head peeks out, drawn by the page)
+    if (((document.hidden || stateEl.dataset.peek === '1') && !solo) || now - lastFrame < 1000 / fps - 2) return; // (a walker draws while still hidden, to take over seamlessly)
     lastFrame = now;
     // the shadows follow every frame while something moves; sitting or sleeping, twice a second
     // is plenty (they're the costliest part of a frame)

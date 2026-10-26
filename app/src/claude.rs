@@ -127,6 +127,12 @@ pub fn describe_tool(name: &str, input: &Value) -> String {
         "Skill" => skill_label(if s(input, "skill").is_empty() { s(input, "name") } else { s(input, "skill") }),
         "mcp__cbot__ask_robot" => format!("{}: {}", s(input, "robot"), short(s(input, "message"), 48)),
         "mcp__cbot__hand_off_task" => format!("{}: {}", s(input, "robot"), short(s(input, "title"), 48)),
+        "mcp__cbot__list_words" => short(s(input, "query"), 32),
+        "mcp__cbot__save_words" => {
+            let words: Vec<String> = input.get("words").and_then(Value::as_array).map(|a| a.iter().filter_map(|w| w.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            short(&words.join(", "), 48)
+        }
+        "mcp__cbot__add_note" => short(s(input, "text"), 48),
         _ => String::new(),
     }
 }

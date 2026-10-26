@@ -230,7 +230,7 @@ fn rep(app: &AppHandle, id: &str) -> Rep {
 }
 
 fn showing(app: &AppHandle, id: &str) -> bool {
-    robots::hwnd_of(app, id).is_some_and(win::is_visible)
+    robots::is_showing(app, id)
 }
 
 /// Robots out on the desktop that have told us lately how they are.

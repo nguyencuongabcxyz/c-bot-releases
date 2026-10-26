@@ -28,6 +28,10 @@ const CHAT_MIN: f64 = 360.0;
 // Awake with the chat tucked away: room above the robot (below it, at the top of the
 // screen) for the status bubble and its speech bubble, so neither covers the desk.
 const TUCK_STRIP: f64 = 116.0;
+// Peeking: hidden away at the screen's edge (bottom, or top if it sits in the top half),
+// only its head poking out, in a window this small (CSS px, at the normal size; room for a
+// tall hat). Click it to bring it back.
+const PEEK: (f64, f64) = (120.0, 130.0);
 // how often the cursor is looked at (eyes follow it every other look)
 const CURSOR_POLL: Duration = Duration::from_millis(33);
 
@@ -65,6 +69,7 @@ pub struct Robot {
     dims: (f64, f64),    // its size (CSS px)
     pub expanded: bool,  // the chat is open
     pub tucked: bool,    // awake with the chat put away
+    pub peek: bool,      // hidden at the screen's edge, peeking out
     chat_w: f64,         // how wide you made the chat (CSS px)
     drag: Option<Drag>,
     resize_from: Option<f64>,
@@ -121,16 +126,31 @@ fn to_dip(p: (i32, i32)) -> Value {
 
 /// The chat goes on whichever side of the robot has room for it (left first: robots
 /// start in the bottom-right corner), from the top of the screen to the bottom.
-fn layout_for(anchor: (i32, i32), expanded: bool, tucked: bool, chat_w: f64, dims: (f64, f64)) -> Layout {
+fn layout_for(anchor: (i32, i32), expanded: bool, tucked: bool, peek: bool, chat_w: f64, dims: (f64, f64)) -> Layout {
     let (m, dw, dh) = place(anchor, dims);
     let s = m.scale;
     let css = |v: i32| (v as f64 / s).round();
     let bounds_msg = |b: Rect| json!({ "x": css(b.x), "y": css(b.y), "width": css(b.w), "height": css(b.h) });
+    if peek && !expanded && !tucked {
+        // A little window on the nearest edge (top or bottom), under the middle of its box.
+        // robotX/Y: where its box would be, so the page can still turn robot:cursor into
+        // where the mouse is from here (its eyes follow it).
+        let wa = m.work;
+        let k = dims.0 / ROBOT.0; // (its size: the head is as big as at its desk)
+        let (pw, ph) = ((PEEK.0 * k * s).round() as i32, (PEEK.1 * k * s).round() as i32);
+        let top = anchor.1 + dh / 2 < wa.y + wa.h / 2;
+        let x = (anchor.0 + dw / 2 - pw / 2).max(wa.x).min(wa.right() - pw);
+        let y = if top { wa.y } else { wa.bottom() - ph };
+        let bounds = Rect { x, y, w: pw, h: ph };
+        let placement = if top { "peek-top" } else { "peek-bottom" };
+        let msg = json!({ "bounds": bounds_msg(bounds), "robotX": css(anchor.0 - x), "robotY": css(anchor.1 - y), "placement": placement });
+        return Layout { bounds, placement, panel_w: 0.0, max_chat_w: CHAT_W, msg: msg.as_object().unwrap().clone() };
+    }
     if !expanded && tucked {
         // The chat put away keeps the window the size and place it has with the chat open
         // (the rest is see-through and lets clicks through), so tucking it away and opening
         // it again is just the page: no window move, which would flicker.
-        let mut open = layout_for(anchor, true, false, chat_w, dims);
+        let mut open = layout_for(anchor, true, false, false, chat_w, dims);
         let robot_y = open.msg["robotY"].as_f64().unwrap_or(0.0);
         open.msg.insert("side".into(), json!(open.placement));
         open.placement = if robot_y >= TUCK_STRIP { "tuck-above" } else { "tuck-below" };
@@ -169,7 +189,7 @@ fn layout_for(anchor: (i32, i32), expanded: bool, tucked: bool, chat_w: f64, dim
 pub fn apply_layout(app: &AppHandle, id: &str) {
     let job = with(app, |st| {
         let r = st.robots.get_mut(id)?;
-        let layout = layout_for(r.anchor, r.expanded, r.tucked, r.chat_w, r.dims);
+        let layout = layout_for(r.anchor, r.expanded, r.tucked, r.peek, r.chat_w, r.dims);
         r.seq += 1;
         let mut msg = layout.msg.clone();
         msg.insert("expanded".into(), json!(r.expanded));
@@ -247,9 +267,10 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
     let (_, w, h) = place(anchor, dims);
     win::set_bounds(hwnd, Rect { x: anchor.0, y: anchor.1, w, h });
     let chat_w = c["chatWidth"].as_f64().unwrap_or(CHAT_W);
+    let peek = c["peek"].as_bool().unwrap_or(false); // (the page lays it out so as it starts)
     with(app, |st| {
         st.robots.insert(id.to_string(), Robot {
-            hwnd, anchor, dims, expanded: false, tucked: false, chat_w, drag: None, resize_from: None, layout: None, seq: 0,
+            hwnd, anchor, dims, expanded: false, tucked: false, peek, chat_w, drag: None, resize_from: None, layout: None, seq: 0,
             through: false, forwarded: None, eyes: None,
         })
     });
@@ -281,6 +302,19 @@ pub fn expand(app: &AppHandle, id: &str, expanded: bool, opts: &Value) {
     apply_layout(app, id);
     if expanded && focus && let Some(w) = app.get_webview_window(&label_of(id)) {
         let _ = w.set_focus();
+    }
+}
+
+/// Hidden at the screen's edge, peeking out (or back at its desk). Remembered, so it
+/// stays hidden after a restart.
+pub fn set_peek(app: &AppHandle, id: &str, peek: bool) {
+    let found = with(app, |st| {
+        let r = st.robots.get_mut(id)?;
+        r.peek = peek;
+        st.store.update(id, crate::util::patch(vec![("peek", json!(peek))]))
+    });
+    if found.is_some() {
+        apply_layout(app, id);
     }
 }
 
@@ -448,6 +482,12 @@ pub fn hwnd_of(app: &AppHandle, id: &str) -> Option<isize> {
 /// The robots whose windows are open.
 pub fn open_ids(app: &AppHandle) -> Vec<String> {
     with(app, |st| st.robots.keys().cloned().collect())
+}
+
+/// Out on the desktop at its desk: its window showing, not hidden away peeking from the edge
+/// (so visitors, the housemaid and word quizzes leave it be).
+pub fn is_showing(app: &AppHandle, id: &str) -> bool {
+    with(app, |st| st.robots.get(id).map(|r| (r.hwnd, r.peek))).is_some_and(|(hwnd, peek)| !peek && win::is_visible(hwnd))
 }
 
 /// Is the chat open (or awake with it tucked away)?

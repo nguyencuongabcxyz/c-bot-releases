@@ -281,6 +281,7 @@ fn robot_menu_of(app: &AppHandle, id: &str, awake: bool, away: bool) -> tauri::R
     let base = folder.rsplit(['\\', '/']).find(|s| !s.is_empty()).unwrap_or(folder);
     let can_paste = clipboard::has_something();
     let (screen_keys, _) = hotkey(app, "screenHotkey", "Ctrl+Alt+B");
+    let peeking = with(app, |st| st.robots.get(id).is_some_and(|r| r.peek));
     build_menu(app, vec![
         note(app, &format!("{name} — {base}")),
         separator(app),
@@ -305,6 +306,7 @@ fn robot_menu_of(app: &AppHandle, id: &str, awake: bool, away: bool) -> tauri::R
         ]),
         separator(app),
         settings_menu(),
+        if peeking { item(app, act("unpeek"), "👋 Come back to the desk", true) } else { item(app, act("peek"), "🫣 Hide at the screen edge (peek)", true) },
         item(app, act("hide"), "🙈 Put away (hide)", true),
     ])
     .map(Some)
@@ -433,7 +435,7 @@ fn picked(app: &AppHandle, id: &str) {
             let rid = Some(id.to_string());
             match *action {
                 // (the page acts these out: robot.ts robot:action)
-                "wake" | "sleep" | "new-tab" | "history" | "paste" | "terminal" | "bonk" | "wander" => {
+                "wake" | "sleep" | "new-tab" | "history" | "paste" | "terminal" | "bonk" | "wander" | "peek" | "unpeek" => {
                     let _ = app.emit_to(robots::label_of(id), "robot:action", *action);
                 }
                 "hide" => hub::set_visible(app, id, false),

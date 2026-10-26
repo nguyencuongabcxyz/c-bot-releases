@@ -445,6 +445,44 @@ pub fn add(app: &AppHandle, text: &str, source: &str) -> Value {
     note.unwrap_or(Value::Null)
 }
 
+/// Your notes, for a robot's chat (its list_notes tool): the open ones, important first,
+/// and with done, the ones ticked off lately too.
+pub fn list_for_chat(app: &AppHandle, done: bool) -> String {
+    let t = now();
+    let Some((open, ticked)) = notes(app, |n| {
+        let ticked: Vec<Value> = if done { n.list().into_iter().filter(|x| x["doneAt"].as_i64().is_some_and(|d| d != 0)).take(20).collect() } else { vec![] };
+        (n.open(), ticked)
+    }) else {
+        return "Your notebook isn't loaded yet.".into();
+    };
+    let when = |n: &Value| match book::age(n, t) {
+        0 => "today".to_string(),
+        1 => "yesterday".to_string(),
+        d => format!("{d} days ago"),
+    };
+    let line = |n: &Value, mark: &str| format!("- {mark}{} _(noted {})_", text(&n["text"]).replace('\n', " / "), when(n));
+    let mut out = if open.is_empty() {
+        "Nothing left to do in your notebook.".to_string()
+    } else {
+        let lines: Vec<String> = open.iter().map(|n| line(n, if n["important"] == true { "⭐ " } else { "" })).collect();
+        format!("{} open note{}:\n{}", open.len(), if open.len() == 1 { "" } else { "s" }, lines.join("\n"))
+    };
+    if done {
+        out.push_str(&if ticked.is_empty() { "\n\nNo notes ticked off lately.".to_string() } else { format!("\n\nDone lately:\n{}", ticked.iter().map(|n| line(n, "✓ ")).collect::<Vec<_>>().join("\n")) });
+    }
+    out
+}
+
+/// A note, asked for in a robot's chat (its add_note tool): it pins it up on its board.
+pub fn add_for_chat(app: &AppHandle, robot_id: &str, text: &str, important: bool) -> Result<String, String> {
+    let Some(note) = notes(app, |n| n.add(text, important, "chat", now())).flatten() else {
+        return Err("The note is empty.".into());
+    };
+    after_change(app);
+    tell(app, Some(robot_id), json!({ "phase": "added", "note": note, "quiet": true }));
+    Ok(format!("Noted{}: {}", if note["important"] == true { " (⭐ important)" } else { "" }, crate::util::text(&note["text"])))
+}
+
 // ---------------------------------------------------------------- commands
 
 /// A robot's: the corkboard was clicked (or /notes). focus: 'add', or a note's id.

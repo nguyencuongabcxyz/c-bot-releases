@@ -101,7 +101,7 @@ fn tell(app: &AppHandle, id: &str, payload: Value) {
 }
 
 fn showing(app: &AppHandle, id: &str) -> bool {
-    robots::hwnd_of(app, id).is_some_and(win::is_visible)
+    robots::is_showing(app, id)
 }
 
 fn centre(r: Rect) -> (i32, i32) {
