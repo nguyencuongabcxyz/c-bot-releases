@@ -20,18 +20,30 @@ const AWAY_AFTER = 120; // s without touching mouse or keyboard
 // QUERY_USER_NOTIFICATION_STATE: 5 = QUNS_ACCEPTS_NOTIFICATIONS (anything else: busy, presenting, away…)
 let shell32;
 function acceptsNotifications() {
-  if (process.platform !== 'win32') return true;
+  const state = notificationState();
+  return state === 5 || state === 0;
+}
+
+// a full-screen app (2), a full-screen game (3) or presentation mode (4) has the screen
+function presenting() {
+  return [2, 3, 4].includes(notificationState());
+}
+
+// Windows' SHQueryUserNotificationState (QUNS_*), or 0 when it can't tell
+function notificationState() {
+  if (process.platform !== 'win32') return 0;
   try {
     if (shell32 === undefined) {
       const koffi = require('koffi');
       const lib = koffi.load('shell32.dll');
       shell32 = { state: lib.func('long __stdcall SHQueryUserNotificationState(_Out_ int *pquns)') };
     }
+    if (!shell32) return 0;
     const out = [0];
-    return shell32.state(out) !== 0 || out[0] === 5 || out[0] === 0;
+    return shell32.state(out) !== 0 ? 0 : out[0];
   } catch {
     shell32 = null;
-    return true;
+    return 0;
   }
 }
 
@@ -87,4 +99,4 @@ function createReminders({ vocab, settings, dream, quiz }) {
   };
 }
 
-module.exports = { createReminders, acceptsNotifications };
+module.exports = { createReminders, acceptsNotifications, presenting };

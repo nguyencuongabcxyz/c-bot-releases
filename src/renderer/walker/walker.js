@@ -26,7 +26,12 @@
       body: 'kit', kit: JSON.stringify(c.kit || {}), acc: c.accessory || 'none', name: c.name || '', theme: c.theme || 'classic',
     });
     document.title = `${c.name} (out for a walk)`;
+    onDuty = !!c.staff;
+    const tag = document.getElementById('tag');
+    tag.textContent = c.tag || '';
+    tag.hidden = !c.tag;
   }
+  let onDuty = false; // (the evening housemaid: in uniform, never in a hoodie or a nightcap)
 
   function renderFace() {
     const f = face && face.until > Date.now() ? face : null;
@@ -46,7 +51,7 @@
     body.classList.toggle('awake', !asleep);
     // a nightcap if it's sleepwalking late at night, a hood if it's up late
     const h = new Date().getHours();
-    const late = h >= 22 || h < 6;
+    const late = !onDuty && (h >= 22 || h < 6);
     stateEl.dataset.nightcap = asleep && late ? '1' : '';
     stateEl.dataset.lateNight = !asleep && late ? '1' : '';
     if (gait) stateEl.dataset.gait = gait;

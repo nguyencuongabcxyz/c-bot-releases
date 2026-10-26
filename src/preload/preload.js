@@ -20,7 +20,7 @@ const LISTEN = new Set([
   'mgr:changed', 'mgr:focus', 'walker:state', 'walker:character', 'walker:cursor', 'walker:dream', 'robot:vocab', 'card:word', 'words:changed',
   'robot:notes', 'notebook:notes', 'notebook:open', 'theme:changed', 'robot:screen', 'palette:open', 'drone:cmd', 'robot:palette',
   'quick:open', 'quick:text', 'robot:quick',
-  'robot:social', 'walker:say', 'plane:pose', 'robot:link', 'robot:tasks',
+  'robot:social', 'walker:say', 'plane:pose', 'robot:link', 'robot:tasks', 'robot:hush',
 ]);
 
 contextBridge.exposeInMainWorld('cbot', {

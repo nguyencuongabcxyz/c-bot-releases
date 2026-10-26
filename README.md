@@ -35,7 +35,7 @@ The **Release** GitHub Action ([.github/workflows/release.yml](.github/workflows
 
 C-Bot lives in the system tray. The first launch opens the **Robot Workshop**, where you build your first robot.
 
-The tray menu is grouped like a robot's right-click menu: your robots (tick to show, untick to put away; walkers can be called back) with the Workshop and New robot; then the features (⌨️ All actions, 🔍 Ask about part of the screen, ✨ Quick actions, 📒 Notes, 📚 English words, each a submenu with its hotkey); then ⚙️ Settings (Theme, Mute, Start with Windows, backups); then the version and Quit.
+The tray menu is grouped like a robot's right-click menu: your robots (tick to show, untick to put away; walkers can be called back) with the Workshop and New robot; then the features (⌨️ All actions, 🔍 Ask about part of the screen, ✨ Quick actions, 📒 Notes, 📚 English words, each a submenu with its hotkey); then ⚙️ Settings (Theme, Sounds, Start with Windows, backups); then the version and Quit.
 
 Your robots survive restarts:
 - **Start with Windows** (tray menu, on by default) brings C-Bot and its robots back after a reboot. Robots you **Put away** stay hidden until you tick them in the tray menu.
@@ -222,8 +222,18 @@ Pick one with its number key (1–9), the arrow keys and Enter, or the mouse. Es
 The Workshop's **Settings** button (bottom of the sidebar) opens the app's settings in place of the robot editor. Above the button, the sidebar always shows where Claude Code (`claude`) was found, with **Search again** and **Change…**, and the action menu's hotkey (click it to go to Shortcuts).
 
 - **Shortcuts:** every hotkey (action menu, ask about part of the screen, quick actions, save a word, take a note), with what it does and whether it works or another app has it. Click one and press the new keys (with Ctrl or Alt; Esc cancels). ↺ puts it back to its default.
-- **Look and sound:** app theme, light or dark, mute robot sounds, and whether a drone brings the action menu.
+- **Look and sound:** app theme, light or dark, robot sounds (Essential only, Everything or Off), and whether a drone brings the action menu.
 - **Notes and reminders:** the reminders, the workdays, who reminds you, where the corkboard goes.
+
+### Sounds
+
+The robots' noises are synthesized (`src/renderer/robot/sound.js`). Pick how many in **⚙️ Settings → Sounds** (tray or right-click menu) or the Workshop:
+
+- **🔈 Essential only** (the default): the sounds that tell you something (an answer is ready, Claude has a question for you, something went wrong, a reminder or word quiz) and the ones that answer what you just did (the hammer's bonk, poking, dragging, charging, feeding it a file, waking it or putting it to sleep, sending, saving a word, a quick action done).
+- **🔊 Everything:** all of that plus the chatter while an answer streams in, a tick for each step, the idle and sleep antics (snores, the robot vacuum, push-up grunts…), the robots together, and the housekeeping noises.
+- **🔇 Off:** silence, and no word read aloud.
+
+While you present, or a full-screen app or game has the screen, only a question for you still dings. When several robots make the same sound at once (they reacted to the same thing), you hear it once. In the code, `Sfx.x()` is an extra (Everything only) and `Sfx.key.x()` is a sound that matters.
 
 ### Ask about part of the screen
 
@@ -356,6 +366,19 @@ With two or more robots out, they notice each other:
 A visit never gets in your way. Click the visitor and it says "Gotta go!" and hurries home; start using the host, give the visitor a task or press a hotkey that needs it, and it heads back (or is called back at once). Its empty desk says who it's visiting. Only one visit (and one plane) happens at a time, each robot visits or throws at most every ten minutes or so, and nothing social happens while you're using a robot (its chat, a card, the notebook, Quick actions, a group chat), while you're away, the screen is locked or Windows says you're busy (a meeting, presenting, fullscreen, Focus). A robot set to **🪑 Stays at its desk** in the Workshop doesn't visit, but can be visited. **⚙️ Settings → 🤝 Robots socialising** in the tray: Often, Sometimes (the default) or Never.
 
 `src/main/social.js` decides who does what (each robot reports how it is every few seconds); the visit walks are errands of the walker (`walker.js`), the flying plane is `src/main/plane.js` and `src/renderer/plane/`, the desk animations (wave, clap, listen, throw, catch, read) are in `office3d/antics/social.js` with the paper plane model in `office3d/plane3d.js`, the walking ones (talk, tiptoe, clap) in `walker3d.js`, and the lines and plane notes in each personality's `social` (`personalities.js`).
+
+### The evening housemaid
+
+At **5 pm** on your workdays, a housemaid robot comes by to tidy up. She isn't one of your robots: a pink robot in a black dress with a white frilly apron and a lace headband, a big feather duster, and a **🧹 Housekeeping** name tag at her feet. She walks in from the left edge of the screen and goes round the desks, left to right. At each one she stands at the desk's left end and wipes the desk top with her duster in long strokes (sparkles all over the desk, and under it where she sweeps), then empties the wastebasket (it stays empty till the next morning). The robot there reacts:
+
+- **Free:** it lifts its feet off the floor so she can sweep under the desk, then waves and thanks her in its own voice ("Thank you! It sparkles! ✨", a Grumpy one: "Don't touch my mug. …OK, thanks.").
+- **Busy, or its chat open:** it carries on ("Don't mind me, keep going! 🧹").
+- **Asleep:** it sleeps on ("Shh… 🤫").
+- **Out for a walk:** she tidies the empty desk anyway.
+
+Then she says good night and leaves by the nearest edge of the screen. Click her and she says a cheery word; she can't be picked up. She comes once a day. If you're away at five (the screen locked, or no mouse or keyboard for two minutes), or presenting, she comes when you're back, until half past six. She waits for a visit between robots to finish, and the robots don't start new ones while she's about.
+
+**⚙️ Settings → 🧹 Evening housemaid** in the tray: untick *Tidies the desks at 5 pm on workdays* to turn her off, or **Send her round now** to see her. The workdays are the notes' ones (Workshop: **Settings → Notes and reminders**). She's `src/main/maid.js` (her round, and her lines) and a walker with no desk (`walker.js` `arrive`). Her wiping pose is `dust` in `walker3d.js`, the feet-up is in `office3d/antics/maid.js`, and her outfit is in the robot builder: **Maid dress** and **Feather duster** (Outfit tab) and the **Maid headband** accessory, so your own robots can wear them too.
 
 ### Learning English words
 

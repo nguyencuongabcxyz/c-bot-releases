@@ -224,6 +224,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
   let visitSet = null;
   let stickiesMoving = false; // a sticky note zooming up or back (scene.js stickies.update)
   let nextZ = 0;
+  let nextSparkle = 0; // (the housemaid dusting the desk: data-tidy)
   let nextSteam = 0;
   let nextSweat = 0;
   let nextBrainSteam = 0;
@@ -247,7 +248,7 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
     // full frame rate only while something is really moving; idle and asleep tick slower
     const lively = solo
       ? walker.lively || dragging || particles.length > 0
-      : dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics.active || !!stateEl.dataset.propHover || !!stateEl.dataset.stickyHover || stickiesMoving || REACTIONS.some((r) => stateEl.classList.contains(r));
+      : dragging || (working && scr !== 'idle') || moodEl.classList.contains('thinking') || Number(stateEl.dataset.helpers) > 0 || antics.active || !!stateEl.dataset.propHover || !!stateEl.dataset.stickyHover || stickiesMoving || stateEl.dataset.tidy === '1' || REACTIONS.some((r) => stateEl.classList.contains(r));
     // (its robot's in the group chat's meeting room: the empty desk needs only the odd frame)
     const fps = stateEl.dataset.meeting === '1' && !dragging ? 2 : lively ? 30 : awake ? 12 : 6;
     if ((document.hidden && !solo) || now - lastFrame < 1000 / fps - 2) return; // (a walker draws while still hidden, to take over seamlessly)
@@ -666,6 +667,17 @@ function mount(host, { stateEl, moodEl, width, height, solo = false }) {
       nextZ = t + 1.1;
       emit('z', worldPoint(robot.head, 0.25, 0.65, 0), { life: 2.2, vel: new THREE.Vector3(0.12, 0.22, 0), size: 0.1, grow: 2 });
     }
+    // the evening housemaid dusting (robot.js: data-tidy): sparkles all over the desk, and under
+    // it where she sweeps; her emptied bin keeps no paper till the morning (data-bin-empty)
+    if (d.tidy === '1' && !hidden && t > nextSparkle) {
+      nextSparkle = t + 0.12;
+      const under = Math.random() < 0.3;
+      const p = under
+        ? new THREE.Vector3(-0.9 + Math.random() * 1.2, 0.04 + Math.random() * 0.1, -0.75 + Math.random() * 0.5)
+        : new THREE.Vector3(-1.15 + Math.random() * 1.5, LAYOUT.deskTop + 0.04 + Math.random() * 0.45, -1.18 + Math.random() * 0.55);
+      emit('star', worldPoint(under ? set.office : set.desk?.top || set.office, p.x, p.y, p.z), { life: 0.8, vel: new THREE.Vector3(0, 0.12, 0), size: 0.05 + Math.random() * 0.05, grow: 0.3, spin: 4 });
+    }
+    for (const paper of set.office.userData.bin?.children || []) if (paper.userData.binPaper) paper.visible = d.binEmpty !== '1';
     // high effort: headband on; full memory: steam out of the ears
     robot.headband.visible = d.effort === 'xhigh' || d.effort === 'max';
     if (d.brain === 'full' && awake && !hidden && t > nextBrainSteam) {

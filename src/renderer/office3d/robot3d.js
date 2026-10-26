@@ -241,6 +241,28 @@ export function buildAccessory(group, name) {
       add(mesh(new THREE.SphereGeometry(0.045, 12, 10), toon('#e0457f'), 0.2, top + 0.05, 0.06));
       break;
     }
+    case 'maidcap': {
+      // a housemaid's frilly white headband: a black band over the top of the head, a little
+      // forward, with a puffy white lace ruffle all along it (round puffs, so it reads as a
+      // frilly cap from the side as well as the front)
+      const cy = top - 0.3;
+      const r = 0.37;
+      const band = add(mesh(new THREE.TorusGeometry(r, 0.028, 8, 36, Math.PI), toon('#1d2235'), 0, cy, 0.1));
+      band.rotation.x = -0.25;
+      // (a neat little trim, two rows of small puffs, not a whole wig of them)
+      const lace = toon('#ffffff');
+      for (const [row, z, size] of [[0, 0.15, 0.045], [1, 0.09, 0.04]]) {
+        const n = 11;
+        for (let i = 0; i < n; i++) {
+          const a = 0.62 + ((i + row * 0.5) / (n - 0.5)) * (Math.PI - 1.24);
+          const rr = r + 0.035;
+          const puff = add(mesh(new THREE.SphereGeometry(size, 12, 10), lace, Math.cos(a) * rr, cy + Math.sin(a) * rr, z));
+          puff.scale.set(1, 1.4, 0.7);
+          puff.rotation.z = a - Math.PI / 2;
+        }
+      }
+      break;
+    }
     case 'beanie': {
       const knit = toon('#3a7bd5');
       const dome = add(mesh(new THREE.SphereGeometry(0.37, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), knit, 0, top - 0.06, 0));

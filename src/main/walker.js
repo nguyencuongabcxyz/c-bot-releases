@@ -159,14 +159,15 @@ function createWalkers({ robots, sizeOf, preload, guardNavigation, onChange, onC
 
   // It's getting up to leave: the walker window is made now, hidden, so it's loaded and
   // drawn by the time the character has stood up and turned (go(), below).
-  function prepare(id, { asleep = false } = {}) {
+  // (a visitor with no desk, arrive(): `at` is where its feet start, `k` its size)
+  function prepare(id, { asleep = false, at = null, k: size = 0 } = {}) {
     if (walkers.has(id)) return walkers.get(id);
     const d = deskBounds(id);
-    if (!d) return null;
-    const k = sizeOf(id);
+    if (!d && !at) return null;
+    const k = size || sizeOf(id);
     const box = { w: Math.round(BOX.w * k), h: Math.round(BOX.h * k) };
-    const x = d.x + d.width * 0.55 - box.w / 2; // (roughly; go() puts it exactly)
-    const y = d.y + d.height * 0.85 - box.h * FEET;
+    const x = at ? at.x - box.w / 2 : d.x + d.width * 0.55 - box.w / 2; // (roughly; go() puts it exactly)
+    const y = at ? at.y - box.h * FEET : d.y + d.height * 0.85 - box.h * FEET;
     const win = new BrowserWindow({
       x: Math.round(x),
       y: Math.round(y),
@@ -226,6 +227,24 @@ function createWalkers({ robots, sizeOf, preload, guardNavigation, onChange, onC
     w.roamUntil = errand ? 0 : Date.now() + rand(...ROAM) * 1000; // (an errand's own code sends it home)
     if (w.ready) takeOver(w);
     else w.handoff = setTimeout(() => takeOver(w), 3000); // (if the page never says it's ready)
+    return w;
+  }
+
+  // A visitor that isn't one of your robots (the evening housemaid, main maid.js): it has no
+  // desk, comes in with its feet at `from` (screen px), looks like `look` (a character's look),
+  // can't be picked up (a click goes to onClick), and only goes where it's sent (walkTo).
+  function arrive(id, { from, look, k = 1 } = {}) {
+    if (walkers.has(id)) return walkers.get(id);
+    const w = prepare(id, { at: from, k });
+    if (!w) return null;
+    clearTimeout(w.cancel);
+    w.npc = true;
+    w.look = look;
+    w.going = true;
+    w.pauseUntil = Infinity; // (standing, till it's sent somewhere)
+    w.target = { x: w.x, y: w.y };
+    if (w.ready) takeOver(w);
+    else w.handoff = setTimeout(() => takeOver(w), 3000);
     return w;
   }
 
@@ -301,12 +320,12 @@ function createWalkers({ robots, sizeOf, preload, guardNavigation, onChange, onC
       const id = idFromSender(event);
       const w = walkers.get(id);
       if (!w) return {};
-      return { character: characterOf(id), gait: w.gait || 'stand', heading: w.heading, asleep: w.asleep };
+      return { character: w.look || characterOf(id), gait: w.gait || 'stand', heading: w.heading, asleep: w.asleep };
     });
     // picked up and carried: it dangles; put down on its desk, it docks
     ipcMain.on('walker:drag', (event, { phase, dx = 0, dy = 0 }) => {
       const w = walkers.get(idFromSender(event));
-      if (!w || w.docking) return;
+      if (!w || w.docking || w.npc) return; // (a visitor can't be carried off)
       if (phase === 'start') {
         w.held = { x: w.x, y: w.y };
         if (w.errand || w.pauseUntil === Infinity) onHeld?.(w.id);
@@ -374,6 +393,7 @@ function createWalkers({ robots, sizeOf, preload, guardNavigation, onChange, onC
   return {
     prepare,
     go,
+    arrive,
     close,
     dock,
     wave,

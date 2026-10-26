@@ -65,6 +65,8 @@ class Store {
     const raw = this._load();
     if (raw) this.data = { ...this.data, ...raw, settings: { ...this.data.settings, ...(raw.settings || {}) } };
     this.data.characters.forEach(migrate);
+    // robot sounds: 'essential' | 'all' | 'off' (it was a mute checkbox: muted is off, else essential)
+    if (!['essential', 'all', 'off'].includes(this.data.settings.sounds)) this.data.settings.sounds = this.data.settings.muted ? 'off' : 'essential';
     this._timer = null;
     this._backupDay = null;
     if (raw) this._backup();

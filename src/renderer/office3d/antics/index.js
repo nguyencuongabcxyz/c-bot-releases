@@ -15,6 +15,7 @@ import { WALK } from './walk.js';
 import { NOTES } from './notes.js';
 import { VOCAB } from './vocab.js';
 import { SOCIAL } from './social.js';
+import { MAID } from './maid.js';
 
 // Antics: the little things a robot does when nobody's asking it anything
 // (sipping coffee, sneezing, snoring a snot bubble…). The page starts one by
@@ -49,7 +50,7 @@ import { SOCIAL } from './social.js';
 // The standing desk's height lives outside antics (awake.js liftTick): an antic
 // sets c.set.office.userData.lift.deskTo / seatTo and the desk motors there.
 // Modules may also export tick(c) for things that live outside one antic (the nightcap).
-const HANDLERS = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS, ...SLEEPY, ...NIGHT, ...WALK, ...VOCAB, ...NOTES, ...SOCIAL };
+const HANDLERS = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS, ...SLEEPY, ...NIGHT, ...WALK, ...VOCAB, ...NOTES, ...SOCIAL, ...MAID };
 const TICKS = [awakeTick, asleepTick, critterTick, calendarTick].filter(Boolean);
 
 const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));

@@ -351,7 +351,7 @@
     state.lastActivity = Date.now();
     body.classList.remove('asleep');
     body.classList.add('awake');
-    Sfx.wake();
+    (tucked ? Sfx : Sfx.key).wake(); // (woken for something it shows by itself: an extra)
     flash('shake', 500);
     express('open', 'o', 700);
     // jolt awake and boot the computer (unless it's already busy working)
@@ -431,7 +431,7 @@
   }
   workingEl.addEventListener('click', () => openChat());
 
-  function sleep() {
+  function sleep({ auto = false } = {}) {
     if (!state.awake) return;
     if (state.away) cbot.send('robot:walker', 'asleep'); // dozes off out there: it sleepwalks
     state.awake = false;
@@ -440,7 +440,7 @@
     state.news = '';
     body.classList.remove('collapsed');
     renderWorking();
-    Sfx.sleep();
+    (auto ? Sfx : Sfx.key).sleep(); // (dozing off by itself: an extra)
     express('closed', 'o', 900);
     body.classList.remove('awake');
     body.classList.add('asleep');
@@ -519,21 +519,48 @@
   function addBot(text, { error = false, denials = [], tools = [], asides = [], edits = [], apps = [], images = [], tab = active() } = {}) {
     const el = document.createElement('div');
     el.className = `msg bot${error ? ' error' : ''}`;
-    el.innerHTML = md(text || (tools?.length || edits?.length || apps?.length || images?.length ? '' : '…'));
-    // the files it changed, the views its tools drew and the pictures they returned
-    if (edits?.length || apps?.length || images?.length) {
+    // steps saved with where they came in the words (at) go back there, each followed by what
+    // it made; older answers (and anything without a step to follow) keep it all on top
+    const placed = (tools || []).filter((t) => t && typeof t === 'object' && Number.isFinite(t.at));
+    const made = new Map(); // step id -> what it made [element]
+    const loose = []; // made by no step we can place
+    const ids = new Set(placed.map((t) => t.id));
+    const madeBy = (id, node) => (id && ids.has(id) ? made.set(id, [...(made.get(id) || []), node]) : loose.push(node));
+    for (const d of edits || []) madeBy(d.id, diffCard(d));
+    for (const a of apps || []) madeBy(a.id, appCard(a));
+    for (const pic of images || []) madeBy(pic.id, toolPics([pic]));
+    const words = String(text || '');
+    const block = (cls, nodes) => {
       const box = document.createElement('div');
-      box.className = 'edits';
-      for (const d of edits || []) box.appendChild(diffCard(d));
-      for (const a of apps || []) box.appendChild(appCard(a));
-      if (images?.length) box.appendChild(toolPics(images));
-      el.prepend(box);
+      box.className = cls;
+      box.append(...nodes);
+      el.appendChild(box);
+    };
+    const say = (s) => {
+      if (!s.trim()) return;
+      const box = document.createElement('div');
+      box.className = 'content';
+      box.innerHTML = md(s);
+      el.appendChild(box);
+    };
+    // on top: the steps we can't place, the asides, what no placed step made
+    const topSteps = toolChips((tools || []).filter((t) => !placed.includes(t)), tab);
+    for (const a of asides || []) topSteps.appendChild(asideChip(a));
+    if (topSteps.children.length) el.appendChild(topSteps);
+    if (loose.length) block('edits', loose);
+    let pos = 0;
+    for (let i = 0; i < placed.length; ) {
+      const at = Math.min(Math.max(placed[i].at, pos), words.length);
+      const group = [];
+      while (i < placed.length && Math.min(Math.max(placed[i].at, pos), words.length) === at) group.push(placed[i++]);
+      say(words.slice(pos, at));
+      pos = at;
+      el.appendChild(toolChips(group, tab));
+      const things = group.flatMap((t) => made.get(t.id) || []);
+      if (things.length) block('edits', things);
     }
-    if (tools?.length || asides?.length) {
-      const row = toolChips(tools || [], tab);
-      for (const a of asides || []) row.appendChild(asideChip(a));
-      el.prepend(row);
-    }
+    say(words.slice(pos));
+    if (!el.children.length) el.innerHTML = md(words || '…');
     if (denials?.length) el.appendChild(deniedNote(denials));
     dedupePics(el);
     tab.log.appendChild(el);
@@ -907,7 +934,7 @@
       const t = question.replace(/\s+/g, ' ').trim();
       tab.title = t.length > 28 ? t.slice(0, 27) + '…' : t;
     }
-    Sfx.send();
+    Sfx.key.send();
     flash('hop', 600);
     const turnId = uid();
     startReply(tab);
@@ -943,7 +970,7 @@
     });
     el.appendChild(bar);
     tab.queue.push({ turnId, el, ask: { question, paths: files.map((f) => f.path) } });
-    Sfx.send();
+    Sfx.key.send();
     flash('hop', 600);
     express('happy', 'o', 900);
     showPop(pick(['📨 Noted! Next up.', 'Got it, right after this!', 'Queued! ✍️']), 1800);
@@ -975,10 +1002,72 @@
   function startReply(tab) {
     const el = document.createElement('div');
     el.className = 'msg bot';
-    el.innerHTML = '<div class="tools"></div><div class="edits"></div><div class="content cursor"></div>';
     tab.log.appendChild(el);
-    tab.current = { el, tools: el.querySelector('.tools'), edits: el.querySelector('.edits'), content: el.querySelector('.content'), text: '' };
+    tab.current = { el, parts: [], text: '' };
+    partFor(tab.current, 'text'); // (its blinking caret, until the first words or step)
     scrollDown(tab);
+  }
+  // (after a question card the answer carries on in a fresh bubble: its words from `offset` on)
+  function moveReply(cur, el, offset) {
+    Object.assign(cur, { el, parts: [], offset, asked: true });
+    partFor(cur, 'text');
+  }
+
+  // The answer as it streams, in the order it happened: words, then the steps it took, the
+  // files they changed, more words… Each part is { kind: 'text', el, from, to } (its slice of
+  // cur.text), { kind: 'steps', el } (a row of step chips) or { kind: 'made', el } (diffs,
+  // tool views, pictures). partFor gives the part to add to, starting a new one when the kind
+  // changes; a text part ends where the next part begins.
+  const PART_CLASS = { text: 'content', steps: 'tools', made: 'edits' };
+  function partFor(cur, kind) {
+    const last = cur.parts[cur.parts.length - 1];
+    if (last?.kind === kind) return last;
+    if (last?.kind === 'text') {
+      last.to = cur.text.length;
+      last.el.classList.remove('cursor');
+      if (!partText(cur, last).trim()) {
+        last.el.remove();
+        cur.parts.pop();
+        const prev = cur.parts[cur.parts.length - 1];
+        if (prev?.kind === kind) return prev;
+      }
+    }
+    const el = document.createElement('div');
+    el.className = PART_CLASS[kind] + (kind === 'text' ? ' cursor' : '');
+    cur.el.appendChild(el);
+    const part = { kind, el, from: cur.text.length };
+    cur.parts.push(part);
+    return part;
+  }
+  const partText = (cur, p) => cur.text.slice(Math.max(p.from, cur.offset || 0), p.to ?? cur.text.length);
+  const hasSteps = (cur) => cur.parts.some((p) => p.kind !== 'text' && p.el.children.length);
+  // a remark it made in passing: with the steps just before the words it's saying (not in the
+  // middle of a sentence)
+  function asideRow(cur) {
+    const last = cur.parts[cur.parts.length - 1];
+    if (last?.kind !== 'text') return partFor(cur, 'steps').el;
+    const prev = cur.parts[cur.parts.length - 2];
+    if (prev?.kind === 'steps') return prev.el;
+    const el = document.createElement('div');
+    el.className = 'tools';
+    last.el.before(el);
+    cur.parts.splice(cur.parts.length - 1, 0, { kind: 'steps', el });
+    return el;
+  }
+
+  // the answer's words, finished: every text part redrawn. `text` stands in when nothing was
+  // streamed, `note` goes after the last words ("…(stopped)"), `empty` shows when there's
+  // nothing else to say
+  function finishText(cur, { text = '', note = '', empty = '' } = {}) {
+    for (const p of cur.parts) if (p.kind === 'text') p.el.innerHTML = md(partText(cur, p));
+    const said = cur.parts.filter((p) => p.kind === 'text' && partText(cur, p).trim());
+    const lastText = said[said.length - 1];
+    if (!said.length && (text || note || empty)) {
+      const p = partFor(cur, 'text');
+      p.el.innerHTML = md(text ? `${text}${note ? `\n\n${note}` : ''}` : note || empty);
+    } else if (note && lastText) lastText.el.innerHTML = md(`${partText(cur, lastText)}\n\n${note}`);
+    for (const p of cur.parts) p.el.classList.remove('cursor');
+    dedupePics(cur.el);
   }
 
   function renderCurrent(tab) {
@@ -990,7 +1079,9 @@
       if (!cur) return;
       const L = tab.log;
       const nearBottom = L.scrollHeight - L.scrollTop - L.clientHeight < 60;
-      cur.content.innerHTML = md(cur.text.slice(cur.offset || 0));
+      // (only the words still coming: the parts before them are done)
+      const last = cur.parts[cur.parts.length - 1];
+      if (last?.kind === 'text') last.el.innerHTML = md(partText(cur, last));
       dedupePics(cur.el);
       if (nearBottom) scrollDown(tab);
     });
@@ -999,7 +1090,7 @@
   function finishCurrent(tab) {
     const cur = tab.current;
     tab.current = null;
-    if (cur) cur.content.classList.remove('cursor');
+    if (cur) for (const p of cur.parts) p.el.classList.remove('cursor');
     setBusy(tab, false);
     // the task you sent is over: if you tucked the chat away, the status bubble says so — unless a bonk restarts it
     if (state.collapsed && !tab.bonk) {
@@ -1085,6 +1176,7 @@
           cur.toolStatus = '💬 Writing it up';
           setTabStatus(tab, '💬 Writing it up…');
         }
+        partFor(cur, 'text'); // (after some steps, the words carry on below them)
         cur.text += ev.delta;
         tab.activity = 'talk';
         if (show) {
@@ -1117,7 +1209,7 @@
           chip.classList.add('agent-chip');
           chip.title = `${label} (click to watch it work)`;
         }
-        cur.tools.appendChild(chip);
+        partFor(cur, 'steps').el.appendChild(chip); // (where it happened: after the words so far)
         cur.toolStatus = label;
         tab.activity = activity;
         setTabStatus(tab, `${label}…`);
@@ -1137,21 +1229,21 @@
         // what a step gave back: on its chip (an error shows), and in its details if they're open
         const call = tab.calls?.get(ev.id);
         if (!call) break;
-        Object.assign(call, { output: ev.text, isError: ev.isError, running: false });
+        Object.assign(call, { output: ev.text, media: ev.media, isError: ev.isError, running: false });
         for (const chip of tab.log.querySelectorAll('.tool[data-call]')) if (chip.dataset.call === ev.id) chip.classList.toggle('failed', !!ev.isError);
         if (helperView.call === call) renderToolView();
         break;
       }
 
       case 'edit':
-        if (!cur?.edits) break;
-        cur.edits.appendChild(diffCard(ev));
+        if (!cur) break;
+        partFor(cur, 'made').el.appendChild(diffCard(ev));
         scrollDown(tab);
         break;
 
       case 'app': // an MCP tool's own view (e.g. an Excalidraw drawing)
-        if (!cur?.edits) break;
-        cur.edits.appendChild(appCard(ev));
+        if (!cur) break;
+        partFor(cur, 'made').el.appendChild(appCard(ev));
         scrollDown(tab);
         break;
 
@@ -1160,8 +1252,8 @@
         break;
 
       case 'tool-images': // pictures an MCP tool returned (a screenshot, a rendered chart)
-        if (!cur?.edits) break;
-        cur.edits.appendChild(toolPics(ev.images));
+        if (!cur) break;
+        partFor(cur, 'made').el.appendChild(toolPics(ev.images));
         scrollDown(tab);
         break;
 
@@ -1178,7 +1270,7 @@
         break;
 
       case 'aside':
-        if (cur) cur.tools.appendChild(asideChip(ev.text));
+        if (cur) asideRow(cur).appendChild(asideChip(ev.text));
         if (!show) break;
         showAside(ev.text);
         Sfx.hmm();
@@ -1201,9 +1293,9 @@
         expireQuestion(tab);
         if (ev.interrupted) {
           if (done) {
-            const said = done.asked ? done.text.slice(done.offset).trim() : done.text;
+            const said = done.text.slice(done.offset || 0).trim();
             const why = tab.bonk ? '🔨 restarting quicker' : 'stopped';
-            done.content.innerHTML = md(said ? `${said}\n\n_…(${why})_` : tab.bonk ? '_🔨 Restarting, quicker!_' : '_Okay, okay, I stopped._');
+            finishText(done, { note: said ? `_…(${why})_` : '', empty: tab.bonk ? '_🔨 Restarting, quicker!_' : '_Okay, okay, I stopped._' });
           }
           if (tab.bonk) break; // the rerun follows straight away
           tab.noteId = '';
@@ -1214,12 +1306,9 @@
           break;
         }
         if (done) {
-          const tail = done.asked ? done.text.slice(done.offset).trim() : done.text || ev.text;
-          if (!tail && done.asked && !done.tools.children.length && !done.edits?.children.length) done.el.remove(); // nothing more after the answer
-          else {
-            done.content.innerHTML = md(tail || '_(no words, just vibes)_');
-            dedupePics(done.el);
-          }
+          const said = done.text.slice(done.offset || 0).trim();
+          if (!said && done.asked && !hasSteps(done)) done.el.remove(); // nothing more after the answer
+          else finishText(done, { text: done.asked ? '' : ev.text, empty: '_(no words, just vibes)_' });
           if (ev.isError) done.el.classList.add('error');
           if (ev.denials?.length) done.el.appendChild(deniedNote(ev.denials));
           if (tab.vocabWord && !ev.isError) done.el.appendChild(saveWordChip(tab.vocabWord));
@@ -1236,21 +1325,21 @@
         if (tab !== active()) tab.status = ev.isError ? 'error' : 'done'; // unread
         if (!show) {
           // a background tab finished while you watch another one
-          Sfx.done();
+          Sfx.key.done();
           express('happy', 'o', 1200);
           showPop(`“${tab.title}” is done!`, 2600);
         } else if (ev.isError) {
-          Sfx.oops();
+          Sfx.key.oops();
           setActivity('error', 3500);
           express('dizzy', 'flat', 2200);
           showPop(pick(persona().oops));
         } else if (ev.denials?.length) {
-          Sfx.oops();
+          Sfx.key.oops();
           setActivity('locked', 3500);
           express('flat', 'flat', 2200);
           showPop('They locked me out of some tools!');
         } else {
-          Sfx.done();
+          Sfx.key.done();
           setActivity('done', 2600);
           express('happy', 'smile', 2000);
           showPop(tab === active() ? pick(persona().done) : `“${tab.title}” is done!`, 2400);
@@ -1276,9 +1365,9 @@
         if (tab.linkReq) linkAnswer(tab, { error: ev.cancelled ? 'it was stopped' : ev.message || 'it failed' });
         const done = finishCurrent(tab);
         expireQuestion(tab);
-        if (done) done.text = done.text.slice(done.offset || 0);
+        const said = done ? done.text.slice(done.offset || 0).trim() : '';
         if (ev.cancelled) {
-          if (done) done.content.innerHTML = md(done.text ? done.text + '\n\n_…(stopped)_' : '_Okay, okay, I stopped._');
+          if (done) finishText(done, { note: said ? '_…(stopped)_' : '', empty: '_Okay, okay, I stopped._' });
           if (show) setActivity(restingActivity());
           express('flat', 'flat', 1200);
           break;
@@ -1287,11 +1376,11 @@
         if (tab !== active()) tab.status = 'error';
         if (done) {
           done.el.classList.add('error');
-          done.content.innerHTML = md(`${done.text ? done.text + '\n\n' : ''}**Oops:** ${ev.message}`);
+          finishText(done, { note: `**Oops:** ${ev.message}` });
         } else {
           addBot(`**Oops:** ${ev.message}`, { error: true, tab });
         }
-        Sfx.oops();
+        Sfx.key.oops();
         express('dizzy', 'flat', 2500);
         showPop(tab === active() ? pick(persona().oops) : `“${tab.title}” hit a snag.`);
         if (!state.awake) body.classList.add('has-badge');
@@ -1310,13 +1399,13 @@
     cbot.invoke('robot:poke');
     if (state.pokes.length >= 5) {
       state.pokes = [];
-      Sfx.annoyed();
+      Sfx.key.annoyed();
       flash('shake', 500);
       express(Math.random() < 0.5 ? 'dizzy' : 'flat', 'flat', 2600);
       showPop(pick(persona().annoyed), 2800);
       return;
     }
-    Sfx.poke();
+    Sfx.key.poke();
     flash('squish', 450);
     flash('blush', 1200);
     express(pick(['happy', 'happy', 'open']), pick(['o', 'smile']), 900);
@@ -1340,7 +1429,7 @@
     if (!press.moved) {
       press.moved = true;
       body.classList.add('dragging');
-      Sfx.whee();
+      Sfx.key.whee();
       express('open', 'o', 60000);
     }
     const now = performance.now();
@@ -1562,7 +1651,7 @@
       body.classList.remove('thinking');
       setActivity('done', 2600);
       express('happy', 'smile', 2000);
-      Sfx.done();
+      Sfx.key.done();
     }
     renderFace();
   }
@@ -1575,8 +1664,8 @@
     const cur = tab.current;
     // close the bubble that was streaming, so the answer continues below the card
     if (cur) {
-      cur.content.classList.remove('cursor');
-      if (!cur.text.slice(cur.offset || 0).trim() && !cur.tools.children.length) cur.el.remove();
+      if (!cur.text.slice(cur.offset || 0).trim() && !hasSteps(cur)) cur.el.remove();
+      else finishText(cur);
     }
 
     const card = document.createElement('div');
@@ -1694,7 +1783,7 @@
         body.classList.remove('has-badge');
         $('#badge').textContent = '!';
       }
-      Sfx.send();
+      Sfx.key.send();
       express('happy', 'smile', 1400);
       showPop(pick(['Got it!', 'Thanks!', 'Noted!', 'Roger that!']), 1500);
       tab.activity = 'think';
@@ -1705,9 +1794,8 @@
       if (tab.current) {
         const el = document.createElement('div');
         el.className = 'msg bot';
-        el.innerHTML = '<div class="tools"></div><div class="edits"></div><div class="content cursor"></div>';
         tab.log.appendChild(el);
-        Object.assign(tab.current, { el, tools: el.querySelector('.tools'), edits: el.querySelector('.edits'), content: el.querySelector('.content'), offset: tab.current.text.length, asked: true });
+        moveReply(tab.current, el, tab.current.text.length);
       }
       scrollDown(tab);
       input.focus();
@@ -1840,7 +1928,7 @@
   function startCraving() {
     if (body.classList.contains('feeding')) return;
     body.classList.add('feeding');
-    Sfx.ooh();
+    Sfx.key.ooh();
     showPop(pick(persona().hungry || ['Ooh, snacks?']), 1800);
     const lean = () => {
       strikePose('eager', 450);
@@ -1888,7 +1976,7 @@
     renderAttachments();
     flash('chomp', 1300);
     express('happy', 'chomp', 1300);
-    Sfx.chomp();
+    Sfx.key.chomp();
     const name = entries.length === 1 ? shortName(entries[0].name) : `${entries.length} things`;
     setTimeout(() => showPop(fill(pick(persona().yum || ['Yum! {file}!'])).replaceAll('{file}', name), 2400), 700);
     setTimeout(() => express('happy', 'smile', 1200), 1300);
@@ -1956,9 +2044,9 @@
   const BONK_HIT_MS = 420; // BONK.hit in office3d/index.js
   function smack(onHit) {
     flash('bonk', 1100);
-    setTimeout(() => Sfx.swish(), BONK_HIT_MS - 110); // the swing
+    setTimeout(() => Sfx.key.swish(), BONK_HIT_MS - 110); // the swing
     setTimeout(() => {
-      Sfx.squeak(); // the squeaky toy lands
+      Sfx.key.squeak(); // the squeaky toy lands
       flash('shake', 400);
       onHit();
     }, BONK_HIT_MS);
@@ -1998,7 +2086,7 @@
     playWith.timer = setTimeout(() => (state.playing = null), PLAY_MS[what]);
     flash(what, PLAY_MS[what]); // the 3D view acts it out
     if (what === 'charge') {
-      Sfx.charge();
+      Sfx.key.charge();
       express('happy', 'o', 1900);
       setTimeout(() => {
         express('happy', 'smile', 1500);
@@ -2009,12 +2097,12 @@
       strikePose('raise', 1200);
       express('open', 'o', 450);
       setTimeout(() => {
-        Sfx.clap();
+        (byUser ? Sfx.key : Sfx).clap(); // (one it does by itself: an extra)
         express('happy', 'smile', 1200);
         showPop(pick(['Up top! ✋', 'Nice one!', 'Team work! ✋']), 1500);
       }, 450);
     } else if (what === 'dance') {
-      Sfx.dance();
+      (byUser ? Sfx.key : Sfx).dance();
       setActivity('dance', PLAY_MS.dance); // the disco screen
       strikePose('cheer', PLAY_MS.dance);
       express('happy', 'smile', PLAY_MS.dance);
@@ -2037,7 +2125,7 @@
   function startled() {
     wake({ sayHi: false });
     express(pick(['dizzy', 'flat']), 'o', 1600);
-    Sfx.annoyed();
+    Sfx.key.annoyed();
     setTimeout(() => showPop(pick(persona().bonked || ['OW!']), 2200), 350);
   }
 
@@ -2357,9 +2445,11 @@
     }
     // what it gave back
     const outEl = bodyEl.querySelector('.tv-out');
+    const media = Array.isArray(c.media) ? c.media : [];
+    if (media.length && !c.running) outEl.after(stepMedia(media, args));
     if (c.running) outEl.innerHTML = '<p class="hv-empty">Still working on it…</p>';
-    else if (c.output === undefined || c.output === null) outEl.innerHTML = `<p class="hv-empty">${missing}</p>`;
-    else if (!c.output) outEl.innerHTML = '<p class="hv-empty">(nothing)</p>';
+    else if (c.output === undefined || c.output === null) outEl.innerHTML = media.length ? '' : `<p class="hv-empty">${missing}</p>`;
+    else if (!c.output) outEl.innerHTML = media.length ? '' : '<p class="hv-empty">(nothing)</p>';
     else {
       bodyEl.querySelector('[data-copy="output"]').hidden = false;
       // another robot's answer reads as its message; everything else as the tool gave it
@@ -2378,6 +2468,46 @@
       });
     }
     Icon.fill(bodyEl);
+  }
+
+  // what a step gave back besides words (main stepMedia): its pictures, shown (click one to
+  // see it full size), and its documents (a PDF it read), as a card that opens the file
+  function stepMedia(media, args) {
+    const box = document.createElement('div');
+    box.className = 'tv-media';
+    const file = typeof args?.file_path === 'string' ? args.file_path : '';
+    const fileName = file.split(/[\\/]/).pop();
+    const card = (icon, title, sub) => {
+      const el = document.createElement(file ? 'button' : 'div');
+      el.className = 'tv-doc';
+      if (file) {
+        el.type = 'button';
+        el.dataset.open = file;
+        el.title = `Open ${file}`;
+      }
+      el.innerHTML = `${Icon(icon)}<span><b></b><small></small></span>${file ? Icon('open', 'sm') : ''}`;
+      el.querySelector('b').textContent = title;
+      el.querySelector('small').textContent = sub;
+      return el;
+    };
+    for (const m of media) {
+      if (m.kind === 'image' && m.data && /^image\/[\w.+-]+$/.test(m.mimeType || '')) {
+        const img = document.createElement('img');
+        img.className = 'tv-pic';
+        img.src = `data:${m.mimeType};base64,${m.data}`;
+        img.alt = fileName || 'Picture';
+        img.title = 'Click to see it full size';
+        img.addEventListener('click', () => img.classList.toggle('big'));
+        box.appendChild(img);
+      } else if (m.kind === 'image') {
+        box.appendChild(card('image', fileName || 'A picture', file ? 'Not kept in the saved history (too big): click to open the file' : 'Not kept in the saved history (too big)'));
+      } else if (m.kind === 'document') {
+        const kind = /pdf/i.test(m.mimeType || '') ? 'PDF' : (m.mimeType || 'Document').replace(/^application\//, '').toUpperCase();
+        const size = m.size ? ` · ${m.size < 1024 ? `${m.size} B` : m.size < 1048576 ? `${Math.round(m.size / 1024)} KB` : `${(m.size / 1048576).toFixed(1)} MB`}` : '';
+        box.appendChild(card('file', fileName || `A ${kind} document`, `${kind}${size}${file ? ' · click to open' : ''}`));
+      }
+    }
+    return box;
   }
 
   function closeHelper() {
@@ -3154,7 +3284,7 @@
       }
       const more = res.total > 30 ? ` (showing the latest of ${res.total} messages)` : '';
       addNote(`↩ Picked up “${res.title}”${more}. Carry on!`, 'resumed', tab);
-      Sfx.wake();
+      Sfx.key.wake();
       flash('spin', 950);
       setActivity('read', 1600); // flick through the old notes
       input.focus();
@@ -3194,7 +3324,7 @@
     nightmare: 6.5, snorebar: 9, ping: 5, vacuum: 9, burrito: 8,
     // your notes and the corkboard (office3d/antics/notes.js)
     // the other robots (office3d/antics/social.js)
-    'turn-to': 2.6, listen: 10, 'clap-at': 2.2, 'plane-throw': 1.8, 'plane-catch': 2.6, 'plane-read': 2.6,
+    'turn-to': 2.6, listen: 10, 'clap-at': 2.2, 'plane-throw': 1.8, 'plane-catch': 2.6, 'plane-read': 2.6, 'feet-up': 4.6,
     notewrite: 30, notepin: 2.4, notetoss: 2.8, boardlift: 3.4, boardglance: 2.6, allclear: 1.8, clockout: 2.6,
     // wandering off round the screen and being brought back
     stepout: 4, stepin: 1.4,
@@ -3397,7 +3527,7 @@
     if (!idleAwake()) return poke();
     stopAntic();
     antic('bsod');
-    Sfx.crash();
+    Sfx.key.crash();
     express('open', 'wide', 1100);
     cue(1.2, () => {
       express('flat', 'flat', 2800);
@@ -3446,7 +3576,9 @@
       duck: 1, stackoverflow: 0.9, cable: 0.6, crumbs: 0.6, 'crumbs-cookie': 0.25, jira: 0.8, works: 0.8,
       reboot: sec > 20 ? 0.8 : 0, merge: sec > 30 ? 0.7 : 0, jitter: sec > 30 ? 0.6 : 0, standup: sec > 40 ? 0.6 : 0,
       ...calendarWeights(),
-      wander: wanders() && sec > 180 ? 1.5 : 0, // bored for three minutes: off for a walk round the screen
+      // bored for three minutes: off for a walk round the screen (not with its chat open: you may
+      // be reading it, and walking off would tuck it away. Right-click → Go for a walk still works)
+      wander: wanders() && sec > 180 && state.collapsed ? 1.5 : 0,
       'word-glance': sight.length ? 2 : 0, // one of your English words up on its monitor, read out
       boardglance: board.total ? 1.2 : 0, // a look over at the corkboard, a pin straightened, a look at you
       notestress: board.total >= 8 ? 0.8 : 0, // so… many… notes…
@@ -3864,7 +3996,7 @@
       stopAntic();
       showPop(pick(persona().sleepy), 1500);
       express('closed', 'o', 1500);
-      setTimeout(() => sleep(), 1400);
+      setTimeout(() => sleep({ auto: true }), 1400);
     }
     setTimeout(antics, rand(7000, 14000));
   }
@@ -3992,11 +4124,15 @@
     syncTabs(c);
   });
 
-  let muted = false; // the tray's Mute robot sounds (it keeps the word-reading voice quiet too)
-  cbot.on('robot:settings', (s) => {
-    muted = !!s.muted;
-    Sfx.setMuted(s.muted);
-  });
+  // the Sounds setting: essential / all / off (off keeps the word-reading voice quiet too)
+  let muted = false;
+  function setSounds(s) {
+    muted = s.sounds === 'off';
+    Sfx.setLevel(s.sounds);
+  }
+  cbot.on('robot:settings', setSounds);
+  // you're presenting or in a full-screen app: only a question for you still dings (main)
+  cbot.on('robot:hush', (on) => Sfx.setHush(on));
 
   // ------------------------------------------------------------ English words (main/vocab.js)
 
@@ -4117,7 +4253,7 @@
         stopAntic();
         antic('notepin', state.awake ? '' : '…noted…');
         if (!state.awake) express('closed', 'talk', 1800);
-        cue(1.25, () => Sfx.pop());
+        cue(1.25, () => Sfx.key.pop());
         if (state.awake) cue(1.4, () => showPop(quip('noted') || 'Noted! 📝', 1500));
         break;
       }
@@ -4129,14 +4265,14 @@
         antic('notetoss', ev.note?.id || '');
         cue(1.4, () => Sfx.swish());
         cue(2.1, () => {
-          Sfx.pop();
+          Sfx.key.pop();
           express('happy', 'smile', 900);
         });
         if (ev.left === 0) {
           setTimeout(() => {
             if (!canActNotes() || !state.awake) return;
             antic('allclear');
-            Sfx.done();
+            Sfx.key.done();
             express('happy', 'wide', 1600);
             showPop(quip('allclear') || 'All clear! ✨', 1800);
           }, 2900);
@@ -4165,7 +4301,7 @@
         antic('clockout');
         cue(0.3, () => express('closed', 'o', 1300));
         cue(0.6, () => showPop(quip('notesClockout') || 'Good work today! 😴', 1600));
-        cue(2.45, () => state.collapsed && sleep()); // (with its chat open it stays up)
+        cue(2.45, () => state.collapsed && sleep({ auto: true })); // (with its chat open it stays up)
         break;
       case 'ask':
         askInNewTab(ev.prompt, ev.note?.id || '', { draft: !!ev.draft });
@@ -4287,7 +4423,7 @@
     renderAttachments();
     flash('hop', 600);
     express('wide', 'o', 900);
-    Sfx.ooh();
+    Sfx.key.ooh();
     showPop(pick(['Ooh, let me see! 🔍', 'What have we got here? 👀', 'Show me! 🔍']), 1800);
     state.lastActivity = Date.now();
     input.focus();
@@ -4440,6 +4576,35 @@
       case 'hosting': // another robot is visiting its desk
         state.hosting = !!ev.on;
         break;
+      case 'tidy': {
+        // the evening housemaid at its desk (main maid.js): sparkles while she dusts, the bin
+        // emptied; free, it lifts its feet so she can sweep under the desk and thanks her
+        state.hosting = true; // (it stays put till she's done)
+        robot.dataset.tidy = '1';
+        clearTimeout(onSocial.bin);
+        onSocial.bin = setTimeout(() => {
+          robot.dataset.binEmpty = '1';
+          binEmptied = new Date().toDateString();
+          Sfx.swish();
+        }, 3600);
+        if (state.away || !state.awake) break; // (asleep: it sleeps on; out: an empty desk)
+        lookSide(ev.side, 7000);
+        if (ev.mood === 'free' && free && !body.classList.contains('expanded')) {
+          stopAntic();
+          antic('feet-up', ev.side);
+          cue(0.5, () => express('o', 'o', 900));
+          cue(4.5, () => {
+            strikePose('wave', 1600);
+            express('happy', 'smile', 2200);
+            if (ev.thanks) showPop(ev.thanks, 2600);
+          });
+        } else if (ev.mood !== 'busy') express('happy', 'smile', 1600);
+        break;
+      }
+      case 'tidy-end':
+        state.hosting = false;
+        robot.dataset.tidy = '';
+        break;
       case 'listen': // a visitor is chatting beside the desk
         if (!state.awake || state.away || state.busy) break;
         stopAntic();
@@ -4575,7 +4740,7 @@
       const was = shownTasks.get(t.id);
       if (!t.mine && was && was !== t.status && state.awake && !state.away) {
         if (t.status === 'done') {
-          Sfx.done();
+          Sfx.key.done();
           showPop(`✅ ${t.other} finished: ${t.title}`, 2600);
         } else if (t.status === 'failed') showPop(`⚠️ ${t.other} couldn't finish: ${t.title}`, 2600);
       }
@@ -4629,7 +4794,7 @@
       case 'replaced':
         if (!free) break;
         flash('hop', 600);
-        Sfx.done();
+        Sfx.key.done();
         showPop(quip('quickDone') || 'Done! ✨', 1500);
         break;
       case 'copied':
@@ -4730,7 +4895,7 @@
         break;
       case 'catch':
         if (!vocabReady()) return;
-        Sfx.ooh();
+        Sfx.key.ooh();
         flash('hop', 600);
         express('happy', 'o', 900);
         showPop(`Ooh, “${w}”!`, 2400);
@@ -4755,7 +4920,7 @@
           cue(0.3, () => Sfx.whee());
           cue(3.9, () => Sfx.pop());
         }
-        Sfx.done();
+        Sfx.key.done();
         sayWord(w);
         setTimeout(() => showPop(ev.phase === 'known' ? `Already got “${w}”!` : vi ? `${w}: ${vi}` : `Got it: ${w}!`, 4200), 900);
         break;
@@ -4765,7 +4930,7 @@
         renderWorking();
         if (robot.dataset.antic === 'dictionary') stopAntic();
         if (!vocabReady()) return;
-        Sfx.oops();
+        Sfx.key.oops();
         express('dizzy', 'flat', 1600);
         showPop("My dictionary's stuck!", 2600);
         break;
@@ -4775,7 +4940,7 @@
       case 'reading':
         // the box you dragged round a word: it squints at it while Claude reads it
         if (!vocabReady()) return;
-        Sfx.ooh();
+        Sfx.key.ooh();
         express('happy', 'o', 1200);
         showPop('Ooh, let me read that… 🔍', 2400);
         state.news = '🔍 Reading the word in your box…';
@@ -4790,7 +4955,7 @@
         renderWorking();
         if (robot.dataset.antic === 'dictionary') stopAntic();
         if (!vocabReady()) return;
-        Sfx.oops();
+        Sfx.key.oops();
         express('dizzy', 'flat', 1600);
         showPop("I can't find a word in there!", 2600);
         break;
@@ -4798,7 +4963,7 @@
         // a reminder (main/reminders.js): it holds up the word, the card asks you
         if (!vocabReady()) return;
         quizWord = ev.word;
-        Sfx.ooh();
+        Sfx.key.ooh();
         flash('hop', 600);
         express('happy', 'o', 900);
         showPop(pick(QUIZ_LINES).replace('{w}', w), 3600);
@@ -4816,7 +4981,7 @@
         if (robot.dataset.antic === 'quiz-card') stopAntic();
         if (!state.awake) return;
         if (ev.how === 'knew') {
-          Sfx.done();
+          Sfx.key.done();
           flash('hop', 600);
           strikePose('cheer', 1400);
           express('happy', 'smile', 1800);
@@ -4882,8 +5047,13 @@
   cbot.on('robot:quick', onQuick);
   cbot.on('robot:social', onSocial);
   cbot.on('robot:link', onLink);
+  let binEmptied = ''; // the day the housemaid emptied its bin (it fills up again overnight)
   setInterval(() => {
     socialReport();
+    if (binEmptied && binEmptied !== new Date().toDateString()) {
+      binEmptied = '';
+      robot.dataset.binEmpty = '';
+    }
     readDeskPlane(); // (a plane on its desk, read once it's free)
     haveTreat(); // (food or milk tea that came, had once it's free)
   }, 5000);
@@ -4925,8 +5095,8 @@
     if (!init.character) return;
     state.personalities = init.personalities;
     state.user = init.user;
-    Sfx.setMuted(init.settings.muted);
-    muted = !!init.settings.muted;
+    setSounds(init.settings);
+    Sfx.setHush(!!init.hush);
     applyCharacter(init.character);
     setVocabCount(init.vocabCount);
     setSight(init.vocabSight || []);

@@ -166,7 +166,8 @@ const TASK_TOOLS = ['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
  *   status(text) · task({op, id, subject, activeForm, status}) · question({requestId, questions})
  *   edit({id, file, created, added, removed, hunks: [{oldStart, newStart, lines}], truncated})
  *   tool-result({id, result: {content, structuredContent, isError}}) for MCP tools (whose tool event carries input)
- *   tool-output({id, text, isError}) for every tool (whose tool event carries args): what it gave back
+ *   tool-output({id, text, media, isError}) for every tool (whose tool event carries args): what it gave
+ *     back (media: its pictures and documents, outputMedia)
  *   compact({phase, pre, post}) · commands([{name, description}]) · tools({version, tools})
  *   done({turnId, text, asides, costUsd, isError, interrupted, denials, sessionId}) · fail({turnId, message, sessionMissing})
  * and exit() when the process goes away. Turns Claude Code starts by itself (a
@@ -544,7 +545,7 @@ class ClaudeSession extends EventEmitter {
           if (block.type !== 'tool_result') continue;
           this._toolResult(block);
           // what the tool gave back, as Claude read it (the chat shows it when you click the step)
-          this.emit('tool-output', { id: block.tool_use_id, text: outputText(block.content), isError: !!block.is_error });
+          this.emit('tool-output', { id: block.tool_use_id, text: outputText(block.content), media: outputMedia(block.content), isError: !!block.is_error });
           // a file it changed: show the diff, like Claude Code's terminal
           const diff = block.is_error ? null : editDiff(msg.tool_use_result);
           if (diff) this.emit('edit', { id: block.tool_use_id, ...diff });
@@ -674,11 +675,29 @@ class ClaudeSession extends EventEmitter {
   }
 }
 
-// a tool result's content as text: its text parts, a mark for each picture, the tools it loaded
+// a tool result's content as text: its text parts and the tools it loaded (its pictures and
+// documents are outputMedia's)
 function outputText(content) {
   if (typeof content === 'string') return content;
-  const part = (x) => (x.type === 'text' ? x.text || '' : x.type === 'image' ? '[picture]' : x.type === 'tool_reference' ? `Loaded the tool ${x.tool_name || x.name || ''}`.trim() : x.type ? `[${x.type}]` : '');
+  const part = (x) => (x.type === 'text' ? x.text || '' : MEDIA.has(x.type) ? '' : x.type === 'tool_reference' ? `Loaded the tool ${x.tool_name || x.name || ''}`.trim() : x.type ? `[${x.type}]` : '');
   return (content || []).map(part).filter(Boolean).join('\n');
+}
+
+// the pictures (Read on an image, a screenshot) and documents (Read on a PDF) in a tool
+// result: [{ kind: 'image', mimeType, data } | { kind: 'document', mimeType, size }]
+// (a document's own bytes stay here: the chat opens its file instead)
+const MEDIA = new Set(['image', 'document']);
+function outputMedia(content) {
+  if (!Array.isArray(content)) return [];
+  const out = [];
+  for (const x of content) {
+    const src = x?.source || {};
+    const mimeType = String(src.media_type || x?.mimeType || '');
+    const data = typeof src.data === 'string' ? src.data : typeof x?.data === 'string' ? x.data : '';
+    if (x?.type === 'image' && data && /^image\/[\w.+-]+$/.test(mimeType)) out.push({ kind: 'image', mimeType, data });
+    else if (x?.type === 'document') out.push({ kind: 'document', mimeType: mimeType || 'application/pdf', size: Math.floor((data.length * 3) / 4) - (data.match(/=*$/)[0].length) });
+  }
+  return out;
 }
 
 function resultText(content) {

@@ -23,9 +23,15 @@
     partyhat: 'Party hat',
     tiara: 'Tiara',
     hairbow: 'Hair bow',
+    maidcap: 'Maid headband',
     beanie: 'Beanie',
   };
   const SIZES = { small: '🐭 Small', normal: '🙂 Normal', large: '🦒 Large', huge: '🐘 Huge' };
+  const SOUNDS_HINT = {
+    essential: 'An answer is ready, a question for you, an error, a reminder, and a sound when you play with it. Quiet while you present or share your screen.',
+    all: 'Every sound: chatter while it answers, each step, its antics and snores, the robots together.',
+    off: 'No sounds at all, and no word read aloud.',
+  };
   // desk themes (office3d/themes.js); picking one also picks its paint job
   const THEMES = { classic: { label: '🎨 Classic' }, sioux: { label: '⛺ Sioux Connect', paint: '#F47920' } };
 
@@ -46,9 +52,9 @@
   };
   // what it wears (office3d/kitwear.js), in the Outfit tab
   const WEAR_SLOTS = {
-    clothes: ['Clothes', { none: 'Nothing', tshirt: 'T-shirt', hawaiian: 'Hawaiian shirt', suit: 'Suit', santa: 'Santa suit', elf: 'Elf tunic', vampire: 'Vampire', witch: 'Witch dress', dress: 'Dress', swimsuit: 'Swimsuit', tutu: 'Tutu' }],
+    clothes: ['Clothes', { none: 'Nothing', tshirt: 'T-shirt', hawaiian: 'Hawaiian shirt', suit: 'Suit', santa: 'Santa suit', elf: 'Elf tunic', vampire: 'Vampire', witch: 'Witch dress', dress: 'Dress', swimsuit: 'Swimsuit', tutu: 'Tutu', maid: 'Maid dress' }],
     neck: ['Round its neck', { none: 'Nothing', scarf: 'Scarf', tie: 'Tie', bow: 'Bow', pearls: 'Pearls', lei: 'Flower lei' }],
-    extra: ['Holding, or on its back', { none: 'Nothing', gift: 'A present', candycane: 'Candy cane', pumpkin: 'Pumpkin bucket', icecream: 'Ice cream', balloon: 'Balloon', cape: 'Cape', wings: 'Fairy wings', batwings: 'Bat wings', surfboard: 'Surfboard', backpack: 'Backpack' }],
+    extra: ['Holding, or on its back', { none: 'Nothing', gift: 'A present', candycane: 'Candy cane', pumpkin: 'Pumpkin bucket', icecream: 'Ice cream', balloon: 'Balloon', cape: 'Cape', wings: 'Fairy wings', batwings: 'Bat wings', surfboard: 'Surfboard', backpack: 'Backpack', duster: 'Feather duster' }],
     specs: ['Glasses', { none: 'Nothing', sunglasses: 'Sunglasses', heart: 'Heart shades', round: 'Round glasses', star: 'Star glasses', eyepatch: 'Eye patch' }],
   };
   // themed looks: a hat (the Accessory) and what it wears, for a boy and a girl
@@ -463,7 +469,9 @@
     if (menu) Icon.text($('#side-hotkey'), `⌨️ ${menu.key}: every action`);
     $('#side-hotkey').classList.toggle('bad', menu?.ok === false);
     $('#drone').checked = state.settings.paletteDrone !== false;
-    $('#mute').checked = !!state.settings.muted;
+    const sounds = ['all', 'off'].includes(state.settings.sounds) ? state.settings.sounds : 'essential';
+    $('#sounds').value = sounds;
+    $('#sounds-hint').textContent = SOUNDS_HINT[sounds];
     $('#theme').value = state.settings.theme === 'vintage' ? 'vintage' : 'future';
     $('#theme-mode').value = ['light', 'dark'].includes(state.settings.themeMode) ? state.settings.themeMode : 'auto';
     renderNotesSettings();
@@ -880,7 +888,7 @@
   });
   $('#preview').addEventListener('click', () => $('#preview').dataset.dragged || wiggle(Math.random() < 0.5 ? 'squish' : 'spin'));
   $('#new-robot').addEventListener('click', () => select(null));
-  $('#mute').addEventListener('change', (e) => cbot.invoke('mgr:settings', { muted: e.target.checked }));
+  $('#sounds').addEventListener('change', (e) => cbot.invoke('mgr:settings', { sounds: e.target.value }));
   $('#theme').addEventListener('change', (e) => cbot.invoke('mgr:settings', { theme: e.target.value }));
   $('#theme-mode').addEventListener('change', (e) => cbot.invoke('mgr:settings', { themeMode: e.target.value }));
 

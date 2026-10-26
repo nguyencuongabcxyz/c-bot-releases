@@ -245,6 +245,7 @@ function makeBin() {
   for (const [x, y, z, r] of [[0.025, 0.19, -0.03, 0.045], [-0.035, 0.18, 0.02, 0.04]]) {
     const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), paper);
     ball.position.set(x, y, z);
+    ball.userData.binPaper = true; // (gone once the evening housemaid empties it: index.js)
     bin.add(ball);
   }
   bin.traverse((o) => {

@@ -18,8 +18,9 @@ const mcpApps = require('./mcpApps');
 const capture = require('./capture');
 const { Vocab, lookup, readPicture, HOUR, MIN } = require('./vocab');
 const { createSnipper } = require('./snip');
-const { createReminders, acceptsNotifications } = require('./reminders');
+const { createReminders, acceptsNotifications, presenting } = require('./reminders');
 const { createSocial } = require('./social');
+const { createMaid } = require('./maid');
 const { createPlanes } = require('./plane');
 const { createRobotLink, TASK_TIMEOUT, TOOLS: LINK_TOOLS } = require('./robotLink');
 const { createWordCard } = require('./wordCard');
@@ -72,6 +73,7 @@ let notebook = null; // the window they're in (notebook.js)
 let noteReminders = null; // the start- and end-of-day reminders about them
 let quickWin = null; // quick actions on selected text (quickWindow.js)
 let social = null; // the robots noticing each other: waves, claps, visits (social.js)
+let maid = null; // the evening housemaid who tidies the desks at 5 pm (maid.js)
 let planes = null; // the paper planes they throw at each other (plane.js)
 let robotLink = null; // robots asking each other from the chat (robotLink.js)
 let reminders = null; // when a robot quizzes you on a word (reminders.js)
@@ -426,7 +428,11 @@ function sessionFor(id, tabId) {
   const turns = new Map(); // turnId -> { prompt, kind, retried }
   session.turns = turns;
 
-  session.on('turn-start', (turnId) => tell(id, tabId, { type: 'turn-start', turnId, kind: turns.get(turnId)?.kind }));
+  session.on('turn-start', (turnId) => {
+    session.turnTextLen = 0; // how much of the answer it has said so far (where each step goes in it)
+    session.turnMediaLeft = STEP_MEDIA.keep;
+    tell(id, tabId, { type: 'turn-start', turnId, kind: turns.get(turnId)?.kind });
+  });
   session.on('session', (sessionId) => {
     store.updateTab(id, tabId, { sessionId });
     store.rememberSession(id, sessionId);
@@ -452,7 +458,10 @@ function sessionFor(id, tabId) {
     const merged = commands.map((cmd) => ({ name: cmd.name, description: cmd.description || known.get(cmd.name) || '' })).slice(0, 200);
     store.update(id, { claudeCommands: merged });
   });
-  session.on('text', (delta) => tell(id, tabId, { type: 'text', delta }));
+  session.on('text', (delta) => {
+    session.turnTextLen = (session.turnTextLen || 0) + delta.length;
+    tell(id, tabId, { type: 'text', delta });
+  });
   session.on('aside', (text) => tell(id, tabId, { type: 'aside', text }));
   session.on('question', (q) => tell(id, tabId, { type: 'question', ...q }));
   session.on('thinking', () => tell(id, tabId, { type: 'thinking' }));
@@ -460,7 +469,8 @@ function sessionFor(id, tabId) {
     // what it was called with (click the step in the chat to see it), and a smaller copy kept with the answer
     tell(id, tabId, { type: 'tool', ...tool, args: clip(args, CALL_LIVE) });
     const kept = (session.turnCalls ||= []);
-    if (kept.length < CALL_KEEP.calls) kept.push({ id: tool.id, name: tool.name, detail: tool.detail, args: clip(args, CALL_KEEP) });
+    // (at: where in the answer's words it came, so the saved answer shows it there too)
+    if (kept.length < CALL_KEEP.calls) kept.push({ id: tool.id, name: tool.name, detail: tool.detail, args: clip(args, CALL_KEEP), at: session.turnTextLen || 0 });
     if (!input) return;
     // an MCP tool: if it comes with its own view (an MCP App), show it in the chat
     const call = { name: tool.name, input };
@@ -473,10 +483,14 @@ function sessionFor(id, tabId) {
     });
   });
   // what a tool gave back: to the chat (its step shows it), and trimmed with the answer
-  session.on('tool-output', ({ id: callId, text, isError }) => {
-    tell(id, tabId, { type: 'tool-output', id: callId, text: cut(text, CALL_LIVE.output), isError });
+  session.on('tool-output', ({ id: callId, text, media, isError }) => {
+    tell(id, tabId, { type: 'tool-output', id: callId, text: cut(text, CALL_LIVE.output), media: stepMedia(media, STEP_MEDIA.live).media, isError });
     const call = session.turnCalls?.find((c) => c.id === callId);
-    if (call) Object.assign(call, { output: cut(text, CALL_KEEP.output), isError: isError || undefined });
+    if (!call) return;
+    Object.assign(call, { output: cut(text, CALL_KEEP.output), isError: isError || undefined });
+    const kept = stepMedia(media, session.turnMediaLeft ?? STEP_MEDIA.keep);
+    session.turnMediaLeft = kept.left;
+    if (kept.media.length) call.media = kept.media;
   });
   session.on('tool-result', ({ id: callId, result }) => {
     const call = session.mcpCalls?.get(callId);
@@ -486,7 +500,7 @@ function sessionFor(id, tabId) {
     // pictures the tool returned (a screenshot, a rendered chart): shown in the answer
     const images = (result.content || []).filter((c) => c.type === 'image' && /^image\/[\w.+-]+$/.test(c.mimeType || '') && typeof c.data === 'string');
     if (!images.length) return;
-    const pics = images.slice(0, 6).map((c) => ({ mimeType: c.mimeType, data: c.data }));
+    const pics = images.slice(0, 6).map((c) => ({ id: callId, mimeType: c.mimeType, data: c.data }));
     tell(id, tabId, { type: 'tool-images', id: callId, images: pics });
     // kept with the answer while they're small, so the store file stays light
     const kept = (session.turnImages ||= []);
@@ -596,15 +610,32 @@ function clip(v, limits, depth = 0) {
   if (Array.isArray(v)) return v.slice(0, 200).map((x) => clip(x, limits, depth + 1));
   return Object.fromEntries(Object.entries(v).slice(0, 100).map(([k, x]) => [k, clip(x, limits, depth + 1)]));
 }
+// A step's pictures and documents (claude.js outputMedia): the chat gets them whole up to
+// STEP_MEDIA.live, the saved answer keeps pictures only while they fit its STEP_MEDIA.keep
+// (one that doesn't is marked notKept). Returns { media, left }: what's left of the budget.
+const STEP_MEDIA = { count: 8, live: 12_000_000, keep: 400_000 };
+function stepMedia(media, budget) {
+  let left = budget;
+  const out = (Array.isArray(media) ? media : []).slice(0, STEP_MEDIA.count).map((m) => {
+    if (m.kind !== 'image') return m;
+    if (m.data.length > left) return { kind: 'image', mimeType: m.mimeType, notKept: true };
+    left -= m.data.length;
+    return m;
+  });
+  return { media: out, left };
+}
+
 function takeCalls(session) {
   const calls = session.turnCalls || [];
   session.turnCalls = [];
-  // (over the budget, the latest steps lose their output first, then their input)
-  let size = JSON.stringify(calls).length;
+  // (over the budget, the latest steps lose their output first, then their input; their
+  // pictures have a budget of their own, STEP_MEDIA)
+  const sizeOf = (v) => JSON.stringify(v, (k, x) => (k === 'media' ? undefined : x))?.length || 0;
+  let size = sizeOf(calls);
   for (let i = calls.length - 1; i >= 0 && size > CALL_KEEP.total; i--) {
     for (const k of ['output', 'args']) {
       if (calls[i][k] === undefined || size <= CALL_KEEP.total) continue;
-      size -= JSON.stringify(calls[i][k]).length;
+      size -= sizeOf(calls[i][k]);
       calls[i][k] = undefined;
       calls[i].trimmed = true;
     }
@@ -932,7 +963,14 @@ function refreshTray() {
       label: '⚙️ Settings',
       submenu: [
         themeMenu(),
-        { label: '🔇 Mute robot sounds', type: 'checkbox', checked: !!store.settings.muted, click: (item) => setSettings({ muted: item.checked }) },
+        soundsMenu(),
+        {
+          label: '🧹 Evening housemaid',
+          submenu: [
+            { label: 'Tidies the desks at 5 pm on workdays', type: 'checkbox', checked: store.settings.maid !== false, click: (i) => setSettings({ maid: i.checked }) },
+            { label: 'Send her round now', enabled: !maid?.active(), click: () => maid?.start() },
+          ],
+        },
         {
           label: '🤝 Robots socialising',
           submenu: [
@@ -992,6 +1030,30 @@ function themeMenu() {
       { type: 'separator' },
       ...Object.entries(THEME_MODES).map(([key, label]) => ({ label, type: 'radio', checked: now.mode === key, click: () => setSettings({ themeMode: key }) })),
     ],
+  };
+}
+
+// You're presenting, or a full-screen app or game has the screen: the robots keep their sounds
+// to themselves, except a question for you (sound.js). Checked every few seconds.
+let hush = false;
+function watchPresenting() {
+  const check = () => {
+    const now = presenting();
+    if (now === hush) return;
+    hush = now;
+    for (const r of robots.values()) if (!r.win.isDestroyed()) r.win.webContents.send('robot:hush', hush);
+  };
+  check();
+  setInterval(check, 5000).unref?.();
+}
+
+// robot sounds: just the ones that matter (the default), all of them, or none
+const SOUND_LEVELS = { essential: '🔈 Essential only', all: '🔊 Everything', off: '🔇 Off' };
+function soundsMenu() {
+  const now = store.settings.sounds || 'essential';
+  return {
+    label: `${SOUND_LEVELS[now]?.split(' ')[0] || '🔈'} Sounds`,
+    submenu: Object.entries(SOUND_LEVELS).map(([key, label]) => ({ label, type: 'radio', checked: now === key, click: () => setSettings({ sounds: key }) })),
   };
 }
 
@@ -1837,6 +1899,7 @@ function registerIpc() {
       vocabHotkey: vocabHotkey(),
       notesBoard: boardFor(id),
       noteHotkey: noteHotkey(),
+      hush,
     };
   });
   // 📚 Save this word (offered under an answer about what a word means)
@@ -2174,7 +2237,7 @@ function registerIpc() {
             click: () => updateCharacter(id, { permissionMode: key }),
           })),
         },
-        { label: '🔇 Mute sounds', type: 'checkbox', checked: !!store.settings.muted, click: (i) => setSettings({ muted: i.checked }) },
+        soundsMenu(),
         themeMenu(),
         { type: 'separator' },
         { label: '🛠️ Customize in the Workshop…', click: () => openManager(id) },
@@ -2410,9 +2473,9 @@ app.whenReady().then(() => {
     preload,
     guardNavigation,
     onChange: () => refreshTray(),
-    onClick: (id) => !!social?.clicked(id),
+    onClick: (id) => !!(maid?.clicked(id) || social?.clicked(id)),
     onHeld: (id) => social?.held(id),
-    onGone: (id) => social?.gone(id),
+    onGone: (id) => (maid?.gone(id), social?.gone(id)),
   });
   vocab = new Vocab();
   wordCard = createWordCard({ preload, guardNavigation, onAction: onCardAction, onClosed: () => quizzing && endQuiz('ignored') });
@@ -2484,10 +2547,31 @@ app.whenReady().then(() => {
       return r && !r.win.isDestroyed() ? { x: r.anchor.x, y: r.anchor.y, width: r.dims.w, height: r.dims.h } : null;
     },
     // (you're working with C-Bot: a card, the notebook or Quick actions is open)
-    appBusy: () => !!(notebook?.isOpen() || quickWin?.isOpen() || wordCard?.showing() || groupChat?.isOpen()),
+    appBusy: () => !!(notebook?.isOpen() || quickWin?.isOpen() || wordCard?.showing() || groupChat?.isOpen() || maid?.active()),
     acceptsNotifications,
   });
   if (process.env.CBOT_TEST) global.cbotSocial = social; // (the tests start visits themselves)
+  maid = createMaid({
+    robots,
+    store,
+    walkers,
+    sendToRobot,
+    deskRect: (id) => {
+      const r = robots.get(id);
+      return r && !r.win.isDestroyed() ? { x: r.anchor.x, y: r.anchor.y, width: r.dims.w, height: r.dims.h } : null;
+    },
+    sizeOf: (id) => store.get(id)?.size || 'normal', // (she comes as big as the smallest robot)
+    sizes: SIZES,
+    statusOf: (id) => social?.peek(id),
+    thanksOf: (id) => {
+      const lines = (PERSONALITIES[store.get(id)?.personality] || Object.values(PERSONALITIES)[0])?.social?.maidThanks || [];
+      return lines[Math.floor(Math.random() * lines.length)] || '';
+    },
+    // (a visit going on, or you're working with C-Bot: she waits)
+    busy: () => !!(social?.state() || notebook?.isOpen() || quickWin?.isOpen() || wordCard?.showing() || groupChat?.isOpen()),
+    presenting,
+  });
+  if (process.env.CBOT_TEST) global.cbotMaid = maid;
   groupChat = createGroupChat({
     preload,
     guardNavigation,
@@ -2538,6 +2622,7 @@ app.whenReady().then(() => {
   bindPaletteHotkey();
   if (!store.list().length) openManager('new');
   startCursorTracking();
+  watchPresenting();
 
   // the taskbar moved or a screen changed size: re-fit the open chats
   // after a sleep, an unlock or a change of screens, robots out for a walk come back where you can reach them

@@ -30,7 +30,7 @@ const HEADINGS = { toward: 0, left: -1.0, right: 1.0, away: Math.PI };
 // out walking, the empty chair is turned this far from the desk towards you (index.js, antics/walk.js)
 export const AWAY_TURN = 0.45;
 // (talk, tiptoe, clap: visiting another robot's desk, main social.js)
-const GAITS = new Set(['stand', 'walk', 'sleepwalk', 'wave', 'look', 'sit', 'dangle', 'land', 'talk', 'tiptoe', 'clap']);
+const GAITS = new Set(['stand', 'walk', 'sleepwalk', 'wave', 'look', 'sit', 'dangle', 'land', 'talk', 'tiptoe', 'clap', 'dust']);
 const BLEND = 0.25; // seconds to switch gaits
 const LAND = 0.4; // the squash on being put down
 
@@ -412,6 +412,23 @@ export function createWalker({ world, emit, worldPoint, scale: deskScale }) {
         o.head[0] = -0.05;
         break;
       }
+      case 'dust': {
+        // the evening housemaid wiping a desk: standing at its end, reaching up and forward with
+        // the duster (left hand) onto the desk top and wiping it in long strokes, in and out,
+        // leaning into each one, the other hand on its hip
+        standPose(o, rig, t);
+        const stroke = Math.sin(t * 4.2); // (out and back, about 1.5 s)
+        const reach = 0.5 + 0.5 * stroke;
+        arm(o.armL, -2.3 - 0.2 * reach, 0.12 + 0.06 * Math.sin(t * 8.4), -0.3 + 0.25 * reach);
+        arm(o.armR, 0.1, 0.65, -1.7);
+        o.head[0] = 0.04;
+        o.head[1] = 0.06 * stroke;
+        o.head[2] = 0.05 * Math.sin(t * 2.1);
+        o.twist = 0.12 * stroke;
+        o.lean = 0.1 + 0.1 * reach;
+        o.y += 0.006 * Math.abs(Math.cos(t * 4.2));
+        break;
+      }
       case 'look': {
         // a hand shading its eyes, scanning the horizon left and right
         standPose(o, rig, t);
@@ -533,6 +550,9 @@ export function createWalker({ world, emit, worldPoint, scale: deskScale }) {
       }
       poseArm(arms.armL, out.armL, out.reachL);
       poseArm(arms.armR, out.armR, out.reachR);
+      // the housemaid's duster: turned round in her hand to reach out along her arm as she wipes
+      const duster = arms.armL.elbow.getObjectByName('duster');
+      if (duster) duster.rotation.x = mix(duster.rotation.x, gait === 'dust' ? Math.PI : 0, ease(dt, 8));
       torso.rotation.set(out.lean + Math.sin(t * 2.2) * 0.01, out.twist, out.tilt);
       // eyes on the cursor while it faces you
       const facing = Math.max(0, Math.cos(yaw)) * (gait === 'sleepwalk' ? 0 : 1);

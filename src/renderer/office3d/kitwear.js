@@ -10,9 +10,9 @@ import { toon, glow, canvasTexture } from './materials.js';
 //     body: its body part ('box', 'egg'…); b: { top, front, half, mid }; h: { faceY, faceZ, width }
 
 export const WEAR = {
-  clothes: ['none', 'tshirt', 'hawaiian', 'santa', 'elf', 'suit', 'vampire', 'witch', 'dress', 'swimsuit', 'tutu'],
+  clothes: ['none', 'tshirt', 'hawaiian', 'santa', 'elf', 'suit', 'vampire', 'witch', 'dress', 'swimsuit', 'tutu', 'maid'],
   neck: ['none', 'scarf', 'lei', 'tie', 'bow', 'pearls'],
-  extra: ['none', 'candycane', 'gift', 'pumpkin', 'icecream', 'balloon', 'cape', 'wings', 'batwings', 'surfboard', 'backpack'],
+  extra: ['none', 'candycane', 'gift', 'pumpkin', 'icecream', 'balloon', 'cape', 'wings', 'batwings', 'surfboard', 'backpack', 'duster'],
   specs: ['none', 'sunglasses', 'heart', 'round', 'star', 'eyepatch'],
 };
 
@@ -237,6 +237,31 @@ function clothes(kind, { torso, arms, body, b, cloth }) {
       collar.rotation.z = Math.PI;
       break;
     }
+    case 'maid': {
+      // a dark dress with a frilly white apron and collar (the evening housemaid wears it)
+      const dark = toon(cloth);
+      const white = toon('#ffffff');
+      put(torso, shell(body, b, 0.04, top, g, dark));
+      sleeves(arms, dark);
+      for (const a of Object.values(arms)) put(a.shoulder, mesh(new THREE.TorusGeometry(0.075, 0.016, 6, 16), white, 0, -0.115, 0).rotateX(Math.PI / 2));
+      skirt(torso, b, dark, { drop: 0.19, flare: 0.14, hem: white });
+      // the apron: a bib up the chest and a skirt panel down the front, edged with frills
+      const bib = put(torso, mesh(new RoundedBoxGeometry(0.22, 0.2, 0.012, 2, 0.02), white, 0, b.mid + 0.02, b.front + g + 0.006));
+      bib.rotation.x = -0.06;
+      const panel = put(torso, mesh(new THREE.BoxGeometry(0.3, 0.2, 0.012), white, 0, 0.0, b.half + 0.08));
+      panel.rotation.x = -0.55;
+      for (let i = 0; i < 7; i++) put(torso, mesh(new THREE.SphereGeometry(0.022, 8, 6), white, -0.15 + i * 0.05, -0.07, b.half + 0.13));
+      // the waist ribbon, tied in a bow at the back
+      put(torso, shell(body, b, b.mid - 0.11, b.mid - 0.08, g + 0.008, white));
+      for (const s of [-1, 1]) {
+        const loop = put(torso, mesh(new THREE.SphereGeometry(0.05, 10, 8), white, s * 0.05, b.mid - 0.09, -b.front - 0.04));
+        loop.scale.set(1.2, 0.7, 0.4);
+      }
+      const collar = put(torso, mesh(new THREE.TorusGeometry(0.1, 0.025, 8, 20, Math.PI), white, 0, top - 0.01, b.front * 0.4));
+      collar.rotation.x = Math.PI / 2;
+      collar.rotation.z = Math.PI;
+      break;
+    }
     case 'swimsuit': {
       put(torso, shell(body, b, 0.02, b.mid + 0.1, g, toon('#ffffff', { map: dots(cloth, '#ffffff') })));
       skirt(torso, b, toon(cloth), { drop: 0.08, flare: 0.05 });
@@ -356,6 +381,24 @@ function extra(kind, { torso, arms, b }) {
       held.add(mesh(new THREE.BoxGeometry(0.07, 0.015, 0.01), face, 0, -0.1, 0.13));
       const handle = mesh(new THREE.TorusGeometry(0.08, 0.008, 6, 20, Math.PI), toon('#1d2235'), 0, -0.03, 0.03);
       held.add(handle);
+      put(hand, held);
+      break;
+    }
+    case 'duster': {
+      // a feather duster: a wooden handle and a big fluffy puff of colourful feathers
+      held.add(mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.4, 8), toon('#a8743e'), 0, 0.13, 0.04)); // (a long handle: it reaches the desk top)
+      held.add(mesh(new THREE.CylinderGeometry(0.022, 0.018, 0.03, 10), toon('#ffd34d'), 0, 0.33, 0.04));
+      const colours = ['#ff6fa5', '#ffd34d', '#7bed9f', '#8fc8ff', '#c6a8ff', '#ff9f43'];
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2;
+        const up = i % 2 ? 0.05 : 0.0;
+        const f = mesh(new THREE.ConeGeometry(0.03, 0.14, 6), toon(colours[i % colours.length]), Math.cos(a) * 0.04, 0.41 + up, 0.04 + Math.sin(a) * 0.04);
+        f.rotation.set(Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7);
+        held.add(f);
+      }
+      held.add(mesh(new THREE.SphereGeometry(0.05, 10, 8), toon('#ffffff'), 0, 0.44, 0.04));
+      held.scale.setScalar(1.35); // (big enough to read as a duster from across the desk)
+      held.name = 'duster'; // (walker3d.js turns it round to wipe a desk with it)
       put(hand, held);
       break;
     }

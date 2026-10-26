@@ -1,7 +1,17 @@
 // Tiny synthesized robot noises — no audio files needed.
+//
+// Two kinds, so the robots aren't noisy by default (the Sounds setting: Sfx.setLevel):
+//   Sfx.done() …      an extra: chatter while it answers, each step, its antics and snores, the
+//                     robots together, housekeeping. Only at level 'all'.
+//   Sfx.key.done() …  one that matters: an answer ready, a question for you, an error, a
+//                     reminder, or the answer to something you just did. At 'all' and 'essential'.
+// Level 'off' is silence. While you present (a full-screen app, presentation mode: Sfx.setHush)
+// only a question for you still dings. And when several robots make the same sound at once
+// (they reacted to the same thing), only the first one is heard.
 window.Sfx = (() => {
   let ctx = null;
-  let muted = false;
+  let level = 'essential'; // 'all' | 'essential' | 'off'
+  let hush = false;
   let lastChirp = 0;
 
   function audio() {
@@ -11,7 +21,6 @@ window.Sfx = (() => {
   }
 
   function tone(freq, { at = 0, dur = 0.08, type = 'square', vol = 0.05, to = null } = {}) {
-    if (muted) return;
     const a = audio();
     const t = a.currentTime + at;
     const osc = a.createOscillator();
@@ -29,7 +38,6 @@ window.Sfx = (() => {
 
   // a burst of filtered noise (a swish)
   function noise({ at = 0, dur = 0.06, vol = 0.2, freq = 1800, type = 'bandpass' } = {}) {
-    if (muted) return;
     const a = audio();
     const t = a.currentTime + at;
     const buf = a.createBuffer(1, Math.ceil(a.sampleRate * dur), a.sampleRate);
@@ -46,8 +54,7 @@ window.Sfx = (() => {
     src.start(t);
   }
 
-  return {
-    setMuted(m) { muted = !!m; },
+  const sounds = {
     wake() { [523, 659, 784, 1047].forEach((f, i) => tone(f, { at: i * 0.07, dur: 0.09 })); },
     sleep() { [784, 659, 523, 392].forEach((f, i) => tone(f, { at: i * 0.1, dur: 0.14, type: 'triangle', vol: 0.06 })); },
     poke() { tone(300, { dur: 0.22, type: 'sine', vol: 0.12, to: 900 }); },
@@ -133,6 +140,37 @@ window.Sfx = (() => {
         tune.forEach((f, i) => tone(f, { at: bar * 2 + i * 0.25 + 0.12, dur: 0.12, type: 'triangle', vol: 0.04 }));
         for (let i = 0; i < 8; i++) noise({ at: bar * 2 + i * 0.25, dur: 0.04, vol: 0.05, freq: i % 2 ? 6000 : 300, type: i % 2 ? 'highpass' : 'lowpass' });
       }
+    },
+  };
+
+  // the same sound another robot just made: skipped (heard over the robots' shared channel)
+  const SAME_WITHIN = 600; // ms
+  const heard = new Map(); // sound -> when another robot last made it
+  let others = null;
+  try {
+    others = new BroadcastChannel('cbot-sfx');
+    others.onmessage = (e) => e.data?.name && heard.set(e.data.name, Date.now());
+  } catch {}
+  // kind: 'extra' (level 'all' only), 'key' ('all' and 'essential'), 'ask' (like key, and heard
+  // while you present too)
+  function play(kind, name, args) {
+    if (level === 'off' || (kind === 'extra' && level !== 'all') || (hush && kind !== 'ask')) return;
+    if (Date.now() - (heard.get(name) || 0) < SAME_WITHIN) return;
+    try {
+      others?.postMessage({ name });
+    } catch {}
+    sounds[name](...args);
+  }
+  const kinds = (kind) => Object.fromEntries(Object.keys(sounds).map((name) => [name, (...args) => play(kind, name, args)]));
+  return {
+    ...kinds('extra'),
+    key: kinds('key'),
+    ask: (...args) => play('ask', 'ask', args), // (Sfx.ask: a question for you)
+    setLevel(l) {
+      level = ['all', 'essential', 'off'].includes(l) ? l : 'essential';
+    },
+    setHush(on) {
+      hush = !!on;
     },
   };
 })();
