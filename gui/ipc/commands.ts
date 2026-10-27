@@ -2,7 +2,7 @@
 // its Rust function (robotAsk is robot_ask); the arguments go over by name (tabId arrives as
 // tab_id). The ones under "told" don't wait for an answer.
 import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
-import type { AppPage, AppView, AppViewCall, Box, Character, ClaudeCommand, ContextUse, FileChip, FileInfo, LinkTask, ModelChoice, Note, NotesReminder, OkOr, Point, QAItem, SessionRow, Settings, Transcript } from '@/types/model';
+import type { AppPage, AppView, AppViewCall, Box, Character, ClaudeCommand, ContextUse, FileChip, FileInfo, FileView, LinkTask, ModelChoice, Note, NotesReminder, OkOr, Point, QAItem, SessionRow, Settings, Transcript } from '@/types/model';
 import type * as P from '@/types/pages';
 import type { RobotInit, AskResult, IslandEdge, IslandNews, IslandReport, IslandRobot, PaletteView, SocialReport, StageState } from '@/types/ipc';
 
@@ -48,6 +48,12 @@ export const robotInspectPaths = (paths: string[]) => invoke<FileInfo[]>('robot_
 export const robotSavePaste = (bytes: ArrayBuffer | Uint8Array, ext: string) => invoke<FileInfo | null>('robot_save_paste', bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), { headers: { ext } });
 export const robotPasteClipboard = () => invoke<FileInfo[]>('robot_paste_clipboard');
 export const robotOpenFile = (file: string, opts?: { reveal?: boolean }) => invoke<OkOr<{ revealed?: boolean }>>('robot_open_file', { file, opts });
+// (a file or folder opened in the chat itself)
+export const robotReadFile = (path: string) => invoke<OkOr<FileView>>('robot_read_file', { path });
+// (speaking into the chat box, voice.rs: the system's engine, if there is one; systemUi: it
+// shows the listening itself)
+export const voiceEngine = () => invoke<{ name: string | null; systemUi: boolean }>('voice_engine');
+export const voiceStart = () => invoke<void>('voice_start');
 // (the composer's ＋: files, or only pictures, picked in the open dialog)
 export const robotPickFiles = (pictures?: boolean) => invoke<FileInfo[]>('robot_pick_files', { pictures });
 // (how tall you made the chat; null: the height of the screen)

@@ -52,6 +52,7 @@ export const Icon = (() => {
     gauge: '<path d="m12 14 4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>',
     clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
     sound: '<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 18.4a9 9 0 0 0 0-12.8"/>',
+    mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
     copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/>',
     trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
@@ -96,7 +97,7 @@ export const Icon = (() => {
     '↩': 'undo', '✋': 'hand', '🤖': 'bot', '🧩': 'plug', '🔒': 'lock', '✅': 'check', '⚠': 'alert', '🛑': 'stop', '⏳': 'clock',
     '💭': 'thought', '📝': 'note', '📁': 'folder', '📄': 'file', '🖼': 'image', '⚡': 'zap', '✨': 'sparkles', '💻': 'terminal',
     '📚': 'book-plus', '📖': 'book', '🔍': 'search', '🃏': 'cards', '🔌': 'plug', '📋': 'notebook', '💬': 'chat', '🚶': 'walk',
-    '🟢': 'dot', '🤔': 'bulb', '✏': 'edit', '⚙': 'terminal', '😵': 'alert', '📦': 'box', '⤢': 'expand', '↗': 'open', '💡': 'bulb', '🎉': 'party', '⏰': 'clock', '👍': 'thumb', '🌐': 'globe', '🛠': 'wrench', '🎓': 'book', '🔥': 'flame',
+    '🟢': 'dot', '🤔': 'bulb', '✏': 'edit', '⚙': 'terminal', '😵': 'alert', '📦': 'box', '⤢': 'expand', '↗': 'open', '💡': 'bulb', '🎉': 'party', '⏰': 'clock', '👍': 'thumb', '🌐': 'globe', '🛠': 'wrench', '🎓': 'book', '🔥': 'flame', '🎙': 'mic',
   };
   const LEAD = /^((?:\p{Extended_Pictographic}|↩)(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s*/u;
   Icon.text = <E extends Element>(el: E, text: unknown): E => {

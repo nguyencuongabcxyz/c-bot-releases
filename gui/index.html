@@ -5,7 +5,7 @@
   <!-- Every window shows this page; main.ts puts in the view it was opened for (?view=).
        So the policy is what any view needs: local pictures (cbot-file), MCP tool views
        (cbot-app), and under Tauri its IPC, picture and tool-view origins (*.localhost). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http://cbot-file.localhost; connect-src 'self' blob: ipc: http://ipc.localhost; font-src 'self' data:; frame-src http://cbot-app.localhost" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http://cbot-file.localhost; connect-src 'self' blob: ipc: http://ipc.localhost; font-src 'self' data:; media-src http://cbot-file.localhost; frame-src http://cbot-app.localhost http://cbot-file.localhost" />
   <title>C-Bot</title>
   <script type="module" src="./main.ts"></script>
 </head>

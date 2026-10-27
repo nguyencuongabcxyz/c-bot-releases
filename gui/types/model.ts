@@ -231,6 +231,16 @@ export type FileInfo = { path: string; name: string; isDir: boolean; size: numbe
 
 export type OkOr<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
+/** A file or folder opened in the chat's file viewer (files.rs read_for_view): its text (the
+ * first 2 MB), a picture (an SVG's source too), a PDF/song/video to show through cbot-file,
+ * a folder's list, or only what it is. modified: ms. */
+export type FileView = { name: string; path: string; ext: string; size: number; modified?: number | null } & (
+  | { kind: 'text'; text: string; truncated: boolean }
+  | { kind: 'image'; text?: string; truncated?: boolean }
+  | { kind: 'pdf' | 'audio' | 'video' | 'binary' }
+  | { kind: 'dir'; entries: { name: string; isDir: boolean; size: number }[]; truncated: boolean }
+);
+
 export type ModelChoice = { value: string; displayName: string; description: string; efforts: string[] };
 
 /** A past conversation in the robot's folder (main sessions.js listSessions). */

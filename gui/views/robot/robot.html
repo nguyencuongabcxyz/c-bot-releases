@@ -23,6 +23,8 @@
   <div id="logs"></div>
   <div id="todo" hidden></div>
   <div id="helpers" hidden></div>
+  <!-- the files this conversation made or changed (chat/outputs.ts) -->
+  <div id="outputs" hidden></div>
   <!-- one helper agent up close: its job, its steps as they happen, its report -->
   <div id="helper-view" hidden>
     <div class="h-top">
@@ -91,6 +93,7 @@
     <button id="btn-attach" class="composer-btn" type="button" title="Add files" data-icon="plus"></button>
     <button id="btn-screen" class="composer-btn" type="button" title="Ask about screen" data-icon="scan"></button>
     <textarea id="input" rows="1" placeholder="Ask me something… (/ for commands, @ for files)" spellcheck="true"></textarea>
+    <button id="btn-mic" class="composer-btn" type="button" title="Speak instead of typing" data-icon="mic" hidden></button>
     <button id="btn-format" class="composer-btn" type="button" title="Formatting" data-icon="text-box"></button>
     <button id="send" type="submit" title="Send (Enter)" data-icon="send"></button>
   </form>
@@ -99,6 +102,8 @@
   <div class="resize-grip" title="Drag to resize" aria-hidden="true"></div>
   <!-- and its height: the edge away from the robot's end of the screen (double-click: full height) -->
   <div class="resize-grip-v" title="Drag to resize" aria-hidden="true"></div>
+  <!-- and the corner between them: both at once -->
+  <div class="resize-grip-d" title="Drag to resize both ways (double-click: back to normal)" aria-hidden="true"></div>
 </section>
 
 <!-- While it works with the chat tucked away: what it's doing, and a way back in -->
