@@ -24,6 +24,17 @@ pub fn project_dir(folder: &str) -> PathBuf {
     PathBuf::from(std::env::var_os("USERPROFILE").unwrap_or_default()).join(".claude").join("projects").join(name)
 }
 
+/// Throw a conversation's transcript away (a temporary chat closed): its JSONL, and the
+/// folder of its helpers' transcripts beside it.
+pub fn forget(folder: &str, session_id: &str) {
+    if session_id.is_empty() || !session_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return; // (a session id, nothing that could point elsewhere)
+    }
+    let dir = project_dir(folder);
+    let _ = fs::remove_file(dir.join(format!("{session_id}.jsonl")));
+    let _ = fs::remove_dir_all(dir.join(session_id));
+}
+
 fn read_slice(file: &Path, size: u64) -> String {
     if size <= BIG_FILE {
         return fs::read_to_string(file).unwrap_or_default();

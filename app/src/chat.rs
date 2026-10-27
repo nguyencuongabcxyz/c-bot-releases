@@ -52,6 +52,8 @@ struct Book {
     images: Vec<Value>,
     edits: Vec<Value>,
     last_compact: Value,
+    thinking: Option<String>, // the step its thinking is going into, while it thinks
+    thoughts: usize,          // (to name them)
 }
 
 pub struct Chat {
@@ -229,6 +231,11 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     }
     let (c, tab, settings) = with(app, |st| Some((st.store.get(id)?.clone(), st.store.tab(id, tab_id)?.clone(), st.store.settings().clone())))?;
     let model = tab["model"].as_str().or(c["model"].as_str()).unwrap_or(""); // '' = Claude Code's default; a tab's choice beats the robot's
+    // an edited question: once, the process picks the conversation up from before it (rewind)
+    let resume_at = tab["resumeAt"].as_str().map(str::to_string);
+    if resume_at.is_some() {
+        with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("resumeAt", Value::Null)])));
+    }
     // the other robots, to ask (robotlink.rs): its tools, usable without asking, and time to wait for an answer
     let mcp_config = robotlink::mcp_config(app, id);
     let opts = claude::Opts {
@@ -244,6 +251,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         allowed_tools: if mcp_config.is_some() { robotlink::allowed_tools() } else { vec![] },
         mcp_config: mcp_config.unwrap_or_default(),
         extra_args: vec![],
+        resume_at,
     };
     let book = Arc::new(Mutex::new(Book::default()));
     let (app2, id2, tab2, book2) = (app.clone(), id.to_string(), tab_id.to_string(), book.clone());
@@ -270,8 +278,18 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         "session" => {
             let sid = data.as_str().unwrap_or("");
             with(app, |st| {
+                let tab = st.store.tab(id, tab_id).cloned().unwrap_or_default();
                 st.store.update_tab(id, tab_id, patch(vec![("sessionId", json!(sid))]));
-                st.store.remember_session(id, sid);
+                if tab["temporary"] == true {
+                    // (not one of the robot's past conversations: kept to throw away when the chat closes)
+                    let mut seen = sessions_of(&tab);
+                    if !seen.iter().any(|s| s == sid) {
+                        seen.push(sid.to_string());
+                    }
+                    st.store.update_tab(id, tab_id, patch(vec![("tempSessions", json!(seen))]));
+                } else {
+                    st.store.remember_session(id, sid);
+                }
             });
         }
         "initialized" => {
@@ -312,18 +330,49 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         }),
         "text" => {
             let delta = data.as_str().unwrap_or("");
-            book_of().text_len += delta.encode_utf16().count();
+            let mut b = book_of();
+            b.text_len += delta.encode_utf16().count();
+            b.thinking = None; // (done thinking: it's talking)
+            drop(b);
             tell(app, id, tab_id, json!({ "type": "text", "delta": delta }));
         }
         "aside" => tell(app, id, tab_id, json!({ "type": "aside", "text": data })),
-        "thinking" => tell(app, id, tab_id, json!({ "type": "thinking" })),
+        // its thinking: a step of its own in the answer (where it came), its words streamed into it
+        "thinking" => {
+            tell(app, id, tab_id, json!({ "type": "thinking" }));
+            let mut b = book_of();
+            b.thoughts += 1;
+            let step = format!("think-{}", b.thoughts);
+            b.thinking = Some(step.clone());
+            if b.calls.len() < KEEP_CALLS {
+                let at = b.text_len;
+                b.calls.push(json!({ "id": step, "name": "Thinking", "detail": "", "at": at, "output": "" }));
+            }
+            drop(b);
+            tell(app, id, tab_id, json!({ "type": "tool", "id": step, "name": "Thinking", "detail": "", "args": null }));
+        }
+        "thinking-text" => {
+            let delta = data.as_str().unwrap_or("");
+            let mut b = book_of();
+            let Some(step) = b.thinking.clone() else { return };
+            if let Some(call) = b.calls.iter_mut().find(|c| c["id"] == step.as_str()) {
+                let so_far = call["output"].as_str().unwrap_or("");
+                if so_far.len() < KEEP.output * 2 {
+                    call["output"] = json!(format!("{so_far}{delta}"));
+                }
+            }
+            drop(b);
+            tell(app, id, tab_id, json!({ "type": "thinking-text", "id": step, "delta": delta }));
+        }
+        "usage" => tell(app, id, tab_id, json!({ "type": "usage", "outputTokens": data["outputTokens"] })),
         "status" => tell(app, id, tab_id, json!({ "type": "status", "text": data })),
-        "question" => {
+        "question" | "request-cancelled" => {
             let mut p = data;
-            p["type"] = json!("question");
+            p["type"] = json!(event);
             tell(app, id, tab_id, p);
         }
         "tool" => {
+            book_of().thinking = None; // (done thinking: it's doing)
             // what it was called with (click the step in the chat to see it), and a smaller copy kept with the answer
             let args = data["args"].clone();
             let mut p = data.clone();
@@ -496,6 +545,7 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                     st.store.push_history(id, tab_id, entry(vec![
                         ("role", json!("assistant")), ("text", data["text"].clone()), ("asides", data["asides"].clone()), ("isError", data["isError"].clone()),
                         ("denials", data["denials"].clone()), ("interrupted", data["interrupted"].clone()), ("edits", edits), ("apps", apps), ("images", images), ("tools", tools),
+                        ("uuid", data["uuid"].clone()), // (where an edited question after it rewinds to)
                     ]));
                 }
                 if let Some(sid) = data["sessionId"].as_str() {
@@ -595,6 +645,46 @@ pub fn set_permission_mode(app: &AppHandle, id: &str, mode: &str) {
     for chat in live {
         chat.session.set_permission_mode(mode);
     }
+}
+
+/// Edit the last question: the conversation goes back to before it. Its question and what
+/// came after are taken out of the history; the next question picks the conversation up from
+/// the answer before it (as a branch of its own: --resume-session-at, --fork-session), or
+/// starts afresh if it was the first. The question comes back, to edit.
+pub fn rewind(app: &AppHandle, id: &str, tab_id: &str) -> Value {
+    if with(app, |st| is_busy(st, id, tab_id)) {
+        return json!({ "ok": false, "error": "Wait till I'm done (or stop me) first." });
+    }
+    let found = with(app, |st| {
+        let tab = st.store.tab(id, tab_id)?;
+        let history = tab["history"].as_array()?;
+        let last = history.iter().rposition(|h| h["role"] == "user")?;
+        let before = &history[..last];
+        let talked = before.iter().any(|h| h["role"] == "assistant");
+        // the answer before it, where the conversation picks up again
+        let at = before.iter().rev().find(|h| h["role"] == "assistant").and_then(|h| h["uuid"].as_str()).map(str::to_string);
+        Some((last, history[last].clone(), talked, at))
+    });
+    let Some((last, question, talked, at)) = found else {
+        return json!({ "ok": false, "error": "There's no question to edit." });
+    };
+    if talked && at.is_none() {
+        return json!({ "ok": false, "error": "That one's too old to edit (it was asked before I could go back in a conversation)." });
+    }
+    close(app, id, tab_id);
+    with(app, |st| {
+        let tab = st.store.tab(id, tab_id).cloned()?;
+        let kept: Vec<Value> = tab["history"].as_array()?.iter().take(last).cloned().collect();
+        let mut fields = vec![("history", Value::Array(kept))];
+        if let Some(at) = &at {
+            fields.push(("resumeAt", json!(at)));
+        } else {
+            fields.extend([("sessionId", Value::Null), ("resumeAt", Value::Null)]); // (it was the first question: start afresh)
+        }
+        st.store.update_tab(id, tab_id, patch(fields))
+    });
+    crate::robots::send_character(app, id);
+    json!({ "ok": true, "text": question["text"], "files": question["files"] })
 }
 
 pub fn close_all(app: &AppHandle) {
@@ -771,17 +861,61 @@ pub fn sessions(app: &AppHandle, id: &str) -> Value {
     }
     // sessions open in a tab are always the robot's, even if they predate session tracking
     let tabs = c["tabs"].as_array().cloned().unwrap_or_default();
+    // (a temporary chat's aren't listed: they go when it closes)
+    let temporary: Vec<String> = tabs.iter().filter(|t| t["temporary"] == true).flat_map(sessions_of).collect();
+    let tabs: Vec<Value> = tabs.into_iter().filter(|t| t["temporary"] != true).collect();
     let open: HashMap<String, Value> = tabs.iter().filter_map(|t| Some((t["sessionId"].as_str()?.to_string(), t["id"].clone()))).collect();
     let mut mine: Vec<String> = c["sessionIds"].as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_string)).collect();
     mine.extend(open.keys().cloned());
     let active_session = tabs.iter().find(|t| t["id"] == c["activeTab"]).and_then(|t| t["sessionId"].as_str()).map(str::to_string);
-    let rows = transcripts::list(folder, &mine, 60).into_iter().map(|mut s| {
+    let rows = transcripts::list(folder, &mine, 60).into_iter().filter(|s| !temporary.iter().any(|t| s["id"] == t.as_str())).map(|mut s| {
         let sid = s["id"].as_str().unwrap_or("").to_string();
         s["current"] = json!(active_session.as_deref() == Some(sid.as_str()));
         s["tabId"] = open.get(&sid).cloned().unwrap_or(Value::Null);
         s
     });
     Value::Array(rows.collect())
+}
+
+// ---------------------------------------------------------------- temporary chats
+
+/// Every conversation a temporary chat went through (an edited question branches off a new one).
+fn sessions_of(tab: &Value) -> Vec<String> {
+    let mut all: Vec<String> = tab["tempSessions"].as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_string)).collect();
+    if let Some(s) = tab["sessionId"].as_str().filter(|s| !all.iter().any(|a| a == s)) {
+        all.push(s.to_string());
+    }
+    all
+}
+
+/// A temporary chat closed: Claude Code's transcripts of it go too (once its process, closed
+/// with the tab, has let go of them).
+pub fn erase_temporary(app: &AppHandle, id: &str, tab: &Value) {
+    let sessions = sessions_of(tab);
+    let folder = with(app, |st| st.store.get(id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default();
+    if sessions.is_empty() || folder.is_empty() {
+        return;
+    }
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(5));
+        for s in &sessions {
+            transcripts::forget(&folder, s);
+        }
+    });
+}
+
+/// At start: temporary chats left from before (C-Bot quit with them open) go, with their transcripts.
+pub fn sweep_temporary(app: &AppHandle) {
+    let left: Vec<(String, Value)> = with(app, |st| {
+        st.store.list().iter().flat_map(|c| {
+            let id = c["id"].as_str().unwrap_or("").to_string();
+            c["tabs"].as_array().into_iter().flatten().filter(|t| t["temporary"] == true).map(move |t| (id.clone(), t.clone())).collect::<Vec<_>>()
+        }).collect()
+    });
+    for (id, tab) in left {
+        erase_temporary(app, &id, &tab);
+        with(app, |st| st.store.remove_tab(&id, tab["id"].as_str().unwrap_or("")));
+    }
 }
 
 pub fn session(app: &AppHandle, id: &str, session_id: &str) -> Value {

@@ -3,12 +3,16 @@ import DOMPurify from 'dompurify';
 import { Office3D } from '@/office3d/index';
 import { McpAppHost } from '@/mcp/appHost';
 import { Icon } from '@/ui/icons';
-import { HistoryView } from './history';
 import { Sfx } from './sound';
+import { HistoryView } from './chat/history';
+import { dressCode } from './chat/code';
+import { stepSummary, tokens as fmtTokens } from './chat/steps';
+import { codeBlock, link, prefixLines, transform, TRANSFORMS, wrap } from './chat/format';
 import { showView } from '@/ui/view';
 import markup from './robot.html?raw';
 import '@/ui/theme.css';
 import './robot.css';
+import './chat/chat.css';
 import type { McpAppHostHandle } from '@/mcp/appHost';
 import type { Office3DView } from '@/office3d/index';
 import type {
@@ -94,7 +98,7 @@ type PaletteFile = { kind: 'file'; rel: string; dir: boolean };
 type Queued = { turnId: string; el: HTMLElement; ask: Ask };
 
 /** Claude's question card, waiting for your answer. */
-type PendingQuestion = { sent: boolean; card: HTMLElement; typed(text: string): void; pickByNumber(n: number): void };
+type PendingQuestion = { sent: boolean; card: HTMLElement; requestId?: string; typed(text: string): void; pickByNumber(n: number): void };
 
 /** A step it took, as its chip shows it (live, or kept with the answer). */
 type ToolCall = Omit<StepCall, 'at'> & { at?: number; running: boolean };
@@ -158,6 +162,12 @@ type ChatTab = {
   linkReq?: string;
   exchange?: string;
   task?: string;
+  // the status line while it works: since when, and how much it has written
+  turnStart?: number;
+  outTokens?: number; // (as Claude Code counts them, when it says)
+  outChars?: number; // (else estimated from what streamed in)
+  sent?: string[]; // what you asked in it, for ↑ / ↓ in the composer
+  rewinding?: boolean; // (its last question is being taken back, to edit or ask again)
 };
 
 /** What the robot's up to: its window's state. */
@@ -222,6 +232,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   const active = () => tabs.get(activeId!); // (none yet: undefined)
   const statusRow = $('#status');
   const statusText = $('#status-text');
+  const statusMeta = $('#status-meta');
   const pop = $('#pop');
 
   const AUTO_SLEEP_MS = 3 * 60 * 1000;
@@ -384,8 +395,21 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     }
     const box = document.createElement('div');
     box.appendChild(frag);
+    dressCode(box); // (highlighted, with a Copy button)
     return box.innerHTML;
   }
+
+  // a code block's Copy button (code.ts)
+  document.addEventListener('click', (e) => {
+    const btn = (e.target as Element).closest<HTMLButtonElement>('.code-copy');
+    if (!btn) return;
+    const code = btn.closest('.codeblock')?.querySelector('pre')?.textContent ?? '';
+    navigator.clipboard.writeText(code).then(() => {
+      btn.textContent = 'Copied';
+      btn.classList.add('done');
+      setTimeout(() => ((btn.textContent = 'Copy'), btn.classList.remove('done')), 1400);
+    }, () => {});
+  });
 
   // a picture its file card already shows isn't shown again under its path in the text
   const samePath = (p: string | undefined) => String(p || '').replace(/\//g, '\\').toLowerCase();
@@ -528,6 +552,10 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 
   function applyCharacter(c: RobotView) {
     state.character = c;
+    if (!body.classList.contains('resizing-v') && (c.chatHeight ?? null) !== chatH) {
+      chatH = c.chatHeight ?? null; // (how tall you made its chat)
+      if (body.classList.contains('expanded')) placePanel();
+    }
     document.documentElement.style.setProperty('--paint', c.color || '#5ac8fa');
     $('#name').textContent = c.name;
     $('#nametag').textContent = c.name;
@@ -554,6 +582,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 
   function renderHistory(tab: ChatTab = active()!) {
     tab.log.innerHTML = '';
+    if (tab.data?.temporary) addNote('🕶️ Temporary chat: nothing here is kept. It’s gone, Claude Code’s transcript too, when you close this tab.', 'temp-note', tab);
     for (const h of (tab.data.history || []).slice(-30)) {
       if (h.role === 'qa') addQaSummary(h.items, tab);
       else if (h.role === 'note') addNote(h.text, '', tab);
@@ -832,6 +861,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
       }
       el.appendChild(row);
     }
+    msgActions(el, 'user', tab);
     tab.log.appendChild(el);
     scrollDown(tab);
     return el;
@@ -884,21 +914,38 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     if (!el.children.length) el.innerHTML = md(words || '…');
     if (denials?.length) el.appendChild(deniedNote(denials));
     dedupePics(el);
+    rawText.set(el, words);
+    msgActions(el, 'bot', tab);
     tab.log.appendChild(el);
     scrollDown(tab);
     return el;
   }
 
-  // the steps of a finished turn: one chip each (click for the details); older history kept just
-  // their names, as compact chips: "📖 Read ×3"
+  // the steps of a finished turn: a line each (click for the details), a long run folded after
+  // the first few; older history kept just their names, as compact chips: "📖 Read ×3"
+  const STEPS_SHOWN = 6;
   function toolChips(tools: (StepCall | string)[], tab: ChatTab) {
     const row = document.createElement('div');
     row.className = 'tools';
     const counts = new Map<string, number>();
-    for (const t of tools) {
-      if (t && typeof t === 'object') row.appendChild(callChip({ ...t, running: false }, tab));
-      else counts.set(t, (counts.get(t) || 0) + 1);
+    const steps = tools.filter((t) => t && typeof t === 'object') as StepCall[];
+    steps.forEach((t, i) => {
+      const step = callChip({ ...t, running: false }, tab);
+      if (steps.length > STEPS_SHOWN + 2 && i >= STEPS_SHOWN) step.hidden = true;
+      row.appendChild(step);
+    });
+    if (steps.length > STEPS_SHOWN + 2) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'steps-more';
+      more.textContent = `+ ${steps.length - STEPS_SHOWN} more steps`;
+      more.addEventListener('click', () => {
+        for (const s of row.querySelectorAll<HTMLElement>('.step[hidden]')) s.hidden = false;
+        more.remove();
+      });
+      row.appendChild(more);
     }
+    for (const t of tools) if (!(t && typeof t === 'object')) counts.set(t, (counts.get(t) || 0) + 1);
     for (const [entry, n] of counts) {
       // "Skill(anthropic-skills:pptx)" -> 🎓 Skill: pptx (anthropic-skills)
       const [, name, detail] = entry.match(/^(\w+)\((.+)\)$/) || [null, entry, ''];
@@ -920,24 +967,62 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     const text = `${verb}${detail ? ' ' + detail : ''}`;
     return { emoji, verb, activity, mcp: !!mcp, text, label: `${emoji} ${text}` };
   }
-  // a step's chip: clicking it shows what it was called with and what it gave back (a helper
-  // agent's opens the helper instead)
-  function callChip(call: ToolCall, tab: ChatTab) {
+  // A step, as a line in the answer (as Claude Code shows it: what it did, and under it what came
+  // back: "⎿ Read 120 lines"). Clicking it shows what it was called with and what it gave back
+  // in full (a helper agent's opens the helper instead).
+  function callChip(call: ToolCall, tab: ChatTab): HTMLElement {
+    if (call.name === 'Thinking') return thinkRow(call);
     const look = toolLook(call.name, call.detail);
-    const chip = document.createElement('span');
-    chip.className = 'tool clickable';
-    chip.dataset.kind = look.activity;
-    if (call.id) chip.dataset.call = call.id;
-    if (call.isError) chip.classList.add('failed');
-    chip.innerHTML = `${Icon(TOOL_ICONS[look.activity] || (look.mcp ? 'plug' : 'wrench'))}<span></span>`;
-    chip.lastChild!.textContent = look.text;
-    chip.title = `${look.label} (click for the details)`;
-    chip.tabIndex = 0;
-    chip.setAttribute('role', 'button');
+    const row = document.createElement('div');
+    row.className = 'step clickable';
+    row.dataset.kind = look.activity;
+    if (call.id) row.dataset.call = call.id;
+    row.classList.toggle('running', call.running);
+    row.classList.toggle('failed', !!call.isError);
+    row.innerHTML = `<div class="step-head"><span class="step-dot"></span>${Icon(TOOL_ICONS[look.activity] || (look.mcp ? 'plug' : 'wrench'))}<span class="step-text"></span></div><div class="step-out" hidden></div>`;
+    row.querySelector('.step-text')!.textContent = look.text;
+    setStepOut(row, call);
+    row.title = `${look.label} (click for the details)`;
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
     const open = () => ((call.name === 'Agent' || call.name === 'Task') && tab?.agents?.has(call.id) ? openHelper(tab, call.id) : openToolView(tab, call));
-    chip.addEventListener('click', open);
-    chip.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open()));
-    return chip;
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open()));
+    return row;
+  }
+  // what a step gave back, under it
+  function setStepOut(row: HTMLElement, call: ToolCall) {
+    const out = row.querySelector<HTMLElement>('.step-out');
+    if (!out) return;
+    const lines = call.running ? [] : stepSummary(call.name, call.output, call.isError);
+    out.replaceChildren(...lines.map((l) => Object.assign(document.createElement('div'), { textContent: l })));
+    out.hidden = !lines.length;
+  }
+
+  // Its thinking, as a step: "✻ Thinking…" while it thinks, "✻ Thought for 6s" after. Open it to
+  // read what it thought (as Claude Code shows it on Ctrl+R).
+  function thinkRow(call: ToolCall) {
+    const d = document.createElement('details');
+    d.className = 'step think';
+    if (call.id) d.dataset.call = call.id;
+    d.dataset.start = String(Date.now());
+    d.innerHTML = '<summary><span class="think-star">✻</span><span class="think-label"></span></summary><div class="think-text"></div>';
+    d.querySelector('.think-text')!.textContent = (call.output || '').trim();
+    d.querySelector('.think-label')!.textContent = call.running ? 'Thinking…' : 'Thought';
+    d.classList.toggle('running', call.running);
+    d.classList.toggle('empty', !call.running && !(call.output || '').trim());
+    return d;
+  }
+  // done thinking (words or a step came next, or the answer's over): how long it took
+  function settleThinking(tab: ChatTab) {
+    for (const d of tab.log.querySelectorAll<HTMLElement>('.step.think.running')) {
+      d.classList.remove('running');
+      const s = Math.max(1, Math.round((Date.now() - Number(d.dataset.start)) / 1000));
+      d.querySelector('.think-label')!.textContent = `Thought for ${s}s`;
+      d.classList.toggle('empty', !d.querySelector('.think-text')!.textContent!.trim());
+      const call = d.dataset.call ? tab.calls?.get(d.dataset.call) : undefined;
+      if (call) call.running = false;
+    }
   }
 
   // A file Claude Code changed, shown the way its terminal does: the file, +/- counts,
@@ -1177,7 +1262,21 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   function setStatus(text: string) {
     statusRow.hidden = !text;
     statusText.textContent = plain(text);
+    renderMeta();
   }
+  // after what it's doing, as Claude Code shows it: "(12s · ↓ 1.2k tokens · esc to stop)"
+  function renderMeta() {
+    const t = active();
+    if (!t?.busy || !t.turnStart || t.question) {
+      statusMeta.textContent = '';
+      return;
+    }
+    const s = Math.max(0, Math.round((Date.now() - t.turnStart) / 1000));
+    const time = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+    const n = Math.max(t.outTokens || 0, Math.round((t.outChars || 0) / 4)); // (what it says, or an estimate as it streams)
+    statusMeta.textContent = `(${time}${n ? ` · ↓ ${fmtTokens(n)} tokens` : ''} · esc to stop)`;
+  }
+  setInterval(() => !statusRow.hidden && renderMeta(), 1000);
 
   // each tab keeps its own status line; only the visible one is shown
   function setTabStatus(tab: ChatTab, text: string) {
@@ -1196,6 +1295,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     tab.busy = busy;
     clearInterval(tab.verbs);
     if (busy) {
+      Object.assign(tab, { turnStart: Date.now(), outTokens: 0, outChars: 0 });
       tab.activity = 'think';
       if (animates(tab)) setActivity(helpersOut() ? 'helpers' : 'think'); // keep supervising helpers still out
       setTabStatus(tab, `${pick(THINKING_VERBS)}…`);
@@ -1221,9 +1321,18 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     setStatus(t?.statusText || '');
   }
 
-  async function submit() {
+  async function submit({ again = false } = {}) {
     const tab = active()!;
     const text = input.value.trim();
+    // an edited question: the old one (and its answer) goes first, then this is asked in its place
+    if (editing && editing.tab === tab && !tab.busy && !again) {
+      if (!text) return;
+      if (!(await takeBack(tab))) return;
+      const draft = editing?.draft ?? '';
+      editing = null;
+      editBanner.hidden = true;
+      tab.draft = draft;
+    }
     if (tab.busy) {
       // while working: app commands still run, empty Enter stops, anything else waits its turn
       if (!text && !state.attachments.length) ipc.robotCancel(tab.id);
@@ -1252,6 +1361,9 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     tab.log.querySelectorAll('.greet').forEach((el) => el.remove());
     clearFinishedHelpers(tab);
     addUser(question, files, tab);
+    sentOf(tab).push(question);
+    tab.rewinding = false;
+    recallAt = -1;
     if (!tab.custom && tab.title === 'New chat') {
       const t = question.replace(/\s+/g, ' ').trim();
       tab.title = t.length > 28 ? t.slice(0, 27) + '…' : t;
@@ -1281,6 +1393,8 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     const question = text || 'Take a look at this.';
     const turnId = uid();
     const el = addUser(question, files, tab);
+    sentOf(tab).push(question);
+    recallAt = -1;
     el.classList.add('queued');
     const bar = document.createElement('div');
     bar.className = 'queue-actions';
@@ -1412,6 +1526,9 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   function finishCurrent(tab: ChatTab) {
     const cur = tab.current;
     tab.current = null;
+    settleThinking(tab);
+    // (a step still showing as running when the answer ended: it was cut short)
+    for (const row of tab.log.querySelectorAll<HTMLElement>('.step.running')) row.classList.remove('running');
     if (cur) for (const p of cur.parts) p.el.classList.remove('cursor');
     setBusy(tab, false);
     // the task you sent is over: if you tucked the chat away, the status bubble says so — unless a bonk restarts it
@@ -1457,6 +1574,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
           if (asked) tab.current.ask = asked;
         }
         if (!tab.busy) setBusy(tab, true);
+        Object.assign(tab, { turnStart: Date.now(), outTokens: 0, outChars: 0 }); // (the status line counts this turn)
         if (tab.hurried) setTabStatus(tab, '🔨 Hurrying…');
         break;
       }
@@ -1490,8 +1608,28 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
         if (state.activity !== 'talk') setActivity('think');
         break;
 
+      case 'thinking-text': {
+        const call = tab.calls?.get(ev.id);
+        if (call) call.output = (call.output || '') + ev.delta;
+        const box = [...tab.log.querySelectorAll<HTMLElement>('.step.think')].find((d) => d.dataset.call === ev.id)?.querySelector('.think-text');
+        if (box) box.textContent += ev.delta;
+        tab.outChars = (tab.outChars || 0) + ev.delta.length;
+        break;
+      }
+
+      case 'usage':
+        tab.outTokens = ev.outputTokens;
+        if (tab === active()) renderMeta();
+        break;
+
+      case 'request-cancelled':
+        if (tab.question?.requestId === ev.requestId) expireQuestion(tab);
+        break;
+
       case 'text':
         if (!cur) return;
+        settleThinking(tab);
+        tab.outChars = (tab.outChars || 0) + ev.delta.length;
         // the moment words start flowing after some work: lightbulb!
         if (show && state.activity !== 'talk' && !cur.text.trim()) flash('idea', 1100);
         if (tab.activity !== 'talk') {
@@ -1522,6 +1660,14 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 
       case 'tool': {
         if (!cur) return;
+        settleThinking(tab);
+        if (ev.name === 'Thinking') {
+          const call = { id: ev.id, name: ev.name, detail: '', running: true };
+          (tab.calls ||= new Map<string, ToolCall>()).set(ev.id, call);
+          partFor(cur, 'steps').el.appendChild(thinkRow(call));
+          scrollDown(tab);
+          break;
+        }
         const { label, activity } = toolLook(ev.name, ev.detail);
         // (the chip: a line icon for the kind of step, then what it did; click it for the details)
         const call = { id: ev.id, name: ev.name, detail: ev.detail, args: ev.args, running: true };
@@ -1552,7 +1698,12 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
         const call = tab.calls?.get(ev.id);
         if (!call) break;
         Object.assign(call, { output: ev.text, media: ev.media, isError: ev.isError, running: false });
-        for (const chip of tab.log.querySelectorAll<HTMLElement>('.tool[data-call]')) if (chip.dataset.call === ev.id) chip.classList.toggle('failed', !!ev.isError);
+        for (const row of tab.log.querySelectorAll<HTMLElement>('.step[data-call]')) {
+          if (row.dataset.call !== ev.id) continue;
+          row.classList.remove('running');
+          row.classList.toggle('failed', !!ev.isError);
+          setStepOut(row, call);
+        }
         if (helperView.call === call) renderToolView();
         break;
       }
@@ -1633,6 +1784,10 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
           else finishText(done, { text: done.asked ? '' : ev.text, empty: '_(no words, just vibes)_' });
           if (ev.isError) done.el.classList.add('error');
           if (ev.denials?.length) done.el.appendChild(deniedNote(ev.denials));
+          if (done.el.isConnected) {
+            rawText.set(done.el, done.asked ? done.text.slice(done.offset || 0) : done.text || ev.text);
+            msgActions(done.el, 'bot', tab);
+          }
           if (tab.vocabWord && !ev.isError) done.el.appendChild(saveWordChip(tab.vocabWord));
           tab.vocabWord = '';
           if (tab.noteId && !ev.isError) done.el.appendChild(tickNoteChip(tab.noteId));
@@ -1699,6 +1854,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
         if (done) {
           done.el.classList.add('error');
           finishText(done, { note: `**Oops:** ${ev.message}` });
+          msgActions(done.el, 'bot', tab); // (Retry: ask it again)
         } else {
           addBot(`**Oops:** ${ev.message}`, { error: true, tab });
         }
@@ -1833,12 +1989,208 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   // ------------------------------------------------------------ composer
 
   function autosize() {
+    // (its box is border-box: one line is exactly the buttons' 32 px, so they sit level with it)
     input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight + 4, 120)}px`;
-    input.style.overflowY = input.scrollHeight + 4 > 120 ? 'auto' : 'hidden';
+    input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+    input.style.overflowY = input.scrollHeight > 120 ? 'auto' : 'hidden';
   }
 
+  // ↑ / ↓ in the composer: what you asked before in this tab, as in a terminal (and Claude Code).
+  // Only from the first line going up (or the last going down), so a long message still moves.
+  let recallAt = -1; // which one is shown (-1: none, your own draft)
+  let recallDraft = '';
+  const sentOf = (t: ChatTab) => (t.sent ??= (t.data?.history || []).filter((h) => h.role === 'user').map((h) => h.text));
+  function recall(dir: -1 | 1) {
+    const t = active();
+    if (!t || input.selectionStart !== input.selectionEnd) return false;
+    const list = sentOf(t);
+    const caret = input.selectionStart;
+    if (dir < 0 && (!list.length || input.value.slice(0, caret).includes('\n'))) return false;
+    if (dir > 0 && (recallAt < 0 || input.value.slice(caret).includes('\n'))) return false;
+    if (recallAt < 0) {
+      recallDraft = input.value;
+      recallAt = list.length;
+    }
+    const next = recallAt + dir;
+    if (next < 0) return true; // (the oldest: stay)
+    recallAt = next >= list.length ? -1 : next;
+    input.value = recallAt < 0 ? recallDraft : list[recallAt];
+    autosize();
+    input.setSelectionRange(input.value.length, input.value.length);
+    return true;
+  }
+
+  // Edit your last question (✏️ on it): the conversation goes back to before it, and what you
+  // send instead takes its place (Claude Code's rewind). Retry (on the last answer) is the same
+  // question again.
+  let editing: { tab: ChatTab; draft: string } | null = null;
+  const editBanner = $('#edit-banner');
+  function startEdit(tab: ChatTab, text: string) {
+    if (tab.busy || tab.queue.length) return showPop('Wait till I’m done (or stop me) first.', 1800);
+    if (!editing) editing = { tab, draft: input.value };
+    editing.tab = tab;
+    input.value = text;
+    autosize();
+    editBanner.hidden = false;
+    editBanner.querySelector('span')!.textContent = '✏️ Editing your last question: Enter sends it in its place, Esc cancels';
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+  function cancelEdit() {
+    if (!editing) return false;
+    input.value = editing.draft;
+    editing = null;
+    editBanner.hidden = true;
+    autosize();
+    return true;
+  }
+  $('#edit-cancel').addEventListener('click', () => cancelEdit());
+  // take the last question (and its answer) back; then it's asked again, as it is or edited
+  async function takeBack(tab: ChatTab) {
+    tab.rewinding = true;
+    // (off the page first: main's redraw of the shortened history, whenever it comes, shows the same)
+    const asked = tab.log.querySelectorAll('.msg.user');
+    const last = asked[asked.length - 1];
+    if (last) {
+      while (last.nextSibling) last.nextSibling.remove();
+      last.remove();
+    }
+    const res = await ipc.robotRewind(tab.id);
+    if (!res.ok) {
+      tab.rewinding = false;
+      renderHistory(tab); // (as it was)
+      showPop(res.error, 2600);
+      return false;
+    }
+    const sent = sentOf(tab);
+    if (sent.length) sent.pop();
+    return true;
+  }
+  async function retry(tab: ChatTab) {
+    if (tab.busy || tab.queue.length) return;
+    const question = sentOf(tab)[sentOf(tab).length - 1];
+    if (!question || !(await takeBack(tab))) return;
+    // (asked again as it was: the draft and files waiting in the composer stay for later)
+    const [draft, files] = [input.value, state.attachments];
+    state.attachments = [];
+    input.value = question;
+    void submit({ again: true });
+    input.value = draft;
+    state.attachments = files;
+    renderAttachments();
+    autosize();
+  }
+
+  // the hover buttons on a message: ✏️ on your last question; Copy and Retry on an answer
+  const rawText = new WeakMap<HTMLElement, string>(); // an answer's words, as written (markdown)
+  function msgActions(el: HTMLElement, kind: 'user' | 'bot', tab: ChatTab) {
+    el.querySelector(':scope > .msg-actions')?.remove();
+    const bar = document.createElement('div');
+    bar.className = 'msg-actions';
+    const button = (icon: string, title: string, act: () => void) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.title = title;
+      b.innerHTML = Icon(icon, 'sm');
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        act();
+      });
+      bar.appendChild(b);
+    };
+    if (kind === 'user') {
+      button('edit', 'Edit this question (the conversation goes back to before it)', () => {
+        const users = tab.log.querySelectorAll('.msg.user:not(.queued):not(.dropped)');
+        if (users[users.length - 1] !== el) return showPop('Only the last question can be edited.', 1800);
+        startEdit(tab, sentOf(tab)[sentOf(tab).length - 1] ?? el.textContent ?? '');
+      });
+    } else {
+      button('copy', 'Copy this answer', () => {
+        navigator.clipboard.writeText(rawText.get(el) ?? el.innerText).then(() => showPop('Copied! 📋', 1200), () => {});
+      });
+      button('refresh', 'Ask again (this answer is replaced)', () => {
+        const answers = tab.log.querySelectorAll('.msg.bot:not(.greet)');
+        if (answers[answers.length - 1] !== el) return showPop('Only the last answer can be asked again.', 1800);
+        retry(tab);
+      });
+    }
+    el.appendChild(bar);
+  }
+
+  // The composer's tools. ＋: files or pictures (the open dialog), what's on the clipboard, or a
+  // box round part of the screen; they go along as chips, as a dropped file does.
+  $('#btn-attach').addEventListener('click', () =>
+    openMenu(
+      $('#btn-attach'),
+      'Add to your message',
+      [
+        { icon: 'file', label: 'Files…', desc: 'anything on this computer', value: 'files' },
+        { icon: 'image', label: 'Pictures…', desc: 'screenshots, photos, diagrams', value: 'pictures' },
+        { icon: 'copy', label: 'From the clipboard', desc: 'a copied picture or files', value: 'clipboard' },
+        { icon: 'scan', label: 'Part of the screen…', desc: 'drag a box round it', value: 'screen' },
+      ],
+      async (v) => {
+        if (v === 'screen') return void ipc.robotScreenAsk();
+        if (v === 'clipboard') return void pasteClipboard();
+        const picked = await ipc.robotPickFiles(v === 'pictures');
+        if (picked.length) eat(picked);
+        else input.focus();
+      },
+    ),
+  );
+
+  // Aa: the formatting bar (markdown round what's selected, and changes to the text itself);
+  // whether it shows is remembered. Ctrl+B / I / E / K and Ctrl+Shift+E work either way.
+  const fmtBar = $('#fmt-bar');
+  const fmtBtn = $('#btn-format');
+  function showFmt(on: boolean) {
+    fmtBar.hidden = !on;
+    fmtBtn.classList.toggle('on', on);
+    try {
+      localStorage.setItem('cbot.fmtBar', on ? '1' : '');
+    } catch {}
+  }
+  try {
+    showFmt(localStorage.getItem('cbot.fmtBar') === '1');
+  } catch {
+    showFmt(false);
+  }
+  fmtBtn.addEventListener('click', () => {
+    showFmt(fmtBar.hidden !== false);
+    input.focus();
+  });
+  function format(kind: string) {
+    switch (kind) {
+      case 'bold':
+        return wrap(input, '**');
+      case 'italic':
+        return wrap(input, '_');
+      case 'strike':
+        return wrap(input, '~~');
+      case 'code':
+        return wrap(input, '`', '`', 'code');
+      case 'block':
+        return codeBlock(input);
+      case 'bullet':
+      case 'number':
+      case 'quote':
+        return prefixLines(input, kind);
+      case 'link':
+        return link(input);
+      case 'transform':
+        return openMenu(fmtBar.querySelector<HTMLElement>('[data-fmt="transform"]')!, 'Change the text (what’s selected, or all of it)', TRANSFORMS.map((t) => ({ label: t.label, desc: t.desc, value: t.id })), (id) => {
+          if (!transform(input, id)) showPop('Nothing to change there.', 1400);
+        });
+    }
+  }
+  fmtBar.addEventListener('mousedown', (e) => e.preventDefault()); // (the selection stays in the box)
+  fmtBar.addEventListener('click', (e) => {
+    const b = (e.target as Element).closest<HTMLElement>('[data-fmt]');
+    if (b) format(b.dataset.fmt!);
+  });
+
   input.addEventListener('input', () => {
+    recallAt = -1; // (typing: ↑ starts from the newest again)
     autosize();
     updatePalette();
     state.lastActivity = Date.now();
@@ -1861,6 +2213,20 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
       q.pickByNumber(Number(e.key));
       return;
     }
+    // formatting keys, as in an editor
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const k = e.key.toLowerCase();
+      const kind = k === 'b' ? 'bold' : k === 'i' ? 'italic' : k === 'k' ? 'link' : k === 'e' ? (e.shiftKey ? 'block' : 'code') : '';
+      if (kind) {
+        e.preventDefault();
+        format(kind);
+        return;
+      }
+    }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.isComposing && recall(e.key === 'ArrowUp' ? -1 : 1)) {
+      e.preventDefault();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       submit();
@@ -1875,6 +2241,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     if (e.key !== 'Escape' || !state.awake) return;
     if (!menuEl.hidden) closeMenu();
     else if (!paletteEl.hidden) hidePalette();
+    else if (cancelEdit()) return;
     else if (history.isOpen()) history.escape();
     else if (helperView.id || helperView.call) closeHelper();
     else if (active()?.busy) stopTab(active()); // like Claude Code: Esc interrupts
@@ -2128,6 +2495,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     const pending: PendingQuestion = {
       sent: false,
       card,
+      requestId,
       // composer text answers the first open question; once all are answered it
       // is added to the last one (replacing a single choice, joining a multi-pick)
       typed(text) {
@@ -3146,7 +3514,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
         const hadHistory = tab.data.history.length;
         tab.data = t;
         if (!tab.busy && key !== tab.key) {
-          if (!t.history.length && hadHistory) {
+          if (!t.history.length && hadHistory && !tab.rewinding) {
             tab.log.innerHTML = '';
             addNote('✨ Fresh start! My memory is squeaky clean.', '', tab);
             if (tab.id === activeId) flash('spin', 850);
@@ -3179,6 +3547,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     const next = tabs.get(id);
     if (!next) return;
     const prev = active();
+    if (prev !== next) cancelEdit(); // (an edit belongs to its tab)
     if (prev && prev !== next) prev.draft = input.value; // each tab keeps its half-typed message
     activeId = id;
     for (const t of tabs.values()) t.log.hidden = t !== next;
@@ -3220,11 +3589,12 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
       if (!t) continue;
       const s = statusOf(t);
       const el = document.createElement('div');
-      el.className = `tab s-${s}${t.id === activeId ? ' on' : ''}`;
+      const temp = !!t.data?.temporary;
+      el.className = `tab s-${s}${t.id === activeId ? ' on' : ''}${temp ? ' temporary' : ''}`;
       el.setAttribute('role', 'tab');
       el.setAttribute('aria-selected', String(t.id === activeId));
-      el.title = `${t.title}${STATUS_LABEL[s] ? ` (${STATUS_LABEL[s]})` : ''}\nDouble-click to rename`;
-      el.innerHTML = '<span class="tab-dot"></span><span class="tab-title"></span><button class="tab-x" type="button" title="Close tab (Ctrl+W)">×</button>';
+      el.title = `${temp ? 'Temporary chat (nothing is kept): ' : ''}${t.title}${STATUS_LABEL[s] ? ` (${STATUS_LABEL[s]})` : ''}\nDouble-click to rename`;
+      el.innerHTML = `${temp ? Icon('eye', 'sm tab-temp') : ''}<span class="tab-dot"></span><span class="tab-title"></span><button class="tab-x" type="button" title="Close tab (Ctrl+W)">×</button>`;
       el.querySelector('.tab-title')!.textContent = t.title;
       el.addEventListener('click', (e) => {
         if (!(e.target as Element).closest('.tab-x') && t.id !== activeId) activateTab(t.id);
@@ -3244,6 +3614,14 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     add.disabled = tabs.size >= 8;
     add.addEventListener('click', () => newTab());
     tabStrip.appendChild(add);
+    const temp = document.createElement('button');
+    temp.type = 'button';
+    temp.className = 'tab-add tab-add-temp';
+    temp.innerHTML = Icon('eye', 'sm');
+    temp.title = 'New temporary chat: nothing is kept, and it’s gone (transcript too) when you close it (/temp)';
+    temp.disabled = tabs.size >= 8;
+    temp.addEventListener('click', () => newTab({ temporary: true }));
+    tabStrip.appendChild(temp);
     const closed = state.character.closedTabs || [];
     if (closed.length) {
       const back = document.createElement('button');
@@ -3257,9 +3635,9 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     tabStrip.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
-  async function newTab() {
+  async function newTab({ temporary = false } = {}) {
     openChat(); // asking something else mid-task needs the chat
-    const res = await ipc.robotTabNew();
+    const res = await ipc.robotTabNew(temporary);
     if (!res.ok) {
       showPop(res.error, 2200);
       return;
@@ -3273,11 +3651,13 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   async function closeTab(id: string) {
     const t = tabs.get(id);
     if (!t) return;
-    if (t.busy && !confirm(`“${t.title}” is still working. Stop it and close the tab?`)) return;
     const hadChat = !!(t.data?.history?.length || t.data?.sessionId);
+    const temp = !!t.data?.temporary;
+    if (t.busy && !confirm(`“${t.title}” is still working. Stop it and close the tab?`)) return;
+    if (temp && hadChat && !t.busy && !confirm('This temporary chat will be gone for good (it can’t be reopened). Close it?')) return;
     const res = await ipc.robotTabClose(id);
     if (!res.ok) return addNote(`📑 ${res.error}`, '', t);
-    if (hadChat) offerUndo(`“${t.title}” closed`);
+    if (hadChat && !temp) offerUndo(`“${t.title}” closed`);
   }
 
   // Closing a tab (× or Ctrl+W) can be taken back: Undo for a few seconds, then ↺ / Ctrl+Shift+T.
@@ -3354,6 +3734,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     { name: 'resume', args: '[search]', description: 'Pick up a past conversation' },
     { name: 'history', description: 'Browse past conversations' },
     { name: 'new', description: 'Start another conversation in a new tab' },
+    { name: 'temp', description: 'A temporary chat: nothing kept, gone when you close it' },
     { name: 'clear', description: 'Wipe this tab and start over' },
     { name: 'close', description: 'Close this tab' },
     { name: 'model', args: '[name]', description: 'Switch my brain (model) for this tab' },
@@ -3393,6 +3774,10 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
       case 'new':
       case 'tab':
         newTab();
+        return true;
+      case 'temp':
+      case 'temporary':
+        newTab({ temporary: true });
         return true;
       case 'clear':
       case 'reset':
@@ -4375,6 +4760,58 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   });
   grip.addEventListener('dblclick', () => ipc.robotResize({ phase: 'reset' }));
 
+  // ...and its height: shorter than the screen if you like (down to CHAT_H_MIN), remembered per
+  // robot. The window stays the height of the screen (the rest lets clicks through), so this is
+  // just the page: the panel hangs from the top with the robot up there, else stands on the bottom,
+  // and its free edge is the one you drag. Double-click: the whole height again.
+  const CHAT_H_MIN = 320;
+  let chatH: number | null = null; // (null: the height of the screen)
+  let winH = innerHeight; // (the window's height in the last layout: it's resized just after)
+  const fullH = () => winH - 22; // (8 px above, 14 below, as #panel sits)
+  function placePanel() {
+    const root = document.documentElement.style;
+    const h = chatH == null ? fullH() : Math.max(Math.min(CHAT_H_MIN, fullH()), Math.min(chatH, fullH()));
+    const fromTop = state.robotY + (ROBOT_H * (state.scale || 1)) / 2 < winH / 2;
+    const top = fromTop ? 8 : winH - 14 - h;
+    root.setProperty('--panel-top', `${top}px`);
+    root.setProperty('--panel-bottom', `${winH - top - h}px`);
+    body.classList.toggle('chat-from-top', fromTop);
+    body.classList.toggle('chat-short', h < fullH() - 2);
+    // the tail points at the robot's head (kept on the panel's straight edge)
+    const headY = state.robotY + office.headPosition().y - top;
+    root.setProperty('--tail-y', `${Math.round(Math.min(Math.max(headY, 40), h - 70))}px`);
+  }
+  const gripV = $('#panel .resize-grip-v');
+  gripV.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    gripV.setPointerCapture(e.pointerId);
+    const startY = e.screenY;
+    const startH = $('#panel').getBoundingClientRect().height;
+    const fromTop = body.classList.contains('chat-from-top');
+    body.classList.add('resizing', 'resizing-v');
+    const move = (ev: PointerEvent) => {
+      const dy = ev.screenY - startY;
+      chatH = Math.round(Math.max(CHAT_H_MIN, Math.min(fullH(), startH + (fromTop ? dy : -dy))));
+      placePanel();
+    };
+    const end = () => {
+      gripV.removeEventListener('pointermove', move);
+      body.classList.remove('resizing', 'resizing-v');
+      if (chatH != null && chatH >= fullH() - 2) chatH = null; // (all the way: the height of the screen, whatever screen)
+      ipc.robotChatHeight(chatH);
+      scrollDown();
+    };
+    gripV.addEventListener('pointermove', move);
+    gripV.addEventListener('pointerup', end, { once: true });
+    gripV.addEventListener('pointercancel', end, { once: true });
+  });
+  gripV.addEventListener('dblclick', () => {
+    chatH = null;
+    placePanel();
+    ipc.robotChatHeight(null);
+  });
+
   // The awake window is the height of the screen and mostly see-through: let
   // clicks on the see-through parts through to whatever is behind it.
   let clickThrough = false;
@@ -4401,9 +4838,8 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     if (l.panel) {
       root.setProperty('--panel-x', `${l.panel.x}px`);
       root.setProperty('--panel-w', `${l.panel.w}px`);
-      // the tail points at the robot's head (kept on the panel's straight edge)
-      const headY = l.robotY + office.headPosition().y - 8;
-      root.setProperty('--tail-y', `${Math.round(Math.min(Math.max(headY, 40), l.bounds.height - 70))}px`);
+      winH = l.bounds.height;
+      placePanel(); // (its height, and the tail at the robot's head)
     }
     body.classList.toggle('expanded', l.expanded);
     body.classList.toggle('side-left', l.placement === 'left');
