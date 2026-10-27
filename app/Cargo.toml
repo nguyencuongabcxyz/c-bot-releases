@@ -32,6 +32,9 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 # rustls the updater already brings
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls-no-provider", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# a robot's WebView2 itself: hearing its page's process fail, nudging it to draw (revive.rs);
+# the same version Tauri's wry uses
+webview2-com = "0.39"
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm",

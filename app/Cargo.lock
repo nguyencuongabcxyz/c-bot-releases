@@ -401,6 +401,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "uuid",
+ "webview2-com",
  "windows-sys 0.61.2",
 ]
 

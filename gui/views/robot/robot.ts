@@ -218,7 +218,15 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   // The 3D office renders whatever state this script puts on #robot and <body>.
   const ROBOT_W = 300;
   const ROBOT_H = 290;
-  const office = Office3D.mount($('#bot-host'), { stateEl: robot, moodEl: body, width: ROBOT_W, height: ROBOT_H });
+  // (its canvas gone for good: main builds the window again, app/src/revive.rs)
+  const office = Office3D.mount($('#bot-host'), { stateEl: robot, moodEl: body, width: ROBOT_W, height: ROBOT_H, onLost: ipc.robotRevive });
+  // Check in with main every so often, and say when the page is hidden: one that goes quiet
+  // is built again, one hidden while its window shows is nudged to draw (revive.rs).
+  const ALIVE_EVERY = 10000;
+  const alive = () => ipc.robotAlive(document.visibilityState === 'hidden');
+  alive();
+  setInterval(alive, ALIVE_EVERY);
+  document.addEventListener('visibilitychange', alive);
   const logs = $('#logs');
   const tabStrip = $('#tabs');
   const input = $<HTMLTextAreaElement & { t?: number }>('#input'); // (t: its typing timer)
@@ -726,7 +734,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     if (peekView) return;
     peekDress();
     Object.assign(peekBot.dataset, { gait: 'stand', heading: 'toward', speed: '1' });
-    peekView = Office3D.mount(peekBot, { stateEl: peekBot, moodEl: peekMood, width: 190, height: 250, solo: true });
+    peekView = Office3D.mount(peekBot, { stateEl: peekBot, moodEl: peekMood, width: 190, height: 250, solo: true, onLost: ipc.robotRevive });
     peekView.setScale(state.scale || 1);
     peekFace();
     peekBlink();

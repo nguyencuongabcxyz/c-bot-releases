@@ -19,6 +19,7 @@ mod palette;
 mod personalities;
 mod planes;
 mod quick;
+mod revive;
 mod robot_ipc;
 mod robotlink;
 mod robots;
@@ -209,6 +210,8 @@ fn main() {
             robot_ipc::robot_inspect_paths,
             robot_ipc::robot_save_paste,
             robot_ipc::robot_open_file,
+            revive::robot_alive,
+            revive::robot_revive,
             clipboard::robot_paste_clipboard,
             terminal::robot_terminal,
             tray::robot_menu,
@@ -335,6 +338,7 @@ fn main() {
             let handle = app.handle().clone();
             chat::sweep_temporary(&handle); // (temporary chats left open when it last quit)
             hub::setup(&handle);
+            revive::setup(&handle); // (before the robots: it watches each as it opens)
             tray::setup(&handle)?;
             // the feature modules (each keeps its own state, binds its own hotkeys)
             capture::setup(&handle);

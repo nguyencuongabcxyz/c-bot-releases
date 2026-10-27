@@ -122,6 +122,8 @@ export const meetingInit = () => invoke<P.MeetingInit | null>('meeting_init');
 export const robotDrag = (step: { phase: 'start' | 'move' | 'end'; dx?: number; dy?: number }) => tell('robot_drag', { step });
 export const robotResize = (step: { phase: 'start' | 'move' | 'end' | 'reset'; dx?: number }) => tell('robot_resize', { step });
 export const robotClickThrough = (through: boolean) => tell('robot_click_through', { through });
+export const robotAlive = (hidden: boolean) => tell('robot_alive', { hidden });
+export const robotRevive = () => tell('robot_revive');
 export const robotWalker = (what: 'wave' | 'asleep' | 'awake' | 'dock' | 'docked' | 'cancel') => tell('robot_walker', { what });
 export const robotsAnswer = (answer: { reqId: string; text?: string; error?: string }) => tell('robots_answer', { answer });
 export const socialReport = (report: SocialReport) => tell('social_report', { report });

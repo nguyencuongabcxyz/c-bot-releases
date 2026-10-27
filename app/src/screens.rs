@@ -14,7 +14,7 @@ use windows_sys::Win32::Foundation::{LPARAM, RECT};
 use windows_sys::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO};
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
-use crate::{robots, walkers};
+use crate::{revive, robots, walkers};
 
 const EVERY: Duration = Duration::from_secs(2);
 // a look that comes this late means the PC was asleep
@@ -54,7 +54,7 @@ fn layout() -> Layout {
 }
 
 /// The desktop is locked (or the secure desktop is up): it doesn't take input.
-fn locked() -> bool {
+pub fn locked() -> bool {
     unsafe {
         let desk = OpenInputDesktop(0, 0, DESKTOP_SWITCHDESKTOP);
         if desk.is_null() {
@@ -70,6 +70,7 @@ fn after_wake(app: &AppHandle) {
     thread::spawn(move || {
         thread::sleep(SETTLE);
         walkers::recover(&app);
+        revive::nudge_all(&app); // (WebView2 can leave a window blank after a sleep)
     });
 }
 

@@ -17,7 +17,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::store::title_for;
 use crate::win::{self, Rect};
-use crate::{chat, terminal, views, walkers, with, State};
+use crate::{chat, revive, terminal, views, walkers, with, State};
 
 // Robot window sizes (CSS px). Each robot can be smaller or bigger (the Workshop's "Size").
 const ROBOT: (f64, f64) = (300.0, 290.0);
@@ -274,11 +274,22 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
             through: false, forwarded: None, eyes: None,
         })
     });
+    revive::watch(app, &win, id);
     let (app2, id2) = (app.clone(), id.to_string());
     win.on_window_event(move |e| {
         if let tauri::WindowEvent::Destroyed = e {
-            with(&app2, |st| st.robots.remove(&id2));
-            walkers::close(&app2, &id2); // (put away while out for a walk: the walker goes too)
+            // (only if it's still this window: built again, a new one may be there already)
+            let mine = with(&app2, |st| {
+                let mine = st.robots.get(&id2).is_some_and(|r| r.hwnd == hwnd);
+                if mine {
+                    st.robots.remove(&id2);
+                }
+                mine
+            });
+            if mine {
+                revive::forget(&app2, &id2);
+                walkers::close(&app2, &id2); // (put away while out for a walk: the walker goes too)
+            }
         }
     });
     Ok(())

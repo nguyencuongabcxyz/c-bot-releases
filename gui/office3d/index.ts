@@ -49,6 +49,7 @@ export type Office3DOptions = {
   width: number;
   height: number;
   solo?: boolean; // the character alone, out for a walk (walker3d.js)
+  onLost?: () => void; // the GPU took the canvas away and didn't give it back: nothing shows
 };
 /** Something you can click round the desk (propAt), nearest first. */
 export type PropHit = BoardHit | { kind: 'hammer' } | { kind: 'plug' };
@@ -103,7 +104,7 @@ function soloView(height: number): SoloView {
 
 // (Some parts are only at the desk (set, antics, bed, the toys) and the walker only out walking
 // (solo): they're null otherwise, and the uses marked `!` below are on their own side of that.)
-function mount(host: HTMLElement, { stateEl, moodEl, width, height, solo = false }: Office3DOptions): Office3DView {
+function mount(host: HTMLElement, { stateEl, moodEl, width, height, solo = false, onLost }: Office3DOptions): Office3DView {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(width, height);
@@ -112,6 +113,15 @@ function mount(host: HTMLElement, { stateEl, moodEl, width, height, solo = false
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = false; // (the frame loop says when: frame())
   host.appendChild(renderer.domElement);
+  // A GPU reset (a driver update, waking from sleep) takes the canvas away; three asks for it
+  // back. If it doesn't come back, the robot is invisible in its see-through window: say so.
+  const LOST_WAIT = 5000;
+  let lostTimer = 0;
+  renderer.domElement.addEventListener('webglcontextlost', () => {
+    clearTimeout(lostTimer);
+    if (onLost) lostTimer = window.setTimeout(onLost, LOST_WAIT);
+  });
+  renderer.domElement.addEventListener('webglcontextrestored', () => clearTimeout(lostTimer));
   const effect = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultColor: [0.11, 0.13, 0.2], defaultAlpha: 1 });
 
   const scene = new THREE.Scene();
@@ -927,6 +937,7 @@ function mount(host: HTMLElement, { stateEl, moodEl, width, height, solo = false
     },
     dispose() {
       cancelAnimationFrame(raf);
+      clearTimeout(lostTimer);
       walker?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
