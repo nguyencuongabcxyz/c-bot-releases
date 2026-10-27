@@ -11,6 +11,7 @@ use tauri::ipc::{InvokeBody, Request};
 
 use crate::agents::personalities;
 use crate::features::{chat, notes, vocab};
+use crate::features::chat::side;
 use crate::mcp::link;
 use crate::robots;
 use crate::robots::sender;
@@ -263,10 +264,40 @@ pub fn robot_answer(app: AppHandle, window: WebviewWindow, tab_id: String, reque
     Ok(chat::answer(&app, &sender(&window)?, &tab_id, &request_id, &answers, &items))
 }
 
+/// Your call on Claude's plan card: go ahead in a permission mode (`mode`), or keep planning (no mode) with notes.
+#[tauri::command(async)]
+pub fn robot_plan(app: AppHandle, window: WebviewWindow, tab_id: String, request_id: String, plan: String, mode: Option<String>, feedback: String) -> Answer {
+    Ok(chat::decide_plan(&app, &sender(&window)?, &tab_id, &request_id, &plan, mode.as_deref(), &feedback))
+}
+
 /// Edit the last question: back to before it (its words come back, to edit and send again).
 #[tauri::command(async)]
 pub fn robot_rewind(app: AppHandle, window: WebviewWindow, tab_id: String) -> Answer {
     Ok(chat::rewind(&app, &sender(&window)?, &tab_id))
+}
+
+/// A side question about an answer (features/chat/side.rs): in a thread asked before, or a new one.
+#[tauri::command(async)]
+pub fn robot_side_ask(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: Option<String>, at: Option<f64>, quote: Option<String>, text: String) -> Answer {
+    let at = at.map(|a| a.round() as i64);
+    Ok(side::ask(&app, &sender(&window)?, &tab_id, thread_id.as_deref(), at, quote.as_deref().unwrap_or(""), &text))
+}
+
+#[tauri::command(async)]
+pub fn robot_side_cancel(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: String) -> Result<bool, String> {
+    Ok(side::cancel(&app, &sender(&window)?, &tab_id, &thread_id))
+}
+
+#[tauri::command(async)]
+pub fn robot_side_remove(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: String) -> Result<bool, String> {
+    Ok(side::remove(&app, &sender(&window)?, &tab_id, &thread_id))
+}
+
+/// The side panel open beside the chat (its width, CSS px) or shut (0): the window makes room.
+#[tauri::command(async)]
+pub fn robot_side_width(app: AppHandle, window: WebviewWindow, width: f64) -> Result<(), String> {
+    robots::set_side_width(&app, &sender(&window)?, width);
+    Ok(())
 }
 
 /// Past conversations in its folder.
@@ -380,7 +411,9 @@ pub fn reset(app: &AppHandle, id: &str, tab_id: Option<&str>) {
             chat::remote(app, id, t, false); // (a fresh start: not on claude.ai any more)
         }
         chat::close(app, id, t);
-        let fresh = patch(vec![("sessionId", Value::Null), ("history", json!([])), ("title", json!("")), ("tasks", json!([])), ("context", Value::Null)]);
+        let sides = with(app, |st| st.store.tab(id, t).map(side::sessions_of)).unwrap_or_default();
+        side::forget(app, id, sides); // (its side questions start over too)
+        let fresh = patch(vec![("sessionId", Value::Null), ("history", json!([])), ("title", json!("")), ("tasks", json!([])), ("context", Value::Null), ("sides", json!([]))]);
         with(app, |st| st.store.update_tab(id, t, fresh));
     }
     if tab_id.is_none() {

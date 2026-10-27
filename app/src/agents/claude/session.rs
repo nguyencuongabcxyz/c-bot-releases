@@ -10,7 +10,7 @@ impl Session {
         let session = Arc::new_cyclic(|me| Session {
             me: me.clone(),
             inner: Mutex::new(Inner {
-                opts, session_id, queue: VecDeque::new(), turn: None, displaced: None, own_uuids: HashSet::new(), pending_questions: HashMap::new(), controls: HashMap::new(),
+                opts, session_id, queue: VecDeque::new(), turn: None, displaced: None, own_uuids: HashSet::new(), pending_questions: HashMap::new(), pending_plans: HashMap::new(), controls: HashMap::new(),
                 task_inputs: HashMap::new(), agent_tools: HashSet::new(), agent_tasks: HashMap::new(), agent_running: HashSet::new(),
                 cost_so_far: 0.0, last_used: Instant::now(), proc: None, generation: 0, restart_before_next: false, closing: false,
                 text: String::new(), asides: AsideFilter::default(), streamed: HashSet::new(), mcp_tool_ids: HashSet::new(), auto_turns: 0,
@@ -81,6 +81,8 @@ impl Session {
         flag("--resume", i.session_id.as_deref().unwrap_or(""));
         // an edited question: the conversation carries on from before it, as a branch of its own
         let resume_at = i.opts.resume_at.take().filter(|_| i.session_id.is_some());
+        // (a branch until it has a conversation of its own: a start that fails first never carries on the one it branches off)
+        let fork = i.opts.fork && i.session_id.is_some();
         flag("--resume-session-at", resume_at.as_deref().unwrap_or(""));
         flag("--model", &o.model);
         flag("--effort", &o.effort);
@@ -102,7 +104,7 @@ impl Session {
         flag("--mcp-config", &o.mcp_config);
         flag("--allowedTools", &o.allowed_tools.join(","));
         args.extend(o.extra_args.iter().cloned());
-        if resume_at.is_some() {
+        if resume_at.is_some() || fork {
             args.push("--fork-session".into());
         }
 
@@ -426,6 +428,33 @@ impl Session {
         true
     }
 
+    /// Your call on its plan: go ahead, switching to this permission mode, or keep planning
+    /// (with your notes on what to change, if any).
+    pub fn decide_plan(&self, request_id: &str, go_mode: Option<&str>, feedback: &str) -> bool {
+        let mut i = self.lock();
+        if i.proc.is_none() {
+            return false;
+        }
+        let Some(input) = i.pending_plans.remove(request_id) else { return false };
+        match go_mode {
+            Some(mode) => {
+                i.opts.permission_mode = mode.into();
+                let perms = json!([{ "type": "setMode", "mode": mode, "destination": "session" }]);
+                i.reply(request_id, json!({ "behavior": "allow", "updatedInput": input, "updatedPermissions": perms }));
+            }
+            None => {
+                let message = match feedback.trim() {
+                    "" => "The user doesn't want to go ahead with this plan yet. Stay in plan mode: don't change anything, and ask them what they'd like changed.".to_string(),
+                    notes => format!("The user wants to keep planning. Revise the plan with their notes, then present it again with ExitPlanMode. Their notes:
+
+{notes}"),
+                };
+                i.reply(request_id, json!({ "behavior": "deny", "message": message }));
+            }
+        }
+        true
+    }
+
     /// End the process. Anything still running or waiting fails as cancelled.
     pub fn close(&self) {
         let mut i = self.lock();
@@ -474,6 +503,7 @@ impl Session {
         let sid = s(&msg, "session_id");
         if !sid.is_empty() && i.session_id.as_deref() != Some(sid) && i.turn.is_some() {
             i.session_id = Some(sid.to_string());
+            i.opts.fork = false; // (branched: from now on it carries on its own conversation)
             i.emit("session", json!(sid));
         }
         match ty {
@@ -499,7 +529,7 @@ impl Session {
             // a question it asked is no longer wanted (the answer was stopped)
             "control_cancel_request" => {
                 let id = s(&msg, "request_id").to_string();
-                if i.pending_questions.remove(&id).is_some() {
+                if i.pending_questions.remove(&id).is_some() || i.pending_plans.remove(&id).is_some() {
                     i.emit("request-cancelled", json!({ "requestId": id }));
                 }
             }
@@ -619,6 +649,11 @@ impl Session {
                 }
                 if sub == "bridge_state" && i.opts.remote.is_some() {
                     i.emit("remote-state", msg["state"].clone());
+                }
+                // its permission mode changed by itself (it went into plan mode, a plan was approved)
+                if sub == "status" && let Some(mode) = msg["permissionMode"].as_str().filter(|m| *m != i.opts.permission_mode) {
+                    i.opts.permission_mode = mode.to_string();
+                    i.emit("mode", json!(mode));
                 }
                 if sub == "task_summary" && !s(&msg, "detail").is_empty() {
                     i.emit("status", msg["detail"].clone());

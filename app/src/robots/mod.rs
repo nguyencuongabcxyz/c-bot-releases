@@ -83,6 +83,7 @@ pub struct Robot {
     pub peek: bool,      // sent away to the island (island.rs): its window veiled, its page still at work
     veiled: bool,        // (its window is, now)
     chat_w: f64,         // how wide you made the chat (CSS px)
+    side_w: f64,         // and the side panel beside it, while it's open (side questions; CSS px)
     drag: Option<Drag>,
     resize_from: Option<f64>,
     layout: Option<Layout>,
@@ -220,13 +221,14 @@ pub fn apply_layout(app: &AppHandle, id: &str) {
         let r = st.robots.get_mut(id)?;
         let layout = match &r.stage {
             Some(t) => stage_layout(t),
-            None => layout_for(r.anchor, r.expanded, r.tucked, r.peek, r.chat_w, r.dims),
+            None => layout_for(r.anchor, r.expanded, r.tucked, r.peek, r.chat_w + r.side_w, r.dims), // (the panel makes room for both)
         };
         r.seq += 1;
         let mut msg = layout.msg.clone();
         msg.insert("expanded".into(), json!(r.expanded));
         msg.insert("seq".into(), json!(r.seq));
         msg.insert("masked".into(), json!(false));
+        msg.insert("sideW".into(), json!(if r.stage.is_some() { 0.0 } else { r.side_w }));
         let bounds = layout.bounds;
         let hide = layout.placement == "hidden";
         let veil = (hide != r.veiled).then_some(hide);
@@ -320,7 +322,7 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
     }
     with(app, |st| {
         st.robots.insert(id.to_string(), Robot {
-            hwnd, anchor, dims, expanded: false, tucked: false, peek, veiled: peek, chat_w, drag: None, resize_from: None, layout: None, seq: 0,
+            hwnd, anchor, dims, expanded: false, tucked: false, peek, veiled: peek, chat_w, side_w: 0.0, drag: None, resize_from: None, layout: None, seq: 0,
             through: false, forwarded: None, eyes: None, stage: None,
         })
     });
@@ -458,14 +460,14 @@ pub fn resize(app: &AppHandle, id: &str, p: &Value) {
         }
         match p["phase"].as_str()? {
             "start" => {
-                r.resize_from = Some(r.layout.as_ref().map_or(r.chat_w, |l| l.panel_w + 14.0));
+                r.resize_from = Some(r.layout.as_ref().map_or(r.chat_w, |l| l.panel_w + 14.0 - r.side_w));
                 None
             }
             "move" => {
                 let from = r.resize_from?;
                 let l = r.layout.as_ref();
                 let grow = if l.map(|l| l.placement) == Some("right") { dx } else { -dx };
-                r.chat_w = (from + grow).max(CHAT_MIN).min(l.map_or(CHAT_W, |l| l.max_chat_w)).round();
+                r.chat_w = (from + grow).max(CHAT_MIN).min(l.map_or(CHAT_W, |l| l.max_chat_w - r.side_w)).round();
                 Some(())
             }
             "end" => {
@@ -487,6 +489,19 @@ pub fn resize(app: &AppHandle, id: &str, p: &Value) {
         }
     });
     if relayout.is_some() {
+        apply_layout(app, id);
+    }
+}
+
+/// The side panel opened beside the chat (its width, CSS px) or shut (0): the chat's room grows
+/// or shrinks by that much, away from the robot.
+pub fn set_side_width(app: &AppHandle, id: &str, width: f64) {
+    let changed = with(app, |st| {
+        let r = st.robots.get_mut(id)?;
+        let w = width.clamp(0.0, 900.0).round();
+        (r.side_w != w).then(|| r.side_w = w)
+    });
+    if changed.is_some() {
         apply_layout(app, id);
     }
 }

@@ -224,7 +224,7 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
     let session_id = tab["sessionId"].as_str().unwrap_or("").to_string();
     let title = format!("C-Bot - {}", c["name"].as_str().unwrap_or("Robo"));
     let since = SystemTime::now();
-    let mut child = match launch(&claude_path.to_string_lossy(), &folder, &session_id, c["model"].as_str().unwrap_or(""), c["permissionMode"].as_str().unwrap_or(""), &title) {
+    let mut child = match launch(&claude_path.to_string_lossy(), &folder, &session_id, c["model"].as_str().unwrap_or(""), chat::mode_of(&c, &tab), &title) {
         Ok(child) => child,
         Err(e) => return json!({ "ok": false, "error": format!("I couldn't open a terminal: {e}") }),
     };

@@ -4,8 +4,8 @@
 //!
 //! What happens is reported to the session's handler as (event, data), the events and
 //! data claude.js emits: turn-start · session · initialized · text · aside · thinking ·
-//! tool · tool-output · tool-result · edit · agent · status · task · question · compact ·
-//! commands · tools · done · fail · exit. They're handed over on a thread of their own,
+//! tool · tool-output · tool-result · edit · agent · status · task · question · plan · mode ·
+//! compact · commands · tools · done · fail · exit. They're handed over on a thread of their own,
 //! so a handler may wait on the session (context_usage) without holding up its output.
 
 pub mod locate;
@@ -122,6 +122,43 @@ mod live_tests {
 
     #[test]
     #[ignore]
+    fn a_plan_waits_for_the_go_ahead_then_gets_built() {
+        let claude = crate::agents::claude::locate::find("").expect("Claude Code installed");
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("cbot-plan-test"); // (not under a short 8.3 temp path: Claude Code asks before writing there)
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = mpsc::channel::<(String, Value)>();
+        let tx = Mutex::new(tx);
+        let handler: Handler = Arc::new(move |_, event, data| {
+            let _ = tx.lock().unwrap().send((event.to_string(), data));
+        });
+        let opts = Opts { claude_path: claude, cwd: dir.to_string_lossy().into(), model: "haiku".into(), permission_mode: "plan".into(), ..Default::default() };
+        let session = Session::new(opts, None, handler);
+        session.ask("Plan creating hello.txt containing the word hi, in a 1-line plan, and present it with ExitPlanMode.".into(), "t1".into());
+        let next = |want: &str| loop {
+            let (event, data) = rx.recv_timeout(Duration::from_secs(180)).unwrap_or_else(|_| panic!("{want} in time"));
+            if event == want {
+                break data;
+            }
+            assert!(event != "done" && event != "fail", "{event} before {want}: {data}");
+        };
+        // first time round: sent back with notes, nothing written
+        let plan = next("plan");
+        assert!(!plan["plan"].as_str().unwrap_or("").is_empty(), "{plan}");
+        assert!(!dir.join("hello.txt").exists(), "wrote before the plan was approved");
+        assert!(session.decide_plan(plan["requestId"].as_str().unwrap(), None, "Make it say hello instead of hi."));
+        // second time: approved, and it builds it
+        let plan = next("plan");
+        assert!(plan["plan"].as_str().unwrap_or("").contains("hello"), "{plan}");
+        assert!(session.decide_plan(plan["requestId"].as_str().unwrap(), Some("acceptEdits"), ""));
+        assert!(!session.decide_plan(plan["requestId"].as_str().unwrap(), Some("acceptEdits"), ""), "decided twice");
+        let done = next("done");
+        assert!(std::fs::read_to_string(dir.join("hello.txt")).unwrap_or_default().contains("hello"), "{done}");
+        session.close();
+    }
+
+    #[test]
+    #[ignore]
     fn remote_control_comes_on_and_survives_a_restart() {
         let claude = crate::agents::claude::locate::find("").expect("Claude Code installed");
         let dir = std::env::temp_dir().join("cbot-session-test");
@@ -173,6 +210,7 @@ pub struct Opts {
     pub allowed_tools: Vec<String>, // tools it may use without asking
     pub extra_args: Vec<String>,    // more command-line flags (the group chat's --strict-mcp-config)
     pub resume_at: Option<String>,  // the next start picks the conversation up after this message, as a new branch (an edited question)
+    pub fork: bool,                 // the next start picks the whole conversation up as a new branch (a side question, features/chat/side.rs)
     pub remote: Option<String>,     // Remote Control: on while set, under this name on claude.ai/code and in the Claude app
     pub remote_session: Option<String>, // and the remote session a new process picks up again (so it stays the same one there)
 }
@@ -202,6 +240,7 @@ struct Inner {
     displaced: Option<Turn>,    // ours, already sent, waiting behind a message from Remote Control
     own_uuids: HashSet<String>, // the messages we sent (any other one came in through Remote Control)
     pending_questions: HashMap<String, Value>, // request id -> the AskUserQuestion input
+    pending_plans: HashMap<String, Value>,     // request id -> the ExitPlanMode input (the plan, waiting for your go-ahead)
     controls: HashMap<String, Reply>,
     task_inputs: HashMap<String, Value>, // tool_use id -> TaskCreate input, to learn its number
     agent_tools: HashSet<String>,       // tool_use ids of Agent calls (each one is a helper agent)

@@ -1,5 +1,5 @@
 //! What a robot's page asks of its chats: a question, stopping, answering Claude, the queue,
-//! rewinding, the brain (model and effort), Remote Control.
+//! rewinding, the brain (model, effort, permission mode), plans to approve, Remote Control.
 
 use super::*;
 
@@ -13,6 +13,7 @@ pub fn close(app: &AppHandle, id: &str, tab_id: &str) {
     if let Some(chat) = with(app, |st| st.chats.remove(&key_of(id, tab_id))) {
         chat.session.close();
     }
+    side::close_tab(app, id, tab_id); // (its side questions' too: they pick up again when asked)
 }
 
 pub fn close_robot(app: &AppHandle, id: &str) {
@@ -27,10 +28,17 @@ pub fn close_robot(app: &AppHandle, id: &str) {
 }
 
 /// A new permission mode from the Workshop or the robot's menu: its live conversations
-/// switch now (the next ones start with it).
+/// switch now (the next ones start with it), and its tabs forget the modes picked in them.
 pub fn set_permission_mode(app: &AppHandle, id: &str, mode: &str) {
+    let tabs: Vec<String> = with(app, |st| st.store.get(id).and_then(|c| c["tabs"].as_array().cloned()).unwrap_or_default())
+        .iter().filter(|t| !t["permissionMode"].is_null()).filter_map(|t| t["id"].as_str().map(str::to_string)).collect();
+    for tab_id in tabs {
+        with(app, |st| st.store.update_tab(id, &tab_id, patch(vec![("permissionMode", Value::Null)])));
+        tell(app, id, &tab_id, json!({ "type": "mode", "mode": mode }));
+    }
     let prefix = format!("{id}|");
-    let live: Vec<Arc<Chat>> = with(app, |st| st.chats.iter().filter(|(k, _)| k.starts_with(&prefix)).map(|(_, c)| c.clone()).collect());
+    // (side questions stay read-only)
+    let live: Vec<Arc<Chat>> = with(app, |st| st.chats.iter().filter(|(k, _)| k.starts_with(&prefix) && !side::is_side(k)).map(|(_, c)| c.clone()).collect());
     for chat in live {
         chat.session.set_permission_mode(mode);
     }
@@ -61,17 +69,22 @@ pub fn rewind(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         return json!({ "ok": false, "error": "That one's too old to edit (it was asked before I could go back in a conversation)." });
     }
     close(app, id, tab_id);
-    with(app, |st| {
+    let dropped = with(app, |st| {
         let tab = st.store.tab(id, tab_id).cloned()?;
         let kept: Vec<Value> = tab["history"].as_array()?.iter().take(last).cloned().collect();
-        let mut fields = vec![("history", Value::Array(kept))];
+        // (side questions about the answers taken out go with them)
+        let (sides, dropped) = side::kept_for(&tab, &kept);
+        let mut fields = vec![("history", Value::Array(kept)), ("sides", sides)];
         if let Some(at) = &at {
             fields.push(("resumeAt", json!(at)));
         } else {
             fields.extend([("sessionId", Value::Null), ("resumeAt", Value::Null)]); // (it was the first question: start afresh)
         }
-        st.store.update_tab(id, tab_id, patch(fields))
-    });
+        st.store.update_tab(id, tab_id, patch(fields))?;
+        Some(dropped)
+    })
+    .unwrap_or_default();
+    side::forget(app, id, dropped);
     crate::robots::send_character(app, id);
     json!({ "ok": true, "text": question["text"], "files": question["files"] })
 }
@@ -253,15 +266,15 @@ pub fn send_now(app: &AppHandle, id: &str, tab_id: &str, turn_id: &str) -> bool 
 
 /// The tab's "brain": model, effort and how full its context is.
 pub fn brain(app: &AppHandle, id: &str, tab_id: &str) -> Value {
-    let Some((models, model, effort)) = with(app, |st| {
+    let Some((models, model, effort, mode, trusted)) = with(app, |st| {
         let c = st.store.get(id)?;
         let tab = st.store.tab(id, tab_id)?;
         let model = tab["model"].as_str().or(c["model"].as_str()).unwrap_or("").to_string();
-        Some((st.model_choices.clone(), model, tab["effort"].as_str().unwrap_or("").to_string()))
+        Some((st.model_choices.clone(), model, tab["effort"].as_str().unwrap_or("").to_string(), mode_of(c, tab).to_string(), allowed_mode(c, "bypassPermissions")))
     }) else {
         return Value::Null;
     };
-    json!({ "models": models, "model": model, "effort": effort, "context": refresh_context(app, id, tab_id) })
+    json!({ "models": models, "model": model, "effort": effort, "permissionMode": mode, "canBypass": trusted, "context": refresh_context(app, id, tab_id) })
 }
 
 pub fn set_brain(app: &AppHandle, id: &str, tab_id: &str, p: &Value) -> Value {
@@ -280,6 +293,15 @@ pub fn set_brain(app: &AppHandle, id: &str, tab_id: &str, p: &Value) -> Value {
             with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("effort", json!(effort))])));
             if let Some(c) = &chat {
                 c.session.set_effort(effort)?;
+            }
+        }
+        if let Some(mode) = p["permissionMode"].as_str() {
+            if !with(app, |st| st.store.get(id).is_some_and(|c| allowed_mode(c, mode))) {
+                return Err("This robot isn't trusted with that. Change its permissions in the Robot Workshop.".into());
+            }
+            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))])));
+            if let Some(c) = &chat {
+                c.session.set_permission_mode(mode);
             }
         }
         Ok(())
@@ -303,6 +325,31 @@ pub fn answer(app: &AppHandle, id: &str, tab_id: &str, request_id: &str, answers
     ok
 }
 
+/// Your call on a plan it made: go ahead (in this permission mode) or keep planning, with notes.
+/// The plan and what you said are kept in the history.
+pub fn decide_plan(app: &AppHandle, id: &str, tab_id: &str, request_id: &str, plan: &str, go_mode: Option<&str>, feedback: &str) -> Value {
+    if let Some(mode) = go_mode
+        && !with(app, |st| st.store.get(id).is_some_and(|c| allowed_mode(c, mode) && mode != "plan"))
+    {
+        return json!({ "ok": false, "error": "This robot isn't trusted with that." });
+    }
+    let feedback: String = feedback.chars().take(4000).collect();
+    if !chat_of(app, id, tab_id).is_some_and(|c| c.session.decide_plan(request_id, go_mode, &feedback)) {
+        return json!({ "ok": false });
+    }
+    let plan: String = plan.chars().take(20000).collect();
+    with(app, |st| {
+        if let Some(mode) = go_mode {
+            st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))]));
+        }
+        st.store.push_history(id, tab_id, json!({ "role": "plan", "plan": plan, "approved": go_mode.is_some(), "mode": go_mode, "feedback": feedback }));
+    });
+    if let Some(mode) = go_mode {
+        tell(app, id, tab_id, json!({ "type": "mode", "mode": mode }));
+    }
+    json!({ "ok": true })
+}
+
 /// Past conversations in the robot's folder, newest first.
 pub fn sessions(app: &AppHandle, id: &str) -> Value {
     let Some(c) = with(app, |st| st.store.get(id).cloned()) else { return json!([]) };
@@ -313,7 +360,9 @@ pub fn sessions(app: &AppHandle, id: &str) -> Value {
     // sessions open in a tab are always the robot's, even if they predate session tracking
     let tabs = c["tabs"].as_array().cloned().unwrap_or_default();
     // (a temporary chat's aren't listed: they go when it closes)
-    let temporary: Vec<String> = tabs.iter().filter(|t| t["temporary"] == true).flat_map(sessions_of).collect();
+    let mut temporary: Vec<String> = tabs.iter().filter(|t| t["temporary"] == true).flat_map(sessions_of).collect();
+    // (nor are side questions: each is a branch of the conversation it's beside)
+    temporary.extend(tabs.iter().chain(c["closedTabs"].as_array().into_iter().flatten()).flat_map(side::sessions_of));
     let tabs: Vec<Value> = tabs.into_iter().filter(|t| t["temporary"] != true).collect();
     let open: HashMap<String, Value> = tabs.iter().filter_map(|t| Some((t["sessionId"].as_str()?.to_string(), t["id"].clone()))).collect();
     let mut mine: Vec<String> = c["sessionIds"].as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_string)).collect();

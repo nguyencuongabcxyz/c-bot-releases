@@ -197,6 +197,12 @@ impl Inner {
             self.emit("question", json!({ "requestId": request_id, "questions": req["input"]["questions"] }));
             return;
         }
+        // a plan, finished: it waits for your go-ahead (or your notes) before anything changes
+        if s(req, "tool_name") == "ExitPlanMode" {
+            self.pending_plans.insert(request_id.clone(), req["input"].clone());
+            self.emit("plan", json!({ "requestId": request_id, "plan": s(&req["input"], "plan"), "file": s(&req["input"], "planFilePath") }));
+            return;
+        }
         let mode = if self.opts.permission_mode.is_empty() { "default" } else { &self.opts.permission_mode };
         let message = format!("{} needs permission this robot doesn't have (mode: {mode}).", s(req, "tool_name"));
         self.reply(&request_id, json!({ "behavior": "deny", "message": message }));

@@ -17,7 +17,8 @@ pub(super) fn sessions_of(tab: &Value) -> Vec<String> {
 /// A temporary chat closed: Claude Code's transcripts of it go too (once its process, closed
 /// with the tab, has let go of them).
 pub fn erase_temporary(app: &AppHandle, id: &str, tab: &Value) {
-    let sessions = sessions_of(tab);
+    let mut sessions = sessions_of(tab);
+    sessions.extend(side::sessions_of(tab));
     let folder = with(app, |st| st.store.get(id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default();
     if sessions.is_empty() || folder.is_empty() {
         return;

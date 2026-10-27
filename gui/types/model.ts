@@ -138,7 +138,16 @@ export type HistoryEntry =
       at: number;
     }
   | { role: 'note'; text: string; at: number }
-  | { role: 'qa'; items: QAItem[]; at?: number };
+  | { role: 'qa'; items: QAItem[]; at?: number }
+  | PlanEntry;
+
+/** A plan Claude made in plan mode, and what you said to it: go ahead (in `mode`), or keep planning (`feedback`). */
+export type PlanEntry = { role: 'plan'; plan: string; approved: boolean; mode?: PermissionMode | null; feedback?: string; at?: number };
+
+/** A side question's thread (app/src/sidechat.rs): asked beside the conversation, about one of
+ *  its answers (the one whose history entry has this `at`). */
+export type SideMessage = { role: 'user' | 'assistant'; text: string; at: number; isError?: boolean; interrupted?: boolean };
+export type SideThread = { id: string; at: number; quote?: string; sessionId?: string | null; history: SideMessage[]; createdAt: number };
 
 export type Task = { id: string; subject: string; activeForm?: string; status: 'pending' | 'in_progress' | 'completed' | string };
 
@@ -157,6 +166,7 @@ export type Tab = {
   temporary?: boolean; // a chat that keeps nothing: gone, transcripts and all, when it's closed
   remote?: boolean; // Remote Control: carried on from claude.ai/code or the Claude app too
   remoteUrl?: string | null; // (its page on claude.ai)
+  sides?: SideThread[]; // side questions about its answers
 };
 
 export type ClaudeCommand = { name: string; description: string };
@@ -216,6 +226,7 @@ export type Layout = {
   maxChatW?: number;
   stage?: StageTileInfo; // (on the stage: its tile)
   inset?: number; // (on the stage: how far the chat sits in from the window's edges)
+  sideW?: number; // (the side panel open beside the chat: the part of the panel's room that's its)
 };
 
 /** A robot's tile on the stage (robots/stage/mod.rs): the gaps on its edges you can drag (each named,
@@ -262,7 +273,8 @@ export type TranscriptMessage =
   | { role: 'user'; text: string; at?: string }
   | { role: 'note'; text: string; at?: string }
   | { role: 'assistant'; text: string; tools: string[]; asides: string[]; at?: string }
-  | { role: 'qa'; items: QAItem[] };
+  | { role: 'qa'; items: QAItem[] }
+  | PlanEntry;
 
 export type Transcript = {
   id: string;
@@ -439,6 +451,8 @@ export type ChatEvent =
   | { type: 'status'; text: string }
   | { type: 'question'; requestId: string; questions: Question[] }
   | { type: 'request-cancelled'; requestId: string }
+  | { type: 'plan'; requestId: string; plan: string; file: string }
+  | { type: 'mode'; mode: PermissionMode }
   | { type: 'thinking-text'; id: string; delta: string }
   | { type: 'usage'; outputTokens: number }
   | { type: 'tool'; id: string; name: string; detail: string; args: unknown }
@@ -461,6 +475,7 @@ export type ChatEvent =
       sessionId: string | null;
       kind?: string;
       uuid?: string | null;
+      at?: number | null; // (when it went into the history: its side questions hang from it)
       outputTokens?: number;
       ms?: number;
     }
@@ -473,6 +488,7 @@ export type ChatEvent =
   | { type: 'mirror'; kind: 'prompt' | 'question' | 'text' | 'idle' }
   | { type: 'mirror'; kind: 'tool'; name: string; detail: string }
   | ({ type: 'app' } & AppViewCall)
-  | { type: 'app-result'; id: string; result: unknown };
+  | { type: 'app-result'; id: string; result: unknown }
+  | { type: 'side'; op: 'start' | 'text' | 'step' | 'done' | 'fail'; threadId: string; turnId?: string; delta?: string; name?: string; detail?: string; text?: string; isError?: boolean; interrupted?: boolean; message?: string; cancelled?: boolean };
 
 export type RobotEvent = ChatEvent & { tabId: string };

@@ -7,6 +7,7 @@
 pub mod awake;
 pub mod group;
 mod page;
+pub mod side;
 mod temporary;
 
 pub use page::*;
@@ -70,6 +71,13 @@ struct Book {
 pub struct Chat {
     pub session: Arc<Session>,
     book: Arc<Mutex<Book>>,
+}
+
+impl Chat {
+    /// A conversation kept with the others, whose answers go elsewhere (a side question, features/chat/side.rs).
+    pub fn bare(session: Arc<Session>) -> Arc<Chat> {
+        Arc::new(Chat { session, book: Arc::default() })
+    }
 }
 
 pub fn key_of(id: &str, tab_id: &str) -> String {
@@ -224,7 +232,7 @@ fn patch(pairs: Vec<(&str, Value)>) -> Map<String, Value> {
 // ---------------------------------------------------------------- one tab's conversation
 
 /// Its personality, and the other robots it can ask (mcp/link.rs).
-fn prompt_for(app: &AppHandle, c: &Value) -> String {
+pub fn prompt_for(app: &AppHandle, c: &Value) -> String {
     let id = c["id"].as_str().unwrap_or("");
     let mut prompt = personalities::system_prompt_for(c);
     if let Some(note) = link::note(app, id) {
@@ -253,7 +261,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         claude_path: locate::find(settings["claudePath"].as_str().unwrap_or(""))?,
         cwd: c["folder"].as_str().unwrap_or("").into(),
         system_prompt: prompt_for(app, &c),
-        permission_mode: c["permissionMode"].as_str().unwrap_or("").into(),
+        permission_mode: mode_of(&c, &tab).into(),
         model: model.into(),
         effort: tab["effort"].as_str().unwrap_or("").into(),
         add_dirs: vec![],
@@ -263,6 +271,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         mcp_config: mcp_config.unwrap_or_default(),
         extra_args: vec![],
         resume_at,
+        fork: false,
         remote: (tab["remote"] == true).then(|| remote_name(&c)),
         remote_session: tab["remoteSession"].as_str().map(str::to_string),
     };
@@ -273,6 +282,21 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     let chat = Arc::new(Chat { session, book });
     with(app, |st| st.chats.insert(key, chat.clone()));
     Some(chat)
+}
+
+/// The tab's permission mode: its own (picked in the chat, or plan mode come and gone), else the robot's.
+pub fn mode_of<'a>(c: &'a Value, tab: &'a Value) -> &'a str {
+    tab["permissionMode"].as_str().filter(|m| allowed_mode(c, m)).or(c["permissionMode"].as_str()).unwrap_or("default")
+}
+
+/// What a chat may switch itself to: anything up to editing files, and planning. Doing anything
+/// at all only where the robot itself is trusted with it (the Workshop's choice).
+fn allowed_mode(c: &Value, mode: &str) -> bool {
+    match mode {
+        "default" | "acceptEdits" | "plan" => true,
+        "bypassPermissions" => c["permissionMode"] == "bypassPermissions",
+        _ => false,
+    }
 }
 
 // What it's called on claude.ai/code and in the Claude app.
@@ -412,10 +436,16 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         }
         "usage" => tell(app, id, tab_id, json!({ "type": "usage", "outputTokens": data["outputTokens"] })),
         "status" => tell(app, id, tab_id, json!({ "type": "status", "text": data })),
-        "question" | "request-cancelled" => {
+        "question" | "request-cancelled" | "plan" => {
             let mut p = data;
             p["type"] = json!(event);
             tell(app, id, tab_id, p);
+        }
+        // it went into plan mode by itself (or out of it): the tab keeps the mode it's in
+        "mode" => {
+            let mode = data.as_str().unwrap_or("default");
+            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))])));
+            tell(app, id, tab_id, json!({ "type": "mode", "mode": mode }));
         }
         "tool" => {
             book_of().thinking = None; // (done thinking: it's doing)
@@ -579,7 +609,7 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 let kind = b.turns.remove(&turn_id).map(|t| t.kind).unwrap_or_default();
                 (kind, b.last_compact.clone(), b.take())
             };
-            let gone = with(app, |st| {
+            let kept = with(app, |st| {
                 let c = st.store.get(id)?.clone();
                 if kind == "compact" {
                     let text = match (last_compact["pre"].as_f64(), last_compact["post"].as_f64()) {
@@ -601,13 +631,13 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 let cost = stats.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0) + data["costUsd"].as_f64().unwrap_or(0.0);
                 stats.insert("costUsd".into(), json!(cost));
                 st.store.update(id, patch(vec![("stats", Value::Object(stats))]));
-                Some(())
+                // (when the answer went in: what its side questions hang from, features/chat/side.rs)
+                Some(st.store.tab(id, tab_id).and_then(|t| t["history"].as_array()?.last()?.get("at").cloned()).unwrap_or(Value::Null))
             });
-            if gone.is_none() {
-                return;
-            }
+            let Some(at) = kept else { return };
             let mut p = data;
             p["type"] = json!("done");
+            p["at"] = at;
             p["kind"] = if kind.is_empty() { Value::Null } else { json!(kind) };
             tell(app, id, tab_id, p);
             refresh_context(app, id, tab_id);
