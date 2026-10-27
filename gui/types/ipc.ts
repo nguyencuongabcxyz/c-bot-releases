@@ -37,7 +37,7 @@ export type RobotInit = {
 
 export type AskResult = OkOr<{ turnId: string; queued: boolean }>;
 
-/** What a robot hears about the stage (stage.rs): picked for it (its number), a message
+/** What a robot hears about the stage (robots/stage/mod.rs): picked for it (its number), a message
  * sent to everyone on it, a tile being dragged over it to swap places. */
 export type StageEvent =
   | { kind: 'pick'; n: number | null }
@@ -64,7 +64,7 @@ export type SocialReport =
   | { awake: boolean; busy: boolean; chat: boolean; idleMs: number; free: boolean; away: boolean; wanders: boolean }
   | { kind: 'done' | 'slept' | 'decline' | 'plane-read' };
 
-/** How a robot is, for the robot island (island.rs): awake, busy and at what since when
+/** How a robot is, for the robot island (robots/island.rs): awake, busy and at what since when
  * (ms), a question waiting for you. */
 export type IslandReport = { awake: boolean; busy: boolean; text: string; since: number | null; asking: boolean };
 /** News from a robot that's away on the island: a job done, a snag, a question (from its
@@ -117,7 +117,7 @@ export interface Events {
   'robot:palette': { phase: 'launch' };
   'robot:social': SocialEvent;
   'robot:link': LinkEvent;
-  // (its shell, shell.rs: what it printed, or that it ended)
+  // (its shell, workbench/shell.rs: what it printed, or that it ended)
   'robot:shell': { sid: number; kind: 'data'; data: string } | { sid: number; kind: 'exit'; code: number };
   // (its Claude, in the shells of its conversation tab: a terminal_* tool call; wait: seconds, for terminal_run)
   'robot:shell-ask': { req: number; tool: string; tab: string; args: { command?: string; shell?: number; shell_type?: string; new_shell?: boolean; lines?: number }; wait: number };

@@ -227,10 +227,10 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   // The 3D office renders whatever state this script puts on #robot and <body>.
   const ROBOT_W = 300;
   const ROBOT_H = 290;
-  // (its canvas gone for good: main builds the window again, app/src/revive.rs)
+  // (its canvas gone for good: main builds the window again, app/src/robots/revive.rs)
   const office = Office3D.mount($('#bot-host'), { stateEl: robot, moodEl: body, width: ROBOT_W, height: ROBOT_H, onLost: ipc.robotRevive });
   // Check in with main every so often, and say when the page is hidden: one that goes quiet
-  // is built again, one hidden while its window shows is nudged to draw (revive.rs).
+  // is built again, one hidden while its window shows is nudged to draw (robots/revive.rs).
   const ALIVE_EVERY = 10000;
   const alive = () => ipc.robotAlive(document.visibilityState === 'hidden');
   alive();
@@ -740,8 +740,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   }
 
   // ---- away on the robot island
-  // Out of your way: its window is veiled (main, robots.rs, with the "hidden" layout) and
-  // its face waits on the robot island at the screen's edge (island.rs), which says what
+  // Out of your way: its window is veiled (main, robots/mod.rs, with the "hidden" layout) and
+  // its face waits on the robot island at the screen's edge (robots/island.rs), which says what
   // it's up to and shows its news. It keeps working meanwhile; the 3D desk stops drawing.
   // Bringing it out from the island (or anything that wakes it) brings it back.
   function peek() {
@@ -4365,7 +4365,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     else shell.toggle();
   }
   // Ctrl+` the drawer, Ctrl+Shift+` another shell in it
-  // its Claude, in the shells of a conversation (terminal_* tools: app/src/shell.rs): the drawer
+  // its Claude, in the shells of a conversation (terminal_* tools: app/src/tools/shell.rs): the drawer
   // comes out for it if that conversation is showing
   ipc.on('robot:shell-ask', async (a) => {
     const answer = await shell.ask(a, { showing: state.awake && !state.collapsed && !state.mirroring });
@@ -5210,7 +5210,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     setClickThrough(e.target === document.body || e.target === document.documentElement);
   });
 
-  // ------------------------------------------------------------ the stage (app/src/stage.rs)
+  // ------------------------------------------------------------ the stage (app/src/robots/stage/mod.rs)
 
   // On the stage its window is a tile of a grid over the screen: the chat fills it (inset a
   // few px, so the gap between two chats is half each window's), the robot hides and its face
@@ -5736,7 +5736,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   });
   $('#btn-screen').addEventListener('click', () => ipc.robotScreenAsk());
 
-  // Speaking instead of typing (voice.rs): the system's own dictation types into the box (on
+  // Speaking instead of typing (workbench/voice.rs): the system's own dictation types into the box (on
   // Windows its voice typing, Win+H, with its own bar showing it listen). No engine, no mic.
   const micBtn = $('#btn-mic');
   ipc.voiceEngine().then((v) => {

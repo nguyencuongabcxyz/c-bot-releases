@@ -124,24 +124,32 @@ It's a [Tauri 2](https://tauri.app) app: the main process is Rust, and every win
 ```text
 app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml)
   src/
-    main.rs           starts the app, and lists every command the pages can call
-    robot_ipc.rs      a robot window's commands about itself (each module has its own)
-    robots.rs         the robot windows: layout, drag, resize, click-through
-    chat.rs           a robot's tabs; claude.rs runs Claude Code and parses its stream
-    find_claude.rs    finds the claude binary
-    transcripts.rs    past conversations from ~/.claude/projects
-    terminal.rs       full Claude Code in a terminal, mirrored onto the robot
-    robots_mcp.rs     the MCP server robots use to ask each other
-    robotlink.rs      delivers those messages between robots
-    groupchat.rs      group chats and the meeting room window
-    stage.rs          several robots' chats tiled over a screen, and "send to all"
-    island.rs         the robot island at the screen's edge; shell.rs shells in the chat
-    quick.rs          quick actions; capture.rs grabs selections, hub.rs the hotkeys
-    vocab.rs          English words; notes.rs notes and reminders
-    walkers.rs        robots away from their desks (with social.rs, maid.rs)
-    store.rs          saving in %APPDATA%\com.cbot.desktop
-    updater.rs        auto-updates
-    tray.rs           the tray icon and its menus; win.rs and friends talk to Windows
+    main.rs           starts the app (the plugins, then runtime/)
+    runtime/          the app's own life: the state (with()), setup and shutdown, every command
+                      the pages can call (commands.rs), the cbot-file / cbot-app schemes,
+                      hub.rs the hotkeys, updater.rs auto-updates
+    store/            saving in %APPDATA%\com.cbot.desktop (c-bot.json, and saved.rs for the rest)
+    agents/           the coding agents that do the work, and the robots' personalities;
+      claude/         Claude Code: session.rs runs it, stream.rs reads its stream, steps.rs
+                      describes its steps; locate.rs finds it; transcripts.rs past conversations
+    robots/           the robot windows (mod.rs: layout, drag, resize, click-through); ipc.rs
+                      a robot window's commands about itself; stage/ several chats tiled
+                      over a screen; island.rs the island at the screen's edge; walkers/,
+                      social/, maid.rs robots away from their desks; topmost.rs, screens.rs
+    mcp/              what Claude itself calls: server.rs C-Bot's MCP server; tools/ its tools
+                      (robots, words, notes, terminal: schema and handler together); link.rs
+                      the app's end of it and robots asking each other; apps.rs MCP Apps
+    workbench/        what you use in the chat: files.rs, shell.rs, terminal.rs (full Claude
+                      Code in a terminal), voice.rs, paste.rs; capture.rs grabs selections;
+                      snip, quick, palette
+    features/         what the robots do for you: chat/ a robot's tabs (page.rs what its page
+                      asks; temporary.rs; awake.rs the PC kept awake for Remote Control) and
+                      group/ the group chat and meeting room; vocab/ English words; notes/
+                      notes and reminders
+    ui/               the app's own windows and menus: views.rs, place.rs, tray.rs, workshop.rs
+    platform/         what needs the operating system, kept by system: windows/ (window,
+                      input, clipboard, screenshot, presence, power, process, webview), and
+                      common/ for what every system shares (types, input logic, images)
 gui/                  the pages (TypeScript, built by Vite into dist/)
   ipc/                main, through @tauri-apps/api: a typed function per command, events
   views/

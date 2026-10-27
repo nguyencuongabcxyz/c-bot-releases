@@ -9,7 +9,7 @@ import * as ipc from '@/ipc';
 showView(markup, { title: 'C-Bot robots' });
 
 (() => {
-  // The robot island (main island.rs; docs/mockups/island-*.svg). At rest, every robot's
+  // The robot island (main robots/island.rs; docs/mockups/island-*.svg). At rest, every robot's
   // face in a strip on the screen's edge; hovered (main tells: island:hover), a card for
   // each, to bring it out or send it away; a robot that's away and has news says so as a
   // toast. Pressed and held, main moves it round the edges with the mouse. The strip is

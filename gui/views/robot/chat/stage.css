@@ -1,4 +1,4 @@
-/* The robot on the stage (app/src/stage.rs, robot.ts "the stage"): its window is a tile of a
+/* The robot on the stage (app/src/robots/stage/mod.rs, robot.ts "the stage"): its window is a tile of a
    grid over the screen and the chat fills it; the robot hides, its face in the title bar. And
    before that, picked for it with Ctrl+click: a glow and its number. */
 

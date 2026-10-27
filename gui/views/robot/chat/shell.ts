@@ -1,5 +1,5 @@
 // Shells in the robot's folder, in a drawer between the chat and the box you type in
-// (main: app/src/shell.rs): a tab each, a shell of its own in each, PowerShell or Git Bash
+// (main: app/src/tools/shell.rs): a tab each, a shell of its own in each, PowerShell or Git Bash
 // (+ opens your usual kind; ▾ picks one, and that's your usual from then on). They belong to the chat
 // tab they were opened in: switch conversations and the drawer shows that one's shells (and
 // is out or put away as you left it there). Putting the drawer away keeps them running; they
@@ -35,7 +35,7 @@ type Tab = {
   heardAt: number; // (when it last printed something)
 };
 
-/** The kinds of shell (shell.rs kind()): 'bash' is Git Bash. */
+/** The kinds of shell (workbench/shell.rs kind()): 'bash' is Git Bash. */
 type Kind = 'powershell' | 'bash';
 const asKind = (k: unknown): Kind => (k === 'bash' ? 'bash' : 'powershell');
 
@@ -43,7 +43,7 @@ const HEIGHT_KEY = 'cbot.shellHeight';
 const KIND_KEY = 'cbot.shellKind';
 const MIN_H = 110;
 const DEFAULT_H = 240;
-const MOST = 8; // (as many as main keeps going for one robot: shell.rs MOST)
+const MOST = 8; // (as many as main keeps going for one robot: workbench/shell.rs MOST)
 
 export const ShellDrawer = ({ chatTab, folderName, onShown, onHidden, onError }: {
   chatTab: () => string | null; // (the conversation showing)
@@ -458,7 +458,7 @@ export const ShellDrawer = ({ chatTab, folderName, onShown, onHidden, onError }:
     return tabs.some((t) => t.sid || t.starting);
   }
 
-  // ---- its Claude, in the shells of one of its conversations (terminal_* tools: shell.rs)
+  // ---- its Claude, in the shells of one of its conversations (terminal_* tools: workbench/shell.rs)
 
   type Ask = Events['robot:shell-ask'];
   type Answer = { text: string; isError?: boolean };
