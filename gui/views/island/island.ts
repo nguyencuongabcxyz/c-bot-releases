@@ -116,6 +116,10 @@ showView(markup, { title: 'C-Bot robots' });
   function renderRest() {
     keep($('#faces'), restFaces, (r) => ({ el: face(r) }), (t, r) => paintFace(t.el, r));
     const t = $('#rest-text');
+    if (target !== 'off') {
+      t.className = 'drop';
+      return setText(t, target === 'over' ? 'Let go to send it away' : 'Drop here to send away');
+    }
     // a robot that's away and at work (or waiting on you) gets the line to itself
     const news = robots.find((r) => r.away && !r.closed && r.asking) || robots.find((r) => r.away && !r.closed && r.busy);
     t.className = news ? `ticker${news.asking ? ' asking' : ''}` : '';
@@ -158,7 +162,7 @@ showView(markup, { title: 'C-Bot robots' });
     c.el.classList.toggle('busy', !!r.busy && !r.closed);
     c.el.classList.toggle('asking', !!r.asking && !r.closed);
     paintFace(c.face, r);
-    c.face.title = `Open ${r.name}'s chat`;
+    c.face.title = 'Open chat';
     setText(c.name, r.name);
     const st = statusOf(r);
     setText(c.status, st.text);
@@ -183,6 +187,7 @@ showView(markup, { title: 'C-Bot robots' });
     ipc.islandAct('all-out');
   });
   $('#all-away').addEventListener('click', () => ipc.islandAct('all-away'));
+  $('#workshop').addEventListener('click', () => ipc.islandAct('workshop'));
 
   // ------------------------------------------------------------ news
 
@@ -213,7 +218,7 @@ showView(markup, { title: 'C-Bot robots' });
     f.classList.add('big');
     f.id = 't-face';
     f.dataset.dot = toast.kind;
-    f.title = `Bring ${r.name} out and open its chat`;
+    f.title = 'Open chat';
     f.addEventListener('click', () => {
       if (toast) act('chat', toast.id);
       endToast();
@@ -226,6 +231,7 @@ showView(markup, { title: 'C-Bot robots' });
     go.textContent = k.go || '';
     $('#t-no').textContent = k.no || '✕';
     $('#t-no').title = k.no ? 'Not now' : 'Dismiss';
+    $('#t-go').title = k.go || '';
     // the countdown starts again
     const bar = $('#t-time i');
     bar.style.animation = 'none';
@@ -251,7 +257,7 @@ showView(markup, { title: 'C-Bot robots' });
   }
 
   function nextToast() {
-    if (toast || dragging || mode === 'panel' || !queue.length) return;
+    if (toast || dragging || target !== 'off' || mode === 'panel' || !queue.length) return;
     toast = queue.shift()!;
     renderToast();
     setMode('toast');
@@ -366,7 +372,7 @@ showView(markup, { title: 'C-Bot robots' });
     hovering = over;
     clearTimeout(openTimer);
     clearTimeout(closeTimer);
-    if (dragging || press) return;
+    if (dragging || press || target !== 'off') return;
     if (mode === 'toast') return holdToast(over);
     if (over) openTimer = window.setTimeout(() => setMode('panel'), OPEN_AFTER);
     else
@@ -410,6 +416,20 @@ showView(markup, { title: 'C-Bot robots' });
     setMode('rest');
     ipc.islandDrag('start');
   }
+
+  // a robot dragged round its desk: the island lights up, and drops it in if it's let go here
+  let target: 'off' | 'near' | 'over' = 'off';
+  ipc.on('island:target', (t) => {
+    target = t;
+    body.classList.toggle('target-near', t !== 'off');
+    body.classList.toggle('target-over', t === 'over');
+    clearTimeout(openTimer);
+    clearTimeout(closeTimer);
+    if (t !== 'off' && mode !== 'rest') setMode('rest');
+    renderRest();
+    fit();
+    if (t === 'off') nextToast();
+  });
 
   ipc.on('island:edge', ({ edge: e, dragging: still }) => {
     if (e !== edge) setEdge(e);

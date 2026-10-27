@@ -145,6 +145,7 @@ export interface Events {
   'island:robots': IslandRobot[];
   'stage:state': StageState;
   'island:hover': boolean;
+  'island:target': 'off' | 'near' | 'over';
   'island:edge': { edge: IslandEdge; dragging: boolean };
   'island:news': IslandNews & { id: string };
 }

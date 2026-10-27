@@ -2253,7 +2253,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     e.preventDefault();
     stopTab(active());
   });
-  $('#btn-sleep').addEventListener('click', () => sleep());
+  // off to the robot island (with the island turned off: just to sleep; Esc still sleeps)
+  $('#btn-island').addEventListener('click', () => (islandOn ? peek() : sleep()));
   $('#btn-collapse').addEventListener('click', () => collapse());
   $('#btn-reset').addEventListener('click', () => ipc.robotReset(activeId!));
   $('#folder').addEventListener('click', () => ipc.robotOpenFolder());
@@ -5079,7 +5080,19 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     muted = s.sounds === 'off';
     Sfx.setLevel(s.sounds);
   }
-  ipc.on('robot:settings', setSounds);
+  ipc.on('robot:settings', (s) => {
+    setSounds(s);
+    islandButton(s);
+  });
+  // the 🏝️ button: to sleep instead while the island's turned off
+  let islandOn = true;
+  function islandButton(s: Settings) {
+    islandOn = s.island !== false;
+    const b = $('#btn-island');
+    b.title = islandOn ? 'Send to island' : 'Sleep (Esc)';
+    b.dataset.tip = b.title;
+    b.innerHTML = Icon(islandOn ? 'island' : 'moon');
+  }
   // you're presenting or in a full-screen app: only a question for you still dings (main)
   ipc.on('robot:hush', (on) => Sfx.setHush(on));
 
@@ -6057,6 +6070,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     state.personalities = init.personalities;
     state.user = init.user;
     setSounds(init.settings);
+    islandButton(init.settings);
     Sfx.setHush(!!init.hush);
     applyCharacter(init.character);
     setVocabCount(init.vocabCount);

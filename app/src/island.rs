@@ -41,6 +41,7 @@ struct Island {
     through: Option<bool>,     // clicks pass through the window (as last set)
     dragging: bool,
     hover: bool,
+    target: &'static str, // a robot dragged round the screen: off | near | over (the island)
     reports: HashMap<String, Value>, // robot id -> how it last said it was
     reminder: HashMap<String, Value>, // robot id -> the notes reminder it holds for you (notes.rs)
     sent: Option<Value>,              // the list as the page last had it
@@ -275,6 +276,28 @@ pub fn say(app: &AppHandle, id: &str, kind: &str, text: &str, reminder: Option<V
     app.emit_to(LABEL, "island:news", json!({ "id": id, "kind": kind, "text": text })).is_ok()
 }
 
+/// A robot being dragged round its desk (robots.rs drag): the island lights up (island:target
+/// near), and more so with the mouse over it (over). Let go over it (end): true, it's sent
+/// away to the island.
+pub fn robot_drag(app: &AppHandle, phase: &str) -> bool {
+    if app.try_state::<Mutex<Island>>().is_none() {
+        return false;
+    }
+    let moving = isl(app, |i| i.target != "off");
+    // (a little room round the strip: it's small to aim at)
+    let (cx, cy) = win::cursor();
+    let over = strip_rect(app).is_some_and(|r| Rect { x: r.x - 24, y: r.y - 24, w: r.w + 48, h: r.h + 48 }.contains(cx, cy));
+    let now = match phase {
+        "move" if over => "over",
+        "move" => "near",
+        _ => "off", // start (a press, maybe a click) or end
+    };
+    if isl(app, |i| std::mem::replace(&mut i.target, now) != now) {
+        let _ = app.emit_to(LABEL, "island:target", now);
+    }
+    phase == "end" && moving && over
+}
+
 // ---------------------------------------------------------------- the mouse
 
 /// The cursor, as robots.rs watches it: dragged, the island follows it round the edges of
@@ -402,7 +425,8 @@ pub fn island_drag(app: AppHandle, window: tauri::WebviewWindow, phase: String) 
 }
 
 /// A button on it: out (back to its desk), away (off the desk, to the island), chat (out,
-/// and its chat open), notes (the notes reminder it holds: the notebook), all-out, all-away.
+/// and its chat open), notes (the notes reminder it holds: the notebook), workshop, all-out,
+/// all-away.
 #[tauri::command(async)]
 pub fn island_act(app: AppHandle, window: tauri::WebviewWindow, action: String, id: Option<String>) -> Result<(), String> {
     only(&window, LABEL)?;
@@ -422,6 +446,7 @@ pub fn island_act(app: AppHandle, window: tauri::WebviewWindow, action: String, 
                 tell(&id, "peek");
             }
         }
+        "workshop" => crate::workshop::open(&app, None),
         "notes" => {
             let reminder = isl(&app, |i| i.reminder.remove(&id));
             crate::notes::open_reminder(&app, Some(id.clone()), reminder.unwrap_or(Value::Null));
@@ -470,6 +495,6 @@ pub fn setup(app: &AppHandle) {
         edge.zip(at)
     })
     .unwrap_or_else(default_spot);
-    app.manage(Mutex::new(Island { hwnd: None, making: false, size: START, edge, at, hit: (0.0, 0.0, 0.0, 0.0), through: None, dragging: false, hover: false, reports: HashMap::new(), reminder: HashMap::new(), sent: None }));
+    app.manage(Mutex::new(Island { hwnd: None, making: false, size: START, edge, at, hit: (0.0, 0.0, 0.0, 0.0), through: None, target: "off", dragging: false, hover: false, reports: HashMap::new(), reminder: HashMap::new(), sent: None }));
     changed(app);
 }

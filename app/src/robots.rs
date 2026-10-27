@@ -217,11 +217,15 @@ pub fn apply_layout(app: &AppHandle, id: &str) {
         let veil = (hide != r.veiled).then_some(hide);
         r.veiled = hide;
         r.layout = Some(layout);
-        Some((r.hwnd, msg, bounds, veil))
+        Some((r.hwnd, msg, bounds, veil, hide))
     });
-    let Some((hwnd, msg, bounds, veil)) = job else { return };
+    let Some((hwnd, msg, bounds, veil, hide)) = job else { return };
     let _ = app.emit_to(label_of(id), "robot:layout", msg);
-    win::set_bounds(hwnd, bounds);
+    // (sent away, it's veiled where it is: moved back to its desk first, it would show there
+    // for a moment; it goes back there as it comes out)
+    if !hide {
+        win::set_bounds(hwnd, bounds);
+    }
     if let Some(hide) = veil {
         walkers::veil(app, hwnd, hide);
     }
@@ -374,12 +378,15 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
     let dx = p["dx"].as_f64().unwrap_or(0.0);
     let dy = p["dy"].as_f64().unwrap_or(0.0);
     match p["phase"].as_str() {
-        Some("start") => with(app, |st| {
-            if let Some(r) = st.robots.get_mut(id).filter(|r| r.stage.is_none()) {
-                let at = win::window_rect(r.hwnd);
-                r.drag = Some(Drag { anchor: r.anchor, at: (at.x, at.y) });
-            }
-        }),
+        Some("start") => {
+            with(app, |st| {
+                if let Some(r) = st.robots.get_mut(id).filter(|r| r.stage.is_none()) {
+                    let at = win::window_rect(r.hwnd);
+                    r.drag = Some(Drag { anchor: r.anchor, at: (at.x, at.y) });
+                }
+            });
+            island::robot_drag(app, "start");
+        }
         Some("move") => {
             let moved = with(app, |st| {
                 let r = st.robots.get_mut(id)?;
@@ -391,6 +398,22 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
             });
             if let Some((hwnd, x, y)) = moved {
                 win::set_position(hwnd, x, y);
+                island::robot_drag(app, "move"); // (the island lights up: drop it there to send it away)
+            }
+        }
+        Some("end") if island::robot_drag(app, "end") => {
+            // dropped on the island: away it goes, its desk where it was before the drag
+            let done = with(app, |st| {
+                let r = st.robots.get_mut(id)?;
+                let d = r.drag.take()?;
+                r.anchor = d.anchor;
+                r.peek = true;
+                st.store.update(id, crate::util::patch(vec![("peek", json!(true))]))
+            });
+            if done.is_some() {
+                apply_layout(app, id);
+                let _ = app.emit_to(label_of(id), "robot:action", "peek"); // (the page catches up: asleep, its desk not drawn)
+                island::changed(app);
             }
         }
         Some("end") => {

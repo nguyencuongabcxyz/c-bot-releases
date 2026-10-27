@@ -37,6 +37,13 @@ body.edge-top #island { border-radius: 0 0 var(--r) var(--r); }
 body.edge-bottom #island { border-radius: var(--r) var(--r) 0 0; }
 body.edge-left #island { border-radius: 0 var(--r) var(--r) 0; }
 body.edge-right #island { border-radius: var(--r) 0 0 var(--r); }
+/* a robot dragged round its desk: drop it here to send it away */
+body.target-near #island { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42), 0 0 0 2px color-mix(in srgb, var(--link) 55%, transparent); }
+body.target-over #island { box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), 0 0 0 2.5px var(--link), 0 0 22px color-mix(in srgb, var(--link) 60%, transparent); }
+body.target-over #faces .face + .face { margin-left: 2px; }
+body.target-over.vertical #faces .face + .face { margin: 2px 0 0; }
+#faces .face { transition: margin 0.2s var(--ease); }
+#rest-text.drop { color: var(--link); font-weight: 600; }
 body.dragging #island { cursor: grabbing; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55), 0 0 0 1.5px var(--busy); }
 /* a question waiting: it pulses till you answer (or say later) */
 #island::after {
@@ -98,6 +105,8 @@ body.vertical #rest-text { display: none; }
 #panel header button { background: none; border: 0; color: var(--link); font-size: 11.5px; padding: 2px 6px; border-radius: 6px; }
 #panel header button:hover { background: var(--slot); color: #fff; }
 #panel header button:disabled { color: #475569; background: none; cursor: default; }
+#panel header button.icon { display: inline-grid; place-items: center; width: 24px; height: 22px; padding: 0; color: var(--dim); }
+#panel header button.icon svg { width: 14px; height: 14px; }
 #cards { display: flex; flex-wrap: wrap; gap: 10px; max-width: calc(6 * 132px + 5 * 10px); }
 body.vertical #cards { flex-direction: column; flex-wrap: nowrap; max-width: none; }
 #grip { width: 36px; height: 4px; border-radius: 2px; background: #334155; margin: 9px auto 0; cursor: grab; }

@@ -12,6 +12,7 @@ export type SoundLevel = 'essential' | 'all' | 'off';
 export type Settings = {
   claudePath: string;
   muted?: boolean;
+  island?: boolean; // the robot island at the screen's edge (on unless false)
   sounds: SoundLevel;
   theme?: string;
   themeMode?: string;

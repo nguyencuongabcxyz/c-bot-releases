@@ -162,7 +162,7 @@ export const stageTile = (action: 'spot' | 'leave') => tell('stage_tile', { acti
 export const stageSplit = (step: { phase: 'start' | 'move' | 'end' | 'even'; split: string; d?: number }) => tell('stage_split', { step });
 export const stageSwap = (phase: 'start' | 'move' | 'end') => tell('stage_swap', { phase });
 export const stageAct = (action: 'start' | 'clear' | 'unpick' | 'exit' | 'add' | 'even' | 'chip', id?: string) => tell('stage_act', { action, id });
-export const islandAct = (action: 'out' | 'away' | 'chat' | 'notes' | 'all-out' | 'all-away', id?: string) => tell('island_act', { action, id });
+export const islandAct = (action: 'out' | 'away' | 'chat' | 'notes' | 'workshop' | 'all-out' | 'all-away', id?: string) => tell('island_act', { action, id });
 export const quickSize = (height: number) => tell('quick_size', { height });
 export const paletteSize = (height: number) => tell('palette_size', { height });
 export const droneArrived = () => tell('drone_arrived');
