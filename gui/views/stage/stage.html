@@ -1,0 +1,26 @@
+<!-- The stage's bar (stage.ts): while picking, a pill saying who's picked; on stage, the bar
+     along the bottom of the screen with "send to all" and the stage's buttons. -->
+<div id="pill" class="layer">
+  <div id="p-faces"></div>
+  <div id="p-text"></div>
+  <button id="p-go" type="button" class="pill primary" data-icon="tabs">Take the stage</button>
+  <button id="p-clear" type="button" class="icon" title="Forget the picks" data-icon="x"></button>
+</div>
+
+<div id="bar" class="layer">
+  <div class="b-title"><b>Stage</b><span id="b-count"></span></div>
+  <button id="b-add" type="button" class="icon" title="Bring another robot on stage" data-icon="plus"></button>
+  <button id="b-even" type="button" class="icon" title="Share the screen out evenly again" data-icon="tabs"></button>
+  <form id="b-send-form">
+    <span class="b-horn" aria-hidden="true">📣</span>
+    <div class="b-box">
+      <label for="b-input">Send to all</label>
+      <textarea id="b-input" rows="1" placeholder="Ask everyone on stage… (Enter sends)" spellcheck="true"></textarea>
+    </div>
+    <span id="b-files" hidden></span>
+    <button id="b-attach" type="button" class="icon" title="Files to send along to every robot" data-icon="plus"></button>
+  </form>
+  <div id="b-chips" aria-label="Who gets it (click to leave one out)"></div>
+  <button id="b-send" type="button" class="pill primary" title="Send to all (Enter)" data-icon="send">Send</button>
+  <button id="b-exit" type="button" class="pill" title="Off the stage: every robot back to its desk">Exit</button>
+</div>

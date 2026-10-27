@@ -229,6 +229,7 @@ pub fn setup(app: &AppHandle) {
             let mut nudges = vec![];
             for id in robots::open_ids(&app) {
                 let showing = robots::hwnd_of(&app, &id).is_some_and(win::is_visible);
+                let away = robots::is_away(&app, &id); // (veiled on the island: it may think it's hidden, rightly)
                 rv(&app, |r| {
                     let p = r.pulses.entry(id.clone()).or_insert_with(Pulse::new);
                     if !showing {
@@ -237,7 +238,7 @@ pub fn setup(app: &AppHandle) {
                     } else if p.at.elapsed() > SILENT {
                         *p = Pulse::new();
                         silent.push(id.clone());
-                    } else if p.hidden_since.is_some_and(|t| t.elapsed() > HIDDEN_FOR) && p.nudged.is_none_or(|t| t.elapsed() > NUDGE_EVERY) {
+                    } else if !away && p.hidden_since.is_some_and(|t| t.elapsed() > HIDDEN_FOR) && p.nudged.is_none_or(|t| t.elapsed() > NUDGE_EVERY) {
                         p.nudged = Some(Instant::now());
                         nudges.push(id.clone());
                     }

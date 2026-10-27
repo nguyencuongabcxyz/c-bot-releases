@@ -121,7 +121,7 @@ export type AppViewCall = AppView & { id: string; input: unknown; result?: unkno
 export type AppPage = { url: string; prefersBorder: boolean; permissions: Record<string, unknown> };
 
 export type HistoryEntry =
-  | { role: 'user'; text: string; files?: FileChip[]; at: number }
+  | { role: 'user'; text: string; files?: FileChip[]; at: number; tag?: string }
   | {
       role: 'assistant';
       text: string;
@@ -170,7 +170,7 @@ export type Character = {
   tabs: Tab[];
   activeTab: string;
   visible: boolean;
-  peek?: boolean; // hidden at the screen's edge, just its head peeking out
+  peek?: boolean; // sent away to the robot island (its window veiled, still at work)
   position: Point | null;
   stats: { questions: number; pokes: number; costUsd: number };
   createdAt: number;
@@ -207,10 +207,20 @@ export type Layout = {
   bounds: Box;
   robotX: number;
   robotY: number;
-  placement: 'none' | 'left' | 'right' | 'tuck-above' | 'tuck-below' | 'peek-top' | 'peek-bottom';
+  placement: 'none' | 'left' | 'right' | 'tuck-above' | 'tuck-below' | 'hidden' | 'stage';
   side?: 'left' | 'right'; // (tucked away: the side the chat opens on)
   panel?: { x: number; w: number };
   maxChatW?: number;
+  stage?: StageTileInfo; // (on the stage: its tile)
+  inset?: number; // (on the stage: how far the chat sits in from the window's edges)
+};
+
+/** A robot's tile on the stage (stage.rs): the gaps on its edges you can drag (each named,
+ * as stage_split knows them), or that it's in the spotlight or a strip beside it. */
+export type StageTileInfo = {
+  edges?: Partial<Record<'left' | 'right' | 'top' | 'bottom', string | null>>;
+  spot?: boolean;
+  strip?: boolean;
 };
 
 /** A file or folder fed to the robot (main.js inspectPath). */

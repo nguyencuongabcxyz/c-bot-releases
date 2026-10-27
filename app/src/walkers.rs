@@ -409,7 +409,7 @@ fn with_walker(app: &AppHandle, id: &str, f: impl FnOnce(&mut Walker, &mut Vec<F
 /// so it's ready the moment the desk lets go.)
 /// (Done on the window's own thread, after whatever tao still has queued for it: set from
 /// another thread while the window was still being set up, a region could come back.)
-fn veil(app: &AppHandle, hwnd: isize, hidden: bool) {
+pub fn veil(app: &AppHandle, hwnd: isize, hidden: bool) {
     let _ = app.run_on_main_thread(move || {
         // SAFETY: plain calls on our own window; once set, the region belongs to the system
         // (null: no region, the whole window).

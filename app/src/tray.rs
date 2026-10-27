@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter, Wry};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::{clipboard, groupchat, hub, maid, notes, palette, personalities, quick, robot_ipc, robots, snip, updater, views, vocab, walkers, with, workshop};
+use crate::{clipboard, groupchat, hub, maid, notes, palette, personalities, quick, robot_ipc, robots, snip, stage, updater, views, vocab, walkers, with, workshop};
 
 pub type MenuItems = Vec<Box<dyn IsMenuItem<Wry>>>;
 type Item = tauri::Result<Box<dyn IsMenuItem<Wry>>>;
@@ -98,6 +98,34 @@ fn visible_count(chars: &[Value]) -> usize {
     chars.iter().filter(|c| c["visible"].as_bool().unwrap_or(false)).count()
 }
 
+/// The stage (stage.rs): the robots on the desk to tick for it, and taking it (or leaving it).
+fn stage_menu(app: &AppHandle, chars: &[Value]) -> Item {
+    let on = stage::is_on(app);
+    let (picked, cast) = (stage::picked(app), stage::cast(app));
+    let mut items: Vec<Item> = vec![];
+    if on {
+        items.push(note(app, &format!("{} robots on stage", cast.len())));
+        items.push(item(app, "tray|stage-exit".into(), "⎋ Off the stage, back to the desks", true));
+    } else {
+        items.push(note(app, "Ctrl+click robots to pick them, or tick them here"));
+    }
+    items.push(separator(app));
+    let out: Vec<&Value> = chars.iter().filter(|c| c["visible"].as_bool().unwrap_or(false)).collect();
+    for c in &out {
+        let id = c["id"].as_str().unwrap_or("");
+        let ticked = if on { cast.iter().any(|x| x == id) } else { picked.iter().any(|x| x == id) };
+        items.push(check(app, format!("tray|stage-pick|{id}"), c["name"].as_str().unwrap_or("Robo"), ticked));
+    }
+    items.push(separator(app));
+    if !on {
+        let label = if picked.is_empty() { "▦ Take the stage".to_string() } else { format!("▦ Take the stage ({} picked)", picked.len()) };
+        items.push(item(app, "tray|stage-start".into(), &label, !picked.is_empty()));
+    }
+    items.push(item(app, "tray|stage-all".into(), "▦ Every robot on the desk", !out.is_empty()));
+    items.push(item(app, "tray|stage-last".into(), "↺ The last stage again", stage::has_last(app)));
+    sub(app, if on { "▦ Stage (on now)" } else { "▦ Arrange on stage" }, items)
+}
+
 /// The tray's menu, from how things are now.
 fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let chars = with(app, |st| st.store.list().clone());
@@ -118,6 +146,7 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     items.push(item(app, "tray|workshop".into(), "🛠️ Robot Workshop…", true));
     items.push(item(app, "tray|new".into(), "➕ New robot…", true));
     items.push(item(app, "tray|groupchat".into(), "👥 Robot group chat…", visible_count(&chars) >= 2));
+    items.push(stage_menu(app, &chars));
     items.push(separator(app));
 
     // the features
@@ -167,6 +196,7 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             check(app, "set|socialising|never".into(), "Never", social == "never"),
         ]),
         check(app, "toggle|paletteDrone".into(), "🛸 A drone brings the action menu", on(&s, "paletteDrone")),
+        check(app, "toggle|island".into(), "🏝️ Robot island at the screen's edge", on(&s, "island")),
         check(app, "toggle|startAtLogin".into(), "🚀 Start with Windows", on(&s, "startAtLogin")),
         separator(app),
         item(app, "tray|backups".into(), "🗄️ Open backups folder", true),
@@ -293,9 +323,11 @@ fn robot_menu_of(app: &AppHandle, id: &str, awake: bool, away: bool) -> tauri::R
         item(app, act("paste"), if can_paste { "📋 Paste screenshot / file from clipboard" } else { "📋 Paste (copy a screenshot or file first)" }, can_paste),
         item(app, act("screen"), &format!("🔍 Ask about part of the screen… ({screen_keys})"), true),
         item(app, act("terminal"), if terminal_open { "⌨️ Terminal is open" } else { "⌨️ Open in terminal (full Claude Code)" }, !terminal_open),
+        item(app, act("shell"), "💲 Shell in my folder (Ctrl+`)", true),
         item(app, act("open-folder"), "📁 Open folder", true),
         separator(app),
         // the features
+        item(app, act("stage-pick"), if stage::is_on(app) { "▦ Join the stage" } else if stage::picked(app).iter().any(|p| p == id) { "▦ Unpick for the stage" } else { "▦ Pick for the stage (Ctrl+click)" }, true),
         item(app, act("groupchat"), if groupchat::in_chat(app, id) { "👥 Group chat (in it now)…" } else { "👥 Start a group chat…" }, visible >= 2),
         item(app, act("quick"), &format!("✨ Quick actions on text… ({})", quick::hotkey(app)), true),
         notes_menu(),
@@ -306,7 +338,7 @@ fn robot_menu_of(app: &AppHandle, id: &str, awake: bool, away: bool) -> tauri::R
         ]),
         separator(app),
         settings_menu(),
-        if peeking { item(app, act("unpeek"), "👋 Come back to the desk", true) } else { item(app, act("peek"), "🫣 Hide at the screen edge (peek)", true) },
+        if peeking { item(app, act("unpeek"), "👋 Come back to the desk", true) } else { item(app, act("peek"), "🏝️ Send away to the robot island", crate::island::on(app)) },
         item(app, act("hide"), "🙈 Put away (hide)", true),
     ])
     .map(Some)
@@ -396,10 +428,26 @@ fn picked(app: &AppHandle, id: &str) {
             hub::set_visible(app, id, !visible);
         }
         ["tray", "dock", id] => walkers::dock(app, id),
+        ["stage", "add", id] => stage::add(app, id),
+        ["tray", "stage-pick", id] => {
+            if stage::cast(app).iter().any(|c| c == id) {
+                stage::leave(app, id);
+            } else {
+                stage::toggle_pick(app, id);
+            }
+            refresh(app);
+        }
         ["tray", what] => match *what {
             "workshop" => workshop::open(app, None),
             "new" => workshop::open(app, Some("new")),
             "groupchat" => groupchat::open(app, hub::nearest_robot(app)),
+            "stage-start" => stage::start(app, None),
+            "stage-all" => {
+                let ids = with(app, |st| st.store.list().iter().filter(|c| c["visible"].as_bool().unwrap_or(false)).filter_map(|c| c["id"].as_str().map(str::to_string)).collect());
+                stage::start(app, Some(ids));
+            }
+            "stage-last" => stage::start_last(app),
+            "stage-exit" => stage::exit(app),
             "palette" => palette::open(app),
             "screen" => snip::ask_screen(app, None, None),
             "quick" => quick::open(app, clipboard_text(), None),
@@ -435,7 +483,7 @@ fn picked(app: &AppHandle, id: &str) {
             let rid = Some(id.to_string());
             match *action {
                 // (the page acts these out: robot.ts robot:action)
-                "wake" | "sleep" | "new-tab" | "history" | "paste" | "terminal" | "bonk" | "wander" | "peek" | "unpeek" => {
+                "wake" | "sleep" | "new-tab" | "history" | "paste" | "terminal" | "shell" | "bonk" | "wander" | "peek" | "unpeek" => {
                     let _ = app.emit_to(robots::label_of(id), "robot:action", *action);
                 }
                 "hide" => hub::set_visible(app, id, false),
@@ -443,6 +491,7 @@ fn picked(app: &AppHandle, id: &str) {
                 "dock" => walkers::dock(app, id),
                 "screen" => snip::ask_screen(app, rid, None),
                 "groupchat" => groupchat::open(app, rid),
+                "stage-pick" => stage::toggle_pick(app, id),
                 "quick" => quick::open(app, clipboard_text(), rid),
                 "notebook" => notes::open_notebook(app, rid, None),
                 "note" => notes::open_notebook(app, rid, Some("add")),

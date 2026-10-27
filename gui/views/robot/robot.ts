@@ -5,16 +5,19 @@ import { McpAppHost } from '@/mcp/appHost';
 import { Icon } from '@/ui/icons';
 import { Sfx } from './sound';
 import { HistoryView } from './chat/history';
+import { ShellDrawer } from './chat/shell';
 import { dressCode } from './chat/code';
+import { tooltips } from './chat/tips';
 import { stepSummary, tokens as fmtTokens } from './chat/steps';
 import { codeBlock, link, prefixLines, transform, TRANSFORMS, wrap } from './chat/format';
 import { showView } from '@/ui/view';
+import { headSvg } from '@/ui/head';
 import markup from './robot.html?raw';
 import '@/ui/theme.css';
 import './robot.css';
 import './chat/chat.css';
+import './chat/stage.css';
 import type { McpAppHostHandle } from '@/mcp/appHost';
-import type { Office3DView } from '@/office3d/index';
 import type {
   AppCall,
   AppViewCall,
@@ -43,6 +46,7 @@ import type {
   Side,
   SightWord,
   SocialEvent,
+  StageTileInfo,
   StepCall,
   StepMedia,
   Task,
@@ -50,7 +54,7 @@ import type {
   VocabEvent,
   VocabWord,
 } from '@/types/model';
-import type { Events, SocialReport } from '@/types/ipc';
+import type { Events, IslandNews, IslandReport, SocialReport, StageEvent } from '@/types/ipc';
 import * as ipc from '@/ipc';
 
 // ---- what the window keeps track of, beside what main tells it (../types/model.ts)
@@ -209,6 +213,7 @@ type RobotState = {
 };
 
 showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
+tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons say what they do)
 
 (() => {
   // (the view's elements: always in its markup, robot.html)
@@ -280,6 +285,10 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     mcp__cbot__save_words: ['📚', 'Saving the words', 'edit'],
     mcp__cbot__list_notes: ['🗒️', 'Reading your notes', 'read'],
     mcp__cbot__add_note: ['🗒️', 'Noting down', 'edit'],
+    // the shells in its conversation's drawer
+    mcp__cbot__terminal_read: ['💻', 'Reading the terminal', 'read'],
+    mcp__cbot__terminal_type: ['💻', 'Typing in the terminal:', 'run'],
+    mcp__cbot__terminal_run: ['💻', 'Running in the terminal:', 'run'],
   };
   // a tool chip's line icon, by the kind of step (../ui/icons.js)
   const TOOL_ICONS: Record<string, string> = { read: 'file', search: 'search', run: 'terminal', edit: 'edit', web: 'globe', agent: 'bot', plan: 'plan', ask: 'help', think: 'wrench' };
@@ -504,8 +513,6 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     // nodding off: in the chair with an eye mask, or on the floor under a blanket (a coin toss each time)
     if (pose === 'sleep' && robot.dataset.pose !== 'sleep') robot.dataset.sleepStyle = Math.random() < 0.5 ? 'chair' : 'floor';
     robot.dataset.pose = pose;
-    peekEl.classList.toggle('dozing', pose === 'sleep');
-    peekFace();
     nightcap();
     look();
   }
@@ -519,7 +526,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   }
 
   function look() {
-    if (state.peek) return; // (peeking from the edge: peekLook has its eyes)
+    if (state.peek) return; // (away on the island: nobody to look at)
     let { dx, dy } = state.lastCursor;
     const pose = robot.dataset.pose;
     let follow = pose === 'idle' || pose === 'talking' || pose === 'wave' || pose === 'cheer' || pose === 'eager';
@@ -565,6 +572,9 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
       if (body.classList.contains('expanded')) placePanel();
     }
     document.documentElement.style.setProperty('--paint', c.color || '#5ac8fa');
+    const face = $('#stage-face');
+    if (!face.firstChild) face.innerHTML = headSvg();
+    face.style.color = c.color || '#5ac8fa';
     $('#name').textContent = c.name;
     $('#nametag').textContent = c.name;
     const chip = $('#folder');
@@ -582,10 +592,6 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     robot.dataset.theme = c.theme || 'classic';
     robot.dataset.name = c.name;
     document.title = c.name;
-    if (peekView) {
-      peekDress(); // (dressed up in the Workshop while it peeks)
-      peekView.setScale(k);
-    }
   }
 
   function renderHistory(tab: ChatTab = active()!) {
@@ -594,7 +600,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     for (const h of (tab.data.history || []).slice(-30)) {
       if (h.role === 'qa') addQaSummary(h.items, tab);
       else if (h.role === 'note') addNote(h.text, '', tab);
-      else if (h.role === 'user') addUser(h.text, h.files, tab);
+      else if (h.role === 'user') addUser(h.text, h.files, tab, h.tag);
       else addBot(h.interrupted ? `${h.text || ''}\n\n_…(stopped)_` : h.text, { error: h.isError, denials: h.denials, tools: h.tools, asides: h.asides, edits: h.edits, apps: h.apps, images: h.images, tab });
     }
   }
@@ -603,7 +609,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   function wake({ sayHi = true, tucked = false } = {}) {
     if (state.away) return awayClick(); // it's out: drag it back first
     if (state.awake) return;
-    unpeek(); // (hidden at the edge: it comes back out first)
+    unpeek(); // (away on the island: it comes back out first)
     state.awake = true;
     stopAntic();
     state.lastActivity = Date.now();
@@ -672,6 +678,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 
   const workingEl = $('#working');
   function renderWorking() {
+    islandReport(); // (the island hears what it's up to, too)
     workingEl.hidden = !state.collapsed;
     if (!state.collapsed) return;
     const asking = [...tabs.values()].some((x) => x.question);
@@ -691,6 +698,8 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 
   function sleep({ auto = false } = {}) {
     if (!state.awake) return;
+    if (auto && shell.running()) return; // (dozing off would end them: a dev server, say)
+    shell.end(); // (its shell goes to bed too, with whatever was running in it)
     if (state.away) ipc.robotWalker('asleep'); // dozes off out there: it sleepwalks
     state.awake = false;
     stopAntic();
@@ -714,104 +723,68 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     socialReport({ kind: 'slept' });
   }
 
-  // ---- hiding at the screen's edge
-  // Out of your way: the desk goes and just its head peeks out at the bottom of the screen
-  // (or the top), eyes following the mouse, z's while it naps, a "!" when it has news. A
-  // click on it (or anything that wakes it) brings it back. Its window is laid out for it
-  // by main (body.peek comes with that layout); the 3D desk stops drawing meanwhile, and
-  // the robot itself is drawn on its own (office3d's solo mode, as out for a walk).
-  const peekEl = $('#peek');
-  const peekBot = $('#peek-bot'); // (the solo view reads its dataset and --paint)
-  const peekMood = document.createElement('div'); // (its awake / asleep: not the desk's)
-  let peekView: Office3DView | null = null;
-  function peekDress() {
-    const c = state.character;
-    if (!c) return;
-    peekBot.style.setProperty('--paint', c.color || '#5ac8fa');
-    Object.assign(peekBot.dataset, { body: 'kit', kit: JSON.stringify(c.kit || {}), acc: c.accessory || 'none', name: c.name, theme: c.theme || 'classic' });
-  }
-  function peekShow() {
-    if (peekView) return;
-    peekDress();
-    Object.assign(peekBot.dataset, { gait: 'stand', heading: 'toward', speed: '1' });
-    peekView = Office3D.mount(peekBot, { stateEl: peekBot, moodEl: peekMood, width: 190, height: 250, solo: true, onLost: ipc.robotRevive });
-    peekView.setScale(state.scale || 1);
-    peekFace();
-    peekBlink();
-  }
-  function peekGone() {
-    peekView?.dispose();
-    peekView = null;
-    clearTimeout(peekBlink.t);
-  }
-  // napping: eyes shut (a nightcap after 10 pm); hover: eyes open, "oh!" and a wave;
-  // working or with news: eyes open
-  function peekFace() {
-    if (!peekView) return;
-    const d = peekBot.dataset;
-    const hover = peekEl.matches(':hover');
-    const news = body.classList.contains('has-badge');
-    const dozing = peekEl.classList.contains('dozing') && !hover && !news;
-    peekMood.className = dozing ? 'asleep' : 'awake';
-    d.eyes = dozing ? 'closed' : news ? 'happy' : 'open';
-    d.mouth = dozing ? 'flat' : hover ? 'o' : news ? 'smile' : 'flat';
-    d.gait = hover ? 'wave' : 'stand';
-    const h = new Date().getHours();
-    d.nightcap = dozing && (h >= 22 || h < 6) ? '1' : '';
-  }
-  function peekBlink() {
-    clearTimeout(peekBlink.t);
-    if (!peekView) return;
-    peekFace(); // (also picks up news that came meanwhile)
-    if (peekMood.className === 'awake') {
-      peekBot.dataset.eyes = 'closed';
-      setTimeout(peekFace, 140);
-    }
-    peekBlink.t = setTimeout(peekBlink, rand(2200, 5000));
-  }
-  peekBlink.t = 0;
-  peekEl.addEventListener('mouseenter', peekFace);
-  peekEl.addEventListener('mouseleave', peekFace);
+  // ---- away on the robot island
+  // Out of your way: its window is veiled (main, robots.rs, with the "hidden" layout) and
+  // its face waits on the robot island at the screen's edge (island.rs), which says what
+  // it's up to and shows its news. It keeps working meanwhile; the 3D desk stops drawing.
+  // Bringing it out from the island (or anything that wakes it) brings it back.
   function peek() {
     if (state.peek || state.away || state.leaving || state.mirroring) return;
     if (state.awake) {
-      sleep(); // (busy, it keeps working down there)
+      sleep(); // (busy, it keeps working away)
       return void setTimeout(() => state.awake || peek(), PANEL_OUT + 60);
     }
     state.peek = true;
     stopAntic();
     Sfx.swish();
     robot.dataset.peek = '1';
-    peekShow();
     ipc.robotPeek(true);
     socialReport();
+    islandReport();
   }
   function unpeek() {
     if (!state.peek) return;
     state.peek = false;
     robot.dataset.peek = '';
-    peekGone();
     ipc.robotPeek(false);
+    islandReport();
     Sfx.pop();
     setTimeout(() => flash('hop', 600), 120);
   }
-  // its eyes on the mouse (c: robot:cursor, from where its desk was: robotX/Y put that here)
-  function peekLook(c: Point) {
-    const top = state.placement === 'peek-top'; // (upside down: so is everything)
-    const eyeY = 36 * (state.scale || 1); // (its face: 36px from the edge, #peek-bot)
-    const dx = (c.x + state.robotX - innerWidth / 2) * (top ? -1 : 1);
-    const dy = top ? eyeY - (c.y + state.robotY) : c.y + state.robotY - (innerHeight - eyeY);
-    const dist = Math.hypot(dx, dy) || 1;
-    const reach = Math.min(1, dist / 120);
-    const root = document.documentElement.style;
-    root.setProperty('--look-x', `${((dx / dist) * 6 * reach).toFixed(2)}px`);
-    root.setProperty('--look-y', `${((dy / dist) * 4 * reach).toFixed(2)}px`);
+
+  // How it is, for the island: said whenever it changes (renderWorking hears most of it),
+  // and every few seconds. Straight away, not on a timer: a veiled page's timers may be slow.
+  let islandSaid = '';
+  let islandQueued = false;
+  function islandReport(news?: IslandNews) {
+    if (news) return ipc.robotIsland(islandNow(), news);
+    if (islandQueued) return;
+    islandQueued = true;
+    queueMicrotask(() => {
+      islandQueued = false;
+      const now = islandNow();
+      const said = JSON.stringify(now);
+      if (said === islandSaid) return;
+      islandSaid = said;
+      ipc.robotIsland(now);
+    });
   }
-  peekEl.addEventListener('click', () => unpeek());
-  peekEl.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    ipc.robotMenu({ awake: state.awake, away: !!state.away });
-  });
+  islandReport.again = () => {
+    islandSaid = '';
+    islandReport();
+  };
+  function islandNow(): IslandReport {
+    const t = active()?.busy ? active() : [...tabs.values()].find((x) => x.busy);
+    const out = helpersOut();
+    const text = t ? plain(t.statusText || 'Working on it…') : out ? `${out === 1 ? 'A helper is' : `${out} helpers are`} still working…` : '';
+    return { awake: state.awake, busy: !!t || out > 0, text, since: t?.turnStart || null, asking: !!pendingQuestion() };
+  }
+  // its news, while it's away: what it said, in a line
+  function islandNews(kind: IslandNews['kind'], text: string) {
+    if (!state.peek) return; // (out on the desk, its own bubble says it)
+    const line = String(text || '').replace(/```[\s\S]*?```/g, ' ').replace(/[`*_#>|[\]]/g, '').replace(/\s+/g, ' ').trim();
+    islandReport({ kind, text: line.length > 140 ? `${line.slice(0, 139)}…` : line });
+  }
 
   function greet() {
     active()!.log.querySelectorAll('.greet').forEach((el) => el.remove());
@@ -851,10 +824,17 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   }
 
   // (files: the ones fed to it, or as kept with the history: no path or thumbnail)
-  function addUser(text: string, files: (FileChip & { path?: string; thumb?: string })[] = [], tab: ChatTab = active()!) {
+  function addUser(text: string, files: (FileChip & { path?: string; thumb?: string })[] = [], tab: ChatTab = active()!, tag = '') {
     const el = document.createElement('div');
     el.className = 'msg user';
     withMentions(el, text);
+    if (tag) {
+      // (sent to everyone on the stage: who got it)
+      const t = document.createElement('div');
+      t.className = 'stage-tag';
+      t.textContent = tag;
+      el.prepend(t);
+    }
     if (files?.length) {
       const row = document.createElement('div');
       row.className = 'files';
@@ -1329,7 +1309,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     setStatus(t?.statusText || '');
   }
 
-  async function submit({ again = false } = {}) {
+  async function submit({ again = false, tag = '' } = {}) {
     const tab = active()!;
     const text = input.value.trim();
     // an edited question: the old one (and its answer) goes first, then this is asked in its place
@@ -1350,7 +1330,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
         hidePalette();
       } else if (tab.question && !tab.question.sent) {
         answerFromComposer(text);
-      } else queueQuestion(tab, text);
+      } else queueQuestion(tab, text, tag);
       return;
     }
     if (!text && !state.attachments.length) return;
@@ -1368,7 +1348,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     tab.vocabWord = askedWord(text); // "what does X mean?": offer to save X under the answer
     tab.log.querySelectorAll('.greet').forEach((el) => el.remove());
     clearFinishedHelpers(tab);
-    addUser(question, files, tab);
+    addUser(question, files, tab, tag);
     sentOf(tab).push(question);
     tab.rewinding = false;
     recallAt = -1;
@@ -1384,14 +1364,14 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     tab.current.ask = { question, paths: files.map((f) => f.path) };
     setBusy(tab, true);
 
-    const res = await ipc.robotAsk(tab.id, question, files.map((f) => f.path), turnId);
+    const res = await ipc.robotAsk(tab.id, question, files.map((f) => f.path), turnId, undefined, tag || undefined);
     if (!res.ok) onEvent({ type: 'fail', tabId: tab.id, turnId, message: res.error });
   }
 
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   // Typed while the robot is still answering: it waits its turn (or jumps the queue with ⚡).
-  async function queueQuestion(tab: ChatTab, text: string) {
+  async function queueQuestion(tab: ChatTab, text: string, tag = '') {
     const files = state.attachments;
     state.attachments = [];
     renderAttachments();
@@ -1400,7 +1380,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     hidePalette();
     const question = text || 'Take a look at this.';
     const turnId = uid();
-    const el = addUser(question, files, tab);
+    const el = addUser(question, files, tab, tag);
     sentOf(tab).push(question);
     recallAt = -1;
     el.classList.add('queued');
@@ -1418,7 +1398,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     flash('hop', 600);
     express('happy', 'o', 900);
     showPop(pick(['📨 Noted! Next up.', 'Got it, right after this!', 'Queued! ✍️']), 1800);
-    const res = await ipc.robotAsk(tab.id, question, files.map((f) => f.path), turnId);
+    const res = await ipc.robotAsk(tab.id, question, files.map((f) => f.path), turnId, undefined, tag || undefined);
     if (!res.ok) {
       dropQueued(tab, turnId, 'not sent');
       addNote(`📨 ${res.error}`, '', tab);
@@ -1807,6 +1787,8 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
           linkAnswer(tab, ev.isError ? { error: said || ev.text || 'it hit an error' } : { text: said || ev.text || '' });
         }
         if (!ev.isError) socialReport({ kind: 'done' });
+        if (ev.isError) islandNews('error', ev.text || 'It hit an error.');
+        else islandNews('done', (done ? (done.asked ? done.text.slice(done.offset || 0) : done.text) : '') || ev.text || `“${tab.title}” is done.`);
         if (tab !== active()) tab.status = ev.isError ? 'error' : 'done'; // unread
         if (!show) {
           // a background tab finished while you watch another one
@@ -1869,6 +1851,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
         Sfx.key.oops();
         express('dizzy', 'flat', 2500);
         showPop(tab === active() ? pick(persona().oops) : `“${tab.title}” hit a snag.`);
+        islandNews('error', ev.message || 'It hit a snag.');
         if (!state.awake) body.classList.add('has-badge');
         renderTabs();
         break;
@@ -1952,6 +1935,12 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     document.documentElement.style.setProperty('--swing', '0deg');
     state.lastActivity = Date.now();
     if (!p.moved) {
+      if (e.ctrlKey && !state.away) {
+        // Ctrl+click: picked for the stage (or not any more)
+        flash('hop', 450);
+        ipc.stagePick();
+        return;
+      }
       const prop = office.propAt?.(e.clientX, e.clientY);
       if (prop?.kind === 'note' || prop?.kind === 'board') return openNotesFromBoard(prop);
       if (state.away) return awayClick();
@@ -2257,6 +2246,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   });
   $('#btn-history').addEventListener('click', () => (history.isOpen() ? history.close() : openHistory()));
   $('#btn-terminal').addEventListener('click', () => openTerminal());
+  $('#btn-shell').addEventListener('click', () => toggleShell());
   // the ■ button always means stop, even with a draft in the box
   $('#send').addEventListener('click', (e) => {
     if (!active()?.busy) return;
@@ -2534,6 +2524,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     Sfx.ask();
     express('open', 'o', 1500);
     renderWorking(); // it needs you: if the chat is tucked away, the status bubble says so
+    islandNews('ask', questions[0]?.question || 'It has a question for you.');
     if (animates(tab)) {
       state.pose = null; // drop any wave or stretch in progress
       setActivity('ask');
@@ -3542,6 +3533,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
       clearInterval(tab.verbs);
       tab.log.remove();
       tabs.delete(id);
+      shell.forget(id); // (main ended its shells with it)
     }
     // follow the main process when it switches tabs (new tab, resume, close)
     if (c.activeTab !== lastMainActive || !tabs.has(activeId!)) {
@@ -3559,6 +3551,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     if (prev && prev !== next) prev.draft = input.value; // each tab keeps its half-typed message
     activeId = id;
     for (const t of tabs.values()) t.log.hidden = t !== next;
+    shell.switchTo(id); // (its own shells)
     if (next.status === 'done' || next.status === 'error') next.status = 'idle'; // read it
     if (prev !== next) {
       input.value = next.draft || '';
@@ -3751,6 +3744,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     { name: 'context', description: 'How full my memory is' },
     { name: 'terminal', description: 'Continue in full Claude Code, in a terminal' },
     { name: 'folder', description: 'Open my folder' },
+    { name: 'shell', description: 'A shell in my folder, right here (Ctrl+`; another: Ctrl+Shift+`)' },
     { name: 'refine', args: '[text]', description: 'Refine, translate or explain some text (Quick actions)' },
     { name: 'screen', description: 'Drag a box round part of the screen and ask about it' },
     { name: 'note', args: '<text>', description: 'Jot a note down (it goes on my corkboard)' },
@@ -3819,6 +3813,9 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
         return true;
       case 'folder':
         ipc.robotOpenFolder();
+        return true;
+      case 'shell':
+        toggleShell({ show: true });
         return true;
       case 'screen':
       case 'snip':
@@ -3998,6 +3995,48 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   async function refreshCommands() {
     state.claudeCommands = await ipc.robotCommands();
   }
+
+  // ------------------------------------------------------------ a shell in my folder
+
+  // A drawer between the chat and the box you type in (chat/shell.ts); it keeps running while
+  // put away, and ends when the robot goes to sleep.
+  // Each conversation has shells of its own: switching tabs switches them too.
+  const shell = ShellDrawer({
+    chatTab: () => activeId,
+    folderName: () => folderName(),
+    onShown: () => body.classList.add('shell-open'),
+    onHidden: ({ quiet }) => {
+      body.classList.remove('shell-open');
+      if (!quiet && state.awake && !state.collapsed) input.focus();
+    },
+    onError: (message) => {
+      express('flat', 'flat', 1500);
+      showPop(message, 2600);
+    },
+  });
+
+  // (show: from a menu or /shell, out it comes; the button and Ctrl+` put it away again;
+  // another: a new tab, another shell)
+  function toggleShell({ show = false, another = false } = {}) {
+    if (state.mirroring) return showPop('Busy in the terminal!', 1800);
+    if (!state.awake) wake({ sayHi: false });
+    if (state.collapsed) openChat({ focus: false });
+    if (another) shell.add();
+    else if (show) shell.show();
+    else shell.toggle();
+  }
+  // Ctrl+` the drawer, Ctrl+Shift+` another shell in it
+  // its Claude, in the shells of a conversation (terminal_* tools: app/src/shell.rs): the drawer
+  // comes out for it if that conversation is showing
+  ipc.on('robot:shell-ask', async (a) => {
+    const answer = await shell.ask(a, { showing: state.awake && !state.collapsed && !state.mirroring });
+    ipc.robotShellReply(a.req, answer);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Backquote' || !e.ctrlKey || e.altKey) return;
+    e.preventDefault();
+    toggleShell({ another: e.shiftKey });
+  });
 
   // ------------------------------------------------------------ past conversations
 
@@ -4777,6 +4816,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   let winH = innerHeight; // (the window's height in the last layout: it's resized just after)
   const fullH = () => winH - 22; // (8 px above, 14 below, as #panel sits)
   function placePanel() {
+    if (staged) return; // (on the stage the chat fills its tile: robot:layout)
     const root = document.documentElement.style;
     const h = chatH == null ? fullH() : Math.max(Math.min(CHAT_H_MIN, fullH()), Math.min(chatH, fullH()));
     const fromTop = state.robotY + (ROBOT_H * (state.scale || 1)) / 2 < winH / 2;
@@ -4834,6 +4874,129 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     setClickThrough(e.target === document.body || e.target === document.documentElement);
   });
 
+  // ------------------------------------------------------------ the stage (app/src/stage.rs)
+
+  // On the stage its window is a tile of a grid over the screen: the chat fills it (inset a
+  // few px, so the gap between two chats is half each window's), the robot hides and its face
+  // goes in the title bar. Drag a gap and main shares the room out again; drag the title bar
+  // onto another tile and they change places. In the spotlight it's big, the others strips
+  // beside it (just the latest of their chat: click one to bring it to the spotlight).
+  let staged = false;
+  const edges = [...document.querySelectorAll<HTMLElement>('.stage-edge')];
+  function setStaged(tile: StageTileInfo | null, inset: number) {
+    staged = !!tile;
+    body.classList.toggle('staged', staged);
+    body.classList.toggle('stage-spot', !!tile?.spot);
+    body.classList.toggle('stage-strip', !!tile?.strip);
+    if (!tile) body.classList.remove('stage-target');
+    const root = document.documentElement.style;
+    root.setProperty('--stage-inset', `${inset}px`);
+    if (staged) {
+      root.setProperty('--panel-top', `${inset}px`);
+      root.setProperty('--panel-bottom', `${inset}px`);
+    }
+    for (const e of edges) {
+      const split = tile?.edges?.[e.dataset.side as 'left'] ?? '';
+      e.dataset.split = split;
+      e.hidden = !split;
+    }
+  }
+  for (const edge of edges) {
+    const across = edge.dataset.side === 'left' || edge.dataset.side === 'right';
+    edge.addEventListener('pointerdown', (e) => {
+      const split = edge.dataset.split;
+      if (e.button !== 0 || !split) return;
+      e.preventDefault();
+      edge.setPointerCapture(e.pointerId);
+      const start = across ? e.screenX : e.screenY;
+      body.classList.add('resizing');
+      if (!across) body.classList.add('resizing-v');
+      ipc.stageSplit({ phase: 'start', split });
+      const move = (ev: PointerEvent) => ipc.stageSplit({ phase: 'move', split, d: (across ? ev.screenX : ev.screenY) - start });
+      const end = () => {
+        edge.removeEventListener('pointermove', move);
+        body.classList.remove('resizing', 'resizing-v');
+        ipc.stageSplit({ phase: 'end', split });
+        scrollDown();
+      };
+      edge.addEventListener('pointermove', move);
+      edge.addEventListener('pointerup', end, { once: true });
+      edge.addEventListener('pointercancel', end, { once: true });
+    });
+    edge.addEventListener('dblclick', () => {
+      if (edge.dataset.split) ipc.stageSplit({ phase: 'even', split: edge.dataset.split });
+    });
+  }
+  $('#btn-spot').addEventListener('click', () => ipc.stageTile('spot'));
+  $('#btn-unstage').addEventListener('click', () => ipc.stageTile('leave'));
+  // its title bar: drag it onto another tile to change places; double-click: the spotlight
+  const header = $('#panel > header');
+  const onButton = (e: Event) => !!(e.target as HTMLElement).closest('button');
+  header.addEventListener('pointerdown', (e) => {
+    if (!staged || e.button !== 0 || onButton(e)) return;
+    header.setPointerCapture(e.pointerId);
+    const from = { x: e.screenX, y: e.screenY };
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      if (!moved && Math.hypot(ev.screenX - from.x, ev.screenY - from.y) < 6) return;
+      if (!moved) {
+        moved = true;
+        body.classList.add('swapping');
+        ipc.stageSwap('start');
+      }
+      ipc.stageSwap('move');
+    };
+    const end = () => {
+      header.removeEventListener('pointermove', move);
+      body.classList.remove('swapping');
+      if (moved) ipc.stageSwap('end');
+    };
+    header.addEventListener('pointermove', move);
+    header.addEventListener('pointerup', end, { once: true });
+    header.addEventListener('pointercancel', end, { once: true });
+  });
+  header.addEventListener('dblclick', (e) => {
+    if (staged && !onButton(e)) ipc.stageTile('spot');
+  });
+  // a strip beside the spotlight: a click brings it there
+  $('#panel').addEventListener('click', (e) => {
+    if (body.classList.contains('stage-strip') && !onButton(e)) ipc.stageTile('spot');
+  });
+
+  // Sent to everyone on the stage: asked in its active tab as if typed there (waiting its
+  // turn if it's busy), tagged with who else got it. What you'd typed here stays put.
+  function askFromStage(a: Extract<StageEvent, { kind: 'ask' }>, files: FileInfo[]) {
+    if (state.away) return;
+    if (!state.awake) wake({ sayHi: false });
+    const tab = active();
+    if (!tab) return;
+    const draft = { text: input.value, files: state.attachments };
+    const tag = a.all ? `📣 to everyone on stage (${a.to.length})` : `📣 to ${a.to.join(', ')}`;
+    input.value = a.prompt;
+    state.attachments = files;
+    // (both put the message in the chat straight away, then wait for main)
+    if (tab.busy) queueQuestion(tab, a.prompt, tag);
+    else submit({ again: true, tag });
+    input.value = draft.text;
+    state.attachments = draft.files;
+    renderAttachments();
+    autosize();
+  }
+
+  ipc.on('robot:stage', async (ev) => {
+    if (ev.kind === 'pick') {
+      const pickEl = $('#stage-pick');
+      pickEl.hidden = ev.n == null;
+      pickEl.textContent = ev.n == null ? '' : String(ev.n);
+      body.classList.toggle('stage-picked', ev.n != null);
+    } else if (ev.kind === 'target') {
+      body.classList.toggle('stage-target', ev.on);
+    } else if (ev.kind === 'ask') {
+      const files = ev.paths.length ? await ipc.robotInspectPaths(ev.paths) : [];
+      askFromStage(ev, files);
+    }
+  });
+
   // ------------------------------------------------------------ main-process events
 
   ipc.on('robot:layout', (l) => {
@@ -4843,7 +5006,12 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     state.robotY = l.robotY;
     root.setProperty('--robot-x', `${l.robotX}px`);
     root.setProperty('--robot-y', `${l.robotY}px`);
-    if (l.panel) {
+    setStaged(l.placement === 'stage' ? (l.stage ?? {}) : null, l.inset ?? 4);
+    if (l.panel && staged) {
+      root.setProperty('--panel-x', `${l.panel.x}px`);
+      root.setProperty('--panel-w', `${l.panel.w}px`);
+      winH = l.bounds.height;
+    } else if (l.panel) {
       root.setProperty('--panel-x', `${l.panel.x}px`);
       root.setProperty('--panel-w', `${l.panel.w}px`);
       winH = l.bounds.height;
@@ -4856,9 +5024,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     body.classList.toggle('tuck-above', l.placement === 'tuck-above');
     body.classList.toggle('tuck-below', l.placement === 'tuck-below');
     body.classList.toggle('tuck-left', l.side === 'left'); // (which side the chat opens on: the strip lines up with the robot on that side)
-    body.classList.toggle('peek', l.placement.startsWith('peek'));
-    body.classList.toggle('peek-top', l.placement === 'peek-top');
-    if (l.placement === 'none' || l.placement.startsWith('peek')) setClickThrough(false);
+    if (l.placement === 'none' || l.placement === 'hidden') setClickThrough(false);
     if (l.expanded) scrollDown();
     laidOut(l);
   });
@@ -4892,7 +5058,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 
   // cursor position arrives relative to the robot box; aim from the robot's head
   ipc.on('robot:cursor', (c) => {
-    if (state.peek) return peekLook(c);
+    if (state.peek) return;
     const head = office.headPosition();
     state.lastCursor = { dx: c.x - head.x, dy: c.y - head.y };
     look();
@@ -5834,6 +6000,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
   let binEmptied = ''; // the day the housemaid emptied its bin (it fills up again overnight)
   setInterval(() => {
     socialReport();
+    islandReport.again(); // (in case the island was away when it last said)
     if (binEmptied && binEmptied !== new Date().toDateString()) {
       binEmptied = '';
       robot.dataset.binEmpty = '';
@@ -5848,7 +6015,14 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     else if (action === 'wake') wake();
     else if (action === 'peek') peek();
     else if (action === 'unpeek') unpeek();
-    else if (action === 'wake-tucked') wake({ sayHi: false, tucked: true }); // (main groupChat.js: the chat stays put away)
+    else if (action === 'chat') {
+      // (the island: out, and its chat open)
+      unpeek();
+      if (!state.awake) wake();
+      else openChat();
+    }
+    else if (action === 'wake-tucked') wake({ sayHi: false, tucked: true });
+    else if (action === 'tuck') collapse(); // (off the stage: back at its desk, still at work) // (main groupChat.js: the chat stays put away)
     else if (action === 'meeting') toMeeting();
     else if (action === 'meeting-end') fromMeeting();
     else if (action === 'reset') ipc.robotReset(activeId!);
@@ -5858,6 +6032,7 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     }
     else if (action === 'history') openHistory();
     else if (action === 'terminal') openTerminal();
+    else if (action === 'shell') toggleShell({ show: true });
     else if (action === 'bonk') bonkRobot();
     else if (action === 'paste') pasteClipboard();
     else if (action === 'wander') {
@@ -5889,10 +6064,9 @@ showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
     setBoard(init.notesBoard);
     syncTabs(init.character);
     if (init.character.peek) {
-      // (hidden at the edge when it was last closed: main lays it out so again)
+      // (away on the island when it was last closed: main keeps it veiled)
       state.peek = true;
       robot.dataset.peek = '1';
-      peekShow();
     }
     ipc.robotExpand(false); // every (re)load starts asleep; keep the window in sync
     if (init.character.terminalOpen && tabs.get(init.character.terminalTab!)) terminalState('opened', tabs.get(init.character.terminalTab!)!, { quiet: true });

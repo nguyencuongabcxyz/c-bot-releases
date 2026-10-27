@@ -12,6 +12,7 @@ mod files;
 mod find_claude;
 mod groupchat;
 mod hub;
+mod island;
 mod maid;
 mod mcp_apps;
 mod notes;
@@ -25,8 +26,10 @@ mod robotlink;
 mod robots;
 mod robots_mcp;
 mod screens;
+mod shell;
 mod snip;
 mod social;
+mod stage;
 mod store;
 mod terminal;
 mod topmost;
@@ -214,6 +217,12 @@ fn main() {
             revive::robot_revive,
             clipboard::robot_paste_clipboard,
             terminal::robot_terminal,
+            shell::robot_shell_open,
+            shell::robot_shell_write,
+            shell::robot_shell_resize,
+            shell::robot_shell_close,
+            shell::robot_shell_reply,
+            shell::robot_shell_kinds,
             tray::robot_menu,
             robotlink::robot_tasks,
             robotlink::robots_answer,
@@ -281,6 +290,21 @@ fn main() {
             groupchat::groupchat_init,
             groupchat::groupchat_act,
             groupchat::meeting_init,
+            island::island_init,
+            island::island_size,
+            island::island_box,
+            island::island_drag,
+            island::island_act,
+            island::robot_island,
+            stage::stage_pick,
+            stage::stage_tile,
+            stage::stage_split,
+            stage::stage_swap,
+            stage::stage_init,
+            stage::stage_act,
+            stage::stage_send,
+            stage::stage_pick_files,
+            stage::stage_add_menu,
         ])
         // local pictures in the chat (cbot-file://img/?path=…), read off the page's thread
         .register_asynchronous_uri_scheme_protocol("cbot-file", |ctx, request, responder| {
@@ -356,6 +380,7 @@ fn main() {
             mcp_apps::setup(&handle);
             groupchat::setup(&handle);
             terminal::setup(&handle);
+            shell::setup(&handle);
             updater::setup(&handle);
             workshop::setup(&handle);
 
@@ -368,6 +393,8 @@ fn main() {
             if no_robots {
                 workshop::open(&handle, Some("new"));
             }
+            stage::setup(&handle);
+            island::setup(&handle); // (once the robots are out: their faces, at the screen's edge)
             robots::watch_cursor(handle.clone());
             chat::close_idle(handle.clone());
             topmost::setup(&handle); // (robots that lost "always on top" get it back)
@@ -390,6 +417,7 @@ fn main() {
             } => api.prevent_exit(),
             RunEvent::Exit => {
                 chat::close_all(app);
+                shell::close_all(app);
                 with(app, |st| st.store.flush());
             }
             _ => {}

@@ -97,6 +97,11 @@ fn open_book(app: &AppHandle, robot: Option<String>, focus: Value, reminder: Val
     tell(app, r.as_deref(), json!({ "phase": "opened" }));
 }
 
+/// The notebook opened from a reminder the robot island held (island.rs).
+pub fn open_reminder(app: &AppHandle, robot: Option<String>, reminder: Value) {
+    open_book(app, robot, Value::Null, reminder, true, String::new(), String::new());
+}
+
 fn default_robot(app: &AppHandle) -> Option<String> {
     hub::nearest_robot(app).or_else(|| hub::notes_robot(app))
 }
@@ -330,6 +335,14 @@ fn remind(app: &AppHandle, kind: &str, info: &Value) -> bool {
         }
         return true;
     };
+    // away on the island: the island holds it up for you, the robot stays put (busy or not)
+    if robots::is_away(app, &id) {
+        let title = if kind == "morning" { "Your notes from yesterday" } else { "Before you go: your notes" };
+        let open = info["open"].as_i64().unwrap_or(0);
+        let text = if open > 0 { format!("{title} ({open} open)") } else { title.to_string() };
+        let reminder = json!({ "kind": kind, "info": { "today": summary["today"], "open": summary["open"], "taken": summary["taken"], "line": text } });
+        return crate::island::say(app, &id, "notes", &text, Some(reminder));
+    }
     if hub::robot_busy(app, &id) {
         return false;
     }

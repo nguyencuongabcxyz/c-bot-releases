@@ -4,7 +4,7 @@
 import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 import type { AppPage, AppView, AppViewCall, Box, Character, ClaudeCommand, ContextUse, FileChip, FileInfo, LinkTask, ModelChoice, Note, NotesReminder, OkOr, Point, QAItem, SessionRow, Settings, Transcript } from '@/types/model';
 import type * as P from '@/types/pages';
-import type { RobotInit, AskResult, PaletteView, SocialReport } from '@/types/ipc';
+import type { RobotInit, AskResult, IslandEdge, IslandNews, IslandReport, IslandRobot, PaletteView, SocialReport, StageState } from '@/types/ipc';
 
 /** A command whose answer nobody waits for (a failure is only logged). */
 function tell(cmd: string, args?: InvokeArgs): void {
@@ -13,7 +13,8 @@ function tell(cmd: string, args?: InvokeArgs): void {
 
 // ---- a robot window
 export const robotInit = () => invoke<RobotInit>('robot_init');
-export const robotAsk = (tabId: string, prompt: string, attachments: string[], turnId?: string, kind?: 'chat' | 'bonk') => invoke<AskResult>('robot_ask', { tabId, prompt, attachments, turnId, kind });
+// (tag: a line kept above the message: sent to everyone on the stage)
+export const robotAsk = (tabId: string, prompt: string, attachments: string[], turnId?: string, kind?: 'chat' | 'bonk', tag?: string) => invoke<AskResult>('robot_ask', { tabId, prompt, attachments, turnId, kind, tag });
 export const robotCompact = (tabId: string, turnId: string) => invoke<AskResult>('robot_compact', { tabId, turnId });
 export const robotCancel = (tabId: string) => invoke<string[]>('robot_cancel', { tabId });
 export const robotUnqueue = (tabId: string, turnId: string) => invoke<boolean>('robot_unqueue', { tabId, turnId });
@@ -53,6 +54,17 @@ export const robotChatHeight = (height: number | null) => invoke<void>('robot_ch
 // (what an MCP tool's view asked to open: main opens it only if it's a web link)
 export const robotOpenLink = (url: string | undefined) => invoke<void>('robot_open_link', { url });
 export const robotOpenFolder = () => invoke<void>('robot_open_folder');
+// (the shells in its chat, shell.rs: one per tab of the drawer, each belonging to a chat tab;
+// sid names one, and its robot:shell events)
+// (kind: 'bash' for Git Bash, else PowerShell; robotShellKinds: the ones there are here)
+export const robotShellOpen = (cols: number, rows: number, tabId: string, kind: string) => invoke<OkOr<{ sid: number; shell: string }>>('robot_shell_open', { cols, rows, tabId, kind });
+export const robotShellKinds = () => invoke<{ kind: string; label: string }[]>('robot_shell_kinds');
+export const robotShellWrite = (sid: number, data: string) => invoke<void>('robot_shell_write', { sid, data });
+export const robotShellResize = (sid: number, cols: number, rows: number) => tell('robot_shell_resize', { sid, cols, rows });
+// (no sid: all of them)
+export const robotShellClose = (sid?: number) => invoke<void>('robot_shell_close', { sid });
+// (how a terminal_* call from its Claude went: robot:shell-ask)
+export const robotShellReply = (req: number, answer: { text: string; isError?: boolean }) => tell('robot_shell_reply', { req, answer });
 export const robotWanderPrep = (opts: { asleep: boolean }) => invoke<boolean>('robot_wander_prep', { opts });
 export const robotWander = (opts: { asleep: boolean; feet?: Point }) => invoke<boolean>('robot_wander', { opts });
 export const robotTasks = () => invoke<LinkTask[]>('robot_tasks');
@@ -118,6 +130,14 @@ export const groupchatInit = () => invoke<P.GroupChatView | null>('groupchat_ini
 export const groupchatAct = (action: string, p?: unknown) => invoke<unknown>('groupchat_act', { action, p });
 export const meetingInit = () => invoke<P.MeetingInit | null>('meeting_init');
 
+// ---- the robot island (island.rs)
+export const islandInit = () => invoke<{ robots: IslandRobot[]; edge: IslandEdge }>('island_init');
+
+// ---- the stage (stage.rs): its bar
+export const stageInit = () => invoke<StageState>('stage_init');
+export const stageSend = (prompt: string, paths: string[]) => invoke<OkOr<{ count: number }>>('stage_send', { prompt, paths });
+export const stagePickFiles = () => invoke<FileInfo[]>('stage_pick_files');
+
 // ---- told, not asked: nothing comes back
 export const robotDrag = (step: { phase: 'start' | 'move' | 'end'; dx?: number; dy?: number }) => tell('robot_drag', { step });
 export const robotResize = (step: { phase: 'start' | 'move' | 'end' | 'reset'; dx?: number }) => tell('robot_resize', { step });
@@ -127,11 +147,22 @@ export const robotRevive = () => tell('robot_revive');
 export const robotWalker = (what: 'wave' | 'asleep' | 'awake' | 'dock' | 'docked' | 'cancel') => tell('robot_walker', { what });
 export const robotsAnswer = (answer: { reqId: string; text?: string; error?: string }) => tell('robots_answer', { answer });
 export const socialReport = (report: SocialReport) => tell('social_report', { report });
+export const robotIsland = (report: IslandReport, news?: IslandNews) => tell('robot_island', { report, news });
 export const walkerDrag = (step: { phase: 'start' | 'move' | 'end'; dx?: number; dy?: number }) => tell('walker_drag', { step });
 export const walkerClick = () => tell('walker_click');
 export const walkerReady = () => tell('walker_ready');
 export const walkerThrough = (through: boolean) => tell('walker_through', { through });
 export const cardSize = (height: number) => tell('card_size', { height });
+export const islandSize = (width: number, height: number) => tell('island_size', { width, height });
+export const islandBox = (x: number, y: number, width: number, height: number) => tell('island_box', { x, y, width, height });
+export const islandDrag = (phase: 'start' | 'end') => tell('island_drag', { phase });
+export const stagePick = () => tell('stage_pick');
+export const stageAddMenu = () => tell('stage_add_menu');
+export const stageTile = (action: 'spot' | 'leave') => tell('stage_tile', { action });
+export const stageSplit = (step: { phase: 'start' | 'move' | 'end' | 'even'; split: string; d?: number }) => tell('stage_split', { step });
+export const stageSwap = (phase: 'start' | 'move' | 'end') => tell('stage_swap', { phase });
+export const stageAct = (action: 'start' | 'clear' | 'unpick' | 'exit' | 'add' | 'even' | 'chip', id?: string) => tell('stage_act', { action, id });
+export const islandAct = (action: 'out' | 'away' | 'chat' | 'notes' | 'all-out' | 'all-away', id?: string) => tell('island_act', { action, id });
 export const quickSize = (height: number) => tell('quick_size', { height });
 export const paletteSize = (height: number) => tell('palette_size', { height });
 export const droneArrived = () => tell('drone_arrived');

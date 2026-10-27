@@ -237,7 +237,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("resumeAt", Value::Null)])));
     }
     // the other robots, to ask (robotlink.rs): its tools, usable without asking, and time to wait for an answer
-    let mcp_config = robotlink::mcp_config(app, id);
+    let mcp_config = robotlink::mcp_config(app, id, tab_id);
     let opts = claude::Opts {
         claude_path: find_claude::find(settings["claudePath"].as_str().unwrap_or(""))?,
         cwd: c["folder"].as_str().unwrap_or("").into(),
@@ -711,7 +711,8 @@ pub fn close_idle(app: AppHandle) {
     });
 }
 
-pub fn ask(app: &AppHandle, id: &str, tab_id: &str, prompt: &str, attachments: &[Value], turn_id: Option<String>, kind: &str) -> Value {
+/// tag: a line kept above your message (sent to everyone on the stage: who got it).
+pub fn ask(app: &AppHandle, id: &str, tab_id: &str, prompt: &str, attachments: &[Value], turn_id: Option<String>, kind: &str, tag: Option<&str>) -> Value {
     let Some((c, settings)) = with(app, |st| {
         st.store.tab(id, tab_id)?;
         Some((st.store.get(id)?.clone(), st.store.settings().clone()))
@@ -761,7 +762,11 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, prompt: &str, attachments: &
         }
         if kind == "chat" {
             let fed: Vec<Value> = dropped.iter().map(|f| json!({ "name": f["name"], "isDir": f["isDir"], "isImage": f["isImage"] })).collect();
-            st.store.push_history(id, tab_id, json!({ "role": "user", "text": prompt, "files": fed }));
+            let mut entry = json!({ "role": "user", "text": prompt, "files": fed });
+            if let Some(tag) = tag.filter(|t| !t.is_empty()) {
+                entry["tag"] = json!(tag.chars().take(200).collect::<String>());
+            }
+            st.store.push_history(id, tab_id, entry);
             let mut stats = c["stats"].as_object().cloned().unwrap_or_default();
             let n = stats.get("questions").and_then(Value::as_i64).unwrap_or(0) + 1;
             stats.insert("questions".into(), json!(n));

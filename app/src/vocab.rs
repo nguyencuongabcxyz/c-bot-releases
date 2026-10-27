@@ -121,6 +121,7 @@ fn distance(r: Rect, (cx, cy): (i32, i32)) -> f64 {
 }
 
 /// A robot free to quiz you: the tutor if it's free, else the free robot nearest the mouse.
+/// With none out on the desk, one away on the robot island (it asks from there).
 fn free_robot(app: &AppHandle) -> Option<String> {
     let free = |id: &str| robots::is_showing(app, id) && !walkers::has(app, id) && !hub::robot_busy(app, id);
     let tutor = settings(app)["vocabTutor"].as_str().unwrap_or("").to_string();
@@ -134,6 +135,16 @@ fn free_robot(app: &AppHandle) -> Option<String> {
         .filter_map(|id| Some((distance(win::window_rect(robots::hwnd_of(app, &id)?), cursor), id)))
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, id)| id)
+        .or_else(|| away_robot(app, &tutor))
+}
+
+/// A robot away on the robot island and not at work: the tutor if it is, else the first.
+fn away_robot(app: &AppHandle, tutor: &str) -> Option<String> {
+    let ok = |id: &str| robots::is_away(app, id) && !hub::robot_busy(app, id);
+    if !tutor.is_empty() && ok(tutor) {
+        return Some(tutor.to_string());
+    }
+    robots::open_ids(app).into_iter().find(|id| ok(id))
 }
 
 /// A robot that's asleep, at its desk or sleepwalking round the screen: the tutor if it is,
@@ -159,11 +170,16 @@ fn sleeping_robot(app: &AppHandle) -> Option<String> {
         .map(|id| (hub::robot_rect(app, &id).map_or(f64::INFINITY, |r| distance(r, cursor)), id))
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, id)| id)
+        .or_else(|| away_robot(app, &tutor)) // (all away on the island: it dreams from there)
 }
 
-/// Where a card goes for this robot: as big as its chat (card.rs chat_bounds).
+/// Where a card goes for this robot: as big as its chat (card.rs chat_bounds). None for a
+/// robot away on the island (the card goes beside the island: card_spot).
 fn card_bounds(app: &AppHandle, id: Option<&str>) -> Option<Rect> {
     let id = id?;
+    if robots::is_away(app, id) {
+        return None;
+    }
     let desk = robots::desk_rect(app, id)?;
     let chat_open = with(app, |st| st.robots.get(id).is_some_and(|r| r.expanded));
     let m = win::monitor_near(desk.x + desk.w / 2, desk.y + desk.h / 2);
@@ -175,9 +191,22 @@ fn show_card(app: &AppHandle, word: Value, robot: Option<String>) {
     if words(app, |w| w.quizzing.is_some()) == Some(true) {
         end_quiz(app, "ignored");
     }
-    let spot = card_bounds(app, robot.as_deref()).map_or(Spot::Near(None), Spot::Bounds);
+    let spot = card_spot(app, robot.as_deref());
     let paint = color_of(app, robot.as_deref());
     card::open(app, word, robot, paint, spot);
+}
+
+/// Where a card for this robot goes: chat-sized by its desk, or beside the island it's away
+/// on (hub::robot_rect), or by the mouse.
+fn card_spot(app: &AppHandle, robot: Option<&str>) -> Spot {
+    card_bounds(app, robot).map_or_else(|| Spot::Near(robot.and_then(|r| hub::robot_rect(app, r))), Spot::Bounds)
+}
+
+/// A robot away on the island: the island says what it's showing you.
+fn island_says(app: &AppHandle, robot: &str, kind: &str, word: &Value) {
+    if robots::is_away(app, robot) {
+        crate::island::say(app, robot, kind, word["word"].as_str().unwrap_or(""), None);
+    }
 }
 
 // ---------------------------------------------------------------- dreams and quizzes
@@ -202,6 +231,7 @@ fn start_dream(app: &AppHandle, word: Option<Value>, robot: Option<String>) -> b
     }
     let near = hub::robot_rect(app, &robot);
     let paint = color_of(app, Some(&robot));
+    island_says(app, &robot, "word", &seen);
     card::open(app, flagged(seen, &["dream", "known"]), Some(robot), paint, Spot::Near(near));
     count_changed(app);
     true
@@ -215,8 +245,9 @@ fn start_quiz(app: &AppHandle, word: Option<Value>, asked: bool, robot: Option<S
     let word_id = word["id"].as_str().unwrap_or("").to_string();
     words(app, |w| w.quizzing = Some(Quiz { word_id, robot_id: robot.clone() }));
     tell(app, Some(&robot), json!({ "phase": "quiz", "word": word, "asked": asked }));
-    let spot = card_bounds(app, Some(&robot)).map_or(Spot::Near(None), Spot::Bounds);
+    let spot = card_spot(app, Some(&robot));
     let paint = color_of(app, Some(&robot));
+    island_says(app, &robot, "quiz", &word);
     card::open(app, flagged(word, &["quiz"]), Some(robot), paint, spot);
     true
 }

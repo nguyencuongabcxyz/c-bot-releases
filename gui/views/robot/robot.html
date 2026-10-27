@@ -2,14 +2,18 @@
 <section id="panel" aria-label="Chat">
   <header>
     <div class="who">
+      <span id="stage-face" aria-hidden="true"></span>
       <span id="name">Robo</span>
       <button id="folder" class="chip" title="Open folder"></button>
     </div>
     <div class="actions">
+      <button id="btn-shell" title="A shell in my folder (Ctrl+`, /shell)" data-icon="shell"></button>
       <button id="btn-terminal" title="Continue in the terminal: full Claude Code (/terminal)" data-icon="terminal"></button>
       <button id="btn-history" title="Past conversations (/resume)" data-icon="history"></button>
       <button id="btn-bonk" title="Bonk me with the squeaky hammer: wake up / hurry up!" data-icon="hammer"></button>
       <button id="btn-reset" title="Start this tab over (/clear)" data-icon="reset"></button>
+      <button id="btn-spot" title="Spotlight me: the others shrink to strips beside me (again: back to the grid)" data-icon="expand"></button>
+      <button id="btn-unstage" title="Step off the stage: back to my desk, chat still open" data-icon="open"></button>
       <button id="btn-collapse" title="Tuck the chat away and watch me work (click me to bring it back)" data-icon="collapse"></button>
       <button id="btn-sleep" title="Go to sleep (Esc)" data-icon="moon"></button>
     </div>
@@ -39,6 +43,20 @@
       <div id="h-msgs"></div>
       <button id="h-resume" type="button">Resume this conversation</button>
     </div>
+  </div>
+  <!-- a shell in my folder (chat/shell.ts): drag its top edge to make it taller -->
+  <div id="shell" hidden>
+    <div id="sh-grip" title="Drag to make the shell taller or shorter (double-click: back to normal)" aria-hidden="true"></div>
+    <div class="sh-bar">
+      <div id="sh-tabs" role="tablist" aria-label="Shells"></div>
+      <button id="sh-new" type="button" title="Another shell (Ctrl+Shift+`)" data-icon="plus"></button>
+      <button id="sh-kind" type="button" title="Which shell: PowerShell or Git Bash" data-icon="down" hidden></button>
+      <div id="sh-menu" role="menu" hidden></div>
+      <span class="spacer"></span>
+      <button id="sh-restart" type="button" title="Start this shell afresh" data-icon="reset"></button>
+      <button id="sh-hide" type="button" title="Put them away, still running (Ctrl+`)" data-icon="down"></button>
+    </div>
+    <div id="sh-term"></div>
   </div>
   <div id="attachments" aria-label="Files for the next question" hidden></div>
   <div id="screen-asks" aria-label="Ask about the part of the screen you boxed" hidden></div>
@@ -99,6 +117,8 @@
   <!-- out for a walk: what a click on the empty desk says -->
   <div id="away-note" role="status" aria-live="polite"></div>
   <div id="badge" aria-hidden="true">!</div>
+  <!-- Ctrl+clicked for the stage: its number in the cast -->
+  <div id="stage-pick" aria-hidden="true" hidden></div>
 
   <div id="bot-host"></div>
   <div id="nametag"></div>
@@ -108,10 +128,9 @@
   <div id="board-label" aria-hidden="true"></div>
 </div>
 
-<!-- Hidden at the screen's edge: just its head peeking out (a click brings it back) -->
-<button id="peek" type="button" title="Click to bring me back to my desk">
-  <span id="peek-bot"></span>
-  <span class="pk-busy"><i></i><i></i><i></i></span>
-  <span class="pk-alert">!</span>
-  <span class="pk-z">z</span>
-</button>
+
+<!-- On the stage: the gaps between tiles, to drag (each window has its half of every gap) -->
+<div class="stage-edge" data-side="left" hidden></div>
+<div class="stage-edge" data-side="right" hidden></div>
+<div class="stage-edge" data-side="top" hidden></div>
+<div class="stage-edge" data-side="bottom" hidden></div>

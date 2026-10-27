@@ -16,7 +16,9 @@
 //! TASK_TIMEOUT, and is cancelled if the robot that handed it off stops waiting (its Claude
 //! was stopped: the tool server hangs up the line).
 //! The same tools reach the user's own things too: their saved English words (list_words,
-//! save_words: vocab.rs) and their notebook (list_notes, add_note: notes.rs).
+//! save_words: vocab.rs) and their notebook (list_notes, add_note: notes.rs); and the shells in
+//! the conversation's own drawer (terminal_*: shell.rs). Each conversation's tools server knows
+//! which one it serves (its chat tab), so a conversation only ever reaches its own shells.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -33,7 +35,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::store::now_ms;
 use crate::util::text;
-use crate::{hub, notes, planes, robots, social, vocab, walkers, win, with};
+use crate::{hub, notes, planes, robots, shell, social, vocab, walkers, win, with};
 
 const ANSWER_TIMEOUT_MS: u64 = 10 * 60_000;
 const EXCHANGE_KEEP_MS: i64 = 30 * 60_000; // a follow-up within this long goes to the same tab
@@ -45,10 +47,13 @@ const TASK_SHOWN: Duration = Duration::from_secs(90); // a finished task stays o
 /// How long a handed-off task may take (ms): Claude Code's MCP_TOOL_TIMEOUT is set past it.
 pub const TASK_TIMEOUT_MS: u64 = 45 * 60 * 1000;
 
-/// The other robots' tools, and the words' and notes', as Claude Code names them.
-const TOOLS: [&str; 7] = [
+/// The other robots' tools, the words' and notes', and reading or typing in its shells, as
+/// Claude Code names them: usable without asking. (terminal_run isn't: running something is
+/// up to the robot's permission mode, as its own Bash is.)
+const TOOLS: [&str; 9] = [
     "mcp__cbot__ask_robot", "mcp__cbot__list_robots", "mcp__cbot__hand_off_task",
     "mcp__cbot__list_words", "mcp__cbot__save_words", "mcp__cbot__list_notes", "mcp__cbot__add_note",
+    "mcp__cbot__terminal_read", "mcp__cbot__terminal_type",
 ];
 
 /// What every robot's Claude should know about the user's words and notebook.
@@ -244,6 +249,9 @@ fn handle(app: &AppHandle, req: &Value, conn: u64) -> Value {
     }
     if let Some(answer) = desk_tool(app, &from, tool, &args) {
         return answer;
+    }
+    if tool.starts_with("terminal_") {
+        return shell::tool(app, &from, req["tab"].as_str().unwrap_or(""), tool, &args);
     }
     if tool != "ask_robot" && tool != "hand_off_task" {
         return err(format!("No tool {tool}."));
@@ -494,19 +502,27 @@ fn connection(app: &AppHandle, mut sock: TcpStream, conn: u64) {
 /// (added to its system prompt).
 pub fn note(app: &AppHandle, id: &str) -> Option<String> {
     let others = note_for(&others(app, id));
-    Some(if others.is_empty() { DESK_NOTE.to_string() } else { format!("{others}\n{DESK_NOTE}") })
+    let desk = format!("{DESK_NOTE}\n{}", shell::NOTE);
+    Some(if others.is_empty() { desk } else { format!("{others}\n{desk}") })
 }
 
-/// The --mcp-config file giving this robot's Claude Code the other-robots tools (written
-/// for each robot: this exe, run as the tools' server, and the way back to the app).
-pub fn mcp_config(app: &AppHandle, id: &str) -> Option<String> {
+/// The --mcp-config file of one of its conversations.
+fn config_file(app: &AppHandle, id: &str, tab: &str) -> PathBuf {
+    let safe = |s: &str| s.chars().filter(|c| c.is_ascii_alphanumeric() || "-_".contains(*c)).collect::<String>();
+    with(app, |st| st.data_dir.join("robot-link")).join(format!("mcp-{}-{}.json", safe(id), safe(tab)))
+}
+
+/// The --mcp-config file giving this conversation's Claude Code the other-robots tools
+/// (written for each conversation: this exe, run as the tools' server, the way back to the
+/// app, and which conversation it is).
+pub fn mcp_config(app: &AppHandle, id: &str, tab: &str) -> Option<String> {
     let (port, token) = link(app, |l| Some((l.port?, l.token.clone())))?;
     let exe = std::env::current_exe().ok()?;
-    let dir = with(app, |st| st.data_dir.join("robot-link"));
-    let file: PathBuf = dir.join(format!("mcp-{id}.json"));
+    let file = config_file(app, id, tab);
+    let dir = file.parent()?.to_path_buf();
     let cfg = json!({ "mcpServers": { "cbot": {
         "command": exe.to_string_lossy(),
-        "args": [crate::robots_mcp::FLAG, id, port.to_string()],
+        "args": [crate::robots_mcp::FLAG, id, port.to_string(), tab],
         "env": { "CBOT_TOKEN": token },
     } } });
     let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, cfg.to_string()));
@@ -515,6 +531,11 @@ pub fn mcp_config(app: &AppHandle, id: &str) -> Option<String> {
         return None;
     }
     Some(file.to_string_lossy().into_owned())
+}
+
+/// A conversation closed: its config goes.
+pub fn forget_tab(app: &AppHandle, id: &str, tab: &str) {
+    let _ = std::fs::remove_file(config_file(app, id, tab));
 }
 
 /// Those tools, usable without asking (--allowedTools).
@@ -609,7 +630,10 @@ mod tests {
     fn the_tools_are_the_cbot_ones() {
         assert_eq!(
             allowed_tools(),
-            ["mcp__cbot__ask_robot", "mcp__cbot__list_robots", "mcp__cbot__hand_off_task", "mcp__cbot__list_words", "mcp__cbot__save_words", "mcp__cbot__list_notes", "mcp__cbot__add_note"]
+            [
+                "mcp__cbot__ask_robot", "mcp__cbot__list_robots", "mcp__cbot__hand_off_task", "mcp__cbot__list_words", "mcp__cbot__save_words",
+                "mcp__cbot__list_notes", "mcp__cbot__add_note", "mcp__cbot__terminal_read", "mcp__cbot__terminal_type",
+            ]
         );
     }
 }

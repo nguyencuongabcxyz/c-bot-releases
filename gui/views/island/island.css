@@ -1,0 +1,171 @@
+/* The robot island: always dark, whatever the theme (it sits on the screen's edge like the
+   notch it's named after). Fonts from ../ui/theme.css. body.edge-* says which edge it's on:
+   it's flush against that one, with room on the other sides for its shadow. */
+:root {
+  --ink: #0b0f1a;
+  --card: #151c2c;
+  --slot: #1c2438;
+  --line: #273049;
+  --fg: #e6edf7;
+  --dim: #94a3b8;
+  --busy: #fbbf24;
+  --done: #4ade80;
+  --ask: #fb7185;
+  --err: #f87171;
+  --link: #93c5fd;
+  --ease: cubic-bezier(0.25, 1.08, 0.4, 1);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { display: flex; font: 12px/1.35 var(--font-ui); color: var(--fg); user-select: none; -webkit-user-select: none; }
+body.edge-top { justify-content: center; align-items: flex-start; padding: 0 14px 14px; }
+body.edge-bottom { justify-content: center; align-items: flex-end; padding: 14px 14px 0; }
+body.edge-left { justify-content: flex-start; align-items: center; padding: 14px 14px 14px 0; }
+body.edge-right { justify-content: flex-end; align-items: center; padding: 14px 0 14px 14px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+
+/* ------------------------------------------------------------------ the strip */
+#island {
+  --r: 16px;
+  position: relative; flex: none; overflow: hidden; background: var(--ink); cursor: default;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(120, 140, 180, 0.12);
+  transition: width 0.28s var(--ease), height 0.28s var(--ease), border-radius 0.28s ease;
+}
+body.mode-panel #island, body.mode-toast #island { --r: 22px; }
+body.edge-top #island { border-radius: 0 0 var(--r) var(--r); }
+body.edge-bottom #island { border-radius: var(--r) var(--r) 0 0; }
+body.edge-left #island { border-radius: 0 var(--r) var(--r) 0; }
+body.edge-right #island { border-radius: var(--r) 0 0 var(--r); }
+body.dragging #island { cursor: grabbing; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55), 0 0 0 1.5px var(--busy); }
+/* a question waiting: it pulses till you answer (or say later) */
+#island::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; border: 2px solid var(--ask);
+  opacity: 0; pointer-events: none;
+}
+body.mode-toast.kind-ask #island::after { animation: pulse 1.6s ease-in-out infinite; }
+body.mode-toast.kind-notes #island::after { border-color: var(--link); animation: pulse 2.2s ease-in-out infinite; }
+
+/* the layers: one at a time, in the middle; the strip clips the others as it changes size */
+.layer {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max-content;
+  opacity: 0; pointer-events: none; transition: opacity 0.16s;
+}
+body.mode-rest #rest, body.mode-panel #panel, body.mode-toast #toast { opacity: 1; pointer-events: auto; transition: opacity 0.2s 0.08s; }
+
+/* ------------------------------------------------------------------ faces */
+.face {
+  position: relative; display: grid; place-items: center; flex: none; padding: 0;
+  width: 26px; height: 26px; border-radius: 50%; background: var(--slot); border: 2px solid var(--ink);
+}
+.face svg { width: 18px; height: 18px; display: block; }
+.face.away svg { opacity: 0.45; }
+/* working: a ring goes round it */
+.face.busy::after, .face.asking::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid transparent;
+  border-top-color: var(--busy); border-right-color: var(--busy); animation: spin 1.1s linear infinite;
+}
+.face.asking::after { border-color: var(--ask); animation: pulse 1.6s ease-in-out infinite; }
+/* news you haven't looked at */
+.face .dot { display: none; position: absolute; right: -3px; top: -3px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--ink); }
+.face[data-dot] .dot { display: block; }
+.face[data-dot="done"] .dot { background: var(--done); }
+.face[data-dot="error"] .dot { background: var(--err); }
+.face[data-dot="ask"] .dot { background: var(--ask); animation: blink 1.6s ease-in-out infinite; }
+.face[data-dot="notes"] .dot { background: var(--link); }
+.face[data-dot="word"] .dot, .face[data-dot="quiz"] .dot { background: #c4b5fd; }
+
+/* ------------------------------------------------------------------ at rest */
+#rest { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 9px; }
+#faces { display: flex; align-items: center; }
+#faces .face + .face { margin-left: -7px; }
+#rest-text { color: #cbd5e1; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rest-text.ticker { width: 250px; }
+#rest-text b { color: #fff; margin-right: 5px; }
+#rest-text .time { color: var(--busy); font: 11px var(--font-mono); margin-left: 6px; font-variant-numeric: tabular-nums; }
+#rest-text.asking b + span { color: var(--ask); }
+body.vertical #rest { flex-direction: column; padding: 9px 5px 9px 5px; }
+body.vertical #faces { flex-direction: column; }
+body.vertical #faces .face + .face { margin: -7px 0 0; }
+body.vertical #rest-text { display: none; }
+
+/* ------------------------------------------------------------------ the panel */
+#panel { padding: 12px 14px 8px; }
+#panel header { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+#panel header b { font-size: 13px; color: #fff; }
+#count { background: var(--slot); color: var(--dim); border-radius: 8px; padding: 0 7px; font-size: 10.5px; }
+.spacer { flex: 1; min-width: 20px; }
+#panel header button { background: none; border: 0; color: var(--link); font-size: 11.5px; padding: 2px 6px; border-radius: 6px; }
+#panel header button:hover { background: var(--slot); color: #fff; }
+#panel header button:disabled { color: #475569; background: none; cursor: default; }
+#cards { display: flex; flex-wrap: wrap; gap: 10px; max-width: calc(6 * 132px + 5 * 10px); }
+body.vertical #cards { flex-direction: column; flex-wrap: nowrap; max-width: none; }
+#grip { width: 36px; height: 4px; border-radius: 2px; background: #334155; margin: 9px auto 0; cursor: grab; }
+#grip:hover { background: #475569; }
+
+.card {
+  width: 132px; padding: 12px 10px 10px; border-radius: 14px; background: var(--card); border: 1px solid #222b40;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; transition: border-color 0.15s, background 0.15s;
+}
+.card:hover { background: #1a2234; border-color: #334155; }
+.card.busy { border-color: color-mix(in srgb, var(--busy) 35%, transparent); }
+.card.asking { border-color: color-mix(in srgb, var(--ask) 55%, transparent); }
+.card .face { width: 56px; height: 56px; border: 0; cursor: pointer; transition: transform 0.15s var(--ease); }
+.card .face:hover { transform: scale(1.06); }
+.card .face svg { width: 42px; height: 42px; }
+.card .face::after { inset: -4px; border-width: 2.5px; }
+.card .face .dot { width: 12px; height: 12px; right: 1px; top: 1px; border-color: var(--card); }
+/* out on the desk: a green light */
+.card .face .here { position: absolute; right: 1px; bottom: 1px; width: 11px; height: 11px; border-radius: 50%; background: var(--done); border: 2px solid var(--card); }
+.card .face.away .here { display: none; }
+.card .who { display: flex; flex-direction: column; align-items: center; width: 100%; min-width: 0; margin-top: 6px; }
+.card .name, .card .status { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .name { font-size: 12.5px; font-weight: 700; color: #fff; }
+.card .status { font-size: 11px; color: var(--dim); }
+.card .status.busy { color: var(--busy); }
+.card .status.ask { color: var(--ask); }
+.card .status.dim { color: #64748b; }
+.card .pill { margin-top: 8px; width: 100%; }
+body.vertical .card { width: 250px; flex-direction: row; gap: 10px; padding: 8px 10px; }
+body.vertical .card .face { width: 40px; height: 40px; }
+body.vertical .card .face svg { width: 30px; height: 30px; }
+body.vertical .card .face .dot { width: 10px; height: 10px; right: -1px; top: -1px; }
+body.vertical .card .face .here { width: 9px; height: 9px; right: -1px; bottom: -1px; }
+body.vertical .card .who { align-items: flex-start; margin: 0; flex: 1; }
+body.vertical .card .pill { margin: 0; width: auto; padding: 0 10px; }
+
+.pill {
+  height: 24px; border-radius: 999px; padding: 0 12px; font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  background: none; border: 1px solid #334155; color: #cbd5e1;
+}
+.pill:hover { border-color: #64748b; color: #fff; }
+.pill.primary { background: #e2e8f0; border-color: transparent; color: #0b1426; }
+.pill.primary:hover { background: #fff; }
+.pill:disabled { opacity: 0.4; cursor: default; }
+
+/* ------------------------------------------------------------------ news */
+#toast { display: flex; align-items: center; gap: 12px; width: 380px; padding: 13px 16px 15px; }
+#toast .face.big { width: 40px; height: 40px; border: 0; cursor: pointer; }
+#toast .face.big svg { width: 30px; height: 30px; }
+#toast .face.big .dot { display: block; width: 13px; height: 13px; right: -3px; top: auto; bottom: -3px; }
+.t-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+#t-title { font-size: 12.5px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#t-text { font-size: 11.5px; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.t-acts { display: flex; gap: 6px; flex: none; }
+body.kind-ask #t-go { background: var(--ask); color: #fff; }
+body.kind-error #t-title { color: #fecaca; }
+/* how long till it tucks itself away (held while the mouse is on it) */
+#t-time { position: absolute; left: 20px; right: 20px; bottom: 5px; height: 2.5px; border-radius: 2px; background: var(--slot); overflow: hidden; }
+#t-time i { display: block; height: 100%; background: var(--done); transform-origin: left; animation: countdown var(--ms, 7s) linear forwards; }
+body.kind-error #t-time i { background: var(--err); }
+body.toast-waits #t-time { display: none; }
+body.toast-held #t-time i { animation-play-state: paused; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.15; } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

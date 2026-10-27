@@ -31,8 +31,14 @@ pub fn robot_busy(app: &AppHandle, id: &str) -> bool {
     with(app, |st| tabs.iter().any(|t| chat::is_busy(st, id, t)))
 }
 
-/// Where the robot is on screen (physical px): out walking, where it walks; else its desk.
+/// Where the robot is on screen (physical px): out walking, where it walks; away on the
+/// island, the island (what's for it goes there); else its desk.
 pub fn robot_rect(app: &AppHandle, id: &str) -> Option<Rect> {
+    if robots::is_away(app, id)
+        && let Some(r) = crate::island::strip_rect(app)
+    {
+        return Some(r);
+    }
     walkers::bounds(app, id).or_else(|| robots::desk_rect(app, id))
 }
 
@@ -54,14 +60,23 @@ pub fn nearest_robot(app: &AppHandle) -> Option<String> {
 }
 
 /// The robot that reminds you about your notes: the one picked in the Workshop if it's
-/// out, else the one nearest the mouse, else any (main.js notesRobot).
+/// out, else the one nearest the mouse, else any (main.js notesRobot). Out on the desk
+/// first; with every one away on the island, one of those (the island speaks for it).
 pub fn notes_robot(app: &AppHandle) -> Option<String> {
     let pick = with(app, |st| st.store.settings()["notesRobot"].as_str().unwrap_or("").to_string());
     let open = robots::open_ids(app);
-    if open.contains(&pick) && robots::hwnd_of(app, &pick).is_some_and(win::is_visible) {
+    let shown = |id: &str| robots::hwnd_of(app, id).is_some_and(win::is_visible);
+    let out = |id: &str| shown(id) && !robots::is_away(app, id);
+    if open.contains(&pick) && out(&pick) {
         return Some(pick);
     }
-    nearest_robot(app).or_else(|| open.into_iter().find(|id| robots::hwnd_of(app, id).is_some_and(win::is_visible)))
+    if let Some(near) = nearest_robot(app).filter(|id| out(id)).or_else(|| open.iter().find(|id| out(id)).cloned()) {
+        return Some(near);
+    }
+    if open.contains(&pick) && shown(&pick) {
+        return Some(pick);
+    }
+    open.into_iter().find(|id| shown(id))
 }
 
 /// A robot that can chat about something: this one, unless it's out walking (then it's
@@ -80,7 +95,13 @@ pub fn chatty_robot(app: &AppHandle, id: Option<&str>) -> Option<String> {
 /// Put a robot on the desktop or away (main.js showRobot / hideRobot).
 pub fn set_visible(app: &AppHandle, id: &str, visible: bool) {
     let index = with(app, |st| {
-        st.store.update(id, crate::util::patch(vec![("visible", json!(visible))]))?;
+        // (out from being put away: onto its desk, even if it was away on the island then)
+        let fresh = visible && !st.robots.contains_key(id);
+        let mut p = crate::util::patch(vec![("visible", json!(visible))]);
+        if fresh {
+            p.insert("peek".into(), json!(false));
+        }
+        st.store.update(id, p)?;
         st.store.list().iter().position(|c| c["id"] == id)
     });
     let Some(index) = index else { return }; // (no such robot)

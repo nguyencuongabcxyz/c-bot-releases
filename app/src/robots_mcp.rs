@@ -1,6 +1,6 @@
 //! The "other robots" tools for a robot's Claude Code (main robotsMcp.js): an MCP server over
 //! stdio that Claude Code starts for each conversation, as `c-bot.exe --robots-mcp <robot id>
-//! <port>` (robotlink.rs writes the --mcp-config that says so). There's no Node here, so the
+//! <port> <chat tab id>` (robotlink.rs writes the --mcp-config that says so). There's no Node here, so the
 //! app's own exe serves it, from the very top of main(), before the Tauri builder (whose
 //! single-instance plugin would otherwise hand the launch to the running app and quit).
 //!   list_robots   the other robots on the desktop: names, folders, awake / busy / asleep
@@ -12,6 +12,9 @@
 //!   save_words    save words to that list; they're looked up as with the word hotkey
 //!   list_notes    the notes in the user's notebook (notes.rs): the open ones, maybe done ones
 //!   add_note      put a note in the notebook (the robot pins it on its board)
+//!   terminal_read what's on screen in this conversation's shells (the drawer in its chat:
+//!                 shell.rs); terminal_type a command typed there for the user to run;
+//!   terminal_run  one run there, its output coming back
 //! Each call goes to the running C-Bot over a private local socket (127.0.0.1:<port>, with the
 //! token from CBOT_TOKEN as its password), which does the asking (robotlink.rs).
 
@@ -31,6 +34,10 @@ pub const FLAG: &str = "--robots-mcp";
 /// anything here, so they can all go at once (and saving words or notes is safe in parallel).
 pub fn tools() -> Value {
     let at_once = json!({ "readOnlyHint": true });
+    // (typing in a shell is one at a time, in order)
+    let in_turn = json!({ "readOnlyHint": false, "destructiveHint": false });
+    let shell_arg = json!({ "type": "integer", "description": "Which shell: the number on its tab (pwsh 2 is 2, bash 3 is 3). Leave out for the one showing." });
+    let kind_arg = json!({ "type": "string", "enum": ["powershell", "bash"], "description": "PowerShell or Git Bash (if it's installed). Leave out for whichever is there (a new shell: PowerShell); given, a shell of that kind is used, or a new one opened." });
     json!([
         {
             "name": "list_robots",
@@ -137,6 +144,63 @@ pub fn tools() -> Value {
             },
             "annotations": at_once,
         },
+        {
+            "name": "terminal_read",
+            "description": concat!(
+                "Read what's on screen in the user's terminal for this conversation: the shells in the drawer of your chat in C-Bot (PowerShell or Git Bash, in your project folder). ",
+                "Use it when the user asks about something in their terminal (an error, a server's log, a test run's output) or to check on a command you ran there that's still going. ",
+                "Returns the last lines of a shell and a list of this conversation's shells."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shell": shell_arg,
+                    "lines": { "type": "integer", "description": "How many of the last lines (default 80, up to 1000)." },
+                },
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
+            "name": "terminal_type",
+            "description": concat!(
+                "Type a command into the user's terminal for this conversation (the shell drawer of your chat in C-Bot) WITHOUT running it: it waits at the prompt, and the user presses Enter if they want it. ",
+                "Use it to hand the user a command to run themselves, especially one that changes things. One line. Opens a shell (and the drawer) if there isn't one."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "The command, one line, for the kind of shell it goes to." },
+                    "shell": shell_arg,
+                    "shell_type": kind_arg,
+                    "new_shell": { "type": "boolean", "description": "Type it into a new shell (a new tab) instead." },
+                },
+                "required": ["command"],
+                "additionalProperties": false,
+            },
+            "annotations": in_turn,
+        },
+        {
+            "name": "terminal_run",
+            "description": concat!(
+                "Run a command in the user's terminal for this conversation (the shell drawer of your chat in C-Bot: PowerShell or Git Bash, in your project folder) and get its output. The user sees it typed and run. ",
+                "It waits until the prompt comes back or the wait runs out; a command still going then (a dev server, a watcher) keeps running there, and terminal_read checks on it later. Use new_shell for something long-running, so the other shells stay free. ",
+                "Use it when the user wants something run in their terminal, or for things that should keep running where they can see them; for quick checks of your own, your usual tools are fine."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "The command, for the kind of shell it goes to. Several lines run one after another." },
+                    "shell": shell_arg,
+                    "shell_type": kind_arg,
+                    "new_shell": { "type": "boolean", "description": "Run it in a new shell (a new tab) instead." },
+                    "wait": { "type": "number", "description": "Seconds to wait for it to finish (default 15, up to 300)." },
+                },
+                "required": ["command"],
+                "additionalProperties": false,
+            },
+            "annotations": in_turn,
+        },
     ])
 }
 
@@ -198,6 +262,7 @@ struct Server {
     port: String,
     token: String,
     robot: String,
+    tab: String, // (the conversation it serves: its chat tab; '' from a config written before)
     out: Mutex<std::io::Stdout>,
     open: Mutex<HashMap<String, TcpStream>>, // JSON-RPC id -> its line to the app (to hang up on)
 }
@@ -218,7 +283,7 @@ impl Server {
         if let Ok(clone) = sock.try_clone() {
             self.open.lock().unwrap_or_else(|e| e.into_inner()).insert(key_of(id), clone);
         }
-        let request = json!({ "token": self.token, "from": self.robot, "tool": tool, "args": args });
+        let request = json!({ "token": self.token, "from": self.robot, "tab": self.tab, "tool": tool, "args": args });
         let answer = (|| {
             if writeln!(sock, "{request}").and_then(|_| sock.flush()).is_err() {
                 return fail("C-Bot closed the line before answering.".into());
@@ -235,19 +300,20 @@ impl Server {
     }
 }
 
-/// `c-bot.exe --robots-mcp <robot id> <port>`: serve the tools on stdin/stdout until
+/// `c-bot.exe --robots-mcp <robot id> <port> [<chat tab id>]`: serve the tools on stdin/stdout until
 /// Claude Code closes stdin. Returns the exit code, or None when it's an ordinary launch.
 pub fn run_if_asked() -> Option<i32> {
     let args: Vec<String> = std::env::args().collect();
     let at = args.iter().position(|a| a == FLAG)?;
     let (Some(robot), Some(port)) = (args.get(at + 1), args.get(at + 2)) else {
-        eprintln!("usage: c-bot --robots-mcp <robot id> <port>");
+        eprintln!("usage: c-bot --robots-mcp <robot id> <port> [<chat tab id>]");
         return Some(2);
     };
     let server = Arc::new(Server {
         port: port.clone(),
         token: std::env::var("CBOT_TOKEN").unwrap_or_default(),
         robot: robot.clone(),
+        tab: args.get(at + 3).cloned().unwrap_or_default(),
         out: Mutex::new(std::io::stdout()),
         open: Mutex::new(HashMap::new()),
     });
@@ -295,11 +361,13 @@ mod tests {
     }
 
     #[test]
-    fn it_lists_the_tools_all_read_only() {
+    fn it_lists_the_tools_read_only_but_typing_in_a_shell() {
         let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": "a", "method": "tools/list" })) else { panic!() };
-        let names: Vec<&str> = r["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["list_robots", "ask_robot", "hand_off_task", "list_words", "save_words", "list_notes", "add_note"]);
-        assert!(r["result"]["tools"].as_array().unwrap().iter().all(|t| t["annotations"]["readOnlyHint"] == true));
+        let tools = r["result"]["tools"].as_array().unwrap();
+        let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(names, ["list_robots", "ask_robot", "hand_off_task", "list_words", "save_words", "list_notes", "add_note", "terminal_read", "terminal_type", "terminal_run"]);
+        let read_only: Vec<&str> = tools.iter().filter(|t| t["annotations"]["readOnlyHint"] == true).map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(read_only, names[..8]);
     }
 
     #[test]

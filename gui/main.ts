@@ -9,6 +9,7 @@ const VIEWS: Record<string, () => Promise<unknown>> = {
   card: () => import('./views/card/card'),
   drone: () => import('./views/drone/drone'),
   groupchat: () => import('./views/groupchat/groupchat'),
+  island: () => import('./views/island/island'),
   manager: () => import('./views/manager/manager'),
   meeting: () => import('./views/meeting/meeting'),
   notebook: () => import('./views/notebook/notebook'),
@@ -17,6 +18,7 @@ const VIEWS: Record<string, () => Promise<unknown>> = {
   quick: () => import('./views/quick/quick'),
   robot: () => import('./views/robot/robot'),
   snip: () => import('./views/snip/snip'),
+  stage: () => import('./views/stage/stage'),
   walker: () => import('./views/walker/walker'),
   words: () => import('./views/words/words'),
 };

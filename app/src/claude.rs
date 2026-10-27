@@ -133,6 +133,7 @@ pub fn describe_tool(name: &str, input: &Value) -> String {
             short(&words.join(", "), 48)
         }
         "mcp__cbot__add_note" => short(s(input, "text"), 48),
+        "mcp__cbot__terminal_type" | "mcp__cbot__terminal_run" => short(s(input, "command"), 48),
         _ => String::new(),
     }
 }

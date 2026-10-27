@@ -17,9 +17,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 const EVERY: Duration = Duration::from_secs(2);
 
 /// The windows that float over everything: the robots, the ones out walking, the word
-/// card, the notebook and Quick actions.
+/// card, the notebook, Quick actions and the robot island.
 fn floats(label: &str) -> bool {
-    label.starts_with("robot-") || label.starts_with("walker-") || matches!(label, "card" | "notebook" | "quick")
+    label.starts_with("robot-") || label.starts_with("walker-") || matches!(label, "card" | "notebook" | "quick" | "island")
 }
 
 fn restore(hwnd: isize) {

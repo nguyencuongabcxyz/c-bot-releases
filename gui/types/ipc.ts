@@ -37,6 +37,24 @@ export type RobotInit = {
 
 export type AskResult = OkOr<{ turnId: string; queued: boolean }>;
 
+/** What a robot hears about the stage (stage.rs): picked for it (its number), a message
+ * sent to everyone on it, a tile being dragged over it to swap places. */
+export type StageEvent =
+  | { kind: 'pick'; n: number | null }
+  | { kind: 'ask'; prompt: string; paths: string[]; to: string[]; all: boolean }
+  | { kind: 'target'; on: boolean };
+
+/** The stage's bar (gui/views/stage): picking (a pill) or on stage (the bar along the bottom). */
+export type StageState = {
+  mode: 'pick' | 'stage';
+  picked: string[];
+  cast: string[];
+  off: string[];
+  spot: string | null;
+  room: number;
+  robots: IslandRobot[];
+};
+
 /** The action palette's menu (main palette.js view). */
 export type PaletteItem = { heading: string } | { id: string; icon: string; label: string; hint?: string };
 export type PaletteView = { text: string; source: string; items: PaletteItem[]; projected: boolean };
@@ -45,6 +63,29 @@ export type PaletteView = { text: string; source: string; items: PaletteItem[]; 
 export type SocialReport =
   | { awake: boolean; busy: boolean; chat: boolean; idleMs: number; free: boolean; away: boolean; wanders: boolean }
   | { kind: 'done' | 'slept' | 'decline' | 'plane-read' };
+
+/** How a robot is, for the robot island (island.rs): awake, busy and at what since when
+ * (ms), a question waiting for you. */
+export type IslandReport = { awake: boolean; busy: boolean; text: string; since: number | null; asking: boolean };
+/** News from a robot that's away on the island: a job done, a snag, a question (from its
+ * page); a word it dreamt of, a word it's quizzing you on, your daily notes (from main). */
+export type IslandNews = { kind: 'done' | 'error' | 'ask' | 'word' | 'quiz' | 'notes'; text: string };
+export type IslandEdge = 'top' | 'bottom' | 'left' | 'right';
+/** A robot as the island shows it: closed (put away, its window shut), away (sent to the
+ * island, or closed), out for a walk; the rest as it last said (null: it hasn't). */
+export type IslandRobot = {
+  id: string;
+  name: string;
+  color: string;
+  closed: boolean;
+  away: boolean;
+  walking: boolean;
+  awake: boolean | null;
+  busy: boolean | null;
+  text: string | null;
+  since: number | null;
+  asking: boolean | null;
+};
 
 /** The drone flying the action palette over (main drone.js); points are in its window. */
 export type DroneCmd =
@@ -65,6 +106,7 @@ export interface Events {
   'robot:character': RobotView;
   'robot:settings': Settings;
   'robot:action': string;
+  'robot:stage': StageEvent;
   'robot:hush': boolean;
   'robot:screen': { file: FileInfo; source: string };
   'robot:tasks': LinkTask[];
@@ -75,6 +117,10 @@ export interface Events {
   'robot:palette': { phase: 'launch' };
   'robot:social': SocialEvent;
   'robot:link': LinkEvent;
+  // (its shell, shell.rs: what it printed, or that it ended)
+  'robot:shell': { sid: number; kind: 'data'; data: string } | { sid: number; kind: 'exit'; code: number };
+  // (its Claude, in the shells of its conversation tab: a terminal_* tool call; wait: seconds, for terminal_run)
+  'robot:shell-ask': { req: number; tool: string; tab: string; args: { command?: string; shell?: number; shell_type?: string; new_shell?: boolean; lines?: number }; wait: number };
   // ---- the other windows
   'mgr:changed': void;
   'mgr:focus': string;
@@ -96,5 +142,10 @@ export interface Events {
   'groupchat:delta': P.GroupChatDelta;
   'meeting:state': P.MeetingState;
   'meeting:say': P.MeetingSay;
+  'island:robots': IslandRobot[];
+  'stage:state': StageState;
+  'island:hover': boolean;
+  'island:edge': { edge: IslandEdge; dragging: boolean };
+  'island:news': IslandNews & { id: string };
 }
 

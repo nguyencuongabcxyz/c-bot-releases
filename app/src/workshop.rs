@@ -77,6 +77,7 @@ pub fn notify(app: &AppHandle) {
     if app.get_webview_window(LABEL).is_some() {
         let _ = app.emit_to(LABEL, "mgr:changed", ());
     }
+    crate::island::changed(app); // (a robot made, deleted, put away or out; the island turned on or off)
 }
 
 // ---------------------------------------------------------------- what it asks

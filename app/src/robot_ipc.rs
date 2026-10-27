@@ -10,7 +10,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::robots::sender;
 use crate::util::patch;
-use crate::{chat, files, hub, notes, personalities, robots, store, vocab, with};
+use crate::{chat, files, hub, notes, personalities, robotlink, robots, shell, store, vocab, with};
 
 const TOO_MANY_TABS: &str = "That's the most tabs I can juggle!";
 
@@ -20,6 +20,7 @@ type Answer = Result<Value, String>;
 #[tauri::command(async)]
 pub fn robot_init(app: AppHandle, window: WebviewWindow) -> Answer {
     let id = sender(&window)?;
+    shell::close(&app, &id); // (a page loaded afresh has no drawer showing the old one)
     let (character, settings) = with(&app, |st| (st.store.get(&id).map(|c| robots::view(st, c)), st.store.settings().clone()));
     Ok(json!({
         "character": character,
@@ -124,6 +125,8 @@ pub fn robot_tab_close(app: AppHandle, window: WebviewWindow, tab_id: String) ->
     }
     let closing = with(&app, |st| st.store.tab(&id, &tab_id).cloned());
     chat::close(&app, &id, &tab_id);
+    shell::close_tab(&app, &id, &tab_id); // (its shells go with it)
+    robotlink::forget_tab(&app, &id, &tab_id);
     if let Some(tab) = closing.filter(|t| t["temporary"] == true) {
         chat::erase_temporary(&app, &id, &tab);
     }
@@ -187,16 +190,16 @@ pub fn robot_commands(app: AppHandle, window: WebviewWindow) -> Answer {
 // ---------------------------------------------------------------- the chat
 
 #[tauri::command(async)]
-pub fn robot_ask(app: AppHandle, window: WebviewWindow, tab_id: String, prompt: String, attachments: Vec<String>, turn_id: Option<String>, kind: Option<String>) -> Answer {
+pub fn robot_ask(app: AppHandle, window: WebviewWindow, tab_id: String, prompt: String, attachments: Vec<String>, turn_id: Option<String>, kind: Option<String>, tag: Option<String>) -> Answer {
     let attachments: Vec<Value> = attachments.into_iter().map(Value::from).collect();
     let turn_id = turn_id.filter(|t| !t.is_empty());
     let kind = if kind.as_deref() == Some("bonk") { "bonk" } else { "chat" };
-    Ok(chat::ask(&app, &sender(&window)?, &tab_id, prompt.trim(), &attachments, turn_id, kind))
+    Ok(chat::ask(&app, &sender(&window)?, &tab_id, prompt.trim(), &attachments, turn_id, kind, tag.as_deref()))
 }
 
 #[tauri::command(async)]
 pub fn robot_compact(app: AppHandle, window: WebviewWindow, tab_id: String, turn_id: String) -> Answer {
-    Ok(chat::ask(&app, &sender(&window)?, &tab_id, "/compact", &[], Some(turn_id), "compact"))
+    Ok(chat::ask(&app, &sender(&window)?, &tab_id, "/compact", &[], Some(turn_id), "compact", None))
 }
 
 #[tauri::command(async)]

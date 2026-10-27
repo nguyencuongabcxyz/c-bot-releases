@@ -40,6 +40,8 @@ Ask one robot to ask another (*"Ask Sunny which port her API runs on"*) or to ha
 
 ![A robot group chat](docs/screenshots/group-chat.png)
 
+To work with several robots at once, put them **▦ on stage**: Ctrl+click the robots (or tick them in the tray's *Arrange on stage*), then *Take the stage*. Their chats tile the screen like windows: drag the gaps between them to resize (the neighbours give way), drag a title bar onto another to swap, or spotlight one. The bar along the bottom sends one message to all of them, and each answers from its own project.
+
 ### Everyday helpers
 
 Your robots help outside the code too, in any app. Remember one hotkey, **Ctrl+Alt+C**: it opens a menu of everything below.
@@ -132,6 +134,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
     robots_mcp.rs     the MCP server robots use to ask each other
     robotlink.rs      delivers those messages between robots
     groupchat.rs      group chats and the meeting room window
+    stage.rs          several robots' chats tiled over a screen, and "send to all"
+    island.rs         the robot island at the screen's edge; shell.rs shells in the chat
     quick.rs          quick actions; capture.rs grabs selections, hub.rs the hotkeys
     vocab.rs          English words; notes.rs notes and reminders
     walkers.rs        robots away from their desks (with social.rs, maid.rs)

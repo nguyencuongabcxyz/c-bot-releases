@@ -17,7 +17,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::store::title_for;
 use crate::win::{self, Rect};
-use crate::{chat, revive, terminal, views, walkers, with, State};
+use crate::{chat, island, revive, shell, stage, terminal, views, walkers, with, State};
 
 // Robot window sizes (CSS px). Each robot can be smaller or bigger (the Workshop's "Size").
 const ROBOT: (f64, f64) = (300.0, 290.0);
@@ -28,10 +28,6 @@ const CHAT_MIN: f64 = 360.0;
 // Awake with the chat tucked away: room above the robot (below it, at the top of the
 // screen) for the status bubble and its speech bubble, so neither covers the desk.
 const TUCK_STRIP: f64 = 116.0;
-// Peeking: hidden away at the screen's edge (bottom, or top if it sits in the top half),
-// only its head poking out, in a window this small (CSS px, at the normal size; room for a
-// tall hat). Click it to bring it back.
-const PEEK: (f64, f64) = (120.0, 130.0);
 // how often the cursor is looked at (eyes follow it every other look)
 const CURSOR_POLL: Duration = Duration::from_millis(33);
 
@@ -69,7 +65,8 @@ pub struct Robot {
     dims: (f64, f64),    // its size (CSS px)
     pub expanded: bool,  // the chat is open
     pub tucked: bool,    // awake with the chat put away
-    pub peek: bool,      // hidden at the screen's edge, peeking out
+    pub peek: bool,      // sent away to the island (island.rs): its window veiled, its page still at work
+    veiled: bool,        // (its window is, now)
     chat_w: f64,         // how wide you made the chat (CSS px)
     drag: Option<Drag>,
     resize_from: Option<f64>,
@@ -78,6 +75,14 @@ pub struct Robot {
     through: bool,                 // clicks pass through the window
     forwarded: Option<(i32, i32)>, // the cursor, as last passed on to the page
     eyes: Option<(i32, i32)>,      // the cursor, as last told for the eyes
+    stage: Option<StageTile>,      // on the stage (stage.rs): its window is this tile
+}
+
+/// A robot's tile on the stage: its window (physical px), and what the page needs to know
+/// about it (which edges are gaps to drag; in the spotlight, or a strip beside it).
+pub struct StageTile {
+    pub rect: Rect,
+    pub info: Value,
 }
 
 #[derive(Clone)]
@@ -132,19 +137,10 @@ fn layout_for(anchor: (i32, i32), expanded: bool, tucked: bool, peek: bool, chat
     let css = |v: i32| (v as f64 / s).round();
     let bounds_msg = |b: Rect| json!({ "x": css(b.x), "y": css(b.y), "width": css(b.w), "height": css(b.h) });
     if peek && !expanded && !tucked {
-        // A little window on the nearest edge (top or bottom), under the middle of its box.
-        // robotX/Y: where its box would be, so the page can still turn robot:cursor into
-        // where the mouse is from here (its eyes follow it).
-        let wa = m.work;
-        let k = dims.0 / ROBOT.0; // (its size: the head is as big as at its desk)
-        let (pw, ph) = ((PEEK.0 * k * s).round() as i32, (PEEK.1 * k * s).round() as i32);
-        let top = anchor.1 + dh / 2 < wa.y + wa.h / 2;
-        let x = (anchor.0 + dw / 2 - pw / 2).max(wa.x).min(wa.right() - pw);
-        let y = if top { wa.y } else { wa.bottom() - ph };
-        let bounds = Rect { x, y, w: pw, h: ph };
-        let placement = if top { "peek-top" } else { "peek-bottom" };
-        let msg = json!({ "bounds": bounds_msg(bounds), "robotX": css(anchor.0 - x), "robotY": css(anchor.1 - y), "placement": placement });
-        return Layout { bounds, placement, panel_w: 0.0, max_chat_w: CHAT_W, msg: msg.as_object().unwrap().clone() };
+        // Sent away to the island: asleep-sized at its desk, its window veiled (apply_layout)
+        let bounds = Rect { x: anchor.0, y: anchor.1, w: dw, h: dh };
+        let msg = json!({ "bounds": bounds_msg(bounds), "robotX": 0, "robotY": 0, "placement": "hidden" });
+        return Layout { bounds, placement: "hidden", panel_w: 0.0, max_chat_w: CHAT_W, msg: msg.as_object().unwrap().clone() };
     }
     if !expanded && tucked {
         // The chat put away keeps the window the size and place it has with the chat open
@@ -185,23 +181,50 @@ fn layout_for(anchor: (i32, i32), expanded: bool, tucked: bool, peek: bool, chat
     Layout { bounds, placement, panel_w: panel["w"].as_f64().unwrap(), max_chat_w, msg: msg.as_object().unwrap().clone() }
 }
 
-/// Lay the window out for how the robot is now (asleep, awake, chat open), and tell the page.
+/// On the stage: the window is its tile, the chat fills it (stage::INSET in from its edges),
+/// the robot itself hides (its face goes in the chat's title bar).
+fn stage_layout(t: &StageTile) -> Layout {
+    let b = t.rect;
+    let s = win::monitor_near(b.x + b.w / 2, b.y + b.h / 2).scale;
+    let css = |v: i32| (v as f64 / s).round();
+    let (w, inset) = (css(b.w), stage::INSET);
+    let panel_w = w - 2.0 * inset;
+    let msg = json!({
+        "bounds": { "x": css(b.x), "y": css(b.y), "width": w, "height": css(b.h) },
+        "robotX": 0, "robotY": 0, "placement": "stage",
+        "panel": { "x": inset, "w": panel_w }, "maxChatW": w,
+        "stage": t.info, "inset": inset,
+    });
+    Layout { bounds: b, placement: "stage", panel_w, max_chat_w: w, msg: msg.as_object().unwrap().clone() }
+}
+
+/// Lay the window out for how the robot is now (asleep, awake, chat open, sent away, on the
+/// stage), and tell the page.
 pub fn apply_layout(app: &AppHandle, id: &str) {
     let job = with(app, |st| {
         let r = st.robots.get_mut(id)?;
-        let layout = layout_for(r.anchor, r.expanded, r.tucked, r.peek, r.chat_w, r.dims);
+        let layout = match &r.stage {
+            Some(t) => stage_layout(t),
+            None => layout_for(r.anchor, r.expanded, r.tucked, r.peek, r.chat_w, r.dims),
+        };
         r.seq += 1;
         let mut msg = layout.msg.clone();
         msg.insert("expanded".into(), json!(r.expanded));
         msg.insert("seq".into(), json!(r.seq));
         msg.insert("masked".into(), json!(false));
         let bounds = layout.bounds;
+        let hide = layout.placement == "hidden";
+        let veil = (hide != r.veiled).then_some(hide);
+        r.veiled = hide;
         r.layout = Some(layout);
-        Some((r.hwnd, msg, bounds))
+        Some((r.hwnd, msg, bounds, veil))
     });
-    let Some((hwnd, msg, bounds)) = job else { return };
+    let Some((hwnd, msg, bounds, veil)) = job else { return };
     let _ = app.emit_to(label_of(id), "robot:layout", msg);
     win::set_bounds(hwnd, bounds);
+    if let Some(hide) = veil {
+        walkers::veil(app, hwnd, hide);
+    }
 }
 
 // ---------------------------------------------------------------- the window
@@ -240,6 +263,7 @@ pub fn send_character(app: &AppHandle, id: &str) {
     if let Some(c) = with(app, |st| st.store.get(id).map(|c| view(st, c))) {
         let _ = app.emit_to(label_of(id), "robot:character", c);
     }
+    island::changed(app); // (a new name or paint)
 }
 
 pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
@@ -267,11 +291,18 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
     let (_, w, h) = place(anchor, dims);
     win::set_bounds(hwnd, Rect { x: anchor.0, y: anchor.1, w, h });
     let chat_w = c["chatWidth"].as_f64().unwrap_or(CHAT_W);
-    let peek = c["peek"].as_bool().unwrap_or(false); // (the page lays it out so as it starts)
+    // (away on the island: veiled from the start; with the island turned off, out on its desk)
+    let peek = c["peek"].as_bool().unwrap_or(false) && island::on(app);
+    if !peek && c["peek"].as_bool() == Some(true) {
+        with(app, |st| st.store.update(id, crate::util::patch(vec![("peek", json!(false))])));
+    }
+    if peek {
+        walkers::veil(app, hwnd, true);
+    }
     with(app, |st| {
         st.robots.insert(id.to_string(), Robot {
-            hwnd, anchor, dims, expanded: false, tucked: false, peek, chat_w, drag: None, resize_from: None, layout: None, seq: 0,
-            through: false, forwarded: None, eyes: None,
+            hwnd, anchor, dims, expanded: false, tucked: false, peek, veiled: peek, chat_w, drag: None, resize_from: None, layout: None, seq: 0,
+            through: false, forwarded: None, eyes: None, stage: None,
         })
     });
     revive::watch(app, &win, id);
@@ -289,9 +320,13 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
             if mine {
                 revive::forget(&app2, &id2);
                 walkers::close(&app2, &id2); // (put away while out for a walk: the walker goes too)
+                shell::close(&app2, &id2); // (and the shell in its chat)
+                stage::gone(&app2, &id2);
+                island::gone(&app2, &id2);
             }
         }
     });
+    island::changed(app);
     Ok(())
 }
 
@@ -305,10 +340,11 @@ pub fn expand(app: &AppHandle, id: &str, expanded: bool, opts: &Value) {
         let r = st.robots.get_mut(id)?;
         r.expanded = expanded;
         r.tucked = !expanded && tucked;
-        Some(())
+        Some(r.stage.is_some())
     });
-    if found.is_none() {
-        return;
+    let Some(staged) = found else { return };
+    if staged && !expanded {
+        return stage::leave(app, id); // (gone to sleep on the stage: off it, back to its desk)
     }
     apply_layout(app, id);
     if expanded && focus && let Some(w) = app.get_webview_window(&label_of(id)) {
@@ -316,8 +352,8 @@ pub fn expand(app: &AppHandle, id: &str, expanded: bool, opts: &Value) {
     }
 }
 
-/// Hidden at the screen's edge, peeking out (or back at its desk). Remembered, so it
-/// stays hidden after a restart.
+/// Sent away to the island (or back at its desk). Remembered, so it stays away after a
+/// restart.
 pub fn set_peek(app: &AppHandle, id: &str, peek: bool) {
     let found = with(app, |st| {
         let r = st.robots.get_mut(id)?;
@@ -325,7 +361,11 @@ pub fn set_peek(app: &AppHandle, id: &str, peek: bool) {
         st.store.update(id, crate::util::patch(vec![("peek", json!(peek))]))
     });
     if found.is_some() {
+        if peek {
+            stage::leave(app, id); // (sent away from the stage: off it first)
+        }
         apply_layout(app, id);
+        island::changed(app);
     }
 }
 
@@ -335,7 +375,7 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
     let dy = p["dy"].as_f64().unwrap_or(0.0);
     match p["phase"].as_str() {
         Some("start") => with(app, |st| {
-            if let Some(r) = st.robots.get_mut(id) {
+            if let Some(r) = st.robots.get_mut(id).filter(|r| r.stage.is_none()) {
                 let at = win::window_rect(r.hwnd);
                 r.drag = Some(Drag { anchor: r.anchor, at: (at.x, at.y) });
             }
@@ -375,7 +415,7 @@ pub fn resize(app: &AppHandle, id: &str, p: &Value) {
     let dx = p["dx"].as_f64().unwrap_or(0.0);
     let relayout = with(app, |st| {
         let r = st.robots.get_mut(id)?;
-        if !r.expanded {
+        if !r.expanded || r.stage.is_some() {
             return None;
         }
         match p["phase"].as_str()? {
@@ -470,6 +510,7 @@ pub fn watch_cursor(app: AppHandle) {
             }
             // robots out for a walk follow the mouse too (and a walker can walk under a still one)
             walkers::cursor(&app, (cx, cy));
+            island::cursor(&app, (cx, cy)); // (hovered, or dragged round the edges)
         }
     });
 }
@@ -495,10 +536,15 @@ pub fn open_ids(app: &AppHandle) -> Vec<String> {
     with(app, |st| st.robots.keys().cloned().collect())
 }
 
-/// Out on the desktop at its desk: its window showing, not hidden away peeking from the edge
+/// Out on the desktop at its desk: its window showing, not sent away to the island
 /// (so visitors, the housemaid and word quizzes leave it be).
 pub fn is_showing(app: &AppHandle, id: &str) -> bool {
     with(app, |st| st.robots.get(id).map(|r| (r.hwnd, r.peek))).is_some_and(|(hwnd, peek)| !peek && win::is_visible(hwnd))
+}
+
+/// Sent away to the island (its window veiled)?
+pub fn is_away(app: &AppHandle, id: &str) -> bool {
+    with(app, |st| st.robots.get(id).is_some_and(|r| r.peek))
 }
 
 /// Is the chat open (or awake with it tucked away)?
@@ -543,4 +589,17 @@ pub fn refit(app: &AppHandle) {
     for id in ids {
         apply_layout(app, &id);
     }
+    stage::refit(app);
+}
+
+/// Onto the stage as this tile, or (none) back to its desk.
+pub fn set_tile(app: &AppHandle, id: &str, tile: Option<StageTile>) {
+    if with(app, |st| st.robots.get_mut(id).map(|r| r.stage = tile)).is_some() {
+        apply_layout(app, id);
+    }
+}
+
+/// Off the stage, its window left where it is till it's next laid out (stage::exit).
+pub fn clear_tile(app: &AppHandle, id: &str) {
+    with(app, |st| st.robots.get_mut(id).map(|r| r.stage = None));
 }
