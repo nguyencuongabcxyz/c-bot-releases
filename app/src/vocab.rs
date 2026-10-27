@@ -173,15 +173,13 @@ fn sleeping_robot(app: &AppHandle) -> Option<String> {
         .or_else(|| away_robot(app, &tutor)) // (all away on the island: it dreams from there)
 }
 
-/// Where a card goes for this robot: as big as its chat (card.rs chat_bounds). None for a
-/// robot away on the island (the card goes beside the island: card_spot).
+/// Where a card goes for this robot: as big as its chat (card.rs chat_bounds), beside its
+/// desk, or beside the robot island it's away on (as big all the same: the full card).
 fn card_bounds(app: &AppHandle, id: Option<&str>) -> Option<Rect> {
     let id = id?;
-    if robots::is_away(app, id) {
-        return None;
-    }
-    let desk = robots::desk_rect(app, id)?;
-    let chat_open = with(app, |st| st.robots.get(id).is_some_and(|r| r.expanded));
+    let away = robots::is_away(app, id).then(|| crate::island::strip_rect(app)).flatten();
+    let desk = away.or_else(|| robots::desk_rect(app, id))?;
+    let chat_open = away.is_none() && with(app, |st| st.robots.get(id).is_some_and(|r| r.expanded));
     let m = win::monitor_near(desk.x + desk.w / 2, desk.y + desk.h / 2);
     Some(card::chat_bounds(desk, m.work, m.scale, chat_open))
 }
