@@ -9,6 +9,7 @@ import { ShellDrawer } from './chat/shell';
 import { dressCode } from './chat/code';
 import { fileIcon as viewIcon, renderFileView } from './chat/fileview';
 import { collectOutputs, renderOutputsPanel, renderOutputsStrip } from './chat/outputs';
+import { SideQuestions } from './chat/sides';
 import { tooltips } from './chat/tips';
 import { stepSummary, tokens as fmtTokens } from './chat/steps';
 import { codeBlock, link, prefixLines, transform, TRANSFORMS, wrap } from './chat/format';
@@ -218,6 +219,7 @@ type RobotState = {
 
 showView(markup, { title: 'C-Bot', bodyClass: 'asleep' });
 tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons say what they do)
+tooltips(document.querySelector<HTMLElement>('#side-panel')!);
 
 (() => {
   // (the view's elements: always in its markup, robot.html)
@@ -617,7 +619,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       if (h.role === 'qa') addQaSummary(h.items, tab);
       else if (h.role === 'note') addNote(h.text, '', tab);
       else if (h.role === 'user') addUser(h.text, h.files, tab, h.tag);
-      else addBot(h.interrupted ? `${h.text || ''}\n\n_…(stopped)_` : h.text, { error: h.isError, denials: h.denials, tools: h.tools, asides: h.asides, edits: h.edits, apps: h.apps, images: h.images, tab });
+      else sides.attach(addBot(h.interrupted ? `${h.text || ''}\n\n_…(stopped)_` : h.text, { error: h.isError, denials: h.denials, tools: h.tools, asides: h.asides, edits: h.edits, apps: h.apps, images: h.images, tab }), h.at, tab);
     }
   }
 
@@ -1669,6 +1671,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   }
 
   function onEvent(ev: RobotEvent) {
+    if (ev.type === 'side') return sides.onEvent(ev); // (a side question's answer: chat/sides.ts)
     const tab = tabs.get(ev.tabId);
     if (!tab) return;
     const cur = tab.current;
@@ -1938,6 +1941,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
           if (done.el.isConnected) {
             rawText.set(done.el, done.asked ? done.text.slice(done.offset || 0) : done.text || ev.text);
             msgActions(done.el, 'bot', tab);
+            sides.attach(done.el, ev.at, tab); // (side questions about it go under it)
           }
           if (tab.vocabWord && !ev.isError) done.el.appendChild(saveWordChip(tab.vocabWord));
           tab.vocabWord = '';
@@ -2273,6 +2277,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
         if (answers[answers.length - 1] !== el) return showPop('Only the last answer can be asked again.', 1800);
         retry(tab);
       });
+      button('chat-ask', 'Side question', () => sides.start(el));
     }
     el.appendChild(bar);
   }
@@ -3876,6 +3881,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     if (prev !== next) cancelEdit(); // (an edit belongs to its tab)
     if (prev && prev !== next) prev.draft = input.value; // each tab keeps its half-typed message
     activeId = id;
+    sides.tabShown(id); // (the side panel holds another tab's thread: it shuts)
     for (const t of tabs.values()) t.log.hidden = t !== next;
     shell.switchTo(id); // (its own shells)
     if (next.status === 'done' || next.status === 'error') next.status = 'idle'; // read it
@@ -4375,6 +4381,23 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     if (e.code !== 'Backquote' || !e.ctrlKey || e.altKey) return;
     e.preventDefault();
     toggleShell({ another: e.shiftKey });
+  });
+
+  // ------------------------------------------------------------ side questions (chat/sides.ts)
+
+  const sides = SideQuestions({
+    md,
+    tabOf: (id) => tabs.get(id),
+    staged: () => staged,
+    // a side answer taken back to the conversation: into the box, to send (or not)
+    useInMain: (text) => {
+      const had = input.value.trimEnd();
+      input.value = had ? `${had}\n\n${text}` : text;
+      autosize();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    },
+    showPop,
   });
 
   // ------------------------------------------------------------ past conversations
@@ -5353,6 +5376,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       winH = l.bounds.height;
       placePanel(); // (its height, and the tail at the robot's head)
     }
+    sides.layout(l); // (the side panel open: it shares the panel's room)
     body.classList.toggle('expanded', l.expanded);
     body.classList.toggle('side-left', l.placement === 'left');
     body.classList.toggle('side-right', l.placement === 'right');

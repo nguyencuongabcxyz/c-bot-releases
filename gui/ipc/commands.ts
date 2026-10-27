@@ -23,6 +23,10 @@ export const robotSendNow = (tabId: string, turnId: string) => invoke<boolean>('
 export const robotAnswer = (tabId: string, requestId: string, answers: Record<string, string>, items: QAItem[]) => invoke<boolean>('robot_answer', { tabId, requestId, answers, items });
 // (edit the last question: back to before it; its words come back to edit)
 export const robotRewind = (tabId: string) => invoke<OkOr<{ text: string; files?: FileChip[] }>>('robot_rewind', { tabId });
+// (side questions: in a thread asked before, or a new one under the answer at `at`)
+export const robotSideAsk = (tabId: string, threadId: string | null, at: number | null, quote: string, text: string) => invoke<OkOr<{ threadId: string; turnId: string }>>('robot_side_ask', { tabId, threadId, at, quote, text });
+export const robotSideCancel = (tabId: string, threadId: string) => invoke<boolean>('robot_side_cancel', { tabId, threadId });
+export const robotSideRemove = (tabId: string, threadId: string) => invoke<boolean>('robot_side_remove', { tabId, threadId });
 export const robotBrain = (tabId: string) => invoke<{ models: ModelChoice[]; model: string; effort: string; context: ContextUse | null } | null>('robot_brain', { tabId });
 export const robotSetBrain = (tabId: string, patch: { model?: string; effort?: string }) => invoke<{ ok: boolean; error?: string }>('robot_set_brain', { tabId, patch });
 export const robotExpand = (expanded: boolean, opts?: { focus?: boolean; tucked?: boolean }) => invoke<void>('robot_expand', { expanded, opts });
@@ -147,6 +151,7 @@ export const stagePickFiles = () => invoke<FileInfo[]>('stage_pick_files');
 
 // ---- told, not asked: nothing comes back
 export const robotDrag = (step: { phase: 'start' | 'move' | 'end'; dx?: number; dy?: number }) => tell('robot_drag', { step });
+export const robotSideWidth = (width: number) => tell('robot_side_width', { width });
 export const robotResize = (step: { phase: 'start' | 'move' | 'end' | 'reset'; dx?: number }) => tell('robot_resize', { step });
 export const robotClickThrough = (through: boolean) => tell('robot_click_through', { through });
 export const robotAlive = (hidden: boolean) => tell('robot_alive', { hidden });

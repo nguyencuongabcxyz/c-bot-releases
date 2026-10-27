@@ -28,6 +28,7 @@ mod robots;
 mod robots_mcp;
 mod screens;
 mod shell;
+mod sidechat;
 mod snip;
 mod social;
 mod stage;
@@ -207,6 +208,10 @@ fn main() {
             robot_ipc::robot_set_brain,
             robot_ipc::robot_answer,
             robot_ipc::robot_rewind,
+            robot_ipc::robot_side_ask,
+            robot_ipc::robot_side_cancel,
+            robot_ipc::robot_side_remove,
+            robot_ipc::robot_side_width,
             robot_ipc::robot_pick_files,
             robot_ipc::robot_chat_height,
             robot_ipc::robot_sessions,

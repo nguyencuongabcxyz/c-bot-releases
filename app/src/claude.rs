@@ -491,6 +491,7 @@ pub struct Opts {
     pub allowed_tools: Vec<String>, // tools it may use without asking
     pub extra_args: Vec<String>,    // more command-line flags (the group chat's --strict-mcp-config)
     pub resume_at: Option<String>,  // the next start picks the conversation up after this message, as a new branch (an edited question)
+    pub fork: bool,                 // the next start picks the whole conversation up as a new branch (a side question, sidechat.rs)
     pub remote: Option<String>,     // Remote Control: on while set, under this name on claude.ai/code and in the Claude app
     pub remote_session: Option<String>, // and the remote session a new process picks up again (so it stays the same one there)
 }
@@ -823,6 +824,8 @@ impl Session {
         flag("--resume", i.session_id.as_deref().unwrap_or(""));
         // an edited question: the conversation carries on from before it, as a branch of its own
         let resume_at = i.opts.resume_at.take().filter(|_| i.session_id.is_some());
+        // (a branch until it has a conversation of its own: a start that fails first never carries on the one it branches off)
+        let fork = i.opts.fork && i.session_id.is_some();
         flag("--resume-session-at", resume_at.as_deref().unwrap_or(""));
         flag("--model", &o.model);
         flag("--effort", &o.effort);
@@ -844,7 +847,7 @@ impl Session {
         flag("--mcp-config", &o.mcp_config);
         flag("--allowedTools", &o.allowed_tools.join(","));
         args.extend(o.extra_args.iter().cloned());
-        if resume_at.is_some() {
+        if resume_at.is_some() || fork {
             args.push("--fork-session".into());
         }
 
@@ -1216,6 +1219,7 @@ impl Session {
         let sid = s(&msg, "session_id");
         if !sid.is_empty() && i.session_id.as_deref() != Some(sid) && i.turn.is_some() {
             i.session_id = Some(sid.to_string());
+            i.opts.fork = false; // (branched: from now on it carries on its own conversation)
             i.emit("session", json!(sid));
         }
         match ty {

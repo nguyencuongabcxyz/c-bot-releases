@@ -10,7 +10,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::robots::sender;
 use crate::util::patch;
-use crate::{chat, files, hub, notes, personalities, robotlink, robots, shell, store, vocab, with};
+use crate::{chat, files, hub, notes, personalities, robotlink, robots, shell, sidechat, store, vocab, with};
 
 const TOO_MANY_TABS: &str = "That's the most tabs I can juggle!";
 
@@ -248,6 +248,30 @@ pub fn robot_rewind(app: AppHandle, window: WebviewWindow, tab_id: String) -> An
     Ok(chat::rewind(&app, &sender(&window)?, &tab_id))
 }
 
+/// A side question about an answer (sidechat.rs): in a thread asked before, or a new one.
+#[tauri::command(async)]
+pub fn robot_side_ask(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: Option<String>, at: Option<f64>, quote: Option<String>, text: String) -> Answer {
+    let at = at.map(|a| a.round() as i64);
+    Ok(sidechat::ask(&app, &sender(&window)?, &tab_id, thread_id.as_deref(), at, quote.as_deref().unwrap_or(""), &text))
+}
+
+#[tauri::command(async)]
+pub fn robot_side_cancel(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: String) -> Result<bool, String> {
+    Ok(sidechat::cancel(&app, &sender(&window)?, &tab_id, &thread_id))
+}
+
+#[tauri::command(async)]
+pub fn robot_side_remove(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: String) -> Result<bool, String> {
+    Ok(sidechat::remove(&app, &sender(&window)?, &tab_id, &thread_id))
+}
+
+/// The side panel open beside the chat (its width, CSS px) or shut (0): the window makes room.
+#[tauri::command(async)]
+pub fn robot_side_width(app: AppHandle, window: WebviewWindow, width: f64) -> Result<(), String> {
+    robots::set_side_width(&app, &sender(&window)?, width);
+    Ok(())
+}
+
 /// Past conversations in its folder.
 #[tauri::command(async)]
 pub fn robot_sessions(app: AppHandle, window: WebviewWindow) -> Answer {
@@ -359,7 +383,9 @@ pub fn reset(app: &AppHandle, id: &str, tab_id: Option<&str>) {
             chat::remote(app, id, t, false); // (a fresh start: not on claude.ai any more)
         }
         chat::close(app, id, t);
-        let fresh = patch(vec![("sessionId", Value::Null), ("history", json!([])), ("title", json!("")), ("tasks", json!([])), ("context", Value::Null)]);
+        let sides = with(app, |st| st.store.tab(id, t).map(sidechat::sessions_of)).unwrap_or_default();
+        sidechat::forget(app, id, sides); // (its side questions start over too)
+        let fresh = patch(vec![("sessionId", Value::Null), ("history", json!([])), ("title", json!("")), ("tasks", json!([])), ("context", Value::Null), ("sides", json!([]))]);
         with(app, |st| st.store.update_tab(id, t, fresh));
     }
     if tab_id.is_none() {

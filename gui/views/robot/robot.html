@@ -106,6 +106,18 @@
   <div class="resize-grip-d" title="Drag to resize both ways (double-click: back to normal)" aria-hidden="true"></div>
 </section>
 
+<!-- A side question moved out beside the chat (chat/sides.ts) -->
+<aside id="side-panel" aria-label="Side questions">
+  <header>
+    <span class="sp-title">Side questions</span>
+    <span class="sp-sub">on this answer</span>
+    <span class="spacer"></span>
+    <button id="sp-inline" type="button" title="Back inline" data-icon="back">Back inline</button>
+    <button id="sp-close" type="button" title="Close" data-icon="x"></button>
+  </header>
+  <div id="sp-body"></div>
+</aside>
+
 <!-- While it works with the chat tucked away: what it's doing, and a way back in -->
 <div id="working" role="status" hidden>
   <span class="dots"><i></i><i></i><i></i></span>
