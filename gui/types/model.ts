@@ -138,7 +138,11 @@ export type HistoryEntry =
       at: number;
     }
   | { role: 'note'; text: string; at: number }
-  | { role: 'qa'; items: QAItem[]; at?: number };
+  | { role: 'qa'; items: QAItem[]; at?: number }
+  | PlanEntry;
+
+/** A plan Claude made in plan mode, and what you said to it: go ahead (in `mode`), or keep planning (`feedback`). */
+export type PlanEntry = { role: 'plan'; plan: string; approved: boolean; mode?: PermissionMode | null; feedback?: string; at?: number };
 
 export type Task = { id: string; subject: string; activeForm?: string; status: 'pending' | 'in_progress' | 'completed' | string };
 
@@ -262,7 +266,8 @@ export type TranscriptMessage =
   | { role: 'user'; text: string; at?: string }
   | { role: 'note'; text: string; at?: string }
   | { role: 'assistant'; text: string; tools: string[]; asides: string[]; at?: string }
-  | { role: 'qa'; items: QAItem[] };
+  | { role: 'qa'; items: QAItem[] }
+  | PlanEntry;
 
 export type Transcript = {
   id: string;
@@ -439,6 +444,8 @@ export type ChatEvent =
   | { type: 'status'; text: string }
   | { type: 'question'; requestId: string; questions: Question[] }
   | { type: 'request-cancelled'; requestId: string }
+  | { type: 'plan'; requestId: string; plan: string; file: string }
+  | { type: 'mode'; mode: PermissionMode }
   | { type: 'thinking-text'; id: string; delta: string }
   | { type: 'usage'; outputTokens: number }
   | { type: 'tool'; id: string; name: string; detail: string; args: unknown }

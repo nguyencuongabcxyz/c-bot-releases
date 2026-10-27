@@ -206,6 +206,7 @@ fn main() {
             robot_ipc::robot_brain,
             robot_ipc::robot_set_brain,
             robot_ipc::robot_answer,
+            robot_ipc::robot_plan,
             robot_ipc::robot_rewind,
             robot_ipc::robot_pick_files,
             robot_ipc::robot_chat_height,

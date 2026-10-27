@@ -9,6 +9,7 @@ import { ShellDrawer } from './chat/shell';
 import { dressCode } from './chat/code';
 import { fileIcon as viewIcon, renderFileView } from './chat/fileview';
 import { collectOutputs, renderOutputsPanel, renderOutputsStrip } from './chat/outputs';
+import { GO_LABEL, MODES, planNotes, planSummary } from './chat/plan';
 import { tooltips } from './chat/tips';
 import { stepSummary, tokens as fmtTokens } from './chat/steps';
 import { codeBlock, link, prefixLines, transform, TRANSFORMS, wrap } from './chat/format';
@@ -36,6 +37,7 @@ import type {
   NotesBoard,
   NotesEvent,
   NotesReminder,
+  PermissionMode,
   Personality,
   Point,
   QAItem,
@@ -104,7 +106,7 @@ type PaletteFile = { kind: 'file'; rel: string; dir: boolean };
 type Queued = { turnId: string; el: HTMLElement; ask: Ask };
 
 /** Claude's question card, waiting for your answer. */
-type PendingQuestion = { sent: boolean; card: HTMLElement; requestId?: string; typed(text: string): void; pickByNumber(n: number): void };
+type PendingQuestion = { sent: boolean; card: HTMLElement; requestId?: string; closed?: string; typed(text: string): void; pickByNumber(n: number): void };
 
 /** A step it took, as its chip shows it (live, or kept with the answer). */
 type ToolCall = Omit<StepCall, 'at'> & { at?: number; running: boolean };
@@ -149,6 +151,8 @@ type ChatTab = {
   context?: ContextUse | null;
   model?: string;
   effort?: string;
+  mode?: PermissionMode; // its permission mode (plan mode while it plans)
+  canBypass?: boolean; // (the robot may be switched to full access: the Workshop's choice)
   verbs?: number;
   renderQueued?: boolean;
   calls?: Map<string, ToolCall>;
@@ -615,6 +619,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     if (tab.data?.temporary) addNote('🕶️ Temporary chat: nothing here is kept. It’s gone, Claude Code’s transcript too, when you close this tab.', 'temp-note', tab);
     for (const h of (tab.data.history || []).slice(-30)) {
       if (h.role === 'qa') addQaSummary(h.items, tab);
+      else if (h.role === 'plan') tab.log.appendChild(planSummary(md, h));
       else if (h.role === 'note') addNote(h.text, '', tab);
       else if (h.role === 'user') addUser(h.text, h.files, tab, h.tag);
       else addBot(h.interrupted ? `${h.text || ''}\n\n_…(stopped)_` : h.text, { error: h.isError, denials: h.denials, tools: h.tools, asides: h.asides, edits: h.edits, apps: h.apps, images: h.images, tab });
@@ -1893,6 +1898,19 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
         askUser(ev, tab);
         break;
 
+      case 'plan':
+        reviewPlan(ev, tab);
+        break;
+
+      // it went into plan mode by itself, a plan was approved, or the Workshop changed its permissions
+      case 'mode':
+        if (!tab.busy) loadBrain(tab); // (and whether full access is on offer now)
+        if (ev.mode === tab.mode) break;
+        tab.mode = ev.mode;
+        if (ev.mode === 'plan' && tab.busy) addNote('📋 I switched to plan mode to think this through first. Nothing changes until you approve.', '', tab);
+        if (tab === active()) renderBrain();
+        break;
+
       case 'aside':
         if (cur) asideRow(cur).appendChild(asideChip(ev.text));
         if (!show) break;
@@ -2373,6 +2391,12 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       q.pickByNumber(Number(e.key));
       return;
     }
+    // Shift+Tab: the next permission mode (plan mode among them), as in Claude Code
+    if (e.key === 'Tab' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      cycleMode();
+      return;
+    }
     // formatting keys, as in an editor
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const k = e.key.toLowerCase();
@@ -2695,27 +2719,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
         Icon.text(card.querySelector('.q-title')!, '✋ Too late, that question has closed');
         return;
       }
-      tab.question = null;
-      if (!pendingQuestion()) {
-        body.classList.remove('has-badge');
-        $('#badge').textContent = '!';
-      }
-      Sfx.key.send();
-      express('happy', 'smile', 1400);
-      showPop(pick(['Got it!', 'Thanks!', 'Noted!', 'Roger that!']), 1500);
-      tab.activity = 'think';
-      if (animates(tab)) setActivity('think');
-      setTabStatus(tab, `${pick(THINKING_VERBS)}…`);
-      renderTabs();
-      // the rest of the answer streams into a fresh bubble below the card
-      if (tab.current) {
-        const el = document.createElement('div');
-        el.className = 'msg bot';
-        tab.log.appendChild(el);
-        moveReply(tab.current, el, tab.current.text.length);
-      }
-      scrollDown(tab);
-      input.focus();
+      handDown(tab, pick(['Got it!', 'Thanks!', 'Noted!', 'Roger that!']));
     }
 
     const pending: PendingQuestion = {
@@ -2743,16 +2747,24 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     tab.log.appendChild(card);
     refresh();
     scrollDown(tab);
+    handUp(tab, card, {
+      status: 'Waiting for your answer',
+      news: questions[0]?.question || 'It has a question for you.',
+      away: `“${tab.title}” has a question for you!`,
+      here: pick(['Quick question!', 'Psst, I need you!', 'Your call!']),
+    });
+  }
 
-    // the robot turns round and puts its hand up
+  // The robot turns round and puts its hand up: a card in the chat waits for you.
+  function handUp(tab: ChatTab, card: HTMLElement, say: { status: string; news: string; away: string; here: string }) {
     tab.activity = 'ask';
-    setTabStatus(tab, 'Waiting for your answer…');
-    if (tab.current) tab.current.toolStatus = 'Waiting for your answer';
+    setTabStatus(tab, `${say.status}…`);
+    if (tab.current) tab.current.toolStatus = say.status;
     renderTabs();
     Sfx.ask();
     express('open', 'o', 1500);
     renderWorking(); // it needs you: if the chat is tucked away, the status bubble says so
-    islandNews('ask', questions[0]?.question || 'It has a question for you.');
+    islandNews('ask', say.news);
     if (animates(tab)) {
       state.pose = null; // drop any wave or stretch in progress
       setActivity('ask');
@@ -2761,11 +2773,157 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       $('#badge').textContent = '?';
       body.classList.add('has-badge');
     } else if (tab !== active()) {
-      showPop(`“${tab.title}” has a question for you!`, 2600);
+      showPop(say.away, 2600);
     } else {
-      showPop(pick(['Quick question!', 'Psst, I need you!', 'Your call!']), 1800);
+      showPop(say.here, 1800);
       card.querySelector<HTMLElement>('.q-opt, .q-other')?.focus();
     }
+  }
+
+  // You answered its card: hand down, back to work, the rest of the answer below the card.
+  function handDown(tab: ChatTab, pop: string) {
+    tab.question = null;
+    if (!pendingQuestion()) {
+      body.classList.remove('has-badge');
+      $('#badge').textContent = '!';
+    }
+    Sfx.key.send();
+    express('happy', 'smile', 1400);
+    showPop(pop, 1500);
+    tab.activity = 'think';
+    if (animates(tab)) setActivity('think');
+    setTabStatus(tab, `${pick(THINKING_VERBS)}…`);
+    renderTabs();
+    // the rest of the answer streams into a fresh bubble below the card
+    if (tab.current) {
+      const el = document.createElement('div');
+      el.className = 'msg bot';
+      tab.log.appendChild(el);
+      moveReply(tab.current, el, tab.current.text.length);
+    }
+    scrollDown(tab);
+    input.focus();
+  }
+
+  // ------------------------------------------------------------ plans from Claude
+
+  // In plan mode Claude looks around, changes nothing, and comes back with a plan
+  // (ExitPlanMode). The plan shows as a card: go ahead (it carries on building, in the
+  // mode you pick), or keep planning, with notes on what to change.
+  function reviewPlan({ requestId, plan, file }: { requestId: string; plan: string; file: string }, tab: ChatTab) {
+    const cur = tab.current;
+    if (cur) {
+      if (!cur.text.slice(cur.offset || 0).trim() && !hasSteps(cur)) cur.el.remove();
+      else finishText(cur);
+    }
+    const card = document.createElement('div');
+    card.className = 'msg q-card plan-card';
+    card.innerHTML = `<div class="q-title">${Icon('plan', 'sm lead')}<span></span></div><div class="plan-body"></div>`;
+    card.querySelector('.q-title span')!.textContent = `${state.character!.name}'s plan`;
+    card.querySelector('.plan-body')!.innerHTML = md(plan || '_(an empty plan)_');
+    if (file) {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'plan-file';
+      open.dataset.open = file; // (opens in the chat's file view)
+      open.innerHTML = `${Icon('file', 'sm')}<span></span>`;
+      open.querySelector('span')!.textContent = file.split(/[\\/]/).pop()!;
+      card.appendChild(open);
+    }
+    const ask = document.createElement('div');
+    ask.className = 'q-text';
+    ask.textContent = 'Go ahead with this plan?';
+    card.appendChild(ask);
+
+    // going ahead: with edits accepted, or (where the robot is trusted with it) full access
+    const choices: { mode: PermissionMode | null; label: string; desc: string }[] = [
+      { mode: 'acceptEdits', label: 'Yes, and auto-accept edits', desc: 'I build it, editing files in my folder without asking' },
+      ...(tab.canBypass ? [{ mode: 'bypassPermissions' as PermissionMode, label: 'Yes, with full access', desc: 'I build it, running anything I need' }] : []),
+      { mode: null, label: 'No, keep planning', desc: 'Tell me what to change' },
+    ];
+    const opts = document.createElement('div');
+    opts.className = 'q-opts';
+    const buttons = choices.map((c, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'q-opt';
+      b.innerHTML = '<span class="q-key"></span><b></b><small></small>';
+      b.querySelector('.q-key')!.textContent = String(i + 1);
+      b.querySelector('b')!.textContent = c.label;
+      b.querySelector('small')!.textContent = c.desc;
+      b.addEventListener('click', () => (c.mode ? decide(c.mode) : keepPlanning()));
+      opts.appendChild(b);
+      return b;
+    });
+    card.appendChild(opts);
+    const notes = document.createElement('textarea');
+    notes.className = 'q-other plan-notes-input';
+    notes.rows = 2;
+    notes.placeholder = 'What should change? (Enter sends it back, Shift+Enter for a new line)';
+    notes.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        decide(null, notes.value);
+      }
+    });
+    card.appendChild(notes);
+
+    // "No": the notes box first; a second "No" (or Enter there) sends it back
+    function keepPlanning() {
+      if (notes.value.trim() || card.classList.contains('noting')) return decide(null, notes.value);
+      card.classList.add('noting');
+      buttons[buttons.length - 1].classList.add('on');
+      notes.focus();
+    }
+
+    async function decide(mode: PermissionMode | null, feedback = '') {
+      if (pending.sent) return;
+      pending.sent = true;
+      feedback = feedback.trim();
+      buttons[mode ? choices.findIndex((c) => c.mode === mode) : buttons.length - 1].classList.add('on');
+      card.classList.add('answered');
+      card.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>('button:not(.plan-file), textarea').forEach((el) => (el.disabled = true));
+      const res = await ipc.robotPlan(tab.id, requestId, plan, mode, feedback);
+      const title = card.querySelector('.q-title span')!;
+      if (!res.ok) {
+        card.classList.add('expired');
+        title.textContent = res.error ? `Couldn't go ahead: ${res.error}` : 'Too late, that plan has closed';
+        return;
+      }
+      if (mode) {
+        tab.mode = mode;
+        if (tab === active()) renderBrain();
+        title.textContent = `Plan approved, ${GO_LABEL[mode]}`;
+        flash('hop', 600);
+      } else {
+        title.textContent = 'Plan sent back for changes';
+        if (feedback) card.appendChild(planNotes(feedback));
+      }
+      handDown(tab, mode ? pick(['Building it!', 'On it!', 'Here we go!', 'Hammer time!']) : pick(['Back to the drawing board!', 'Let me rethink…', 'Noted!']));
+    }
+
+    const pending: PendingQuestion = {
+      sent: false,
+      card,
+      requestId,
+      closed: 'This plan closed before you decided',
+      // typing in the composer: notes on what to change, and it goes back for another go
+      typed(text) {
+        decide(null, text);
+      },
+      pickByNumber(n) {
+        buttons[n - 1]?.click();
+      },
+    };
+    tab.question = pending;
+    tab.log.appendChild(card);
+    scrollDown(tab);
+    handUp(tab, card, {
+      status: 'Waiting for your go-ahead',
+      news: 'It has a plan for you to look over.',
+      away: `“${tab.title}” has a plan for you!`,
+      here: pick(['Here’s my plan!', 'Plan ready!', 'Have a look!']),
+    });
   }
 
   const pendingQuestion = () => [...tabs.values()].find((t) => t.question && !t.question.sent);
@@ -2785,7 +2943,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     if (!q || q.sent) return;
     q.card.classList.add('expired');
     q.card.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input').forEach((el) => (el.disabled = true));
-    Icon.text(q.card.querySelector('.q-title')!, '✋ This question closed without an answer');
+    if (q.closed) q.card.querySelector('.q-title span')!.textContent = q.closed;
+    else Icon.text(q.card.querySelector('.q-title')!, '✋ This question closed without an answer');
   }
 
   function addQaSummary(items: QAItem[] = [], tab: ChatTab = active()!) {
@@ -3618,6 +3777,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     if (info.models?.length) brainInfo.models = info.models;
     tab.model = info.model;
     tab.effort = info.effort;
+    tab.mode = info.permissionMode;
+    tab.canBypass = info.canBypass;
     if (info.context) tab.context = info.context;
     if (tab === active()) renderBrain();
   }
@@ -3629,6 +3790,13 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     $('#brain-model').innerHTML = `${Icon('cpu')}<span></span><span class="caret">▼</span>`;
     $('#brain-model').children[1].textContent = modelName(t.model);
     $('#brain-effort').innerHTML = `${Icon('zap')}<span>${t.effort || 'auto'}</span><span class="caret">▼</span>`;
+    // its permission mode, plan mode standing out (and the box you type in with it)
+    const mode = modeOf(t);
+    $('#brain-mode').innerHTML = `${Icon(MODES[mode][0])}<span></span><span class="caret">▼</span>`;
+    $('#brain-mode').children[1].textContent = MODES[mode][1];
+    $('#brain-mode').dataset.mode = mode;
+    body.classList.toggle('plan-mode', mode === 'plan');
+    input.placeholder = mode === 'plan' ? 'Plan something with me… (Shift+Tab: mode)' : 'Ask me something… (/ for commands, @ for files)';
     const meter = $('#brain-meter');
     const ctx = t.context;
     const pct = ctx ? Math.max(0, Math.min(100, ctx.percentage)) : null;
@@ -3703,6 +3871,21 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       { icon: 'gauge', label: 'What’s in my head?', desc: 'How full my memory is', value: 'context' },
     ], (v) => (v === 'compact' ? compactTab(t) : showContext(t)));
   }
+  const modeOf = (t: ChatTab): PermissionMode => t.mode || state.character?.permissionMode || 'default';
+  // the modes this tab may switch to, in Shift+Tab order (full access only where the robot is trusted with it)
+  const modesFor = (t: ChatTab) => (Object.keys(MODES) as PermissionMode[]).filter((m) => m !== 'bypassPermissions' || t.canBypass || modeOf(t) === m);
+  function openModeMenu() {
+    const t = active()!;
+    openMenu($('#brain-mode'), 'Permissions for this tab (Shift+Tab)', modesFor(t).map((m) => ({ icon: MODES[m][0], label: MODES[m][1], desc: MODES[m][2], value: m, on: modeOf(t) === m })), (v) =>
+      setBrain(t, { permissionMode: v as PermissionMode }),
+    );
+  }
+  function cycleMode() {
+    const t = active()!;
+    const all = modesFor(t);
+    setBrain(t, { permissionMode: all[(all.indexOf(modeOf(t)) + 1) % all.length] });
+  }
+  $('#brain-mode').addEventListener('click', openModeMenu);
   $('#brain-model').addEventListener('click', openModelMenu);
   $('#brain-effort').addEventListener('click', openEffortMenu);
   $('#brain-meter').addEventListener('click', openMemoryMenu);
@@ -3720,14 +3903,23 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   }
 
   // Swap the brain mid-chat: the robot spins, its monitor reboots and its eyes change colour.
-  async function setBrain(tab: ChatTab, patch: { model: string } | { effort: string }) {
+  async function setBrain(tab: ChatTab, patch: { model: string } | { effort: string } | { permissionMode: PermissionMode }) {
+    if ('permissionMode' in patch && patch.permissionMode === modeOf(tab)) return;
     const res = await ipc.robotSetBrain(tab.id, patch);
     if (!res.ok) {
       addNote(`🧠 Couldn't switch: ${res.error || 'unknown problem'}`, '', tab);
       return;
     }
-    Object.assign(tab, patch);
+    if ('permissionMode' in patch) tab.mode = patch.permissionMode;
+    else Object.assign(tab, patch);
     if (tab === active()) renderBrain();
+    if ('permissionMode' in patch) {
+      const mode = patch.permissionMode;
+      addNote(mode === 'plan' ? '📋 Plan mode: I look around and write a plan. Nothing changes until you approve it.' : `🔒 ${MODES[mode][1]}: ${MODES[mode][2].toLowerCase()}`, '', tab);
+      flash(mode === 'plan' ? 'hop' : 'shake', 500);
+      Sfx.swap();
+      showPop(mode === 'plan' ? pick(['Let me plan first!', 'Thinking cap on!', 'Blueprints out!']) : `${MODES[mode][1]}!`, 1600);
+    }
     if ('model' in patch) {
       addNote(`🧠 Brain swapped to ${modelName(patch.model)} for this tab`, '', tab);
       flash('spin', 950);
@@ -4067,6 +4259,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     { name: 'close', description: 'Close this tab' },
     { name: 'model', args: '[name]', description: 'Switch my brain (model) for this tab' },
     { name: 'effort', args: '[low…max]', description: 'How hard I think' },
+    { name: 'plan', args: '[task]', description: 'Plan mode: I plan first and change nothing until you approve (Shift+Tab)' },
     { name: 'compact', description: 'Squish my memory to free up room' },
     { name: 'context', description: 'How full my memory is' },
     { name: 'terminal', description: 'Continue in full Claude Code, in a terminal' },
@@ -4144,6 +4337,17 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
         if (arg) pickEffort(arg);
         else openEffortMenu();
         return true;
+      case 'plan': {
+        // on (or, with nothing after it, off again: back to editing); with a task, it's planned straight away
+        const tab = active()!;
+        const off = !arg && modeOf(tab) === 'plan';
+        setBrain(tab, { permissionMode: off ? 'acceptEdits' : 'plan' }).then(() => {
+          if (!arg || modeOf(tab) !== 'plan' || tab !== active()) return;
+          input.value = arg;
+          submit();
+        });
+        return true;
+      }
       case 'compact':
         compactTab(active());
         return true;

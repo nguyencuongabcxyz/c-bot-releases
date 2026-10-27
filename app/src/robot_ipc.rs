@@ -242,6 +242,12 @@ pub fn robot_answer(app: AppHandle, window: WebviewWindow, tab_id: String, reque
     Ok(chat::answer(&app, &sender(&window)?, &tab_id, &request_id, &answers, &items))
 }
 
+/// Your call on Claude's plan card: go ahead in a permission mode (`mode`), or keep planning (no mode) with notes.
+#[tauri::command(async)]
+pub fn robot_plan(app: AppHandle, window: WebviewWindow, tab_id: String, request_id: String, plan: String, mode: Option<String>, feedback: String) -> Answer {
+    Ok(chat::decide_plan(&app, &sender(&window)?, &tab_id, &request_id, &plan, mode.as_deref(), &feedback))
+}
+
 /// Edit the last question: back to before it (its words come back, to edit and send again).
 #[tauri::command(async)]
 pub fn robot_rewind(app: AppHandle, window: WebviewWindow, tab_id: String) -> Answer {

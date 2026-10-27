@@ -147,6 +147,7 @@ fn parse_transcript(text: &str) -> Parsed {
     let (mut title, mut summary): (Option<String>, Option<String>) = (None, None);
     let mut cur: Option<usize> = None; // the assistant message being added to
     let mut asked: HashMap<String, Value> = HashMap::new(); // tool_use id -> questions, to pair with the answers
+    let mut planned: HashMap<String, String> = HashMap::new(); // tool_use id -> a plan, to pair with what you said to it
     for line in text.split('\n') {
         let Ok(o) = serde_json::from_str::<Value>(line) else { continue };
         let ty = o["type"].as_str().unwrap_or("");
@@ -162,12 +163,19 @@ fn parse_transcript(text: &str) -> Parsed {
         if ty == "user" {
             if let Some(blocks) = content.as_array().filter(|b| !b.is_empty() && b.iter().all(|x| x["type"] == "tool_result")) {
                 for b in blocks {
-                    let Some(questions) = asked.get(b["tool_use_id"].as_str().unwrap_or("")) else { continue };
                     let result = match &b["content"] {
                         Value::String(t) => t.clone(),
                         Value::Array(a) => a.iter().map(|x| x["text"].as_str().unwrap_or("")).collect(),
                         _ => String::new(),
                     };
+                    if let Some(plan) = planned.remove(b["tool_use_id"].as_str().unwrap_or("")) {
+                        let approved = b["is_error"].as_bool() != Some(true);
+                        let feedback = if approved { "" } else { result.split_once("Their notes:").map_or("", |(_, n)| n.trim()) };
+                        messages.push(json!({ "role": "plan", "plan": plan, "approved": approved, "feedback": feedback }));
+                        cur = None;
+                        continue;
+                    }
+                    let Some(questions) = asked.get(b["tool_use_id"].as_str().unwrap_or("")) else { continue };
                     let picked: HashMap<String, String> = re(&ANSWER, r#""([^"]+)"="([^"]*)""#).captures_iter(&result).map(|c| (c[1].to_string(), c[2].to_string())).collect();
                     let items: Vec<Value> = questions.as_array().into_iter().flatten().map(|q| {
                         let answer = picked.get(q["question"].as_str().unwrap_or("")).cloned().unwrap_or_else(|| "(no answer)".into());
@@ -229,6 +237,9 @@ fn parse_transcript(text: &str) -> Parsed {
                         m["tools"].as_array_mut().unwrap().push(json!(label));
                         if name == "AskUserQuestion" && b["input"]["questions"].is_array() {
                             asked.insert(b["id"].as_str().unwrap_or("").to_string(), b["input"]["questions"].clone());
+                        }
+                        if name == "ExitPlanMode" && let Some(plan) = b["input"]["plan"].as_str() {
+                            planned.insert(b["id"].as_str().unwrap_or("").to_string(), plan.to_string());
                         }
                     }
                     _ => {}
@@ -311,4 +322,33 @@ pub fn read(folder: &str, session_id: &str, limit: usize) -> Option<Value> {
         m
     }).collect();
     Some(json!({ "id": session_id, "title": one_line(parsed.title.as_deref().unwrap_or("Untitled conversation"), 80), "total": total, "messages": messages }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(v: Value) -> String {
+        v.to_string()
+    }
+
+    #[test]
+    fn plans_come_back_with_what_was_said_to_them() {
+        let plan_use = |id: &str, plan: &str| line(json!({ "type": "assistant", "message": { "content": [{ "type": "tool_use", "id": id, "name": "ExitPlanMode", "input": { "plan": plan } }] } }));
+        let result = |id: &str, text: &str, error: bool| line(json!({ "type": "user", "message": { "content": [{ "type": "tool_result", "tool_use_id": id, "content": text, "is_error": error }] } }));
+        let text = [
+            line(json!({ "type": "user", "message": { "content": "Add a button" } })),
+            plan_use("a", "1. Draw it"),
+            result("a", "The user wants to keep planning. Revise the plan… Their notes:\n\nMake it blue", true),
+            plan_use("b", "1. Draw it, blue"),
+            result("b", "User has approved your plan.", false),
+        ]
+        .join("\n");
+        let plans: Vec<Value> = parse_transcript(&text).messages.into_iter().filter(|m| m["role"] == "plan").collect();
+        assert_eq!(plans.len(), 2, "{plans:?}");
+        assert_eq!(plans[0]["approved"], false);
+        assert_eq!(plans[0]["feedback"], "Make it blue");
+        assert_eq!(plans[1]["approved"], true);
+        assert_eq!(plans[1]["plan"], "1. Draw it, blue");
+    }
 }

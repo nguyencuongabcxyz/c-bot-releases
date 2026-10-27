@@ -242,7 +242,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         claude_path: find_claude::find(settings["claudePath"].as_str().unwrap_or(""))?,
         cwd: c["folder"].as_str().unwrap_or("").into(),
         system_prompt: prompt_for(app, &c),
-        permission_mode: c["permissionMode"].as_str().unwrap_or("").into(),
+        permission_mode: mode_of(&c, &tab).into(),
         model: model.into(),
         effort: tab["effort"].as_str().unwrap_or("").into(),
         add_dirs: vec![],
@@ -262,6 +262,21 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     let chat = Arc::new(Chat { session, book });
     with(app, |st| st.chats.insert(key, chat.clone()));
     Some(chat)
+}
+
+/// The tab's permission mode: its own (picked in the chat, or plan mode come and gone), else the robot's.
+pub fn mode_of<'a>(c: &'a Value, tab: &'a Value) -> &'a str {
+    tab["permissionMode"].as_str().filter(|m| allowed_mode(c, m)).or(c["permissionMode"].as_str()).unwrap_or("default")
+}
+
+/// What a chat may switch itself to: anything up to editing files, and planning. Doing anything
+/// at all only where the robot itself is trusted with it (the Workshop's choice).
+fn allowed_mode(c: &Value, mode: &str) -> bool {
+    match mode {
+        "default" | "acceptEdits" | "plan" => true,
+        "bypassPermissions" => c["permissionMode"] == "bypassPermissions",
+        _ => false,
+    }
 }
 
 // What it's called on claude.ai/code and in the Claude app.
@@ -401,10 +416,16 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         }
         "usage" => tell(app, id, tab_id, json!({ "type": "usage", "outputTokens": data["outputTokens"] })),
         "status" => tell(app, id, tab_id, json!({ "type": "status", "text": data })),
-        "question" | "request-cancelled" => {
+        "question" | "request-cancelled" | "plan" => {
             let mut p = data;
             p["type"] = json!(event);
             tell(app, id, tab_id, p);
+        }
+        // it went into plan mode by itself (or out of it): the tab keeps the mode it's in
+        "mode" => {
+            let mode = data.as_str().unwrap_or("default");
+            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))])));
+            tell(app, id, tab_id, json!({ "type": "mode", "mode": mode }));
         }
         "tool" => {
             book_of().thinking = None; // (done thinking: it's doing)
@@ -673,8 +694,14 @@ pub fn close_robot(app: &AppHandle, id: &str) {
 }
 
 /// A new permission mode from the Workshop or the robot's menu: its live conversations
-/// switch now (the next ones start with it).
+/// switch now (the next ones start with it), and its tabs forget the modes picked in them.
 pub fn set_permission_mode(app: &AppHandle, id: &str, mode: &str) {
+    let tabs: Vec<String> = with(app, |st| st.store.get(id).and_then(|c| c["tabs"].as_array().cloned()).unwrap_or_default())
+        .iter().filter(|t| !t["permissionMode"].is_null()).filter_map(|t| t["id"].as_str().map(str::to_string)).collect();
+    for tab_id in tabs {
+        with(app, |st| st.store.update_tab(id, &tab_id, patch(vec![("permissionMode", Value::Null)])));
+        tell(app, id, &tab_id, json!({ "type": "mode", "mode": mode }));
+    }
     let prefix = format!("{id}|");
     let live: Vec<Arc<Chat>> = with(app, |st| st.chats.iter().filter(|(k, _)| k.starts_with(&prefix)).map(|(_, c)| c.clone()).collect());
     for chat in live {
@@ -890,15 +917,15 @@ pub fn send_now(app: &AppHandle, id: &str, tab_id: &str, turn_id: &str) -> bool 
 
 /// The tab's "brain": model, effort and how full its context is.
 pub fn brain(app: &AppHandle, id: &str, tab_id: &str) -> Value {
-    let Some((models, model, effort)) = with(app, |st| {
+    let Some((models, model, effort, mode, trusted)) = with(app, |st| {
         let c = st.store.get(id)?;
         let tab = st.store.tab(id, tab_id)?;
         let model = tab["model"].as_str().or(c["model"].as_str()).unwrap_or("").to_string();
-        Some((st.model_choices.clone(), model, tab["effort"].as_str().unwrap_or("").to_string()))
+        Some((st.model_choices.clone(), model, tab["effort"].as_str().unwrap_or("").to_string(), mode_of(c, tab).to_string(), allowed_mode(c, "bypassPermissions")))
     }) else {
         return Value::Null;
     };
-    json!({ "models": models, "model": model, "effort": effort, "context": refresh_context(app, id, tab_id) })
+    json!({ "models": models, "model": model, "effort": effort, "permissionMode": mode, "canBypass": trusted, "context": refresh_context(app, id, tab_id) })
 }
 
 pub fn set_brain(app: &AppHandle, id: &str, tab_id: &str, p: &Value) -> Value {
@@ -917,6 +944,15 @@ pub fn set_brain(app: &AppHandle, id: &str, tab_id: &str, p: &Value) -> Value {
             with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("effort", json!(effort))])));
             if let Some(c) = &chat {
                 c.session.set_effort(effort)?;
+            }
+        }
+        if let Some(mode) = p["permissionMode"].as_str() {
+            if !with(app, |st| st.store.get(id).is_some_and(|c| allowed_mode(c, mode))) {
+                return Err("This robot isn't trusted with that. Change its permissions in the Robot Workshop.".into());
+            }
+            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))])));
+            if let Some(c) = &chat {
+                c.session.set_permission_mode(mode);
             }
         }
         Ok(())
@@ -938,6 +974,31 @@ pub fn answer(app: &AppHandle, id: &str, tab_id: &str, request_id: &str, answers
         with(app, |st| st.store.push_history(id, tab_id, json!({ "role": "qa", "items": items })));
     }
     ok
+}
+
+/// Your call on a plan it made: go ahead (in this permission mode) or keep planning, with notes.
+/// The plan and what you said are kept in the history.
+pub fn decide_plan(app: &AppHandle, id: &str, tab_id: &str, request_id: &str, plan: &str, go_mode: Option<&str>, feedback: &str) -> Value {
+    if let Some(mode) = go_mode
+        && !with(app, |st| st.store.get(id).is_some_and(|c| allowed_mode(c, mode) && mode != "plan"))
+    {
+        return json!({ "ok": false, "error": "This robot isn't trusted with that." });
+    }
+    let feedback: String = feedback.chars().take(4000).collect();
+    if !chat_of(app, id, tab_id).is_some_and(|c| c.session.decide_plan(request_id, go_mode, &feedback)) {
+        return json!({ "ok": false });
+    }
+    let plan: String = plan.chars().take(20000).collect();
+    with(app, |st| {
+        if let Some(mode) = go_mode {
+            st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))]));
+        }
+        st.store.push_history(id, tab_id, json!({ "role": "plan", "plan": plan, "approved": go_mode.is_some(), "mode": go_mode, "feedback": feedback }));
+    });
+    if let Some(mode) = go_mode {
+        tell(app, id, tab_id, json!({ "type": "mode", "mode": mode }));
+    }
+    json!({ "ok": true })
 }
 
 /// Past conversations in the robot's folder, newest first.

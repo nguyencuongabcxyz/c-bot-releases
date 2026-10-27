@@ -2,6 +2,7 @@
 // conversation in the robot's folder, a read-only preview, and Resume.
 import { Icon } from '@/ui/icons';
 import type { SessionRow } from '@/types/model';
+import { planSummary } from './plan';
 import * as ipc from '@/ipc';
 
 /** A conversation picked up again (robot:resume). */
@@ -98,6 +99,10 @@ export const HistoryView = ({ md, robotName, activeTabId, onResumed, onClose }: 
     }
     for (const m of full.messages) {
       const el = document.createElement('div');
+      if (m.role === 'plan') {
+        msgs.appendChild(planSummary(md, m));
+        continue;
+      }
       if (m.role === 'qa') {
         for (const it of m.items) {
           const row = document.createElement('div');

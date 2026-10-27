@@ -4,8 +4,8 @@
 //!
 //! What happens is reported to the session's handler as (event, data), the events and
 //! data claude.js emits: turn-start · session · initialized · text · aside · thinking ·
-//! tool · tool-output · tool-result · edit · agent · status · task · question · compact ·
-//! commands · tools · done · fail · exit. They're handed over on a thread of their own,
+//! tool · tool-output · tool-result · edit · agent · status · task · question · plan · mode ·
+//! compact · commands · tools · done · fail · exit. They're handed over on a thread of their own,
 //! so a handler may wait on the session (context_usage) without holding up its output.
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -440,6 +440,43 @@ mod live_tests {
 
     #[test]
     #[ignore]
+    fn a_plan_waits_for_the_go_ahead_then_gets_built() {
+        let claude = crate::find_claude::find("").expect("Claude Code installed");
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("cbot-plan-test"); // (not under a short 8.3 temp path: Claude Code asks before writing there)
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = mpsc::channel::<(String, Value)>();
+        let tx = Mutex::new(tx);
+        let handler: Handler = Arc::new(move |_, event, data| {
+            let _ = tx.lock().unwrap().send((event.to_string(), data));
+        });
+        let opts = Opts { claude_path: claude, cwd: dir.to_string_lossy().into(), model: "haiku".into(), permission_mode: "plan".into(), ..Default::default() };
+        let session = Session::new(opts, None, handler);
+        session.ask("Plan creating hello.txt containing the word hi, in a 1-line plan, and present it with ExitPlanMode.".into(), "t1".into());
+        let next = |want: &str| loop {
+            let (event, data) = rx.recv_timeout(Duration::from_secs(180)).unwrap_or_else(|_| panic!("{want} in time"));
+            if event == want {
+                break data;
+            }
+            assert!(event != "done" && event != "fail", "{event} before {want}: {data}");
+        };
+        // first time round: sent back with notes, nothing written
+        let plan = next("plan");
+        assert!(!plan["plan"].as_str().unwrap_or("").is_empty(), "{plan}");
+        assert!(!dir.join("hello.txt").exists(), "wrote before the plan was approved");
+        assert!(session.decide_plan(plan["requestId"].as_str().unwrap(), None, "Make it say hello instead of hi."));
+        // second time: approved, and it builds it
+        let plan = next("plan");
+        assert!(plan["plan"].as_str().unwrap_or("").contains("hello"), "{plan}");
+        assert!(session.decide_plan(plan["requestId"].as_str().unwrap(), Some("acceptEdits"), ""));
+        assert!(!session.decide_plan(plan["requestId"].as_str().unwrap(), Some("acceptEdits"), ""), "decided twice");
+        let done = next("done");
+        assert!(std::fs::read_to_string(dir.join("hello.txt")).unwrap_or_default().contains("hello"), "{done}");
+        session.close();
+    }
+
+    #[test]
+    #[ignore]
     fn remote_control_comes_on_and_survives_a_restart() {
         let claude = crate::find_claude::find("").expect("Claude Code installed");
         let dir = std::env::temp_dir().join("cbot-session-test");
@@ -520,6 +557,7 @@ struct Inner {
     displaced: Option<Turn>,    // ours, already sent, waiting behind a message from Remote Control
     own_uuids: HashSet<String>, // the messages we sent (any other one came in through Remote Control)
     pending_questions: HashMap<String, Value>, // request id -> the AskUserQuestion input
+    pending_plans: HashMap<String, Value>,     // request id -> the ExitPlanMode input (the plan, waiting for your go-ahead)
     controls: HashMap<String, Reply>,
     task_inputs: HashMap<String, Value>, // tool_use id -> TaskCreate input, to learn its number
     agent_tools: HashSet<String>,       // tool_use ids of Agent calls (each one is a helper agent)
@@ -735,6 +773,12 @@ impl Inner {
             self.emit("question", json!({ "requestId": request_id, "questions": req["input"]["questions"] }));
             return;
         }
+        // a plan, finished: it waits for your go-ahead (or your notes) before anything changes
+        if s(req, "tool_name") == "ExitPlanMode" {
+            self.pending_plans.insert(request_id.clone(), req["input"].clone());
+            self.emit("plan", json!({ "requestId": request_id, "plan": s(&req["input"], "plan"), "file": s(&req["input"], "planFilePath") }));
+            return;
+        }
         let mode = if self.opts.permission_mode.is_empty() { "default" } else { &self.opts.permission_mode };
         let message = format!("{} needs permission this robot doesn't have (mode: {mode}).", s(req, "tool_name"));
         self.reply(&request_id, json!({ "behavior": "deny", "message": message }));
@@ -752,7 +796,7 @@ impl Session {
         let session = Arc::new_cyclic(|me| Session {
             me: me.clone(),
             inner: Mutex::new(Inner {
-                opts, session_id, queue: VecDeque::new(), turn: None, displaced: None, own_uuids: HashSet::new(), pending_questions: HashMap::new(), controls: HashMap::new(),
+                opts, session_id, queue: VecDeque::new(), turn: None, displaced: None, own_uuids: HashSet::new(), pending_questions: HashMap::new(), pending_plans: HashMap::new(), controls: HashMap::new(),
                 task_inputs: HashMap::new(), agent_tools: HashSet::new(), agent_tasks: HashMap::new(), agent_running: HashSet::new(),
                 cost_so_far: 0.0, last_used: Instant::now(), proc: None, generation: 0, restart_before_next: false, closing: false,
                 text: String::new(), asides: AsideFilter::default(), streamed: HashSet::new(), mcp_tool_ids: HashSet::new(), auto_turns: 0,
@@ -1168,6 +1212,33 @@ impl Session {
         true
     }
 
+    /// Your call on its plan: go ahead, switching to this permission mode, or keep planning
+    /// (with your notes on what to change, if any).
+    pub fn decide_plan(&self, request_id: &str, go_mode: Option<&str>, feedback: &str) -> bool {
+        let mut i = self.lock();
+        if i.proc.is_none() {
+            return false;
+        }
+        let Some(input) = i.pending_plans.remove(request_id) else { return false };
+        match go_mode {
+            Some(mode) => {
+                i.opts.permission_mode = mode.into();
+                let perms = json!([{ "type": "setMode", "mode": mode, "destination": "session" }]);
+                i.reply(request_id, json!({ "behavior": "allow", "updatedInput": input, "updatedPermissions": perms }));
+            }
+            None => {
+                let message = match feedback.trim() {
+                    "" => "The user doesn't want to go ahead with this plan yet. Stay in plan mode: don't change anything, and ask them what they'd like changed.".to_string(),
+                    notes => format!("The user wants to keep planning. Revise the plan with their notes, then present it again with ExitPlanMode. Their notes:
+
+{notes}"),
+                };
+                i.reply(request_id, json!({ "behavior": "deny", "message": message }));
+            }
+        }
+        true
+    }
+
     /// End the process. Anything still running or waiting fails as cancelled.
     pub fn close(&self) {
         let mut i = self.lock();
@@ -1241,7 +1312,7 @@ impl Session {
             // a question it asked is no longer wanted (the answer was stopped)
             "control_cancel_request" => {
                 let id = s(&msg, "request_id").to_string();
-                if i.pending_questions.remove(&id).is_some() {
+                if i.pending_questions.remove(&id).is_some() || i.pending_plans.remove(&id).is_some() {
                     i.emit("request-cancelled", json!({ "requestId": id }));
                 }
             }
@@ -1361,6 +1432,11 @@ impl Session {
                 }
                 if sub == "bridge_state" && i.opts.remote.is_some() {
                     i.emit("remote-state", msg["state"].clone());
+                }
+                // its permission mode changed by itself (it went into plan mode, a plan was approved)
+                if sub == "status" && let Some(mode) = msg["permissionMode"].as_str().filter(|m| *m != i.opts.permission_mode) {
+                    i.opts.permission_mode = mode.to_string();
+                    i.emit("mode", json!(mode));
                 }
                 if sub == "task_summary" && !s(&msg, "detail").is_empty() {
                     i.emit("status", msg["detail"].clone());
