@@ -7,6 +7,7 @@ import { Sfx } from './sound';
 import { HistoryView } from './chat/history';
 import { ShellDrawer } from './chat/shell';
 import { dressCode } from './chat/code';
+import { fileIcon as viewIcon, renderFileView } from './chat/fileview';
 import { tooltips } from './chat/tips';
 import { stepSummary, tokens as fmtTokens } from './chat/steps';
 import { codeBlock, link, prefixLines, transform, TRANSFORMS, wrap } from './chat/format';
@@ -440,7 +441,9 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     }
   }
 
-  // clicking a local file (a link, a path, a picture) opens it; programs are only shown in their folder
+  // clicking a local file (a link, a path, a picture) shows it in the chat; Ctrl+click opens
+  // it in its app (programs are only shown in their folder)
+  const openInApp = (p: string) => ipc.robotOpenFile(p).then((res) => res && !res.ok && showPop(res.error, 2400));
   document.addEventListener('click', (e) => {
     // (a click lands on an element; the link's href is read only when it has no data-open)
     const link = (e.target as Element).closest<HTMLAnchorElement>(`a[href^="${FILE_URL}open/"], [data-open]`);
@@ -454,8 +457,10 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       return;
     }
     e.preventDefault();
+    e.stopPropagation();
     const p = link.dataset.open || new URL(link.href).searchParams.get('path')!; // (our file links carry their path)
-    ipc.robotOpenFile(p).then((res) => res && !res.ok && showPop(res.error, 2400));
+    if (e.ctrlKey || e.metaKey) openInApp(p);
+    else openFileView(p);
   });
   // a picture that isn't there (yet, or anymore) just disappears
   document.addEventListener('error', (e) => (e.target as Element).matches?.('img.local-img') && (e.target as Element).remove(), true);
@@ -851,7 +856,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       for (const f of files) {
         const chip = document.createElement('span');
         chip.className = 'file-chip';
-        chip.title = f.path || f.name;
+        chip.title = f.path ? `${f.path}\nClick to look at it here (Ctrl+click: open it)` : f.name;
+        if (f.path) chip.dataset.open = f.path;
         if (f.thumb) chip.appendChild(thumbImg(f.thumb));
         if (!f.thumb) chip.insertAdjacentHTML('beforeend', Icon(fileIcon(f), 'sm'));
         chip.appendChild(document.createElement('span')).textContent = f.name;
@@ -919,30 +925,15 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     return el;
   }
 
-  // the steps of a finished turn: a line each (click for the details), a long run folded after
-  // the first few; older history kept just their names, as compact chips: "📖 Read ×3"
-  const STEPS_SHOWN = 6;
+  // the steps of a finished turn: a line each (click one for its details), two or more folded
+  // under one line saying what they did ("Read 3 files, ran 2 commands"), as Claude Code
+  // desktop does; older history kept just their names, as compact chips: "📖 Read ×3"
   function toolChips(tools: (StepCall | string)[], tab: ChatTab) {
     const row = document.createElement('div');
     row.className = 'tools';
     const counts = new Map<string, number>();
-    const steps = tools.filter((t) => t && typeof t === 'object') as StepCall[];
-    steps.forEach((t, i) => {
-      const step = callChip({ ...t, running: false }, tab);
-      if (steps.length > STEPS_SHOWN + 2 && i >= STEPS_SHOWN) step.hidden = true;
-      row.appendChild(step);
-    });
-    if (steps.length > STEPS_SHOWN + 2) {
-      const more = document.createElement('button');
-      more.type = 'button';
-      more.className = 'steps-more';
-      more.textContent = `+ ${steps.length - STEPS_SHOWN} more steps`;
-      more.addEventListener('click', () => {
-        for (const s of row.querySelectorAll<HTMLElement>('.step[hidden]')) s.hidden = false;
-        more.remove();
-      });
-      row.appendChild(more);
-    }
+    for (const t of tools) if (t && typeof t === 'object') row.appendChild(callChip({ ...t, running: false }, tab));
+    foldSteps(row, true);
     for (const t of tools) if (!(t && typeof t === 'object')) counts.set(t, (counts.get(t) || 0) + 1);
     for (const [entry, n] of counts) {
       // "Skill(anthropic-skills:pptx)" -> 🎓 Skill: pptx (anthropic-skills)
@@ -966,27 +957,150 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     return { emoji, verb, activity, mcp: !!mcp, text, label: `${emoji} ${text}` };
   }
   // A step, as a line in the answer (as Claude Code shows it: what it did, and under it what came
-  // back: "⎿ Read 120 lines"). Clicking it shows what it was called with and what it gave back
-  // in full (a helper agent's opens the helper instead).
+  // back: "⎿ Read 120 lines"). Clicking it opens it right there: the command or the file, and
+  // what came back (all of it in the helper panel); a helper agent's opens the helper instead.
+  const stepCalls = new WeakMap<HTMLElement, ToolCall>();
   function callChip(call: ToolCall, tab: ChatTab): HTMLElement {
     if (call.name === 'Thinking') return thinkRow(call);
     const look = toolLook(call.name, call.detail);
     const row = document.createElement('div');
     row.className = 'step clickable';
     row.dataset.kind = look.activity;
+    row.dataset.tool = call.name;
     if (call.id) row.dataset.call = call.id;
     row.classList.toggle('running', call.running);
     row.classList.toggle('failed', !!call.isError);
-    row.innerHTML = `<div class="step-head"><span class="step-dot"></span>${Icon(TOOL_ICONS[look.activity] || (look.mcp ? 'plug' : 'wrench'))}<span class="step-text"></span></div><div class="step-out" hidden></div>`;
+    row.innerHTML = `<div class="step-head" tabindex="0" role="button" aria-expanded="false"><span class="step-dot"></span>${Icon(TOOL_ICONS[look.activity] || (look.mcp ? 'plug' : 'wrench'))}<span class="step-text"></span><span class="step-caret" aria-hidden="true">›</span></div><div class="step-out" hidden></div>`;
     row.querySelector('.step-text')!.textContent = look.text;
     setStepOut(row, call);
-    row.title = `${look.label} (click for the details)`;
-    row.tabIndex = 0;
-    row.setAttribute('role', 'button');
-    const open = () => ((call.name === 'Agent' || call.name === 'Task') && tab?.agents?.has(call.id) ? openHelper(tab, call.id) : openToolView(tab, call));
-    row.addEventListener('click', open);
-    row.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open()));
+    stepCalls.set(row, call);
+    const head = row.querySelector<HTMLElement>('.step-head')!;
+    head.title = `${look.label} (click for the details)`;
+    const toggle = () => {
+      if ((call.name === 'Agent' || call.name === 'Task') && tab?.agents?.has(call.id)) return openHelper(tab, call.id);
+      const open = row.classList.toggle('open');
+      head.setAttribute('aria-expanded', String(open));
+      if (open) renderStepDetail(row, tab);
+      else row.querySelector(':scope > .step-detail')?.remove();
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle()));
     return row;
+  }
+
+  // A step opened in place: what it ran or looked at (a file opens in the file viewer) and what
+  // came back, the start of it; "Full details" shows it all in the helper panel.
+  const STEP_OUT_MAX = 4000;
+  function renderStepDetail(row: HTMLElement, tab: ChatTab) {
+    const call = stepCalls.get(row);
+    if (!call) return;
+    let box = row.querySelector<HTMLElement>(':scope > .step-detail');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'step-detail';
+      row.appendChild(box);
+    }
+    box.replaceChildren();
+    const pre = (cls: string, text: string) => Object.assign(document.createElement('pre'), { className: cls, textContent: text });
+    const note = (text: string) => Object.assign(document.createElement('div'), { className: 'sd-note', textContent: text });
+    const args = call.args && typeof call.args === 'object' ? (call.args as Record<string, unknown>) : null;
+    const str = (k: string) => (typeof args?.[k] === 'string' ? (args[k] as string) : '');
+    if (str('command')) box.appendChild(pre('sd-in sd-cmd', str('command')));
+    const file = str('file_path') || str('notebook_path') || (/^([a-zA-Z]:[\\/]|\\\\)/.test(str('path')) ? str('path') : '');
+    if (file) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sd-file';
+      b.dataset.open = file;
+      b.title = `${file}\nClick to look at it here (Ctrl+click: open it)`;
+      b.innerHTML = `${Icon(str('file_path') || str('notebook_path') ? 'file' : 'folder', 'sm')}<span></span>${Icon('right', 'sm')}`;
+      b.querySelector('span')!.textContent = file;
+      box.appendChild(b);
+    }
+    const what = str('pattern') || str('url') || str('query');
+    if (what) box.appendChild(pre('sd-in', what));
+    else if (!str('command') && !file && args && Object.keys(args).length) {
+      const json = JSON.stringify(args, null, 2);
+      box.appendChild(pre('sd-in', json.length > 1500 ? `${json.slice(0, 1500)}…` : json));
+    }
+    if (call.running) box.appendChild(note('Still working on it…'));
+    else if (typeof call.output === 'string' && call.output.trim()) {
+      const out = call.output.length > STEP_OUT_MAX ? `${call.output.slice(0, STEP_OUT_MAX)}\n… (${(call.output.length - STEP_OUT_MAX).toLocaleString()} more characters)` : call.output;
+      box.appendChild(pre(`sd-out${call.isError ? ' error' : ''}`, out));
+    } else box.appendChild(note(call.trimmed ? 'What came back wasn’t kept in the saved history (it was too big).' : 'Nothing came back.'));
+    const full = document.createElement('button');
+    full.type = 'button';
+    full.className = 'sd-full';
+    full.dataset.icon = 'expand';
+    full.textContent = 'Full details';
+    full.addEventListener('click', () => openToolView(tab, call));
+    box.appendChild(full);
+    Icon.fill(box);
+  }
+
+  // A run of two or more steps folds under one line saying what they did, as Claude Code
+  // desktop does: "› Read 3 files, ran 2 commands · 5 steps". A finished turn's start folded;
+  // a turn still going shows its steps as they come (until you fold it).
+  const STEP_GROUPS: [RegExp, (n: number) => string][] = [
+    [/^Thinking$/, () => 'thought'],
+    [/^(Read|NotebookRead)$/, (n) => `read ${n} file${n === 1 ? '' : 's'}`],
+    [/^(Grep|Glob|LS|ToolSearch)$/, (n) => (n === 1 ? 'searched once' : `searched ${n} times`)],
+    [/^(Bash|PowerShell|BashOutput|KillShell|KillBash)$|terminal_/, (n) => `ran ${n} command${n === 1 ? '' : 's'}`],
+    [/^(Edit|MultiEdit|Write|NotebookEdit)$/, (n) => `edited ${n} file${n === 1 ? '' : 's'}`],
+    [/^(WebFetch|WebSearch)$/, (n) => `looked up ${n} page${n === 1 ? '' : 's'}`],
+    [/^(Agent|Task)$/, (n) => `sent ${n} helper${n === 1 ? '' : 's'}`],
+    [/^TodoWrite$/, () => 'updated the plan'],
+  ];
+  function stepsSummary(steps: HTMLElement[]) {
+    const counts = new Map<number, number>();
+    let other = 0;
+    for (const s of steps) {
+      const g = STEP_GROUPS.findIndex(([re]) => re.test(s.dataset.tool || ''));
+      if (g < 0) other++;
+      else counts.set(g, (counts.get(g) || 0) + 1);
+    }
+    const bits = [...counts].sort((a, b) => a[0] - b[0]).map(([g, n]) => STEP_GROUPS[g][1](n));
+    if (other) bits.push(`used ${other} tool${other === 1 ? '' : 's'}`);
+    const text = bits.join(', ');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+  function foldSteps(row: HTMLElement, folded?: boolean) {
+    const steps = [...row.querySelectorAll<HTMLElement>(':scope > .step')];
+    let head = row.querySelector<HTMLButtonElement>(':scope > .steps-head');
+    if (steps.length < 2) {
+      head?.remove();
+      row.classList.remove('foldable', 'folded', 'has-failed');
+      return;
+    }
+    if (!head) {
+      head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'steps-head';
+      head.innerHTML = '<span class="sh-caret" aria-hidden="true">›</span><span class="sh-text"></span><span class="sh-n"></span>';
+      head.addEventListener('click', () => {
+        const fold = !row.classList.contains('folded');
+        row.classList.toggle('folded', fold);
+        foldSteps(row);
+        if (fold) return;
+        // (they come down one after another)
+        row.querySelectorAll<HTMLElement>(':scope > .step').forEach((s, i) => s.style.setProperty('--i', String(Math.min(i, 12))));
+        row.classList.remove('unfolding');
+        void row.offsetWidth;
+        row.classList.add('unfolding');
+        clearTimeout(Number(row.dataset.unfoldTimer));
+        row.dataset.unfoldTimer = String(setTimeout(() => row.classList.remove('unfolding'), 700));
+      });
+      row.prepend(head);
+    }
+    row.classList.add('foldable');
+    if (folded !== undefined) row.classList.toggle('folded', folded);
+    head.setAttribute('aria-expanded', String(!row.classList.contains('folded')));
+    const failed = steps.filter((s) => s.classList.contains('failed')).length;
+    const running = steps.some((s) => s.classList.contains('running'));
+    head.querySelector('.sh-text')!.textContent = stepsSummary(steps);
+    head.querySelector('.sh-n')!.textContent = [`${steps.length} steps`, failed ? `${failed} failed` : '', running ? 'working…' : ''].filter(Boolean).join(' · ');
+    head.title = row.classList.contains('folded') ? 'Show the steps' : 'Fold the steps away';
+    row.classList.toggle('has-failed', failed > 0);
   }
   // what a step gave back, under it
   function setStepOut(row: HTMLElement, call: ToolCall) {
@@ -1002,6 +1116,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   function thinkRow(call: ToolCall) {
     const d = document.createElement('details');
     d.className = 'step think';
+    d.dataset.tool = 'Thinking';
     if (call.id) d.dataset.call = call.id;
     d.dataset.start = String(Date.now());
     d.innerHTML = '<summary><span class="think-star">✻</span><span class="think-label"></span></summary><div class="think-text"></div>';
@@ -1358,7 +1473,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     tab.vocabWord = askedWord(text); // "what does X mean?": offer to save X under the answer
     tab.log.querySelectorAll('.greet').forEach((el) => el.remove());
     clearFinishedHelpers(tab);
-    addUser(question, files, tab, tag);
+    addUser(question, files, tab, tag).classList.add('enter');
     sentOf(tab).push(question);
     tab.rewinding = false;
     recallAt = -1;
@@ -1393,7 +1508,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     const el = addUser(question, files, tab, tag);
     sentOf(tab).push(question);
     recallAt = -1;
-    el.classList.add('queued');
+    el.classList.add('queued', 'enter');
     const bar = document.createElement('div');
     bar.className = 'queue-actions';
     bar.innerHTML = `<span>${Icon('inbox', 'sm lead')}next up</span><button type="button" title="Stop the current answer and do this now">${Icon('zap', 'sm lead')}Send now</button><button type="button" title="Don't send">${Icon('x', 'sm')}</button>`;
@@ -1435,7 +1550,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   // an empty bot bubble that the next streamed reply fills in
   function startReply(tab: ChatTab): asserts tab is ChatTab & { current: Reply } {
     const el = document.createElement('div');
-    el.className = 'msg bot';
+    el.className = 'msg bot enter';
     tab.log.appendChild(el);
     tab.current = { el, parts: [], text: '' };
     partFor(tab.current, 'text'); // (its blinking caret, until the first words or step)
@@ -1527,6 +1642,11 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     settleThinking(tab);
     // (a step still showing as running when the answer ended: it was cut short)
     for (const row of tab.log.querySelectorAll<HTMLElement>('.step.running')) row.classList.remove('running');
+    // (and its runs of steps fold away under what they did)
+    for (const run of tab.log.querySelectorAll<HTMLElement>('.tools.live')) {
+      run.classList.remove('live');
+      foldSteps(run, true);
+    }
     if (cur) for (const p of cur.parts) p.el.classList.remove('cursor');
     setBusy(tab, false);
     // the task you sent is over: if you tucked the chat away, the status bubble says so — unless a bonk restarts it
@@ -1662,7 +1782,10 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
         if (ev.name === 'Thinking') {
           const call = { id: ev.id, name: ev.name, detail: '', running: true };
           (tab.calls ||= new Map<string, ToolCall>()).set(ev.id, call);
-          partFor(cur, 'steps').el.appendChild(thinkRow(call));
+          const steps = partFor(cur, 'steps').el;
+          steps.appendChild(thinkRow(call));
+          steps.classList.add('live');
+          foldSteps(steps);
           scrollDown(tab);
           break;
         }
@@ -1675,7 +1798,10 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
           chip.classList.add('agent-chip');
           chip.title = `${label} (click to watch it work)`;
         }
-        partFor(cur, 'steps').el.appendChild(chip); // (where it happened: after the words so far)
+        const steps = partFor(cur, 'steps').el;
+        steps.appendChild(chip); // (where it happened: after the words so far)
+        steps.classList.add('live');
+        foldSteps(steps);
         cur.toolStatus = label;
         tab.activity = activity;
         setTabStatus(tab, `${label}…`);
@@ -1701,6 +1827,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
           row.classList.remove('running');
           row.classList.toggle('failed', !!ev.isError);
           setStepOut(row, call);
+          if (row.classList.contains('open')) renderStepDetail(row, tab);
+          if (row.parentElement) foldSteps(row.parentElement);
         }
         if (helperView.call === call) renderToolView();
         break;
@@ -2268,7 +2396,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     else if (!paletteEl.hidden) hidePalette();
     else if (cancelEdit()) return;
     else if (history.isOpen()) history.escape();
-    else if (helperView.id || helperView.call) closeHelper();
+    else if (helperView.id || helperView.call || helperView.file) backFromView();
     else if (active()?.busy) stopTab(active()); // like Claude Code: Esc interrupts
     else sleep();
   });
@@ -2696,6 +2824,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       chip.title = f.path;
       chip.innerHTML = `<span></span><button type="button" title="Spit it out">${Icon('x', 'sm')}</button>`;
       chip.querySelector('span')!.textContent = f.name;
+      chip.querySelector('span')!.dataset.open = f.path; // (the name: a look at it; the ✕ spits it out)
       if (!f.thumb) chip.querySelector('span')!.insertAdjacentHTML('beforebegin', Icon(fileIcon(f), 'sm'));
       if (f.thumb) chip.prepend(thumbImg(f.thumb));
       chip.querySelector('button')!.addEventListener('click', () => {
@@ -3032,7 +3161,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   // Helper agents (sub-agents) Claude Code sends out, each with its own card:
   // what it's doing right now, how far it got, and its report when it's back.
   const helpersEl = $('#helpers');
-  const helperView: { id: string | null; call: ToolCall | null; tab: ChatTab | null; timer: number } = { id: null, call: null, tab: null, timer: 0 }; // (call: a tool step's details instead)
+  // (call: a tool step's details instead; file: a file or folder, trail: the ones opened before it, for Back)
+  const helperView: { id: string | null; call: ToolCall | null; tab: ChatTab | null; timer: number; file: string | null; trail: string[] } = { id: null, call: null, tab: null, timer: 0, file: null, trail: [] };
   const AGENT_ICON: Record<string, string> = { completed: 'check', failed: 'alert', killed: 'stop', stopped: 'stop' };
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const elapsed = (a: Helper) => {
@@ -3169,8 +3299,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   function openHelper(tab: ChatTab, id: string) {
     if (!tab.agents?.has(id)) return;
     if (history.isOpen()) history.close();
-    helperView.id = id;
-    helperView.tab = tab;
+    Object.assign(helperView, { id, tab, call: null, file: null, trail: [] });
     document.body.classList.add('helper-open');
     $('#helper-view').hidden = false;
     renderHelperView(true);
@@ -3183,9 +3312,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   function openToolView(tab: ChatTab, call: ToolCall) {
     if (history.isOpen()) history.close();
     clearInterval(helperView.timer);
-    helperView.id = null;
-    helperView.call = call;
-    helperView.tab = tab;
+    Object.assign(helperView, { id: null, call, tab, file: null, trail: [] });
     document.body.classList.add('helper-open');
     $('#helper-view').hidden = false;
     renderToolView();
@@ -3305,15 +3432,64 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
 
   function closeHelper() {
     clearInterval(helperView.timer);
-    helperView.id = null;
-    helperView.call = null;
-    helperView.tab = null;
+    Object.assign(helperView, { id: null, call: null, tab: null, file: null, trail: [] });
     $('#helper-view').hidden = true;
     document.body.classList.remove('helper-open');
     scrollDown();
     input.focus();
   }
-  $('#hv-back').addEventListener('click', closeHelper);
+  // Back: to the file or folder opened before this one, or out to the chat
+  function backFromView() {
+    const prev = helperView.file && helperView.trail.pop();
+    if (prev) openFileView(prev, { back: true });
+    else closeHelper();
+  }
+  $('#hv-back').addEventListener('click', backFromView);
+
+  // A file or folder up close, in the chat (chat/fileview.ts): clicking a file in the chat
+  // shows it here; a file in a folder's list (or the folder a file is in) opens in its place.
+  let fileViewSeq = 0;
+  async function openFileView(path: string, { back = false } = {}) {
+    if (history.isOpen()) history.close();
+    clearInterval(helperView.timer);
+    if (!back && helperView.file && helperView.file !== path) helperView.trail.push(helperView.file);
+    if (!helperView.file) helperView.trail = [];
+    Object.assign(helperView, { id: null, call: null, tab: active() ?? null, file: path });
+    document.body.classList.add('helper-open');
+    $('#helper-view').hidden = false;
+    const name = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
+    const title = $('#hv-title');
+    title.textContent = name;
+    title.title = path;
+    const bodyEl = $('#hv-body');
+    const seq = ++fileViewSeq;
+    const res = await ipc.robotReadFile(path).catch((err) => ({ ok: false as const, error: String(err) }));
+    if (seq !== fileViewSeq || helperView.file !== path) return; // (another was opened meanwhile)
+    if (!res.ok) {
+      bodyEl.innerHTML = '<div class="fv-card"><div class="fv-card-what"></div><button type="button" class="fv-card-open" data-icon="open">Open in its app</button></div>';
+      bodyEl.querySelector('.fv-card-what')!.textContent = res.error;
+      bodyEl.querySelector('.fv-card-open')!.addEventListener('click', () => openInApp(path));
+      Icon.fill(bodyEl);
+      return;
+    }
+    title.innerHTML = Icon(viewIcon(res), 'sm lead');
+    title.append(res.name);
+    renderFileView(bodyEl, res, {
+      md,
+      fileUrl: FILE_URL,
+      open: (p) => openFileView(p),
+      openInApp,
+      reveal: (p) => ipc.robotOpenFile(p, { reveal: true }),
+      copy: (text, btn) =>
+        navigator.clipboard.writeText(text).then(() => {
+          btn.classList.add('done');
+          setTimeout(() => btn.classList.remove('done'), 1400);
+          showPop('Copied! 📋', 1200);
+        }, () => {}),
+    });
+    Icon.fill(bodyEl);
+    bodyEl.scrollTop = 0;
+  }
 
   function renderHelperView(top = false) {
     const a = helperView.tab?.agents?.get(helperView.id!);
@@ -3656,7 +3832,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     renderTabs();
     renderTodo();
     renderHelpers();
-    if ((helperView.id || helperView.call) && helperView.tab !== next) closeHelper();
+    if ((helperView.id || helperView.call || helperView.file) && helperView.tab !== next) closeHelper();
     renderBrain();
     loadBrain(next);
     scrollDown(next);
@@ -4886,34 +5062,9 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
 
   // ------------------------------------------------------------ chat size and click-through
 
-  // drag the chat panel's outer edge to make it wider or narrower; double-click resets it
-  const grip = $('#panel .resize-grip');
-  grip.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    grip.setPointerCapture(e.pointerId);
-    const startX = e.screenX;
-    let raf = 0;
-    body.classList.add('resizing');
-    ipc.robotResize({ phase: 'start' });
-    const move = (ev: PointerEvent) => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => ipc.robotResize({ phase: 'move', dx: ev.screenX - startX }));
-    };
-    const end = () => {
-      cancelAnimationFrame(raf);
-      grip.removeEventListener('pointermove', move);
-      body.classList.remove('resizing');
-      ipc.robotResize({ phase: 'end' });
-      scrollDown();
-    };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', end, { once: true });
-    grip.addEventListener('pointercancel', end, { once: true });
-  });
-  grip.addEventListener('dblclick', () => ipc.robotResize({ phase: 'reset' }));
-
-  // ...and its height: shorter than the screen if you like (down to CHAT_H_MIN), remembered per
+  // The chat panel's size: drag its outer edge for the width (the window grows or shrinks), its
+  // free end for the height, or the corner between them for both; double-click one to reset it.
+  // The height: shorter than the screen if you like (down to CHAT_H_MIN), remembered per
   // robot. The window stays the height of the screen (the rest lets clicks through), so this is
   // just the page: the panel hangs from the top with the robot up there, else stands on the bottom,
   // and its free edge is the one you drag. Double-click: the whole height again.
@@ -4935,36 +5086,58 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     const headY = state.robotY + office.headPosition().y - top;
     root.setProperty('--tail-y', `${Math.round(Math.min(Math.max(headY, 40), h - 70))}px`);
   }
-  const gripV = $('#panel .resize-grip-v');
-  gripV.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    gripV.setPointerCapture(e.pointerId);
-    const startY = e.screenY;
-    const startH = $('#panel').getBoundingClientRect().height;
-    const fromTop = body.classList.contains('chat-from-top');
-    body.classList.add('resizing', 'resizing-v');
-    const move = (ev: PointerEvent) => {
-      const dy = ev.screenY - startY;
-      chatH = Math.round(Math.max(CHAT_H_MIN, Math.min(fullH(), startH + (fromTop ? dy : -dy))));
+  function sizeGrip(grip: HTMLElement, width: boolean, height: boolean) {
+    const way = width && height ? 'd' : width ? 'h' : 'v';
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      const [startX, startY] = [e.screenX, e.screenY];
+      const startH = $('#panel').getBoundingClientRect().height;
+      const fromTop = body.classList.contains('chat-from-top');
+      let raf = 0;
+      body.classList.add('resizing', `resizing-${way}`);
+      if (width) ipc.robotResize({ phase: 'start' });
+      const move = (ev: PointerEvent) => {
+        if (height) {
+          const dy = ev.screenY - startY;
+          chatH = Math.round(Math.max(CHAT_H_MIN, Math.min(fullH(), startH + (fromTop ? dy : -dy))));
+          placePanel();
+        }
+        if (!width) return;
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => ipc.robotResize({ phase: 'move', dx: ev.screenX - startX }));
+      };
+      let ended = false;
+      // (let go, or the drag taken away: another window grabbed the mouse)
+      const end = () => {
+        if (ended) return;
+        ended = true;
+        cancelAnimationFrame(raf);
+        grip.removeEventListener('pointermove', move);
+        for (const k of ['pointerup', 'pointercancel', 'lostpointercapture']) grip.removeEventListener(k, end);
+        body.classList.remove('resizing', `resizing-${way}`);
+        if (width) ipc.robotResize({ phase: 'end' });
+        if (height) {
+          if (chatH != null && chatH >= fullH() - 2) chatH = null; // (all the way: the height of the screen, whatever screen)
+          ipc.robotChatHeight(chatH);
+        }
+        scrollDown();
+      };
+      grip.addEventListener('pointermove', move);
+      for (const k of ['pointerup', 'pointercancel', 'lostpointercapture']) grip.addEventListener(k, end);
+    });
+    grip.addEventListener('dblclick', () => {
+      if (width) ipc.robotResize({ phase: 'reset' });
+      if (!height) return;
+      chatH = null;
       placePanel();
-    };
-    const end = () => {
-      gripV.removeEventListener('pointermove', move);
-      body.classList.remove('resizing', 'resizing-v');
-      if (chatH != null && chatH >= fullH() - 2) chatH = null; // (all the way: the height of the screen, whatever screen)
-      ipc.robotChatHeight(chatH);
-      scrollDown();
-    };
-    gripV.addEventListener('pointermove', move);
-    gripV.addEventListener('pointerup', end, { once: true });
-    gripV.addEventListener('pointercancel', end, { once: true });
-  });
-  gripV.addEventListener('dblclick', () => {
-    chatH = null;
-    placePanel();
-    ipc.robotChatHeight(null);
-  });
+      ipc.robotChatHeight(null);
+    });
+  }
+  sizeGrip($('#panel .resize-grip'), true, false);
+  sizeGrip($('#panel .resize-grip-v'), false, true);
+  sizeGrip($('#panel .resize-grip-d'), true, true);
 
   // The awake window is the height of the screen and mostly see-through: let
   // clicks on the see-through parts through to whatever is behind it.
@@ -5505,6 +5678,30 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     Sfx.whee();
   });
   $('#btn-screen').addEventListener('click', () => ipc.robotScreenAsk());
+
+  // Speaking instead of typing (voice.rs): the system's own dictation types into the box (on
+  // Windows its voice typing, Win+H, with its own bar showing it listen). No engine, no mic.
+  const micBtn = $('#btn-mic');
+  ipc.voiceEngine().then((v) => {
+    if (!v.name) return;
+    micBtn.hidden = false;
+    if (v.name === 'windows-voice-typing') micBtn.title = 'Speak instead of typing (Windows voice typing, Win+H)';
+  }, () => {});
+  micBtn.addEventListener('mousedown', (e) => e.preventDefault()); // (the box keeps the keyboard, and where you were in it)
+  micBtn.addEventListener('click', async () => {
+    if (document.activeElement !== input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+    micBtn.classList.add('on');
+    setTimeout(() => micBtn.classList.remove('on'), 1600);
+    try {
+      await ipc.voiceStart();
+      showPop('🎙️ Listening… say it, I’ll type it', 2200);
+    } catch (err) {
+      showPop(String(err), 2400);
+    }
+  });
 
   // ------------------------------------------------------------ the other robots
   // Robots noticing each other (main social.js decides when; it hears how this one is every

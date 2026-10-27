@@ -31,3 +31,24 @@ export function dressCode(root: ParentNode) {
     box.append(head, pre);
   }
 }
+
+// (a file's extension where highlight.js doesn't know it by that name)
+const EXT_LANG: Record<string, string> = {
+  mjs: 'javascript', cjs: 'javascript', mts: 'typescript', cts: 'typescript', jsonc: 'json', json5: 'json',
+  csproj: 'xml', props: 'xml', targets: 'xml', config: 'xml', xaml: 'xml', vue: 'xml', svelte: 'xml',
+  bash: 'bash', zsh: 'bash', env: 'ini', cfg: 'ini', conf: 'ini', lock: 'yaml', gradle: 'kotlin',
+};
+const HIGHLIGHT_MAX = 300_000;
+
+/** A whole file's text for the file viewer, highlighted by its extension (as HTML), and the
+ *  language's name; a file too big to highlight quickly, or of no known language, as is. */
+export function highlightFile(text: string, ext: string): { html: string; lang: string | null } {
+  const lang = EXT_LANG[ext] ?? ext;
+  const known = lang && text.length <= HIGHLIGHT_MAX ? hljs.getLanguage(lang) : undefined;
+  if (!known) {
+    const esc = document.createElement('div');
+    esc.textContent = text;
+    return { html: esc.innerHTML, lang: null };
+  }
+  return { html: hljs.highlight(text, { language: lang, ignoreIllegals: true }).value, lang: known.name ?? lang };
+}

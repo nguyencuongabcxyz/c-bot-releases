@@ -323,6 +323,12 @@ pub fn robot_open_file(file: String, opts: Option<Value>) -> Value {
     files::open_file(&file, opts.is_some_and(|o| o["reveal"].as_bool().unwrap_or(false)))
 }
 
+/// A file or folder opened in the chat's file viewer (files::read_for_view).
+#[tauri::command(async)]
+pub fn robot_read_file(app: AppHandle, path: String) -> Value {
+    files::read_for_view(&path, &crate::picture_roots(&app))
+}
+
 pub fn folder_of(app: &AppHandle, id: &str) -> String {
     with(app, |st| st.store.get(id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default()
 }

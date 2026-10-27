@@ -40,6 +40,7 @@ mod updater;
 mod util;
 mod views;
 mod vocab;
+mod voice;
 mod walkers;
 mod win;
 mod workshop;
@@ -126,8 +127,8 @@ fn migrate_looks(st: &mut State) {
 }
 
 /// The folders pictures in the chat may come from: the user's home, temp, pasted
-/// screenshots and the robots' folders. Not, say, C:\Windows.
-fn picture_roots(app: &AppHandle) -> Vec<String> {
+/// screenshots and the robots' folders. Not, say, C:\Windows. (The file viewer too.)
+pub fn picture_roots(app: &AppHandle) -> Vec<String> {
     let mut roots = vec![
         std::env::var("USERPROFILE").unwrap_or_default(),
         std::env::temp_dir().to_string_lossy().into_owned(),
@@ -215,6 +216,9 @@ fn main() {
             robot_ipc::robot_inspect_paths,
             robot_ipc::robot_save_paste,
             robot_ipc::robot_open_file,
+            robot_ipc::robot_read_file,
+            voice::voice_engine,
+            voice::voice_start,
             revive::robot_alive,
             revive::robot_revive,
             clipboard::robot_paste_clipboard,
@@ -308,12 +312,13 @@ fn main() {
             stage::stage_pick_files,
             stage::stage_add_menu,
         ])
-        // local pictures in the chat (cbot-file://img/?path=…), read off the page's thread
+        // local pictures in the chat (cbot-file://img/?path=…) and the file viewer's PDFs,
+        // songs and videos (view/?path=…), read off the page's thread
         .register_asynchronous_uri_scheme_protocol("cbot-file", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             thread::spawn(move || {
                 let allowed = picture_roots(&app);
-                responder.respond(files::serve_image(request.uri(), &allowed));
+                responder.respond(files::serve(&request, &allowed));
             });
         })
         // MCP tool views (http://cbot-app.localhost/<page>/), each with its own CSP (mcp_apps.rs)

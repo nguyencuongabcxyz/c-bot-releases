@@ -404,7 +404,7 @@ body.busy #send .ic { width: 13px; height: 13px; }
 body.helper-open #logs, body.helper-open #status, body.helper-open #composer, body.helper-open #todo,
 body.helper-open #helpers, body.helper-open #attachments { display: none; }
 #hv-title { flex: 1; min-width: 0; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#hv-body { flex: 1; overflow-y: auto; padding: 2px 14px 14px; user-select: text; }
+#hv-body { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 14px 14px; user-select: text; }
 .hv-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
 .hv-meta span { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 8px; font: 11.5px var(--font-mono); }
 .hv-meta .pill-running { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 40%, transparent); font-weight: 600; }
@@ -535,6 +535,10 @@ body.feeding #drop-hint { display: flex; animation: pop-in 0.2s ease-out; }
 .composer-btn:hover { background: var(--bg-3); color: var(--fg); }
 .composer-btn .ic { width: 17px; height: 17px; }
 #btn-format.on { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+#btn-mic[hidden] { display: none; }
+#btn-mic.on { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+#btn-mic.on .ic { animation: mic-on 0.5s var(--ease-spring, ease-out); }
+@keyframes mic-on { 40% { transform: scale(1.25); } }
 
 /* ------------------------------------------------------- past conversations */
 
@@ -646,11 +650,19 @@ body.history-open #logs, body.history-open #status, body.history-open #composer,
 :root[data-theme="vintage"] .hljs-comment { color: #9a8c76; }
 
 /* the steps as a timeline: what it did, and under it what came back ("⎿ Read 120 lines") */
-.tools > .step, .tools > .steps-more { flex-basis: 100%; }
-.step { min-width: 0; font: 12px/1.45 var(--font-mono); color: var(--fg-2); animation: pop-in 0.2s ease-out; }
-.step.clickable { cursor: pointer; border-radius: 6px; padding: 1px 4px; margin: 0 -4px; }
-.step.clickable:hover, .step.clickable:focus-visible { background: var(--bg-2); color: var(--fg); outline: none; }
+.tools > .step, .tools > .steps-head { flex-basis: 100%; }
+.step { min-width: 0; font: 12px/1.45 var(--font-mono); color: var(--fg-2); animation: step-in 0.22s var(--ease-out) both; }
+.step.clickable { border-radius: 6px; margin: 0 -4px; }
 .step-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.step.clickable > .step-head { cursor: pointer; padding: 1px 4px; border-radius: 6px; transition: background-color 0.12s, color 0.12s; }
+.step.clickable > .step-head:hover, .step.clickable > .step-head:focus-visible { background: var(--bg-2); color: var(--fg); outline: none; }
+.step.open > .step-head { color: var(--fg); }
+.step-caret {
+  margin-left: auto; flex-shrink: 0; color: var(--muted); font: 13px/1 var(--font-ui); opacity: 0;
+  transition: transform 0.18s var(--ease-out), opacity 0.12s;
+}
+.step-head:hover .step-caret, .step-head:focus-visible .step-caret, .step.open .step-caret { opacity: 1; }
+.step.open .step-caret { transform: rotate(90deg); }
 .step-head .ic { width: 12px; height: 12px; color: var(--muted); flex-shrink: 0; }
 .step[data-kind="read"] .step-head .ic { color: #3b82f6; }
 .step[data-kind="search"] .step-head .ic { color: #8b5cf6; }
@@ -668,11 +680,54 @@ body.history-open #logs, body.history-open #status, body.history-open #composer,
 .step-out::before { content: "⎿"; position: absolute; left: 11px; top: -1px; color: var(--line-2); }
 .step-out > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .step.failed .step-out { color: color-mix(in srgb, var(--danger) 80%, var(--muted)); }
-.steps-more {
-  align-self: flex-start; border: 0; background: none; color: var(--muted); font: 11.5px var(--font-mono);
-  cursor: pointer; padding: 1px 4px 1px 17px; text-align: left;
+.step-out { padding-left: 30px; }
+.step-out::before { left: 15px; }
+
+/* a step opened in place: what it ran or read, what came back, a way to all of it */
+.step-detail {
+  margin: 3px 0 6px 15px; padding: 6px 0 4px 11px; border-left: 2px solid var(--line-2);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 5px; cursor: auto;
+  animation: reveal 0.2s var(--ease-out) both;
 }
-.steps-more:hover { color: var(--fg); text-decoration: underline; }
+.step.failed .step-detail { border-left-color: color-mix(in srgb, var(--danger) 55%, var(--line-2)); }
+.step-detail pre {
+  align-self: stretch; margin: 0; padding: 6px 9px; border-radius: 7px; max-height: 260px; overflow: auto;
+  background: var(--code-bg); color: var(--code-fg); font: 11.5px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  user-select: text;
+}
+.step-detail pre.sd-cmd::before { content: "$ "; color: var(--accent); }
+.step-detail pre.sd-out { color: color-mix(in srgb, var(--code-fg) 82%, transparent); }
+.step-detail pre.sd-out.error { color: #ffa198; }
+.sd-note { color: var(--muted); font: italic 11.5px var(--font-ui); }
+.sd-file, .sd-full {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--bg); color: var(--fg-2); font: 11.5px var(--font-mono); padding: 3px 8px; cursor: pointer;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
+}
+.sd-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.sd-file:hover, .sd-full:hover { background: var(--bg-2); color: var(--fg); border-color: var(--line-2); }
+.sd-file .ic, .sd-full .ic { width: 12px; height: 12px; flex-shrink: 0; }
+.sd-full { font-family: var(--font-ui); border-style: dashed; }
+
+/* a run of steps folded under what they did: "› Read 3 files, ran 2 commands · 5 steps" */
+.steps-head {
+  display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 -4px; padding: 2px 4px; border: 0; border-radius: 6px;
+  background: none; color: var(--fg-2); font: 12px/1.45 var(--font-mono); text-align: left; cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+.steps-head:hover, .steps-head:focus-visible { background: var(--bg-2); color: var(--fg); outline: none; }
+.sh-caret { flex-shrink: 0; width: 12px; text-align: center; color: var(--muted); font: 14px/1 var(--font-ui); transform: rotate(90deg); transition: transform 0.2s var(--ease-out); }
+.tools.folded .sh-caret { transform: none; }
+.sh-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-n { flex-shrink: 0; margin-left: auto; color: var(--muted); font-size: 11px; }
+.tools.has-failed .sh-n { color: color-mix(in srgb, var(--danger) 80%, var(--muted)); }
+.tools.live .sh-n { color: var(--accent-ink, var(--accent)); }
+.tools.foldable > .step { margin-left: 10px; }
+.tools.foldable > .step.clickable, .tools.foldable > .step.think { margin-left: 6px; }
+.tools.folded > .step { display: none; }
+.tools.unfolding > .step { animation: step-in 0.24s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 28ms); }
+@keyframes step-in { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes reveal { from { opacity: 0; transform: translateY(-4px); } }
 
 /* its thinking: "✻ Thought for 6s", open it to read */
 .step.think { margin: 0 -4px; padding: 1px 4px; border-radius: 6px; }
@@ -706,12 +761,14 @@ body.history-open #logs, body.history-open #status, body.history-open #composer,
 /* the buttons on a message when you hover it: edit your question; copy or redo an answer */
 .msg.user, .msg.bot { position: relative; }
 .msg-actions {
-  position: absolute; display: none; gap: 2px; padding: 2px; border-radius: 7px;
+  position: absolute; display: flex; gap: 2px; padding: 2px; border-radius: 7px;
   background: var(--panel-bg); border: 1px solid var(--line-2); box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); z-index: 2;
+  opacity: 0; visibility: hidden; transform: translateY(3px) scale(0.97);
+  transition: opacity 0.14s, transform 0.18s var(--ease-out), visibility 0s 0.14s;
 }
 .msg.user > .msg-actions { right: 4px; bottom: -14px; }
 .msg.bot > .msg-actions { right: 0; bottom: -16px; }
-.msg:hover > .msg-actions, .msg:focus-within > .msg-actions { display: flex; }
+.msg:hover > .msg-actions, .msg:focus-within > .msg-actions { opacity: 1; visibility: visible; transform: none; transition: opacity 0.14s, transform 0.18s var(--ease-out); }
 .msg.queued > .msg-actions, .msg.dropped > .msg-actions, .msg.greet > .msg-actions { display: none; }
 .msg-actions button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 3px 5px; border-radius: 5px; line-height: 0; }
 .msg-actions button:hover { background: var(--bg-2); color: var(--fg); }
@@ -749,6 +806,24 @@ body.chat-from-top .resize-grip-v { top: auto; bottom: -7px; }
 .resize-grip-v:hover::after, body.resizing-v .resize-grip-v::after { opacity: 0.3; }
 body.resizing-v, body.resizing-v * { cursor: ns-resize !important; }
 
+/* ...and the corner between the two: both at once. The outer edge is the left one unless the
+   robot sits left of the chat (side-right); the free end is the top unless it hangs from the top */
+.resize-grip-d { position: absolute; left: -8px; top: -8px; width: 22px; height: 22px; cursor: nwse-resize; z-index: 6; }
+body.side-right .resize-grip-d { left: auto; right: -8px; cursor: nesw-resize; }
+body.chat-from-top .resize-grip-d { top: auto; bottom: -8px; cursor: nesw-resize; }
+body.side-right.chat-from-top .resize-grip-d { cursor: nwse-resize; }
+.resize-grip-d::after {
+  content: ""; position: absolute; left: 7px; top: 7px; width: 9px; height: 9px; border: solid var(--fg); border-width: 3px 0 0 3px;
+  border-top-left-radius: 6px; opacity: 0; transition: opacity 0.15s;
+}
+body.side-right .resize-grip-d::after { left: auto; right: 7px; border-width: 3px 3px 0 0; border-radius: 0 6px 0 0; }
+body.chat-from-top .resize-grip-d::after { top: auto; bottom: 7px; border-width: 0 0 3px 3px; border-radius: 0 0 0 6px; }
+body.side-right.chat-from-top .resize-grip-d::after { border-width: 0 3px 3px 0; border-radius: 0 0 6px 0; }
+.resize-grip-d:hover::after, body.resizing-d .resize-grip-d::after { opacity: 0.35; }
+body.resizing-d, body.resizing-d * { cursor: nwse-resize !important; }
+body.resizing-d.side-right, body.resizing-d.side-right *, body.resizing-d.chat-from-top, body.resizing-d.chat-from-top * { cursor: nesw-resize !important; }
+body.resizing-d.side-right.chat-from-top, body.resizing-d.side-right.chat-from-top * { cursor: nwse-resize !important; }
+
 /* tooltips for the chat's buttons (chat/tips.ts: the webview's own hardly show here) */
 .chat-tip {
   position: fixed; left: 0; top: 0; z-index: 50; max-width: 260px; width: max-content;
@@ -757,3 +832,160 @@ body.resizing-v, body.resizing-v * { cursor: ns-resize !important; }
   pointer-events: none; opacity: 0; visibility: hidden; transition: opacity 0.12s, visibility 0s 0.12s;
 }
 .chat-tip.show { opacity: 0.97; visibility: visible; transition: opacity 0.12s; }
+
+/* ------------------------------------------------------------- the file viewer (chat/fileview.ts) */
+
+.file-chip[data-open], .file-chip [data-open] { cursor: pointer; }
+.file-chip[data-open]:hover, .file-chip [data-open]:hover { text-decoration: underline; text-underline-offset: 2px; }
+#hv-body:has(> .fv), #hv-body:has(> .fv-card) { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+#hv-body > .fv-card { margin: 18px 14px; }
+.fv { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fv-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 7px 12px; border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-2) 55%, var(--panel-bg));
+}
+.fv-where { flex: 1 1 100%; min-width: 0; display: flex; }
+.fv-up {
+  min-width: 0; max-width: 100%; border: 0; background: none; padding: 0; color: var(--muted); font: 11px var(--font-mono);
+  cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
+.fv-up:hover { color: var(--accent-ink, var(--accent)); text-decoration: underline; }
+.fv-meta { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--muted); font: 11px var(--font-mono); }
+.fv-meta span { white-space: nowrap; }
+.fv-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.fv-act, .fv-mode {
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel-bg); color: var(--fg-2); font: 500 11.5px var(--font-ui); cursor: pointer;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s, transform 0.08s;
+}
+.fv-act .ic { width: 12px; height: 12px; }
+.fv-act:hover, .fv-mode:hover { background: var(--bg-2); color: var(--fg); border-color: var(--line-2); }
+.fv-act.done { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.fv-modes { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--bg-2); margin-right: 4px; }
+.fv-mode { height: 20px; border-color: transparent; background: none; }
+.fv-mode.on { background: var(--panel-bg); color: var(--fg); border-color: var(--line-2); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.fv-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.fv-body.swap { animation: fade-in 0.18s ease-out; }
+.fv-note { padding: 8px 14px; color: var(--muted); font: italic 12px var(--font-ui); }
+.fv-cut { border-top: 1px dashed var(--line); }
+
+/* code and text: line numbers, then the text, highlighted */
+.fv-code { display: flex; min-height: 100%; background: var(--code-bg); color: var(--code-fg); font: 12px/1.55 var(--font-mono); width: max-content; min-width: 100%; }
+.fv-gutter {
+  position: sticky; left: 0; margin: 0; padding: 10px 10px 14px 12px; text-align: right; user-select: none;
+  color: color-mix(in srgb, var(--code-fg) 32%, transparent); background: var(--code-bg); border-right: 1px solid color-mix(in srgb, var(--code-fg) 10%, transparent);
+  font: inherit;
+}
+.fv-src { margin: 0; padding: 10px 16px 14px 12px; font: inherit; tab-size: 4; user-select: text; }
+.fv-src code { font: inherit; background: none; padding: 0; border: 0; color: inherit; }
+
+/* markdown as a page */
+.fv-page.msg.bot { max-width: none; margin: 0; padding: 14px 18px 20px; background: none; border: 0; box-shadow: none; animation: none; }
+
+/* a picture to zoom into and move about (fileview.ts zoomView), on a checkerboard for the see-through bits */
+.fv-pic {
+  position: absolute; inset: 0; overflow: hidden; outline: none; touch-action: none; user-select: none;
+  background: repeating-conic-gradient(color-mix(in srgb, var(--fg) 6%, transparent) 0 25%, transparent 0 50%) 0 0 / 16px 16px;
+}
+.fv-pic.movable { cursor: grab; }
+.fv-pic.dragging { cursor: grabbing; }
+.fv-img {
+  position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; box-shadow: 0 2px 14px rgb(0 0 0 / 0.2);
+  opacity: 0; transition: opacity 0.18s; -webkit-user-drag: none; pointer-events: none;
+}
+.fv-pic.ready .fv-img { opacity: 1; }
+.fv-pic.anim .fv-img { transition: opacity 0.18s, transform 0.22s var(--ease-out); }
+.fv-pic.pixels .fv-img { image-rendering: pixelated; }
+.fv-zoom {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 3px;
+  border: 1px solid var(--line-2); border-radius: 10px; background: color-mix(in srgb, var(--panel-bg) 86%, transparent);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.22); backdrop-filter: blur(8px); opacity: 0.8; transition: opacity 0.15s; cursor: default;
+}
+.fv-pic:hover .fv-zoom, .fv-pic:focus-visible .fv-zoom { opacity: 1; }
+.fv-z {
+  min-width: 26px; height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: none; color: var(--fg-2);
+  font: 600 14px/1 var(--font-ui); cursor: pointer; transition: background-color 0.12s, color 0.12s;
+}
+.fv-z:hover { background: var(--bg-2); color: var(--fg); }
+.fv-z-pct { min-width: 54px; font: 11.5px var(--font-mono); }
+.fv-z-fit { font-size: 11.5px; }
+.fv-z-fit.on { color: var(--accent-ink, var(--accent)); }
+
+/* a PDF, a web page: the whole body */
+.fv-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.fv-pdf { background: #525659; }
+
+/* a song or a video */
+.fv-player { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; box-sizing: border-box; }
+.fv-player-video { background: #000; padding: 0; }
+.fv-video { width: 100%; max-height: 100%; }
+.fv-audio { width: min(100%, 420px); }
+
+/* a folder: its files, folders first */
+.fv-list { display: flex; flex-direction: column; padding: 6px; }
+.fv-entry {
+  display: flex; align-items: center; gap: 9px; padding: 5px 8px; border: 0; border-radius: 7px; background: none; color: var(--fg-2);
+  font: 12.5px var(--font-ui); text-align: left; cursor: pointer; transition: background-color 0.1s, color 0.1s;
+  animation: step-in 0.2s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 12ms);
+}
+.fv-entry:hover, .fv-entry:focus-visible { background: var(--bg-2); color: var(--fg); outline: none; }
+.fv-entry.dir { font-weight: 600; }
+.fv-e-icon { display: inline-flex; flex-shrink: 0; color: var(--muted); }
+.fv-entry.dir .fv-e-icon { color: var(--accent); }
+.fv-e-icon .ic { width: 15px; height: 15px; }
+.fv-e-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-e-size { flex-shrink: 0; color: var(--muted); font: 11px var(--font-mono); }
+
+/* CSV: a table, its header row stuck on top */
+.fv-table-wrap { min-width: 100%; width: max-content; }
+.fv-table { border-collapse: collapse; font: 12px var(--font-mono); }
+.fv-table th, .fv-table td { padding: 4px 10px; border: 1px solid var(--line); text-align: left; white-space: pre; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.fv-table th { position: sticky; top: 0; background: var(--bg-2); color: var(--fg); font-weight: 600; z-index: 1; }
+.fv-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--bg-2) 45%, transparent); }
+.fv-table tbody tr:hover td { background: var(--accent-soft); }
+.fv-table .fv-rn { color: var(--muted); text-align: right; user-select: none; }
+
+/* what it can't show: what it is, and a way to open it */
+.fv-card {
+  margin: 28px auto; max-width: 320px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
+  padding: 22px 18px; border: 1px dashed var(--line-2); border-radius: 12px; animation: pop-in 0.22s var(--ease-out);
+}
+.fv-big-icon { display: inline-flex; color: var(--muted); }
+.fv-big-icon .ic { width: 40px; height: 40px; stroke-width: 1.5; }
+.fv-card-what { font-weight: 650; color: var(--fg); }
+.fv-card-why { color: var(--muted); font-size: 12.5px; }
+.fv-card-open {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 6px 14px; border: 0; border-radius: 8px;
+  background: var(--accent); color: #fff; font: 600 12.5px var(--font-ui); cursor: pointer; transition: filter 0.12s, transform 0.08s;
+}
+.fv-card-open .ic { width: 14px; height: 14px; }
+.fv-card-open:hover { filter: brightness(1.08); }
+
+/* ------------------------------------------------------------- motion
+   Short, one-off moves only (a see-through window that animates forever never rests). */
+
+:root { --ease-out: cubic-bezier(0.22, 0.8, 0.24, 1); --ease-spring: cubic-bezier(0.3, 1.32, 0.5, 1); }
+body.expanded #panel { animation: panel-in 0.3s var(--ease-spring) both; }
+@keyframes panel-in { from { opacity: 0; transform: scale(0.94) translateY(6px); } }
+.msg.user.enter { animation: msg-up 0.3s var(--ease-spring) both; }
+.msg.bot.enter { animation: msg-up 0.26s var(--ease-out) both; }
+@keyframes msg-up { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
+#helper-view:not([hidden]) { animation: view-in 0.22s var(--ease-out); }
+@keyframes view-in { from { opacity: 0; transform: translateX(10px); } }
+@keyframes fade-in { from { opacity: 0; } }
+#fmt-bar:not([hidden]), #edit-banner:not([hidden]) { animation: rise 0.18s var(--ease-out); }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+/* details that open smoothly (the diff cards, its thinking, the helper's report) */
+:root { interpolate-size: allow-keywords; }
+.diff::details-content, .step.think::details-content, #hv-body details::details-content {
+  block-size: 0; overflow: clip; transition: block-size 0.22s var(--ease-out), content-visibility 0.22s allow-discrete;
+}
+.diff[open]::details-content, .step.think[open]::details-content, #hv-body details[open]::details-content { block-size: auto; }
+/* a press you can feel */
+#panel button:not(:disabled):active { transform: scale(0.95); }
+#panel .fv-entry:active, #panel .steps-head:active, #panel .step-head:active { transform: none; background: var(--bg-3); }
+/* thin scrollbars that keep out of the way */
+#panel ::-webkit-scrollbar { width: 8px; height: 8px; }
+#panel ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 18%, transparent); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+#panel ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--fg) 32%, transparent); }
+#panel ::-webkit-scrollbar-track, #panel ::-webkit-scrollbar-corner { background: transparent; }

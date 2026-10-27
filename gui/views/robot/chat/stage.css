@@ -15,7 +15,7 @@ body.stage-picked #bot-host { filter: drop-shadow(0 0 10px color-mix(in srgb, va
 /* ------------------------------------------------------------- a tile */
 #stage-face, #btn-spot, #btn-unstage { display: none; }
 body.staged #robot, body.staged #aside, body.staged #working { visibility: hidden; pointer-events: none; }
-body.staged .tail, body.staged .resize-grip, body.staged .resize-grip-v, body.staged #btn-collapse { display: none; }
+body.staged .tail, body.staged .resize-grip, body.staged .resize-grip-v, body.staged .resize-grip-d, body.staged #btn-collapse { display: none; }
 body.staged #panel { transform-origin: center; border-radius: 12px; }
 body.staged #btn-spot, body.staged #btn-unstage { display: inline-flex; }
 body.stage-spot #btn-spot { color: var(--accent); }
