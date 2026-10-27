@@ -7,25 +7,25 @@
 //! or the window loses focus).
 
 use std::io::Cursor;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
 use base64::Engine;
-use image::{ExtendedColorType, ImageEncoder, ImageFormat, RgbaImage};
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
-use serde_json::{json, Value};
-use tauri_plugin_dialog::DialogExt;
-use tauri::{AppHandle, Manager, WindowEvent};
+use image::{ExtendedColorType, ImageEncoder, ImageFormat, RgbaImage};
+use serde_json::{Value, json};
 use tauri::window::Color;
+use tauri::{AppHandle, Manager, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::platform::{screenshot, window};
 use crate::robots;
 use crate::robots::walkers;
-use crate::runtime::{hub, with};
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::only;
+use crate::runtime::{hub, with};
 use crate::ui::views;
 use crate::workbench::{files, paste};
 
@@ -83,9 +83,17 @@ pub fn crop_box(b: &Value, scale: f64, (iw, ih): (u32, u32)) -> Option<(u32, u32
 fn data_url(image: &RgbaImage) -> Option<String> {
     let mut png = Vec::new();
     PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Adaptive)
-        .write_image(image.as_raw(), image.width(), image.height(), ExtendedColorType::Rgba8)
+        .write_image(
+            image.as_raw(),
+            image.width(),
+            image.height(),
+            ExtendedColorType::Rgba8,
+        )
         .ok()?;
-    Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)))
+    Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png)
+    ))
 }
 
 fn png_bytes(image: &RgbaImage) -> Option<Vec<u8>> {
@@ -96,9 +104,16 @@ fn png_bytes(image: &RgbaImage) -> Option<Vec<u8>> {
 
 /// Capture the screen under the mouse and let the user drag a box (hint: the line at the
 /// top; hide_robots: fade the robot windows out of the way first).
-pub fn start(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Result<(), String> {
+pub fn start(
+    app: &AppHandle,
+    hint: &str,
+    hide_robots: bool,
+    on_shot: OnShot,
+) -> Result<(), String> {
     // one box at a time (a second press of the hotkey while one's up does nothing)
-    if app.get_webview_window(LABEL).is_some() || SHOT.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+    if app.get_webview_window(LABEL).is_some()
+        || SHOT.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+    {
         return Ok(());
     }
     if STARTING.swap(true, Ordering::SeqCst) {
@@ -114,7 +129,11 @@ fn begin(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Res
     let screen = window::monitor_near(cx, cy); // (all of it: the box can go over the taskbar too)
     // the screen as it is now, before the window covers it (and without the robots in the way)
     let hidden: Vec<isize> = if hide_robots {
-        robots::open_ids(app).iter().filter_map(|id| robots::hwnd_of(app, id)).filter(|&h| window::is_visible(h)).collect()
+        robots::open_ids(app)
+            .iter()
+            .filter_map(|id| robots::hwnd_of(app, id))
+            .filter(|&h| window::is_visible(h))
+            .collect()
     } else {
         vec![]
     };
@@ -131,7 +150,14 @@ fn begin(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Res
     let image = image.ok_or("couldn't capture the screen")?;
     let data_url = data_url(&image).ok_or("couldn't encode the screen")?;
     let round = ROUND.fetch_add(1, Ordering::SeqCst) + 1;
-    *SHOT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Shot { round, image, scale: screen.scale, hint: hint.to_string(), data_url, on_shot });
+    *SHOT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Shot {
+        round,
+        image,
+        scale: screen.scale,
+        hint: hint.to_string(),
+        data_url,
+        on_shot,
+    });
     open_window(app, screen, round).inspect_err(|_| {
         take_shot(Some(round));
     })
@@ -202,15 +228,22 @@ fn ask(app: &AppHandle, robot_id: Option<String>, source: Option<String>) -> boo
 /// The box you dragged: saved like a pasted screenshot, and handed to a robot at its desk.
 fn screen_shot(app: &AppHandle, robot_id: Option<String>, source: String, png: Vec<u8>) {
     let dir = with(app, |st| st.data_dir.join("attachments"));
-    let Some(file) = files::save_paste(&dir, &png, "png").map(paste::with_thumb) else { return };
+    let Some(file) = files::save_paste(&dir, &png, "png").map(paste::with_thumb) else {
+        return;
+    };
     let payload = json!({ "file": file, "source": source });
-    let at_desk = |id: &String| robots::hwnd_of(app, id).is_some_and(window::is_visible) && !walkers::has(app, id);
+    let at_desk = |id: &String| {
+        robots::hwnd_of(app, id).is_some_and(window::is_visible) && !walkers::has(app, id)
+    };
     if let Some(id) = robot_id.filter(at_desk).or_else(|| hub::nearest_robot(app)) {
         hub::send_to_robot(app, &id, "robot:screen", payload);
         return;
     }
     // everyone's out for a walk: call one back to its desk first
-    if let Some(walker) = robots::open_ids(app).into_iter().find(|id| walkers::has(app, id)) {
+    if let Some(walker) = robots::open_ids(app)
+        .into_iter()
+        .find(|id| walkers::has(app, id))
+    {
         walkers::dock(app, &walker);
         let app = app.clone();
         thread::spawn(move || {
@@ -219,7 +252,10 @@ fn screen_shot(app: &AppHandle, robot_id: Option<String>, source: String, png: V
         });
         return;
     }
-    app.dialog().message("No robot is out to ask. Show one from the tray menu first.").title("C-Bot").show(|_| {});
+    app.dialog()
+        .message("No robot is out to ask. Show one from the tray menu first.")
+        .title("C-Bot")
+        .show(|_| {});
 }
 
 // ---------------------------------------------------------------- the page
@@ -227,7 +263,11 @@ fn screen_shot(app: &AppHandle, robot_id: Option<String>, source: String, png: V
 /// A robot's 🔍 / "Ask about part of the screen".
 #[tauri::command(async)]
 pub fn robot_screen_ask(app: AppHandle, window: tauri::WebviewWindow) -> bool {
-    ask(&app, robots::id_of(window.label()).map(str::to_string), None)
+    ask(
+        &app,
+        robots::id_of(window.label()).map(str::to_string),
+        None,
+    )
 }
 
 /// The screen as it was, for the snip window to draw.
@@ -235,18 +275,31 @@ pub fn robot_screen_ask(app: AppHandle, window: tauri::WebviewWindow) -> bool {
 pub fn snip_init(window: tauri::WebviewWindow) -> Result<Value, String> {
     only(&window, LABEL)?;
     let shot = SHOT.lock().unwrap_or_else(|e| e.into_inner());
-    Ok(shot.as_ref().map_or(Value::Null, |s| json!({ "image": s.data_url, "hint": s.hint })))
+    Ok(shot.as_ref().map_or(
+        Value::Null,
+        |s| json!({ "image": s.data_url, "hint": s.hint }),
+    ))
 }
 
 /// The box was dragged (CSS px): its part of the screen goes where it was asked for.
 #[tauri::command(async)]
-pub fn snip_done(app: AppHandle, window: tauri::WebviewWindow, area: Value) -> Result<bool, String> {
+pub fn snip_done(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    area: Value,
+) -> Result<bool, String> {
     only(&window, LABEL)?;
-    let Some(shot) = take_shot(None) else { return Ok(false) };
+    let Some(shot) = take_shot(None) else {
+        return Ok(false);
+    };
     close_window(&app);
-    let Some((x, y, w, h)) = crop_box(&area, shot.scale, shot.image.dimensions()) else { return Ok(false) };
+    let Some((x, y, w, h)) = crop_box(&area, shot.scale, shot.image.dimensions()) else {
+        return Ok(false);
+    };
     let part = image::imageops::crop_imm(&shot.image, x, y, w, h).to_image();
-    let Some(png) = png_bytes(&part) else { return Ok(false) };
+    let Some(png) = png_bytes(&part) else {
+        return Ok(false);
+    };
     (shot.on_shot)(&app, png);
     Ok(true)
 }
@@ -260,13 +313,16 @@ pub fn snip_cancel(app: AppHandle, window: tauri::WebviewWindow) -> Result<bool,
 }
 
 pub fn setup(app: &AppHandle) {
-    hub::add_hotkey(app, Hotkey {
-        setting: "screenHotkey",
-        label: "Ask about part of the screen",
-        what: "Drag a box round anything and ask a robot",
-        default: "Ctrl+Alt+B",
-        run: |app| ask_screen(app, None, None),
-    });
+    hub::add_hotkey(
+        app,
+        Hotkey {
+            setting: "screenHotkey",
+            label: "Ask about part of the screen",
+            what: "Drag a box round anything and ask a robot",
+            default: "Ctrl+Alt+B",
+            run: |app| ask_screen(app, None, None),
+        },
+    );
 }
 
 #[cfg(test)]
@@ -277,13 +333,25 @@ mod tests {
     fn crop_maths() {
         let b = |x: f64, y: f64, w: f64, h: f64| json!({ "x": x, "y": y, "width": w, "height": h });
         // CSS px to physical at 150%
-        assert_eq!(crop_box(&b(10.0, 20.0, 100.0, 50.0), 1.5, (2880, 1620)), Some((15, 30, 150, 75)));
+        assert_eq!(
+            crop_box(&b(10.0, 20.0, 100.0, 50.0), 1.5, (2880, 1620)),
+            Some((15, 30, 150, 75))
+        );
         // at 100%
-        assert_eq!(crop_box(&b(0.0, 0.0, 1920.0, 1080.0), 1.0, (1920, 1080)), Some((0, 0, 1920, 1080)));
+        assert_eq!(
+            crop_box(&b(0.0, 0.0, 1920.0, 1080.0), 1.0, (1920, 1080)),
+            Some((0, 0, 1920, 1080))
+        );
         // cut to the capture at its right and bottom edges
-        assert_eq!(crop_box(&b(1900.0, 1000.0, 100.0, 100.0), 1.0, (1920, 1080)), Some((1900, 1000, 20, 80)));
+        assert_eq!(
+            crop_box(&b(1900.0, 1000.0, 100.0, 100.0), 1.0, (1920, 1080)),
+            Some((1900, 1000, 20, 80))
+        );
         // starts off the left/top: from 0
-        assert_eq!(crop_box(&b(-5.0, -5.0, 50.0, 50.0), 1.0, (100, 100)), Some((0, 0, 50, 50)));
+        assert_eq!(
+            crop_box(&b(-5.0, -5.0, 50.0, 50.0), 1.0, (100, 100)),
+            Some((0, 0, 50, 50))
+        );
         // too small to be a box (a click), or nothing left inside the capture
         assert_eq!(crop_box(&b(10.0, 10.0, 3.0, 40.0), 1.0, (100, 100)), None);
         assert_eq!(crop_box(&b(98.0, 10.0, 40.0, 40.0), 1.0, (100, 100)), None);
@@ -295,9 +363,17 @@ mod tests {
         let img = RgbaImage::from_pixel(8, 4, image::Rgba([1, 2, 3, 255]));
         let url = data_url(&img).unwrap();
         assert!(url.starts_with("data:image/png;base64,"));
-        let bytes = base64::engine::general_purpose::STANDARD.decode(&url[22..]).unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&url[22..])
+            .unwrap();
         assert_eq!(image::load_from_memory(&bytes).unwrap().to_rgba8(), img);
         let part = image::imageops::crop_imm(&img, 2, 1, 3, 2).to_image();
-        assert_eq!(image::load_from_memory(&png_bytes(&part).unwrap()).unwrap().to_rgba8().dimensions(), (3, 2));
+        assert_eq!(
+            image::load_from_memory(&png_bytes(&part).unwrap())
+                .unwrap()
+                .to_rgba8()
+                .dimensions(),
+            (3, 2)
+        );
     }
 }

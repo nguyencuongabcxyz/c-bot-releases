@@ -2,8 +2,9 @@
 //! keys (SendInput), and Windows' last-input stamp. (What's built on these: platform/input.rs.)
 
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, GetLastInputInfo, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-    LASTINPUTINFO, VK_CONTROL, VK_F1, VK_LBUTTON, VK_LWIN, VK_MENU, VK_RBUTTON, VK_RWIN, VK_SHIFT, VK_SPACE,
+    GetAsyncKeyState, GetLastInputInfo, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+    KEYEVENTF_KEYUP, LASTINPUTINFO, SendInput, VK_CONTROL, VK_F1, VK_LBUTTON, VK_LWIN, VK_MENU,
+    VK_RBUTTON, VK_RWIN, VK_SHIFT, VK_SPACE,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
 
@@ -44,7 +45,15 @@ pub fn main_button_down() -> bool {
 fn input(vk: u16, up: bool) -> INPUT {
     INPUT {
         r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: vk, wScan: 0, dwFlags: if up { KEYEVENTF_KEYUP } else { 0 }, time: 0, dwExtraInfo: 0 } },
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: if up { KEYEVENTF_KEYUP } else { 0 },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
     }
 }
 
@@ -52,15 +61,28 @@ fn input(vk: u16, up: bool) -> INPUT {
 /// into whatever window has the keyboard; whether Windows took them all.
 pub fn press(keys: &[Key]) -> bool {
     let codes: Vec<u16> = keys.iter().map(|&k| vk(k)).collect();
-    let inputs: Vec<INPUT> = codes.iter().map(|&c| input(c, false)).chain(codes.iter().rev().map(|&c| input(c, true))).collect();
+    let inputs: Vec<INPUT> = codes
+        .iter()
+        .map(|&c| input(c, false))
+        .chain(codes.iter().rev().map(|&c| input(c, true)))
+        .collect();
     // SAFETY: a valid array of keyboard INPUTs, its length and the struct's size.
-    let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32) };
+    let sent = unsafe {
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_ptr(),
+            std::mem::size_of::<INPUT>() as i32,
+        )
+    };
     sent as usize == inputs.len()
 }
 
 /// Windows' last-input stamp: it changes whenever you touch the mouse or keyboard.
 pub fn last_input_stamp() -> u64 {
-    let mut info = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+    let mut info = LASTINPUTINFO {
+        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+        dwTime: 0,
+    };
     // SAFETY: fills in the struct we pass (its size set as asked).
     unsafe { GetLastInputInfo(&mut info) };
     u64::from(info.dwTime)

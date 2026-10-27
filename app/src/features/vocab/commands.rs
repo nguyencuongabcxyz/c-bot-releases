@@ -24,7 +24,8 @@ pub fn robot_vocab_open(app: AppHandle, window: tauri::WebviewWindow, id: String
 #[tauri::command(async)]
 pub fn robot_vocab_quiz(app: AppHandle, window: tauri::WebviewWindow, how: String) -> bool {
     let sender = sender_of(&window);
-    let mine = sender.is_some() && words(&app, |w| w.quizzing.as_ref().map(|q| q.robot_id.clone())).flatten() == sender;
+    let mine = sender.is_some()
+        && words(&app, |w| w.quizzing.as_ref().map(|q| q.robot_id.clone())).flatten() == sender;
     if !mine {
         return false;
     }
@@ -74,7 +75,12 @@ pub fn card_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -> R
 
 /// A button on the card.
 #[tauri::command(async)]
-pub fn card_act(app: AppHandle, window: tauri::WebviewWindow, action: String, payload: Option<Value>) -> Result<Value, String> {
+pub fn card_act(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
     only(&window, card::LABEL)?;
     Ok(on_card(&app, &action, &payload.unwrap_or_default()))
 }
@@ -131,7 +137,13 @@ pub fn setup(app: &AppHandle) {
     saved.import(crate::runtime::paths::electron_data_dir());
     let vocab = Vocab::from(saved.load());
     let t = now();
-    app.manage(Mutex::new(Words { vocab, saved, quizzing: None, asked: false, clock: DreamClock::new(t, &words::local_day(t)) }));
+    app.manage(Mutex::new(Words {
+        vocab,
+        saved,
+        quizzing: None,
+        asked: false,
+        clock: DreamClock::new(t, &words::local_day(t)),
+    }));
     card::setup(app);
     // (what's waiting is written as C-Bot quits)
     let quitting = tauri::plugin::Builder::<tauri::Wry>::new("cbot-vocab")
@@ -144,35 +156,44 @@ pub fn setup(app: &AppHandle) {
     if let Err(err) = app.plugin(quitting) {
         eprintln!("[vocab] couldn't watch for quitting: {err}");
     }
-    hub::add_hotkey(app, Hotkey {
-        setting: "vocabHotkey",
-        label: "Save a word",
-        what: "The word you selected goes into My words",
-        default: "Ctrl+Alt+W",
-        run: capture_word,
-    });
+    hub::add_hotkey(
+        app,
+        Hotkey {
+            setting: "vocabHotkey",
+            label: "Save a word",
+            what: "The word you selected goes into My words",
+            default: "Ctrl+Alt+W",
+            run: capture_word,
+        },
+    );
 
     // changes are saved a moment after they happen
     let a = app.clone();
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_millis(100));
-        if let Some(state) = a.try_state::<Mutex<Words>>() {
-            let mut w = state.lock().unwrap_or_else(|e| e.into_inner());
-            let Words { vocab, saved, .. } = &mut *w;
-            saved.tick(&vocab.data);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_millis(100));
+            if let Some(state) = a.try_state::<Mutex<Words>>() {
+                let mut w = state.lock().unwrap_or_else(|e| e.into_inner());
+                let Words { vocab, saved, .. } = &mut *w;
+                saved.tick(&vocab.data);
+            }
         }
     });
     // now and then a sleeping robot dreams of a word that's due
     let a = app.clone();
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_millis(dreams::TICK_MS));
-        dream_tick(&a);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_millis(dreams::TICK_MS));
+            dream_tick(&a);
+        }
     });
     // what's in sight moves on as words come due
     let a = app.clone();
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_millis(HOUR as u64));
-        count_changed(&a);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_millis(HOUR as u64));
+            count_changed(&a);
+        }
     });
 }
 
@@ -188,7 +209,9 @@ pub(super) fn dream_tick(app: &AppHandle) {
     }) else {
         return;
     };
-    let Some(word) = words(app, |w| w.vocab.next_dream(t, &not)).flatten() else { return }; // nothing due: look again soon
+    let Some(word) = words(app, |w| w.vocab.next_dream(t, &not)).flatten() else {
+        return;
+    }; // nothing due: look again soon
     let id = text(&word["id"]);
     if start_dream(app, Some(word), sleeping_robot(app)) {
         words(app, |w| w.clock.dreamt(t, &id));

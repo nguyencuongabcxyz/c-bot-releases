@@ -9,23 +9,23 @@
 
 mod run;
 
-pub use run::{slice16, MAX_TEXT};
+pub use run::{MAX_TEXT, slice16};
 
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Map, Value};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use serde_json::{Map, Value, json};
 use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
-use crate::platform::{clipboard, window};
 use crate::platform::window::Rect;
+use crate::platform::{clipboard, window};
 use crate::robots;
 use crate::robots::walkers;
-use crate::runtime::{hub, with};
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::{only, patch, text};
+use crate::runtime::{hub, with};
 use crate::store::now_ms;
 use crate::ui::place;
 use crate::workbench::capture;
@@ -50,7 +50,7 @@ pub struct Ctx {
 
 struct Quick {
     ctx: Option<Ctx>,
-    height: f64,                  // what the page asked for (CSS px)
+    height: f64,                     // what the page asked for (CSS px)
     job: Option<(u64, run::Handle)>, // the action running now
     seq: u64,
 }
@@ -77,8 +77,16 @@ fn plan(near: Rect, wa: Rect, s: f64, tall: f64) -> Rect {
 }
 
 fn place(app: &AppHandle) {
-    let Some((near, height)) = quick(app, |q| q.ctx.as_ref().map(|c| (c.near, q.height))) else { return };
-    let Some(hwnd) = app.get_webview_window(LABEL).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize) else { return };
+    let Some((near, height)) = quick(app, |q| q.ctx.as_ref().map(|c| (c.near, q.height))) else {
+        return;
+    };
+    let Some(hwnd) = app
+        .get_webview_window(LABEL)
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| h.0 as isize)
+    else {
+        return;
+    };
     let (near, m) = place::around(near);
     let r = plan(near, m.work, m.scale, height);
     window::set_bounds(hwnd, r);
@@ -102,7 +110,10 @@ fn show(app: &AppHandle) {
 fn view(app: &AppHandle, ctx: &Ctx) -> Value {
     let s = with(app, |st| st.store.settings().clone());
     let mut prefs = json!({ "action": "refine", "style": "polished", "lang": "en" });
-    for extra in [s.get("quickPrefs"), ctx.prefs.as_ref()].into_iter().flatten() {
+    for extra in [s.get("quickPrefs"), ctx.prefs.as_ref()]
+        .into_iter()
+        .flatten()
+    {
         if let (Some(p), Some(e)) = (prefs.as_object_mut(), extra.as_object()) {
             p.extend(e.clone());
         }
@@ -120,21 +131,50 @@ fn view(app: &AppHandle, ctx: &Ctx) -> Value {
 }
 
 fn quick_model(settings: &Value) -> String {
-    settings["quickModel"].as_str().filter(|m| !m.is_empty()).unwrap_or("haiku").to_string()
+    settings["quickModel"]
+        .as_str()
+        .filter(|m| !m.is_empty())
+        .unwrap_or("haiku")
+        .to_string()
 }
 
 fn paint_of(app: &AppHandle, robot_id: Option<&str>) -> String {
-    let color = robot_id.and_then(|id| with(app, |st| st.store.get(id).and_then(|c| c["color"].as_str().map(str::to_string))));
-    color.filter(|c| !c.is_empty()).unwrap_or_else(|| PAINT.into())
+    let color = robot_id.and_then(|id| {
+        with(app, |st| {
+            st.store
+                .get(id)
+                .and_then(|c| c["color"].as_str().map(str::to_string))
+        })
+    });
+    color
+        .filter(|c| !c.is_empty())
+        .unwrap_or_else(|| PAINT.into())
 }
 
 /// The context for opening on this text beside this robot (the nearest one, else the notes
 /// robot, when none's given) (main.js openQuick).
-pub fn ctx_for(app: &AppHandle, text: String, source: String, hwnd: isize, robot_id: Option<String>, prefs: Option<Value>) -> Ctx {
-    let robot_id = robot_id.or_else(|| hub::nearest_robot(app)).or_else(|| hub::notes_robot(app));
+pub fn ctx_for(
+    app: &AppHandle,
+    text: String,
+    source: String,
+    hwnd: isize,
+    robot_id: Option<String>,
+    prefs: Option<Value>,
+) -> Ctx {
+    let robot_id = robot_id
+        .or_else(|| hub::nearest_robot(app))
+        .or_else(|| hub::notes_robot(app));
     let near = robot_id.as_deref().and_then(|id| hub::robot_rect(app, id));
     let paint = paint_of(app, robot_id.as_deref());
-    Ctx { text, source, hwnd, robot_id, near, paint, prefs }
+    Ctx {
+        text,
+        source,
+        hwnd,
+        robot_id,
+        near,
+        paint,
+        prefs,
+    }
 }
 
 /// Open Quick actions on this text, beside this robot (the nearest if none).
@@ -222,7 +262,11 @@ pub fn hotkey(app: &AppHandle) -> String {
 /// (main.js captureQuick).
 fn capture_quick(app: &AppHandle) {
     let sel = capture::read_selection(app, &hotkey(app), true);
-    let (source, hwnd) = if sel.text.is_empty() { (String::new(), 0) } else { (sel.source, sel.hwnd) };
+    let (source, hwnd) = if sel.text.is_empty() {
+        (String::new(), 0)
+    } else {
+        (sel.source, sel.hwnd)
+    };
     let ctx = ctx_for(app, sel.text, source, hwnd, None, None);
     open_with(app, ctx);
 }
@@ -234,7 +278,12 @@ fn capture_quick(app: &AppHandle) {
 fn on_action(app: &AppHandle, action: &str, ctx: &Ctx, p: &Value) -> Value {
     let tell = |phase: &str| {
         if let Some(id) = &ctx.robot_id {
-            hub::send_to_robot(app, id, "robot:quick", json!({ "phase": phase, "action": p.get("action").cloned().unwrap_or(Value::Null) }));
+            hub::send_to_robot(
+                app,
+                id,
+                "robot:quick",
+                json!({ "phase": phase, "action": p.get("action").cloned().unwrap_or(Value::Null) }),
+            );
         }
     };
     match action {
@@ -254,8 +303,15 @@ fn on_action(app: &AppHandle, action: &str, ctx: &Ctx, p: &Value) -> Value {
         }
         "ask" => {
             // talk it over with the robot: a new chat tab with the text (and the answer so far)
-            let Some(robot_id) = hub::chatty_robot(app, ctx.robot_id.as_deref()) else { return json!(false) };
-            let prompt = ask_prompt(&text(&p["action"]), p["style"].as_str(), &text(&p["text"]), &text(&p["result"]));
+            let Some(robot_id) = hub::chatty_robot(app, ctx.robot_id.as_deref()) else {
+                return json!(false);
+            };
+            let prompt = ask_prompt(
+                &text(&p["action"]),
+                p["style"].as_str(),
+                &text(&p["text"]),
+                &text(&p["result"]),
+            );
             close(app);
             tell_notes_later(app, &robot_id, prompt);
             json!(true)
@@ -267,15 +323,30 @@ fn on_action(app: &AppHandle, action: &str, ctx: &Ctx, p: &Value) -> Value {
 /// The chat tab's draft for "Ask more": the text, what you asked, the answer so far.
 fn ask_prompt(action: &str, style: Option<&str>, selected: &str, result: &str) -> String {
     let what = match action {
-        "refine" => format!("refine it ({})", style.filter(|s| !s.is_empty()).unwrap_or("polished")),
+        "refine" => format!(
+            "refine it ({})",
+            style.filter(|s| !s.is_empty()).unwrap_or("polished")
+        ),
         "translate" => "translate it".into(),
         "explain" => "explain it".into(),
         "summarise" => "summarise it".into(),
         _ => "help with it".into(),
     };
-    let mut lines = vec![format!("I selected this text and asked you to {what}."), String::new(), "---".into(), selected.into(), "---".into()];
+    let mut lines = vec![
+        format!("I selected this text and asked you to {what}."),
+        String::new(),
+        "---".into(),
+        selected.into(),
+        "---".into(),
+    ];
     if !result.is_empty() {
-        lines.extend([String::new(), "Your answer was:".into(), "---".into(), result.into(), "---".into()]);
+        lines.extend([
+            String::new(),
+            "Your answer was:".into(),
+            "---".into(),
+            result.into(),
+            "---".into(),
+        ]);
     }
     lines.extend([String::new(), "Let's go over it together: ".into()]);
     lines.join("\n")
@@ -288,7 +359,12 @@ pub fn tell_notes_later(app: &AppHandle, robot_id: &str, prompt: String) {
     let (app, id) = (app.clone(), robot_id.to_string());
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(wait));
-        hub::send_to_robot(&app, &id, "robot:notes", json!({ "phase": "ask", "prompt": prompt, "draft": true }));
+        hub::send_to_robot(
+            &app,
+            &id,
+            "robot:notes",
+            json!({ "phase": "ask", "prompt": prompt, "draft": true }),
+        );
     });
 }
 
@@ -297,7 +373,9 @@ pub fn tell_notes_later(app: &AppHandle, robot_id: &str, prompt: String) {
 /// Run an action on the text: the words stream as quick:text { id, text }; the answer
 /// (or cancelled, or an error) is what it returns.
 fn run_action(app: &AppHandle, req: &Value) -> Value {
-    let Some(ctx) = quick(app, |q| q.ctx.clone()) else { return Value::Null };
+    let Some(ctx) = quick(app, |q| q.ctx.clone()) else {
+        return Value::Null;
+    };
     let id = now_ms();
     let s = with(app, |st| st.store.settings().clone());
     let model = quick_model(&s);
@@ -348,7 +426,9 @@ fn run_action(app: &AppHandle, req: &Value) -> Value {
 
 /// The window's buttons (quick:act).
 fn act(app: &AppHandle, action: &str, p: &Value) -> Value {
-    let Some(ctx) = quick(app, |q| q.ctx.clone()) else { return Value::Null };
+    let Some(ctx) = quick(app, |q| q.ctx.clone()) else {
+        return Value::Null;
+    };
     match action {
         "close" => {
             close(app);
@@ -356,11 +436,17 @@ fn act(app: &AppHandle, action: &str, p: &Value) -> Value {
         }
         "prefs" => {
             // the action / style / language you picked: next time it starts there
-            let Some(picked) = p.as_object() else { return Value::Null };
+            let Some(picked) = p.as_object() else {
+                return Value::Null;
+            };
             with(app, |st| {
-                let mut prefs: Map<String, Value> = st.store.settings()["quickPrefs"].as_object().cloned().unwrap_or_default();
+                let mut prefs: Map<String, Value> = st.store.settings()["quickPrefs"]
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default();
                 prefs.extend(picked.clone());
-                st.store.update_settings(patch(vec![("quickPrefs", Value::Object(prefs))]))
+                st.store
+                    .update_settings(patch(vec![("quickPrefs", Value::Object(prefs))]))
             })
         }
         "copy" => {
@@ -410,59 +496,145 @@ pub fn quick_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -> 
 
 /// Run an action on the text (it streams in through quick:text; up to 90 s).
 #[tauri::command(async)]
-pub fn quick_run(app: AppHandle, window: tauri::WebviewWindow, req: Value) -> Result<Value, String> {
+pub fn quick_run(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    req: Value,
+) -> Result<Value, String> {
     only(&window, LABEL)?;
     Ok(run_action(&app, &req))
 }
 
 /// A button in the window: close, prefs, copy, replace, stop, ask.
 #[tauri::command(async)]
-pub fn quick_act(app: AppHandle, window: tauri::WebviewWindow, action: String, p: Option<Value>) -> Result<Value, String> {
+pub fn quick_act(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    p: Option<Value>,
+) -> Result<Value, String> {
     only(&window, LABEL)?;
     Ok(act(&app, &action, &p.unwrap_or_default()))
 }
 
 pub fn setup(app: &AppHandle) {
-    app.manage(Mutex::new(Quick { ctx: None, height: 360.0, job: None, seq: 0 }));
-    hub::add_hotkey(app, Hotkey {
-        setting: "quickHotkey",
-        label: "Quick actions",
-        what: "Refine, translate or explain the text you selected",
-        default: "Ctrl+Alt+R",
-        run: capture_quick,
-    });
+    app.manage(Mutex::new(Quick {
+        ctx: None,
+        height: 360.0,
+        job: None,
+        seq: 0,
+    }));
+    hub::add_hotkey(
+        app,
+        Hotkey {
+            setting: "quickHotkey",
+            label: "Quick actions",
+            what: "Refine, translate or explain the text you selected",
+            default: "Ctrl+Alt+R",
+            run: capture_quick,
+        },
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const WA: Rect = Rect { x: 0, y: 0, w: 1920, h: 1040 };
+    const WA: Rect = Rect {
+        x: 0,
+        y: 0,
+        w: 1920,
+        h: 1040,
+    };
 
     #[test]
     fn beside_the_robot() {
         // a robot in the bottom-right corner: on its left, bottoms lined up
-        let robot = Rect { x: 1590, y: 740, w: 300, h: 290 };
-        assert_eq!(plan(robot, WA, 1.0, 360.0), Rect { x: 1590 - 420 - 8, y: 1030 - 360, w: 420, h: 360 });
+        let robot = Rect {
+            x: 1590,
+            y: 740,
+            w: 300,
+            h: 290,
+        };
+        assert_eq!(
+            plan(robot, WA, 1.0, 360.0),
+            Rect {
+                x: 1590 - 420 - 8,
+                y: 1030 - 360,
+                w: 420,
+                h: 360
+            }
+        );
         // no room on its left: on its right
-        let left = Rect { x: 100, y: 300, w: 300, h: 290 };
-        assert_eq!(plan(left, WA, 1.0, 360.0), Rect { x: 408, y: 230, w: 420, h: 360 });
+        let left = Rect {
+            x: 100,
+            y: 300,
+            w: 300,
+            h: 290,
+        };
+        assert_eq!(
+            plan(left, WA, 1.0, 360.0),
+            Rect {
+                x: 408,
+                y: 230,
+                w: 420,
+                h: 360
+            }
+        );
         // too tall for the screen: as tall as fits, kept on it
         let r = plan(robot, WA, 1.0, 2000.0);
         assert_eq!((r.y, r.h), (8, 1040 - 16));
         // high up: kept below the top edge
-        let up = Rect { x: 1500, y: 0, w: 300, h: 100 };
+        let up = Rect {
+            x: 1500,
+            y: 0,
+            w: 300,
+            h: 100,
+        };
         assert_eq!(plan(up, WA, 1.0, 360.0).y, 8);
     }
 
     #[test]
     fn by_the_mouse_and_scaled() {
         // no robot: above the mouse (a box of no size), its left edge clear of it
-        let r = plan(Rect { x: 1000, y: 600, w: 0, h: 0 }, WA, 1.0, 300.0);
-        assert_eq!(r, Rect { x: 572, y: 300, w: 420, h: 300 });
+        let r = plan(
+            Rect {
+                x: 1000,
+                y: 600,
+                w: 0,
+                h: 0,
+            },
+            WA,
+            1.0,
+            300.0,
+        );
+        assert_eq!(
+            r,
+            Rect {
+                x: 572,
+                y: 300,
+                w: 420,
+                h: 300
+            }
+        );
         // on a 150% screen to the right of the main one
-        let wa = Rect { x: 1920, y: 0, w: 2560, h: 1400 };
-        let r = plan(Rect { x: 1925, y: 900, w: 0, h: 0 }, wa, 1.5, 300.0);
+        let wa = Rect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1400,
+        };
+        let r = plan(
+            Rect {
+                x: 1925,
+                y: 900,
+                w: 0,
+                h: 0,
+            },
+            wa,
+            1.5,
+            300.0,
+        );
         assert_eq!((r.x, r.w, r.h), (1925 + 12, 630, 450));
         assert_eq!(r.y, 450);
     }
@@ -470,9 +642,15 @@ mod tests {
     #[test]
     fn ask_more() {
         let p = ask_prompt("refine", Some("formal"), "hello", "Hello.");
-        assert_eq!(p, "I selected this text and asked you to refine it (formal).\n\n---\nhello\n---\n\nYour answer was:\n---\nHello.\n---\n\nLet's go over it together: ");
+        assert_eq!(
+            p,
+            "I selected this text and asked you to refine it (formal).\n\n---\nhello\n---\n\nYour answer was:\n---\nHello.\n---\n\nLet's go over it together: "
+        );
         let p = ask_prompt("translate", None, "xin chào", "");
-        assert_eq!(p, "I selected this text and asked you to translate it.\n\n---\nxin chào\n---\n\nLet's go over it together: ");
+        assert_eq!(
+            p,
+            "I selected this text and asked you to translate it.\n\n---\nxin chào\n---\n\nLet's go over it together: "
+        );
         assert!(ask_prompt("refine", None, "a", "").contains("refine it (polished)"));
         assert!(ask_prompt("", None, "a", "").contains("help with it"));
     }

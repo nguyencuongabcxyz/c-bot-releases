@@ -14,4 +14,4 @@ mod state;
 pub mod updater;
 pub mod util;
 
-pub use state::{with, State};
+pub use state::{State, with};

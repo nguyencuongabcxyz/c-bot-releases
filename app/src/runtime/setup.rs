@@ -10,8 +10,10 @@ use std::time::Duration;
 use serde_json::json;
 use tauri::{App, AppHandle, Manager, RunEvent};
 
-use crate::features::{chat, notes, vocab};
+use super::paths::{self, electron_data_dir};
+use super::{State, hub, migrate, with};
 use crate::features::chat::awake;
+use crate::features::{chat, notes, vocab};
 use crate::mcp::{apps, link};
 use crate::robots;
 use crate::robots::{island, maid, planes, revive, screens, social, stage, topmost, walkers};
@@ -19,8 +21,6 @@ use crate::runtime::updater;
 use crate::store::Store;
 use crate::ui::{tray, workshop};
 use crate::workbench::{capture, palette, paste, quick, shell, snip, terminal};
-use super::{hub, migrate, with, State};
-use super::paths::{self, electron_data_dir};
 
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     paths::init(app.handle()); // (first: where the user's folders are)
@@ -120,7 +120,9 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 pub fn on_event(app: &AppHandle, event: RunEvent) {
     match event {
         // it lives in the tray: closing every window doesn't quit it
-        RunEvent::ExitRequested { api, code: None, .. } => api.prevent_exit(),
+        RunEvent::ExitRequested {
+            api, code: None, ..
+        } => api.prevent_exit(),
         RunEvent::Exit => {
             chat::close_all(app);
             shell::close_all(app);

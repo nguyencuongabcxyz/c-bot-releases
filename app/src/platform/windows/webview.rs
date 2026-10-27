@@ -16,7 +16,9 @@ pub use crate::platform::common::types::Failure;
 pub fn on_process_failed(window: &WebviewWindow, then: impl Fn(Failure) + Send + 'static) {
     // SAFETY: WebView2 COM calls on the window's own controller, on its thread (with_webview).
     let _ = window.with_webview(move |wv| unsafe {
-        let Ok(core) = wv.controller().CoreWebView2() else { return };
+        let Ok(core) = wv.controller().CoreWebView2() else {
+            return;
+        };
         let handler = ProcessFailedEventHandler::create(Box::new(move |_, args| {
             let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
             if let Some(args) = args {
@@ -24,7 +26,9 @@ pub fn on_process_failed(window: &WebviewWindow, then: impl Fn(Failure) + Send +
             }
             let failure = match kind {
                 COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED => Failure::PageExited,
-                COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE => Failure::PageUnresponsive,
+                COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE => {
+                    Failure::PageUnresponsive
+                }
                 COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED => Failure::BrowserExited,
                 _ => return Ok(()),
             };

@@ -19,11 +19,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter};
 
+use crate::agents::claude::{Session, locate, transcripts};
 use crate::agents::{claude, personalities};
-use crate::agents::claude::{locate, Session, transcripts};
 use crate::mcp::{apps, link, tools};
 use crate::robots::label_of;
 use crate::runtime::with;
@@ -37,8 +37,14 @@ struct Limits {
     text: usize,
     output: usize,
 }
-const LIVE: Limits = Limits { text: 20000, output: 40000 };
-const KEEP: Limits = Limits { text: 1500, output: 2500 };
+const LIVE: Limits = Limits {
+    text: 20000,
+    output: 40000,
+};
+const KEEP: Limits = Limits {
+    text: 1500,
+    output: 2500,
+};
 const KEEP_CALLS: usize = 60;
 const KEEP_TOTAL: usize = 40000;
 // A step's pictures and documents: the chat gets them whole up to LIVE_MEDIA, the saved
@@ -57,7 +63,7 @@ struct TurnInfo {
 #[derive(Default)]
 struct Book {
     turns: HashMap<String, TurnInfo>,
-    text_len: usize,  // how much of the answer it has said so far, in JS string units (where each step goes in it)
+    text_len: usize, // how much of the answer it has said so far, in JS string units (where each step goes in it)
     media_left: usize,
     calls: Vec<Value>,
     mcp_calls: Map<String, Value>, // tool call id -> { name, input, result, view, noView } (in the order they came)
@@ -76,7 +82,10 @@ pub struct Chat {
 impl Chat {
     /// A conversation kept with the others, whose answers go elsewhere (a side question, features/chat/side.rs).
     pub fn bare(session: Arc<Session>) -> Arc<Chat> {
-        Arc::new(Chat { session, book: Arc::default() })
+        Arc::new(Chat {
+            session,
+            book: Arc::default(),
+        })
     }
 }
 
@@ -116,8 +125,15 @@ fn clip(v: &Value, l: &Limits, depth: usize) -> Value {
     match v {
         Value::String(s) => json!(cut(s, l.text)),
         _ if depth > 6 => v.clone(),
-        Value::Array(a) => Value::Array(a.iter().take(200).map(|x| clip(x, l, depth + 1)).collect()),
-        Value::Object(o) => Value::Object(o.iter().take(100).map(|(k, x)| (k.clone(), clip(x, l, depth + 1))).collect()),
+        Value::Array(a) => {
+            Value::Array(a.iter().take(200).map(|x| clip(x, l, depth + 1)).collect())
+        }
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .take(100)
+                .map(|(k, x)| (k.clone(), clip(x, l, depth + 1)))
+                .collect(),
+        ),
         _ => v.clone(),
     }
 }
@@ -125,22 +141,32 @@ fn clip(v: &Value, l: &Limits, depth: usize) -> Value {
 /// A step's pictures within a byte budget; returns them and what's left of it.
 fn step_media(media: &Value, budget: usize) -> (Value, usize) {
     let mut left = budget;
-    let out = media.as_array().into_iter().flatten().take(MEDIA_COUNT).map(|m| {
-        if m["kind"] != "image" {
-            return m.clone();
-        }
-        let len = m["data"].as_str().map_or(0, str::len);
-        if len > left {
-            return json!({ "kind": "image", "mimeType": m["mimeType"], "notKept": true });
-        }
-        left -= len;
-        m.clone()
-    });
+    let out = media
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(MEDIA_COUNT)
+        .map(|m| {
+            if m["kind"] != "image" {
+                return m.clone();
+            }
+            let len = m["data"].as_str().map_or(0, str::len);
+            if len > left {
+                return json!({ "kind": "image", "mimeType": m["mimeType"], "notKept": true });
+            }
+            left -= len;
+            m.clone()
+        });
     (Value::Array(out.collect()), left)
 }
 
 fn count_lines(hunks: &Value) -> usize {
-    hunks.as_array().into_iter().flatten().map(|h| h["lines"].as_array().map_or(0, Vec::len)).sum()
+    hunks
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|h| h["lines"].as_array().map_or(0, Vec::len))
+        .sum()
 }
 
 // Diffs kept in history are cut down so the store file stays small.
@@ -184,7 +210,11 @@ impl Book {
                 c["trimmed"] = json!(true);
             }
         }
-        if calls.is_empty() { Value::Null } else { Value::Array(calls) }
+        if calls.is_empty() {
+            Value::Null
+        } else {
+            Value::Array(calls)
+        }
     }
 
     /// The finished turn's MCP tool calls that have (or may have) a view, kept with the
@@ -193,7 +223,14 @@ impl Book {
         std::mem::take(&mut self.mcp_calls)
             .into_iter()
             .filter(|(_, c)| c["noView"] != true)
-            .map(|(id, c)| entry(vec![("id", json!(id)), ("name", c["name"].clone()), ("input", c["input"].clone()), ("result", c["result"].clone())]))
+            .map(|(id, c)| {
+                entry(vec![
+                    ("id", json!(id)),
+                    ("name", c["name"].clone()),
+                    ("input", c["input"].clone()),
+                    ("result", c["result"].clone()),
+                ])
+            })
             .filter(|a| a.to_string().len() < 300_000)
             .take(10)
             .collect()
@@ -204,7 +241,13 @@ impl Book {
         let images = std::mem::take(&mut self.images);
         let apps = self.take_apps();
         let calls = self.take_calls();
-        let some = |v: Vec<Value>| if v.is_empty() { Value::Null } else { Value::Array(v) };
+        let some = |v: Vec<Value>| {
+            if v.is_empty() {
+                Value::Null
+            } else {
+                Value::Array(v)
+            }
+        };
         (some(edits), some(apps), some(images), calls)
     }
 }
@@ -222,7 +265,13 @@ fn strip_media(v: &mut Value) {
 
 /// A history entry without its empty parts (as JSON.stringify drops undefined).
 fn entry(pairs: Vec<(&str, Value)>) -> Value {
-    Value::Object(pairs.into_iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.to_string(), v)).collect())
+    Value::Object(
+        pairs
+            .into_iter()
+            .filter(|(_, v)| !v.is_null())
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+    )
 }
 
 fn patch(pairs: Vec<(&str, Value)>) -> Map<String, Value> {
@@ -248,12 +297,21 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     if let Some(chat) = with(app, |st| st.chats.get(&key).cloned()) {
         return Some(chat);
     }
-    let (c, tab, settings) = with(app, |st| Some((st.store.get(id)?.clone(), st.store.tab(id, tab_id)?.clone(), st.store.settings().clone())))?;
+    let (c, tab, settings) = with(app, |st| {
+        Some((
+            st.store.get(id)?.clone(),
+            st.store.tab(id, tab_id)?.clone(),
+            st.store.settings().clone(),
+        ))
+    })?;
     let model = tab["model"].as_str().or(c["model"].as_str()).unwrap_or(""); // '' = Claude Code's default; a tab's choice beats the robot's
     // an edited question: once, the process picks the conversation up from before it (rewind)
     let resume_at = tab["resumeAt"].as_str().map(str::to_string);
     if resume_at.is_some() {
-        with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("resumeAt", Value::Null)])));
+        with(app, |st| {
+            st.store
+                .update_tab(id, tab_id, patch(vec![("resumeAt", Value::Null)]))
+        });
     }
     // the other robots, to ask (mcp/link.rs): its tools, usable without asking, and time to wait for an answer
     let mcp_config = link::mcp_config(app, id, tab_id);
@@ -265,9 +323,20 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         model: model.into(),
         effort: tab["effort"].as_str().unwrap_or("").into(),
         add_dirs: vec![],
-        tools: settings["toolset"]["tools"].as_array().map(|t| t.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()),
-        env: vec![("MCP_TOOL_TIMEOUT".into(), (link::TASK_TIMEOUT_MS + 60_000).to_string())], // (a handed-off task may take a while)
-        allowed_tools: if mcp_config.is_some() { tools::allowed() } else { vec![] },
+        tools: settings["toolset"]["tools"].as_array().map(|t| {
+            t.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        }),
+        env: vec![(
+            "MCP_TOOL_TIMEOUT".into(),
+            (link::TASK_TIMEOUT_MS + 60_000).to_string(),
+        )], // (a handed-off task may take a while)
+        allowed_tools: if mcp_config.is_some() {
+            tools::allowed()
+        } else {
+            vec![]
+        },
         mcp_config: mcp_config.unwrap_or_default(),
         extra_args: vec![],
         resume_at,
@@ -276,8 +345,15 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         remote_session: tab["remoteSession"].as_str().map(str::to_string),
     };
     let book = Arc::new(Mutex::new(Book::default()));
-    let (app2, id2, tab2, book2) = (app.clone(), id.to_string(), tab_id.to_string(), book.clone());
-    let handler: claude::Handler = Arc::new(move |session, event, data| on_event(&app2, &id2, &tab2, &book2, session, event, data));
+    let (app2, id2, tab2, book2) = (
+        app.clone(),
+        id.to_string(),
+        tab_id.to_string(),
+        book.clone(),
+    );
+    let handler: claude::Handler = Arc::new(move |session, event, data| {
+        on_event(&app2, &id2, &tab2, &book2, session, event, data)
+    });
     let session = Session::new(opts, tab["sessionId"].as_str().map(str::to_string), handler);
     let chat = Arc::new(Chat { session, book });
     with(app, |st| st.chats.insert(key, chat.clone()));
@@ -286,7 +362,11 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
 
 /// The tab's permission mode: its own (picked in the chat, or plan mode come and gone), else the robot's.
 pub fn mode_of<'a>(c: &'a Value, tab: &'a Value) -> &'a str {
-    tab["permissionMode"].as_str().filter(|m| allowed_mode(c, m)).or(c["permissionMode"].as_str()).unwrap_or("default")
+    tab["permissionMode"]
+        .as_str()
+        .filter(|m| allowed_mode(c, m))
+        .or(c["permissionMode"].as_str())
+        .unwrap_or("default")
 }
 
 /// What a chat may switch itself to: anything up to editing files, and planning. Doing anything
@@ -304,20 +384,56 @@ fn remote_name(c: &Value) -> String {
     format!("{} · C-Bot", c["name"].as_str().unwrap_or("Robot"))
 }
 
-fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, session: &Arc<Session>, event: &str, data: Value) {
+fn on_event(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    book: &Arc<Mutex<Book>>,
+    session: &Arc<Session>,
+    event: &str,
+    data: Value,
+) {
     let book_of = || book.lock().unwrap_or_else(|e| e.into_inner());
     match event {
         // Remote Control came on (its page on claude.ai), went off, or couldn't
         "remote" => {
             let on = data["on"] == true;
-            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("remote", json!(on)), ("remoteSession", data["remoteSession"].clone()), ("remoteUrl", data["url"].clone())])));
-            tell(app, id, tab_id, json!({ "type": "remote", "on": on, "url": data["url"], "error": data["error"] }));
+            with(app, |st| {
+                st.store.update_tab(
+                    id,
+                    tab_id,
+                    patch(vec![
+                        ("remote", json!(on)),
+                        ("remoteSession", data["remoteSession"].clone()),
+                        ("remoteUrl", data["url"].clone()),
+                    ]),
+                )
+            });
+            tell(
+                app,
+                id,
+                tab_id,
+                json!({ "type": "remote", "on": on, "url": data["url"], "error": data["error"] }),
+            );
         }
-        "remote-state" => tell(app, id, tab_id, json!({ "type": "remote-state", "state": data })),
+        "remote-state" => tell(
+            app,
+            id,
+            tab_id,
+            json!({ "type": "remote-state", "state": data }),
+        ),
         // a message typed on claude.ai/code or in the Claude app: into the chat as yours
         "remote-prompt" => {
-            let folder = with(app, |st| st.store.get(id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default();
-            let (sid, uuid) = (data["sessionId"].as_str().unwrap_or(""), data["uuid"].as_str().unwrap_or(""));
+            let folder = with(app, |st| {
+                st.store
+                    .get(id)
+                    .and_then(|c| c["folder"].as_str().map(str::to_string))
+            })
+            .unwrap_or_default();
+            let (sid, uuid) = (
+                data["sessionId"].as_str().unwrap_or(""),
+                data["uuid"].as_str().unwrap_or(""),
+            );
             // (it's written to the transcript about when it starts: give it a moment)
             let mut text = None;
             for _ in 0..30 {
@@ -332,8 +448,19 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 return; // (not the user's words: Claude Code's own)
             }
             let tag = "📱 From the Claude app";
-            with(app, |st| st.store.push_history(id, tab_id, json!({ "role": "user", "text": text, "tag": tag })));
-            tell(app, id, tab_id, json!({ "type": "remote-prompt", "text": text, "tag": tag }));
+            with(app, |st| {
+                st.store.push_history(
+                    id,
+                    tab_id,
+                    json!({ "role": "user", "text": text, "tag": tag }),
+                )
+            });
+            tell(
+                app,
+                id,
+                tab_id,
+                json!({ "type": "remote-prompt", "text": text, "tag": tag }),
+            );
         }
         "turn-start" => {
             let turn_id = data.as_str().unwrap_or("").to_string();
@@ -343,20 +470,27 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 b.media_left = KEEP_MEDIA;
                 b.turns.get(&turn_id).map(|t| t.kind.clone())
             };
-            tell(app, id, tab_id, json!({ "type": "turn-start", "turnId": turn_id, "kind": kind }));
+            tell(
+                app,
+                id,
+                tab_id,
+                json!({ "type": "turn-start", "turnId": turn_id, "kind": kind }),
+            );
         }
         "session" => {
             let sid = data.as_str().unwrap_or("");
             with(app, |st| {
                 let tab = st.store.tab(id, tab_id).cloned().unwrap_or_default();
-                st.store.update_tab(id, tab_id, patch(vec![("sessionId", json!(sid))]));
+                st.store
+                    .update_tab(id, tab_id, patch(vec![("sessionId", json!(sid))]));
                 if tab["temporary"] == true {
                     // (not one of the robot's past conversations: kept to throw away when the chat closes)
                     let mut seen = sessions_of(&tab);
                     if !seen.iter().any(|s| s == sid) {
                         seen.push(sid.to_string());
                     }
-                    st.store.update_tab(id, tab_id, patch(vec![("tempSessions", json!(seen))]));
+                    st.store
+                        .update_tab(id, tab_id, patch(vec![("tempSessions", json!(seen))]));
                 } else {
                     st.store.remember_session(id, sid);
                 }
@@ -374,29 +508,65 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         "tools" => {
             // learn Claude Code's default tools once (per version), so later sessions can add the task tools to them
             if data["chosen"].as_bool() != Some(true) {
-                let tools: Vec<String> = data["tools"].as_array().into_iter().flatten().filter_map(|t| t.as_str()).filter(|t| !t.starts_with("mcp__")).map(str::to_string).collect();
-                with(app, |st| st.store.update_settings(patch(vec![("toolset", json!({ "version": data["version"], "tools": tools }))])));
+                let tools: Vec<String> = data["tools"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|t| t.as_str())
+                    .filter(|t| !t.starts_with("mcp__"))
+                    .map(str::to_string)
+                    .collect();
+                with(app, |st| {
+                    st.store.update_settings(patch(vec![(
+                        "toolset",
+                        json!({ "version": data["version"], "tools": tools }),
+                    )]))
+                });
                 // this conversation started without the task tools: pick them up from its next question
                 session.set_tools(tools);
             } else {
                 with(app, |st| {
                     let cached = &st.store.settings()["toolset"];
                     if cached.is_object() && cached["version"] != data["version"] {
-                        st.store.update_settings(patch(vec![("toolset", Value::Null)]));
+                        st.store
+                            .update_settings(patch(vec![("toolset", Value::Null)]));
                     }
                 });
             }
         }
         "commands" => with(app, |st| {
             // keep descriptions we already know when init only gives us names
-            let known: HashMap<String, Value> = st.store.get(id).and_then(|c| c["claudeCommands"].as_array().cloned()).unwrap_or_default().into_iter()
-                .map(|c| (c["name"].as_str().unwrap_or("").to_string(), c["description"].clone())).collect();
-            let merged: Vec<Value> = data.as_array().into_iter().flatten().take(200).map(|c| {
-                let name = c["name"].as_str().unwrap_or("");
-                let desc = c["description"].as_str().filter(|d| !d.is_empty()).map(|d| json!(d)).or_else(|| known.get(name).cloned()).unwrap_or(json!(""));
-                json!({ "name": name, "description": desc })
-            }).collect();
-            st.store.update(id, patch(vec![("claudeCommands", Value::Array(merged))]));
+            let known: HashMap<String, Value> = st
+                .store
+                .get(id)
+                .and_then(|c| c["claudeCommands"].as_array().cloned())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|c| {
+                    (
+                        c["name"].as_str().unwrap_or("").to_string(),
+                        c["description"].clone(),
+                    )
+                })
+                .collect();
+            let merged: Vec<Value> = data
+                .as_array()
+                .into_iter()
+                .flatten()
+                .take(200)
+                .map(|c| {
+                    let name = c["name"].as_str().unwrap_or("");
+                    let desc = c["description"]
+                        .as_str()
+                        .filter(|d| !d.is_empty())
+                        .map(|d| json!(d))
+                        .or_else(|| known.get(name).cloned())
+                        .unwrap_or(json!(""));
+                    json!({ "name": name, "description": desc })
+                })
+                .collect();
+            st.store
+                .update(id, patch(vec![("claudeCommands", Value::Array(merged))]));
         }),
         "text" => {
             let delta = data.as_str().unwrap_or("");
@@ -416,15 +586,24 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
             b.thinking = Some(step.clone());
             if b.calls.len() < KEEP_CALLS {
                 let at = b.text_len;
-                b.calls.push(json!({ "id": step, "name": "Thinking", "detail": "", "at": at, "output": "" }));
+                b.calls.push(
+                    json!({ "id": step, "name": "Thinking", "detail": "", "at": at, "output": "" }),
+                );
             }
             drop(b);
-            tell(app, id, tab_id, json!({ "type": "tool", "id": step, "name": "Thinking", "detail": "", "args": null }));
+            tell(
+                app,
+                id,
+                tab_id,
+                json!({ "type": "tool", "id": step, "name": "Thinking", "detail": "", "args": null }),
+            );
         }
         "thinking-text" => {
             let delta = data.as_str().unwrap_or("");
             let mut b = book_of();
-            let Some(step) = b.thinking.clone() else { return };
+            let Some(step) = b.thinking.clone() else {
+                return;
+            };
             if let Some(call) = b.calls.iter_mut().find(|c| c["id"] == step.as_str()) {
                 let so_far = call["output"].as_str().unwrap_or("");
                 if so_far.len() < KEEP.output * 2 {
@@ -432,9 +611,19 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 }
             }
             drop(b);
-            tell(app, id, tab_id, json!({ "type": "thinking-text", "id": step, "delta": delta }));
+            tell(
+                app,
+                id,
+                tab_id,
+                json!({ "type": "thinking-text", "id": step, "delta": delta }),
+            );
         }
-        "usage" => tell(app, id, tab_id, json!({ "type": "usage", "outputTokens": data["outputTokens"] })),
+        "usage" => tell(
+            app,
+            id,
+            tab_id,
+            json!({ "type": "usage", "outputTokens": data["outputTokens"] }),
+        ),
         "status" => tell(app, id, tab_id, json!({ "type": "status", "text": data })),
         "question" | "request-cancelled" | "plan" => {
             let mut p = data;
@@ -444,7 +633,10 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         // it went into plan mode by itself (or out of it): the tab keeps the mode it's in
         "mode" => {
             let mode = data.as_str().unwrap_or("default");
-            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))])));
+            with(app, |st| {
+                st.store
+                    .update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))]))
+            });
             tell(app, id, tab_id, json!({ "type": "mode", "mode": mode }));
         }
         "tool" => {
@@ -467,17 +659,32 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
             }
             // an MCP tool: if it comes with its own view (an MCP App), show it in the chat
             let call_id = data["id"].as_str().unwrap_or("").to_string();
-            b.mcp_calls.insert(call_id.clone(), json!({ "name": data["name"], "input": data["input"] }));
+            b.mcp_calls.insert(
+                call_id.clone(),
+                json!({ "name": data["name"], "input": data["input"] }),
+            );
             drop(b);
-            let (app, id, tab_id, book) = (app.clone(), id.to_string(), tab_id.to_string(), book.clone());
+            let (app, id, tab_id, book) = (
+                app.clone(),
+                id.to_string(),
+                tab_id.to_string(),
+                book.clone(),
+            );
             let tool = data["name"].as_str().unwrap_or("").to_string();
             // (looked up off this thread: it may ask the tool's server, which takes a moment)
             thread::spawn(move || {
-                let folder = with(&app, |st| st.store.get(&id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default();
+                let folder = with(&app, |st| {
+                    st.store
+                        .get(&id)
+                        .and_then(|c| c["folder"].as_str().map(str::to_string))
+                })
+                .unwrap_or_default();
                 let view = apps::app_for(&app, &tool, &folder);
                 let shown = {
                     let mut b = book.lock().unwrap_or_else(|e| e.into_inner());
-                    let Some(call) = b.mcp_calls.get_mut(&call_id) else { return }; // (its answer is already done with it)
+                    let Some(call) = b.mcp_calls.get_mut(&call_id) else {
+                        return;
+                    }; // (its answer is already done with it)
                     call["noView"] = json!(view.is_none());
                     let Some(view) = view else { return };
                     call["view"] = view.clone();
@@ -494,10 +701,17 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         "tool-output" => {
             let text = data["text"].as_str().unwrap_or("");
             let (live, _) = step_media(&data["media"], LIVE_MEDIA);
-            tell(app, id, tab_id, json!({ "type": "tool-output", "id": data["id"], "text": cut(text, LIVE.output), "media": live, "isError": data["isError"] }));
+            tell(
+                app,
+                id,
+                tab_id,
+                json!({ "type": "tool-output", "id": data["id"], "text": cut(text, LIVE.output), "media": live, "isError": data["isError"] }),
+            );
             let mut b = book_of();
             let left = b.media_left;
-            let Some(call) = b.calls.iter_mut().find(|c| c["id"] == data["id"]) else { return };
+            let Some(call) = b.calls.iter_mut().find(|c| c["id"] == data["id"]) else {
+                return;
+            };
             call["output"] = json!(cut(text, KEEP.output));
             if data["isError"].as_bool() == Some(true) {
                 call["isError"] = json!(true);
@@ -511,14 +725,28 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         "tool-result" => {
             let mut b = book_of();
             let call_id = data["id"].as_str().unwrap_or("").to_string();
-            let Some(call) = b.mcp_calls.get_mut(&call_id) else { return };
+            let Some(call) = b.mcp_calls.get_mut(&call_id) else {
+                return;
+            };
             call["result"] = data["result"].clone();
             if call.get("view").is_some() {
-                tell(app, id, tab_id, json!({ "type": "app-result", "id": call_id, "result": data["result"] }));
+                tell(
+                    app,
+                    id,
+                    tab_id,
+                    json!({ "type": "app-result", "id": call_id, "result": data["result"] }),
+                );
             }
             // pictures the tool returned (a screenshot, a rendered chart): shown in the answer
-            let pics: Vec<Value> = data["result"]["content"].as_array().into_iter().flatten()
-                .filter(|c| c["type"] == "image" && claude::is_image_mime(c["mimeType"].as_str().unwrap_or("")) && c["data"].is_string())
+            let pics: Vec<Value> = data["result"]["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|c| {
+                    c["type"] == "image"
+                        && claude::is_image_mime(c["mimeType"].as_str().unwrap_or(""))
+                        && c["data"].is_string()
+                })
                 .take(6)
                 .map(|c| json!({ "id": call_id, "mimeType": c["mimeType"], "data": c["data"] }))
                 .collect();
@@ -527,13 +755,22 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
             }
             // kept with the answer while they're small, so the store file stays light
             for pic in &pics {
-                let used: usize = b.images.iter().map(|k| k["data"].as_str().map_or(0, str::len)).sum();
+                let used: usize = b
+                    .images
+                    .iter()
+                    .map(|k| k["data"].as_str().map_or(0, str::len))
+                    .sum();
                 if used + pic["data"].as_str().map_or(0, str::len) < 800_000 {
                     b.images.push(pic.clone());
                 }
             }
             drop(b);
-            tell(app, id, tab_id, json!({ "type": "tool-images", "id": call_id, "images": pics }));
+            tell(
+                app,
+                id,
+                tab_id,
+                json!({ "type": "tool-images", "id": call_id, "images": pics }),
+            );
         }
         // files it changed: shown as diffs now, and kept (trimmed) with the answer in history
         "edit" => {
@@ -543,7 +780,8 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
             let mut b = book_of();
             if b.edits.len() < 20 {
                 let mut kept = data.clone();
-                let truncated = data["truncated"].as_bool().unwrap_or(false) || count_lines(&data["hunks"]) > 120;
+                let truncated = data["truncated"].as_bool().unwrap_or(false)
+                    || count_lines(&data["hunks"]) > 120;
                 kept["hunks"] = trim_hunks(&data["hunks"], 120);
                 kept["truncated"] = json!(truncated);
                 b.edits.push(kept);
@@ -552,13 +790,18 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
         "agent" => {
             let mut ev = data;
             // a background helper's full report sits in a file; short ones are already in the summary
-            if ev["op"] == "done" && !ev["outputFile"].as_str().unwrap_or("").is_empty()
+            if ev["op"] == "done"
+                && !ev["outputFile"].as_str().unwrap_or("").is_empty()
                 && let Ok(report) = std::fs::read_to_string(ev["outputFile"].as_str().unwrap())
             {
                 let report = report.trim();
                 if !report.is_empty() && report.len() > ev["summary"].as_str().map_or(0, str::len) {
                     let chars: Vec<char> = report.chars().collect();
-                    ev["report"] = json!(chars[chars.len().saturating_sub(20000)..].iter().collect::<String>());
+                    ev["report"] = json!(
+                        chars[chars.len().saturating_sub(20000)..]
+                            .iter()
+                            .collect::<String>()
+                    );
                 }
             }
             if let Some(o) = ev.as_object_mut() {
@@ -572,7 +815,9 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 let t = st.store.tab(id, tab_id)?;
                 let mut tasks: Vec<Value> = t["tasks"].as_array().cloned().unwrap_or_default();
                 match data["op"].as_str() {
-                    Some("replace") => tasks = data["tasks"].as_array().cloned().unwrap_or_default(),
+                    Some("replace") => {
+                        tasks = data["tasks"].as_array().cloned().unwrap_or_default()
+                    }
                     Some("create") => {
                         tasks.retain(|x| x["id"] != data["id"]);
                         tasks.push(json!({ "id": data["id"], "subject": data["subject"], "activeForm": data["activeForm"], "status": "pending" }));
@@ -580,7 +825,10 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                     _ => {
                         for x in tasks.iter_mut().filter(|x| x["id"] == data["id"]) {
                             for (k, v) in data.as_object().unwrap() {
-                                let set = !matches!(v, Value::Null | Value::Bool(false)) && v != "" && v != 0 && k != "op";
+                                let set = !matches!(v, Value::Null | Value::Bool(false))
+                                    && v != ""
+                                    && v != 0
+                                    && k != "op";
                                 if set {
                                     x[k] = v.clone();
                                 }
@@ -589,11 +837,17 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                     }
                 }
                 tasks.retain(|x| x["status"] != "deleted");
-                st.store.update_tab(id, tab_id, patch(vec![("tasks", json!(tasks))]))?;
+                st.store
+                    .update_tab(id, tab_id, patch(vec![("tasks", json!(tasks))]))?;
                 Some(tasks)
             });
             if let Some(tasks) = tasks {
-                tell(app, id, tab_id, json!({ "type": "tasks", "tasks": tasks, "change": data }));
+                tell(
+                    app,
+                    id,
+                    tab_id,
+                    json!({ "type": "tasks", "tasks": tasks, "change": data }),
+                );
             }
         }
         "compact" => {
@@ -613,32 +867,61 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 let c = st.store.get(id)?.clone();
                 if kind == "compact" {
                     let text = match (last_compact["pre"].as_f64(), last_compact["post"].as_f64()) {
-                        (Some(pre), Some(post)) if pre > 0.0 => format!("🗜️ Compacted my memory: {}k → {}k tokens", (pre / 1000.0).round(), (post / 1000.0).round()),
+                        (Some(pre), Some(post)) if pre > 0.0 => format!(
+                            "🗜️ Compacted my memory: {}k → {}k tokens",
+                            (pre / 1000.0).round(),
+                            (post / 1000.0).round()
+                        ),
                         _ => "🗜️ Compacted my memory".into(),
                     };
-                    st.store.push_history(id, tab_id, json!({ "role": "note", "text": text }));
+                    st.store
+                        .push_history(id, tab_id, json!({ "role": "note", "text": text }));
                 } else {
-                    st.store.push_history(id, tab_id, entry(vec![
-                        ("role", json!("assistant")), ("text", data["text"].clone()), ("asides", data["asides"].clone()), ("isError", data["isError"].clone()),
-                        ("denials", data["denials"].clone()), ("interrupted", data["interrupted"].clone()), ("edits", edits), ("apps", apps), ("images", images), ("tools", tools),
-                        ("uuid", data["uuid"].clone()), // (where an edited question after it rewinds to)
-                    ]));
+                    st.store.push_history(
+                        id,
+                        tab_id,
+                        entry(vec![
+                            ("role", json!("assistant")),
+                            ("text", data["text"].clone()),
+                            ("asides", data["asides"].clone()),
+                            ("isError", data["isError"].clone()),
+                            ("denials", data["denials"].clone()),
+                            ("interrupted", data["interrupted"].clone()),
+                            ("edits", edits),
+                            ("apps", apps),
+                            ("images", images),
+                            ("tools", tools),
+                            ("uuid", data["uuid"].clone()), // (where an edited question after it rewinds to)
+                        ]),
+                    );
                 }
                 if let Some(sid) = data["sessionId"].as_str() {
-                    st.store.update_tab(id, tab_id, patch(vec![("sessionId", json!(sid))]));
+                    st.store
+                        .update_tab(id, tab_id, patch(vec![("sessionId", json!(sid))]));
                 }
                 let mut stats = c["stats"].as_object().cloned().unwrap_or_default();
-                let cost = stats.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0) + data["costUsd"].as_f64().unwrap_or(0.0);
+                let cost = stats.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0)
+                    + data["costUsd"].as_f64().unwrap_or(0.0);
                 stats.insert("costUsd".into(), json!(cost));
-                st.store.update(id, patch(vec![("stats", Value::Object(stats))]));
+                st.store
+                    .update(id, patch(vec![("stats", Value::Object(stats))]));
                 // (when the answer went in: what its side questions hang from, features/chat/side.rs)
-                Some(st.store.tab(id, tab_id).and_then(|t| t["history"].as_array()?.last()?.get("at").cloned()).unwrap_or(Value::Null))
+                Some(
+                    st.store
+                        .tab(id, tab_id)
+                        .and_then(|t| t["history"].as_array()?.last()?.get("at").cloned())
+                        .unwrap_or(Value::Null),
+                )
             });
             let Some(at) = kept else { return };
             let mut p = data;
             p["type"] = json!("done");
             p["at"] = at;
-            p["kind"] = if kind.is_empty() { Value::Null } else { json!(kind) };
+            p["kind"] = if kind.is_empty() {
+                Value::Null
+            } else {
+                json!(kind)
+            };
             tell(app, id, tab_id, p);
             refresh_context(app, id, tab_id);
         }
@@ -647,7 +930,11 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
             let retry = {
                 let mut b = book_of();
                 match b.turns.get_mut(&turn_id) {
-                    Some(t) if data["sessionMissing"].as_bool() == Some(true) && session.session_id().is_some() && !t.retried => {
+                    Some(t)
+                        if data["sessionMissing"].as_bool() == Some(true)
+                            && session.session_id().is_some()
+                            && !t.retried =>
+                    {
                         t.retried = true;
                         Some(t.prompt.clone())
                     }
@@ -657,7 +944,10 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
             if let Some(prompt) = retry {
                 // The old conversation is gone (e.g. folder moved): quietly start fresh.
                 session.forget_session();
-                with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("sessionId", Value::Null)])));
+                with(app, |st| {
+                    st.store
+                        .update_tab(id, tab_id, patch(vec![("sessionId", Value::Null)]))
+                });
                 session.ask(prompt, turn_id);
                 return;
             }
@@ -667,9 +957,21 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 b.take()
             };
             if data["cancelled"].as_bool() != Some(true) {
-                with(app, |st| st.store.push_history(id, tab_id, entry(vec![
-                    ("role", json!("assistant")), ("text", data["message"].clone()), ("isError", json!(true)), ("edits", edits), ("apps", apps), ("images", images), ("tools", tools),
-                ])));
+                with(app, |st| {
+                    st.store.push_history(
+                        id,
+                        tab_id,
+                        entry(vec![
+                            ("role", json!("assistant")),
+                            ("text", data["message"].clone()),
+                            ("isError", json!(true)),
+                            ("edits", edits),
+                            ("apps", apps),
+                            ("images", images),
+                            ("tools", tools),
+                        ]),
+                    )
+                });
             }
             let mut p = data;
             p["type"] = json!("fail");
@@ -681,11 +983,30 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
 
 /// How full the tab's context is ("brain battery"), after each answer.
 fn refresh_context(app: &AppHandle, id: &str, tab_id: &str) -> Value {
-    let stored = || with(app, |st| st.store.tab(id, tab_id).map(|t| t["context"].clone()).unwrap_or(Value::Null));
-    let Some(chat) = with(app, |st| st.chats.get(&key_of(id, tab_id)).cloned()) else { return stored() };
-    let Some(u) = chat.session.context_usage() else { return stored() };
+    let stored = || {
+        with(app, |st| {
+            st.store
+                .tab(id, tab_id)
+                .map(|t| t["context"].clone())
+                .unwrap_or(Value::Null)
+        })
+    };
+    let Some(chat) = with(app, |st| st.chats.get(&key_of(id, tab_id)).cloned()) else {
+        return stored();
+    };
+    let Some(u) = chat.session.context_usage() else {
+        return stored();
+    };
     let context = json!({ "percentage": u["percentage"], "totalTokens": u["totalTokens"], "maxTokens": u["maxTokens"], "autoCompactAt": u["autoCompactThreshold"], "autoCompact": u["isAutoCompactEnabled"] });
-    with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("context", context.clone())])));
-    tell(app, id, tab_id, json!({ "type": "context", "context": context }));
+    with(app, |st| {
+        st.store
+            .update_tab(id, tab_id, patch(vec![("context", context.clone())]))
+    });
+    tell(
+        app,
+        id,
+        tab_id,
+        json!({ "type": "context", "context": context }),
+    );
     context
 }

@@ -12,11 +12,11 @@ use std::thread;
 use std::time::Duration;
 
 use base64::Engine;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
-use crate::agents::claude::{clean_env, Killer};
-use crate::platform::process::NoWindow;
 use super::words::norm;
+use crate::agents::claude::{Killer, clean_env};
+use crate::platform::process::NoWindow;
 
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -130,7 +130,10 @@ const CORE_SYSTEM: &str = concat!(
 // synonyms, word family: most of the writing, so slower).
 fn part(keys: &[&str]) -> Value {
     let all = schema();
-    let props: Map<String, Value> = keys.iter().map(|k| (k.to_string(), all["properties"][*k].clone())).collect();
+    let props: Map<String, Value> = keys
+        .iter()
+        .map(|k| (k.to_string(), all["properties"][*k].clone()))
+        .collect();
     json!({ "type": "object", "properties": props, "required": keys })
 }
 
@@ -160,7 +163,9 @@ fn s(v: &Value, max: usize) -> String {
 }
 
 fn list(v: &Value, n: usize) -> Vec<Value> {
-    v.as_array().map(|a| a.iter().take(n).cloned().collect()).unwrap_or_default()
+    v.as_array()
+        .map(|a| a.iter().take(n).cloned().collect())
+        .unwrap_or_default()
 }
 
 /// A verb's five forms, or null when it isn't a verb.
@@ -186,7 +191,11 @@ pub fn result_of(line: &str) -> Option<Result<Value, String>> {
             Value::Null => "nothing came back".to_string(),
             r => crate::runtime::util::text(r),
         };
-        let why = if why.is_empty() { "nothing came back".to_string() } else { why };
+        let why = if why.is_empty() {
+            "nothing came back".to_string()
+        } else {
+            why
+        };
         return Some(Err(why.chars().take(200).collect()));
     }
     Some(Ok(out.clone()))
@@ -196,9 +205,25 @@ pub fn result_of(line: &str) -> Option<Result<Value, String>> {
 /// user message (a string, or content blocks such as an image).
 fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result<Value, String> {
     let args = [
-        "-p", "--model", "haiku", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-        "--json-schema", &schema.to_string(), "--system-prompt", system,
-        "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", "",
+        "-p",
+        "--model",
+        "haiku",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--json-schema",
+        &schema.to_string(),
+        "--system-prompt",
+        system,
+        "--tools",
+        "",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--setting-sources",
+        "",
     ];
     let mut child = Command::new(exe)
         .args(args)
@@ -237,12 +262,19 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
                 }
             }
         }
-        let code = child.wait().ok().and_then(|s| s.code()).map_or("null".to_string(), |c| c.to_string());
+        let code = child
+            .wait()
+            .ok()
+            .and_then(|s| s.code())
+            .map_or("null".to_string(), |c| c.to_string());
         waiter.gone();
         drop(child);
         let err = err_reader.join().unwrap_or_default();
         let err: String = err.chars().take(200).collect();
-        let _ = tx.send(Err(format!("Claude Code stopped ({code}): {}", if err.is_empty() { "no answer" } else { &err })));
+        let _ = tx.send(Err(format!(
+            "Claude Code stopped ({code}): {}",
+            if err.is_empty() { "no answer" } else { &err }
+        )));
     });
     let answer = match rx.recv_timeout(LOOKUP_TIMEOUT) {
         Ok(a) => a,
@@ -256,14 +288,18 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
 }
 
 fn claude_exe(claude_path: &str) -> Result<std::path::PathBuf, String> {
-    crate::agents::claude::locate::find(claude_path).ok_or_else(|| "Claude Code isn't installed".to_string())
+    crate::agents::claude::locate::find(claude_path)
+        .ok_or_else(|| "Claude Code isn't installed".to_string())
 }
 
 /// The question: the word, and the sentence it was found in.
 fn prompt_for(text: &str, context: &str) -> String {
     let mut p = format!("Word or phrase: \"{text}\"");
     if !context.is_empty() && context != text {
-        p.push_str(&format!("\nFound in: \"{}\"", context.chars().take(400).collect::<String>()));
+        p.push_str(&format!(
+            "\nFound in: \"{}\"",
+            context.chars().take(400).collect::<String>()
+        ));
     }
     p
 }
@@ -273,8 +309,15 @@ fn meaning_of(r: &Value, text: &str) -> Result<Value, String> {
     if r["senses"].as_array().is_none_or(Vec::is_empty) {
         return Err("no meaning came back".into());
     }
-    let word = if s(&r["word"], 80).is_empty() { text.chars().take(80).collect() } else { s(&r["word"], 80) };
-    let senses: Vec<Value> = list(&r["senses"], 3).iter().map(|x| json!({ "pos": s(&x["pos"], 30), "vi": s(&x["vi"], 400), "en": s(&x["en"], 400) })).collect();
+    let word = if s(&r["word"], 80).is_empty() {
+        text.chars().take(80).collect()
+    } else {
+        s(&r["word"], 80)
+    };
+    let senses: Vec<Value> = list(&r["senses"], 3)
+        .iter()
+        .map(|x| json!({ "pos": s(&x["pos"], 30), "vi": s(&x["vi"], 400), "en": s(&x["en"], 400) }))
+        .collect();
     Ok(json!({ "word": word, "ipa": s(&r["ipa"], 80), "senses": senses }))
 }
 
@@ -299,9 +342,27 @@ fn entry_of(meaning: Value, extras: Result<Value, String>) -> Value {
     out.insert("tip".into(), json!(s(&r["tip"], 400)));
     // (none at all if the extras failed: the card then offers to look it up again, as for older words)
     if error.is_none() {
-        out.insert("synonyms".into(), Value::Array(list(&r["synonyms"], 6).iter().map(like).filter(has_word).collect()));
+        out.insert(
+            "synonyms".into(),
+            Value::Array(
+                list(&r["synonyms"], 6)
+                    .iter()
+                    .map(like)
+                    .filter(has_word)
+                    .collect(),
+            ),
+        );
     }
-    out.insert("antonyms".into(), Value::Array(list(&r["antonyms"], 5).iter().map(like).filter(has_word).collect()));
+    out.insert(
+        "antonyms".into(),
+        Value::Array(
+            list(&r["antonyms"], 5)
+                .iter()
+                .map(like)
+                .filter(has_word)
+                .collect(),
+        ),
+    );
     let family: Vec<Value> = list(&r["family"], 8)
         .iter()
         .map(|f| json!({ "word": s(&f["word"], 80), "pos": s(&f["pos"], 30), "vi": s(&f["vi"], 400), "example": s(&f["example"], 400) }))
@@ -317,17 +378,44 @@ fn entry_of(meaning: Value, extras: Result<Value, String>) -> Value {
 /// Look a word up. on_core(meaning) is called as soon as the meaning is in ({ word, ipa,
 /// senses }), before the rest. If only the extras fail, it's still an entry, with the meaning
 /// and empty extras (and extrasError).
-pub fn lookup(text: &str, context: &str, claude_path: &str, on_core: impl FnOnce(&Value)) -> Result<Value, String> {
+pub fn lookup(
+    text: &str,
+    context: &str,
+    claude_path: &str,
+    on_core: impl FnOnce(&Value),
+) -> Result<Value, String> {
     let exe = claude_exe(claude_path)?;
     let prompt = prompt_for(text, context);
     let extras = {
         let (exe, prompt) = (exe.clone(), prompt.clone());
-        thread::spawn(move || ask_haiku(&exe, &part(&["phrases", "verbForms", "tip", "synonyms", "antonyms", "family"]), SYSTEM, json!(prompt)))
+        thread::spawn(move || {
+            ask_haiku(
+                &exe,
+                &part(&[
+                    "phrases",
+                    "verbForms",
+                    "tip",
+                    "synonyms",
+                    "antonyms",
+                    "family",
+                ]),
+                SYSTEM,
+                json!(prompt),
+            )
+        })
     };
     // (the meaning failing is the lookup failing; the extras, still on their way, are dropped)
-    let meaning = ask_haiku(&exe, &part(&["word", "ipa", "senses"]), CORE_SYSTEM, json!(prompt)).and_then(|r| meaning_of(&r, text))?;
+    let meaning = ask_haiku(
+        &exe,
+        &part(&["word", "ipa", "senses"]),
+        CORE_SYSTEM,
+        json!(prompt),
+    )
+    .and_then(|r| meaning_of(&r, text))?;
     on_core(&meaning);
-    let extras = extras.join().unwrap_or_else(|_| Err("the lookup broke".into()));
+    let extras = extras
+        .join()
+        .unwrap_or_else(|_| Err("the lookup broke".into()));
     Ok(entry_of(meaning, extras))
 }
 
@@ -340,7 +428,10 @@ pub fn read_picture(png: &[u8], claude_path: &str) -> Result<(String, String), S
         { "type": "text", "text": "Which word or phrase did I box?" },
     ]);
     let r = ask_haiku(&exe, &read_schema(), READ_SYSTEM, content)?;
-    Ok((s(&r["text"], 80).trim().to_string(), s(&r["sentence"], 400).trim().to_string()))
+    Ok((
+        s(&r["text"], 80).trim().to_string(),
+        s(&r["sentence"], 400).trim().to_string(),
+    ))
 }
 
 #[cfg(test)]
@@ -351,17 +442,32 @@ mod tests {
     fn the_answer_line() {
         assert_eq!(result_of(r#"{"type":"assistant"}"#), None);
         assert_eq!(result_of("not json"), None);
-        assert_eq!(result_of(r#"{"type":"result","structured_output":{"word":"run"}}"#), Some(Ok(json!({ "word": "run" }))));
-        assert_eq!(result_of(r#"{"type":"result","is_error":true,"result":"Not logged in"}"#), Some(Err("Not logged in".into())));
-        assert_eq!(result_of(r#"{"type":"result","result":"plain text"}"#), Some(Err("plain text".into())));
-        assert_eq!(result_of(r#"{"type":"result"}"#), Some(Err("nothing came back".into())));
+        assert_eq!(
+            result_of(r#"{"type":"result","structured_output":{"word":"run"}}"#),
+            Some(Ok(json!({ "word": "run" })))
+        );
+        assert_eq!(
+            result_of(r#"{"type":"result","is_error":true,"result":"Not logged in"}"#),
+            Some(Err("Not logged in".into()))
+        );
+        assert_eq!(
+            result_of(r#"{"type":"result","result":"plain text"}"#),
+            Some(Err("plain text".into()))
+        );
+        assert_eq!(
+            result_of(r#"{"type":"result"}"#),
+            Some(Err("nothing came back".into()))
+        );
     }
 
     #[test]
     fn the_question() {
         assert_eq!(prompt_for("run", ""), "Word or phrase: \"run\"");
         assert_eq!(prompt_for("run", "run"), "Word or phrase: \"run\"");
-        assert_eq!(prompt_for("ran", "I ran home."), "Word or phrase: \"ran\"\nFound in: \"I ran home.\"");
+        assert_eq!(
+            prompt_for("ran", "I ran home."),
+            "Word or phrase: \"ran\"\nFound in: \"I ran home.\""
+        );
     }
 
     #[test]
@@ -370,7 +476,10 @@ mod tests {
         assert_eq!(core["required"], json!(["word", "ipa", "senses"]));
         assert_eq!(core["properties"].as_object().unwrap().len(), 3);
         assert!(core["properties"]["senses"]["items"]["required"].is_array());
-        assert_eq!(schema()["required"].as_array().unwrap().len(), schema()["properties"].as_object().unwrap().len());
+        assert_eq!(
+            schema()["required"].as_array().unwrap().len(),
+            schema()["properties"].as_object().unwrap().len()
+        );
     }
 
     #[test]
@@ -385,17 +494,29 @@ mod tests {
             "tip": "", "synonyms": [{ "word": "sprint", "vi": "chạy nước rút", "note": "" }, { "word": "" }],
             "antonyms": [], "family": [{ "word": "Ran", "pos": "verb" }, { "word": "runner", "pos": "noun", "vi": "người chạy", "example": "" }],
         });
-        let e = entry_of(json!({ "word": "ran", "ipa": "", "senses": [] }), Ok(extras));
+        let e = entry_of(
+            json!({ "word": "ran", "ipa": "", "senses": [] }),
+            Ok(extras),
+        );
         assert_eq!(e["phrases"].as_array().unwrap().len(), 1);
         assert_eq!(e["verbForms"]["irregular"], true);
-        assert_eq!(e["synonyms"], json!([{ "word": "sprint", "vi": "chạy nước rút", "note": "" }]));
+        assert_eq!(
+            e["synonyms"],
+            json!([{ "word": "sprint", "vi": "chạy nước rút", "note": "" }])
+        );
         assert_eq!(e["family"].as_array().unwrap().len(), 1); // (not the word itself)
         assert!(e.get("extrasError").is_none());
         // not a verb: no forms
-        let e = entry_of(json!({ "word": "happy" }), Ok(json!({ "verbForms": { "base": "", "past": "" } })));
+        let e = entry_of(
+            json!({ "word": "happy" }),
+            Ok(json!({ "verbForms": { "base": "", "past": "" } })),
+        );
         assert_eq!(e["verbForms"], Value::Null);
         // the extras failed: no synonyms at all (the card offers to look it up again), and why
-        let e = entry_of(json!({ "word": "happy" }), Err("Claude Code took too long".into()));
+        let e = entry_of(
+            json!({ "word": "happy" }),
+            Err("Claude Code took too long".into()),
+        );
         assert!(e.get("synonyms").is_none());
         assert_eq!(e["extrasError"], "Claude Code took too long");
         assert_eq!(e["antonyms"], json!([]));

@@ -1,11 +1,11 @@
 //! Every Tauri command the pages can call, by the module that answers it (gui/ipc/commands.ts
 //! has a typed function for each).
 
-use tauri::ipc::Invoke;
 use tauri::Wry;
+use tauri::ipc::Invoke;
 
-use crate::features::{notes, vocab};
 use crate::features::chat::group;
+use crate::features::{notes, vocab};
 use crate::mcp::{apps, link};
 use crate::robots::{ipc, island, revive, social, stage, walkers};
 use crate::ui::{tray, workshop};

@@ -10,10 +10,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 
-use crate::agents::claude::{self, locate, Session, transcripts};
+use crate::agents::claude::{self, Session, locate, transcripts};
 use crate::features::chat::{self, Chat};
 use crate::robots::label_of;
 use crate::runtime::util::patch;
@@ -30,7 +30,10 @@ const NOTE: &str = "This is a side question: the user is asking about something 
 static TURNS: Mutex<Option<HashMap<String, (String, bool)>>> = Mutex::new(None);
 
 fn turns<R>(f: impl FnOnce(&mut HashMap<String, (String, bool)>) -> R) -> R {
-    f(TURNS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new))
+    f(TURNS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new))
 }
 
 pub fn is_side(key: &str) -> bool {
@@ -55,16 +58,31 @@ fn fail(error: &str) -> Value {
 }
 
 /// The tab's threads, changed by `f` and kept.
-fn edit_threads<R>(app: &AppHandle, id: &str, tab_id: &str, f: impl FnOnce(&mut Vec<Value>) -> R) -> Option<R> {
+fn edit_threads<R>(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    f: impl FnOnce(&mut Vec<Value>) -> R,
+) -> Option<R> {
     with(app, |st| {
-        let mut threads = st.store.tab(id, tab_id)?["sides"].as_array().cloned().unwrap_or_default();
+        let mut threads = st.store.tab(id, tab_id)?["sides"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         let r = f(&mut threads);
-        st.store.update_tab(id, tab_id, patch(vec![("sides", Value::Array(threads))]))?;
+        st.store
+            .update_tab(id, tab_id, patch(vec![("sides", Value::Array(threads))]))?;
         Some(r)
     })
 }
 
-fn edit_thread(app: &AppHandle, id: &str, tab_id: &str, thread_id: &str, f: impl FnOnce(&mut Value)) {
+fn edit_thread(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    thread_id: &str,
+    f: impl FnOnce(&mut Value),
+) {
     edit_threads(app, id, tab_id, |ts| {
         if let Some(t) = ts.iter_mut().find(|t| t["id"] == thread_id) {
             f(t);
@@ -85,12 +103,26 @@ fn push(app: &AppHandle, id: &str, tab_id: &str, thread_id: &str, entry: Value) 
 
 /// Ask in a thread: one asked before (thread_id), or a new one under the answer at `at`,
 /// about `quote` (what you picked out of it; may be empty).
-pub fn ask(app: &AppHandle, id: &str, tab_id: &str, thread_id: Option<&str>, at: Option<i64>, quote: &str, text: &str) -> Value {
+pub fn ask(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    thread_id: Option<&str>,
+    at: Option<i64>,
+    quote: &str,
+    text: &str,
+) -> Value {
     let text = text.trim();
     if text.is_empty() {
         return fail("Ask me something first.");
     }
-    let Some((c, tab, settings)) = with(app, |st| Some((st.store.get(id)?.clone(), st.store.tab(id, tab_id)?.clone(), st.store.settings().clone()))) else {
+    let Some((c, tab, settings)) = with(app, |st| {
+        Some((
+            st.store.get(id)?.clone(),
+            st.store.tab(id, tab_id)?.clone(),
+            st.store.settings().clone(),
+        ))
+    }) else {
         return fail("That conversation is gone.");
     };
     let folder = c["folder"].as_str().unwrap_or("");
@@ -107,7 +139,9 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, thread_id: Option<&str>, at:
             None => return fail("That side question is gone."),
         },
         None => {
-            let Some(at) = at else { return fail("Which answer is it about?") };
+            let Some(at) = at else {
+                return fail("Which answer is it about?");
+            };
             if threads.len() >= THREADS_MAX {
                 return fail("This chat has too many side questions. Delete a few first.");
             }
@@ -121,18 +155,29 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, thread_id: Option<&str>, at:
     };
     let thread_id = thread["id"].as_str().unwrap_or("").to_string();
     let key = key_of(id, tab_id, &thread_id);
-    if with(app, |st| st.chats.get(&key).is_some_and(|c| c.session.busy())) {
+    if with(app, |st| {
+        st.chats.get(&key).is_some_and(|c| c.session.busy())
+    }) {
         return fail("Wait till I've answered that one (or stop me) first.");
     }
     // its first question says what it's about
     let quote = thread["quote"].as_str().unwrap_or("");
     let prompt = if thread["history"].as_array().is_none_or(Vec::is_empty) && !quote.is_empty() {
         let quoted: Vec<String> = quote.lines().map(|l| format!("> {l}")).collect();
-        format!("[My side question is about this part of the conversation:]\n{}\n\n{text}", quoted.join("\n"))
+        format!(
+            "[My side question is about this part of the conversation:]\n{}\n\n{text}",
+            quoted.join("\n")
+        )
     } else {
         text.to_string()
     };
-    push(app, id, tab_id, &thread_id, json!({ "role": "user", "text": text }));
+    push(
+        app,
+        id,
+        tab_id,
+        &thread_id,
+        json!({ "role": "user", "text": text }),
+    );
     let chat = match with(app, |st| st.chats.get(&key).cloned()) {
         Some(chat) => chat,
         None => start(app, id, tab_id, &thread, &c, &tab, claude_path),
@@ -145,21 +190,47 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, thread_id: Option<&str>, at:
 
 /// A thread's own Claude Code process: its own conversation once it has one, else a branch of the
 /// tab's as it is now (or, while the tab is still answering, as it was after its last answer).
-fn start(app: &AppHandle, id: &str, tab_id: &str, thread: &Value, c: &Value, tab: &Value, claude_path: PathBuf) -> Arc<Chat> {
+fn start(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    thread: &Value,
+    c: &Value,
+    tab: &Value,
+    claude_path: PathBuf,
+) -> Arc<Chat> {
     let thread_id = thread["id"].as_str().unwrap_or("").to_string();
     let busy = with(app, |st| chat::is_busy(st, id, tab_id));
-    let last_answer = || tab["history"].as_array().into_iter().flatten().rev().find(|h| h["role"] == "assistant").and_then(|h| h["uuid"].as_str()).map(str::to_string);
-    let (session_id, fork, resume_at) = match (thread["sessionId"].as_str(), tab["sessionId"].as_str()) {
-        (Some(own), _) => (Some(own.to_string()), false, None),
-        (None, Some(main)) => (Some(main.to_string()), true, if busy { last_answer() } else { None }),
-        (None, None) => (None, false, None),
+    let last_answer = || {
+        tab["history"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .rev()
+            .find(|h| h["role"] == "assistant")
+            .and_then(|h| h["uuid"].as_str())
+            .map(str::to_string)
     };
+    let (session_id, fork, resume_at) =
+        match (thread["sessionId"].as_str(), tab["sessionId"].as_str()) {
+            (Some(own), _) => (Some(own.to_string()), false, None),
+            (None, Some(main)) => (
+                Some(main.to_string()),
+                true,
+                if busy { last_answer() } else { None },
+            ),
+            (None, None) => (None, false, None),
+        };
     let opts = claude::Opts {
         claude_path,
         cwd: c["folder"].as_str().unwrap_or("").into(),
         system_prompt: format!("{}\n{NOTE}", chat::prompt_for(app, c)),
         permission_mode: "default".into(),
-        model: tab["model"].as_str().or(c["model"].as_str()).unwrap_or("").into(), // (the tab's brain)
+        model: tab["model"]
+            .as_str()
+            .or(c["model"].as_str())
+            .unwrap_or("")
+            .into(), // (the tab's brain)
         effort: tab["effort"].as_str().unwrap_or("").into(),
         tools: Some(TOOLS.iter().map(|t| t.to_string()).collect()),
         allowed_tools: vec!["WebSearch".into(), "WebFetch".into()],
@@ -168,32 +239,81 @@ fn start(app: &AppHandle, id: &str, tab_id: &str, thread: &Value, c: &Value, tab
         fork,
         ..Default::default()
     };
-    let (app2, id2, tab2, thread2) = (app.clone(), id.to_string(), tab_id.to_string(), thread_id.clone());
-    let handler: claude::Handler = Arc::new(move |session, event, data| on_event(&app2, &id2, &tab2, &thread2, session, event, data));
+    let (app2, id2, tab2, thread2) = (
+        app.clone(),
+        id.to_string(),
+        tab_id.to_string(),
+        thread_id.clone(),
+    );
+    let handler: claude::Handler = Arc::new(move |session, event, data| {
+        on_event(&app2, &id2, &tab2, &thread2, session, event, data)
+    });
     let chat = Chat::bare(Session::new(opts, session_id, handler));
-    with(app, |st| st.chats.insert(key_of(id, tab_id, &thread_id), chat.clone()));
+    with(app, |st| {
+        st.chats
+            .insert(key_of(id, tab_id, &thread_id), chat.clone())
+    });
     chat
 }
 
-fn on_event(app: &AppHandle, id: &str, tab_id: &str, thread_id: &str, session: &Arc<Session>, event: &str, data: Value) {
+fn on_event(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    thread_id: &str,
+    session: &Arc<Session>,
+    event: &str,
+    data: Value,
+) {
     match event {
         // (its own conversation now: the next process carries that on)
         "session" => {
             let sid = data.as_str().unwrap_or("").to_string();
             edit_thread(app, id, tab_id, thread_id, |t| t["sessionId"] = json!(sid));
         }
-        "turn-start" => tell(app, id, tab_id, thread_id, "start", json!({ "turnId": data })),
+        "turn-start" => tell(
+            app,
+            id,
+            tab_id,
+            thread_id,
+            "start",
+            json!({ "turnId": data }),
+        ),
         "text" => tell(app, id, tab_id, thread_id, "text", json!({ "delta": data })),
-        "tool" => tell(app, id, tab_id, thread_id, "step", json!({ "name": data["name"], "detail": data["detail"] })),
+        "tool" => tell(
+            app,
+            id,
+            tab_id,
+            thread_id,
+            "step",
+            json!({ "name": data["name"], "detail": data["detail"] }),
+        ),
         "done" => {
             turns(|t| t.remove(data["turnId"].as_str().unwrap_or("")));
-            push(app, id, tab_id, thread_id, json!({ "role": "assistant", "text": data["text"], "isError": data["isError"], "interrupted": data["interrupted"] }));
-            tell(app, id, tab_id, thread_id, "done", json!({ "text": data["text"], "isError": data["isError"], "interrupted": data["interrupted"] }));
+            push(
+                app,
+                id,
+                tab_id,
+                thread_id,
+                json!({ "role": "assistant", "text": data["text"], "isError": data["isError"], "interrupted": data["interrupted"] }),
+            );
+            tell(
+                app,
+                id,
+                tab_id,
+                thread_id,
+                "done",
+                json!({ "text": data["text"], "isError": data["isError"], "interrupted": data["interrupted"] }),
+            );
         }
         "fail" => {
             let turn_id = data["turnId"].as_str().unwrap_or("").to_string();
             let retry = turns(|t| match t.get_mut(&turn_id) {
-                Some((prompt, retried)) if data["sessionMissing"] == true && session.session_id().is_some() && !*retried => {
+                Some((prompt, retried))
+                    if data["sessionMissing"] == true
+                        && session.session_id().is_some()
+                        && !*retried =>
+                {
                     *retried = true;
                     Some(prompt.clone())
                 }
@@ -210,9 +330,20 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, thread_id: &str, session: &
                 return;
             }
             let cancelled = data["cancelled"] == true;
-            let entry = if cancelled { json!({ "role": "assistant", "text": "", "interrupted": true }) } else { json!({ "role": "assistant", "text": data["message"], "isError": true }) };
+            let entry = if cancelled {
+                json!({ "role": "assistant", "text": "", "interrupted": true })
+            } else {
+                json!({ "role": "assistant", "text": data["message"], "isError": true })
+            };
             push(app, id, tab_id, thread_id, entry);
-            tell(app, id, tab_id, thread_id, "fail", json!({ "message": data["message"], "cancelled": cancelled }));
+            tell(
+                app,
+                id,
+                tab_id,
+                thread_id,
+                "fail",
+                json!({ "message": data["message"], "cancelled": cancelled }),
+            );
         }
         _ => {}
     }
@@ -220,7 +351,11 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, thread_id: &str, session: &
 
 /// Stop the thread's answer.
 pub fn cancel(app: &AppHandle, id: &str, tab_id: &str, thread_id: &str) -> bool {
-    let Some(chat) = with(app, |st| st.chats.get(&key_of(id, tab_id, thread_id)).cloned()) else { return false };
+    let Some(chat) = with(app, |st| {
+        st.chats.get(&key_of(id, tab_id, thread_id)).cloned()
+    }) else {
+        return false;
+    };
     chat.session.interrupt();
     true
 }
@@ -230,9 +365,22 @@ pub fn remove(app: &AppHandle, id: &str, tab_id: &str, thread_id: &str) -> bool 
     if let Some(chat) = with(app, |st| st.chats.remove(&key_of(id, tab_id, thread_id))) {
         chat.session.close();
     }
-    let gone = edit_threads(app, id, tab_id, |ts| ts.iter().position(|t| t["id"] == thread_id).map(|i| ts.remove(i))).flatten();
+    let gone = edit_threads(app, id, tab_id, |ts| {
+        ts.iter()
+            .position(|t| t["id"] == thread_id)
+            .map(|i| ts.remove(i))
+    })
+    .flatten();
     let Some(gone) = gone else { return false };
-    forget(app, id, gone["sessionId"].as_str().map(str::to_string).into_iter().collect());
+    forget(
+        app,
+        id,
+        gone["sessionId"]
+            .as_str()
+            .map(str::to_string)
+            .into_iter()
+            .collect(),
+    );
     true
 }
 
@@ -240,7 +388,12 @@ pub fn remove(app: &AppHandle, id: &str, tab_id: &str, thread_id: &str) -> bool 
 pub fn close_tab(app: &AppHandle, id: &str, tab_id: &str) {
     let prefix = format!("{}|side|", chat::key_of(id, tab_id));
     let gone: Vec<Arc<Chat>> = with(app, |st| {
-        let keys: Vec<String> = st.chats.keys().filter(|k| k.starts_with(&prefix)).cloned().collect();
+        let keys: Vec<String> = st
+            .chats
+            .keys()
+            .filter(|k| k.starts_with(&prefix))
+            .cloned()
+            .collect();
         keys.iter().filter_map(|k| st.chats.remove(k)).collect()
     });
     for chat in gone {
@@ -252,18 +405,38 @@ pub fn close_tab(app: &AppHandle, id: &str, tab_id: &str) {
 /// its answers, and the conversations of those that go.
 pub fn kept_for(tab: &Value, history: &[Value]) -> (Value, Vec<String>) {
     let ats: Vec<i64> = history.iter().filter_map(|h| h["at"].as_i64()).collect();
-    let (kept, gone): (Vec<Value>, Vec<Value>) = tab["sides"].as_array().into_iter().flatten().cloned().partition(|t| t["at"].as_i64().is_some_and(|at| ats.contains(&at)));
-    (Value::Array(kept), gone.iter().filter_map(|t| t["sessionId"].as_str().map(str::to_string)).collect())
+    let (kept, gone): (Vec<Value>, Vec<Value>) = tab["sides"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .cloned()
+        .partition(|t| t["at"].as_i64().is_some_and(|at| ats.contains(&at)));
+    (
+        Value::Array(kept),
+        gone.iter()
+            .filter_map(|t| t["sessionId"].as_str().map(str::to_string))
+            .collect(),
+    )
 }
 
 /// Every conversation a tab's threads have.
 pub fn sessions_of(tab: &Value) -> Vec<String> {
-    tab["sides"].as_array().into_iter().flatten().filter_map(|t| t["sessionId"].as_str().map(str::to_string)).collect()
+    tab["sides"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t["sessionId"].as_str().map(str::to_string))
+        .collect()
 }
 
 /// Claude Code's transcripts of threads that are gone (once their processes have let go of them).
 pub fn forget(app: &AppHandle, id: &str, sessions: Vec<String>) {
-    let folder = with(app, |st| st.store.get(id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default();
+    let folder = with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["folder"].as_str().map(str::to_string))
+    })
+    .unwrap_or_default();
     if sessions.is_empty() || folder.is_empty() {
         return;
     }

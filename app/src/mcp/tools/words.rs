@@ -1,12 +1,12 @@
 //! The user's English words (features/vocab/): listing them (list_words) and saving more
 //! (save_words), looked up as the word hotkey does.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 
+use super::err;
 use crate::features::vocab;
 use crate::runtime::util::text;
-use super::err;
 
 /// Its tools, as tools/list gives them.
 pub fn list() -> Value {
@@ -50,7 +50,9 @@ pub fn list() -> Value {
 
 pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
     if tool == "list_words" {
-        let limit = args["limit"].as_u64().map_or(50, |n| n.clamp(1, 300) as usize);
+        let limit = args["limit"]
+            .as_u64()
+            .map_or(50, |n| n.clamp(1, 300) as usize);
         return json!({ "text": vocab::list_for_chat(app, &text(&args["query"]), limit) });
     }
     let list: Vec<String> = match &args["words"] {

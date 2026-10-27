@@ -25,9 +25,9 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use serde_json::{json, Value};
-use tauri_plugin_dialog::DialogExt;
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::platform::window;
 use crate::platform::window::Rect;
@@ -113,8 +113,8 @@ struct Stage {
     scale: f64,
     rows: bool, // groups are rows (else columns)
     groups: Vec<Group>,
-    spot: Option<String>,      // in the spotlight, the others in strips
-    off: HashSet<String>,      // left out of "send to all"
+    spot: Option<String>, // in the spotlight, the others in strips
+    off: HashSet<String>, // left out of "send to all"
     drag: Option<Drag>,
     swap: Option<Swap>,
     placed: HashMap<String, (Rect, Value)>, // what each robot's window was last given
@@ -139,12 +139,23 @@ fn ready(app: &AppHandle) -> bool {
 fn apply(app: &AppHandle) {
     let jobs = stg(app, |s| {
         let now = if s.on { s.placements() } else { vec![] };
-        let jobs: Vec<Placed> = now.iter().filter(|p| s.placed.get(&p.id) != Some(&(p.rect, p.info.clone()))).cloned().collect();
+        let jobs: Vec<Placed> = now
+            .iter()
+            .filter(|p| s.placed.get(&p.id) != Some(&(p.rect, p.info.clone())))
+            .cloned()
+            .collect();
         s.placed = now.into_iter().map(|p| (p.id, (p.rect, p.info))).collect();
         jobs
     });
     for p in jobs {
-        robots::set_tile(app, &p.id, Some(robots::StageTile { rect: p.rect, info: p.info }));
+        robots::set_tile(
+            app,
+            &p.id,
+            Some(robots::StageTile {
+                rect: p.rect,
+                info: p.info,
+            }),
+        );
     }
     show_bar(app);
 }
@@ -258,7 +269,12 @@ pub fn start(app: &AppHandle, ids: Option<Vec<String>>) {
         Some(ids.clone())
     });
     let Some(cast) = cast else { return };
-    with(app, |st| st.store.update_settings(crate::runtime::util::patch(vec![("stageLast", json!(cast))])));
+    with(app, |st| {
+        st.store.update_settings(crate::runtime::util::patch(vec![(
+            "stageLast",
+            json!(cast),
+        )]))
+    });
     tell_picks(app);
     apply(app);
     for id in &cast {
@@ -271,7 +287,14 @@ pub fn start(app: &AppHandle, ids: Option<Vec<String>>) {
 /// The last cast again (as it was when it last took the stage).
 pub fn start_last(app: &AppHandle) {
     let last: Vec<String> = with(app, |st| {
-        st.store.settings()["stageLast"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default()
+        st.store.settings()["stageLast"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
     });
     if !last.is_empty() {
         start(app, Some(last));
@@ -279,7 +302,11 @@ pub fn start_last(app: &AppHandle) {
 }
 
 pub fn has_last(app: &AppHandle) -> bool {
-    with(app, |st| st.store.settings()["stageLast"].as_array().is_some_and(|a| !a.is_empty()))
+    with(app, |st| {
+        st.store.settings()["stageLast"]
+            .as_array()
+            .is_some_and(|a| !a.is_empty())
+    })
 }
 
 /// Off the stage: every robot back at its desk with its chat tucked away (still at work).
@@ -417,7 +444,11 @@ pub fn changed(app: &AppHandle) {
         return;
     }
     let now = bar_state(app);
-    let new = stg(app, |s| (s.sent.as_ref() != Some(&now)).then(|| s.sent = Some(now.clone())).is_some());
+    let new = stg(app, |s| {
+        (s.sent.as_ref() != Some(&now))
+            .then(|| s.sent = Some(now.clone()))
+            .is_some()
+    });
     if new {
         let _ = app.emit_to(LABEL, "stage:state", now);
     }
@@ -426,7 +457,13 @@ pub fn changed(app: &AppHandle) {
 /// The bar where it goes (the pill while picking, the bar on stage), made or closed.
 fn show_bar(app: &AppHandle) {
     let (want, hwnd, making) = stg(app, |s| {
-        let want = if s.on { Some(s.bar_rect()) } else if !s.picked.is_empty() { Some(s.pill_rect()) } else { None };
+        let want = if s.on {
+            Some(s.bar_rect())
+        } else if !s.picked.is_empty() {
+            Some(s.pill_rect())
+        } else {
+            None
+        };
         (want, s.bar, s.making)
     });
     match (want, hwnd) {
@@ -499,13 +536,31 @@ fn make_bar(app: &AppHandle) -> Option<isize> {
 /// One message to every robot on stage that's not left out: each robot's page sends it in
 /// its own chat, as if you'd typed it there (waiting its turn if it's busy).
 fn send(app: &AppHandle, prompt: &str, paths: &[String]) -> Value {
-    let to = stg(app, |s| s.cast().into_iter().filter(|id| !s.off.contains(id)).collect::<Vec<_>>());
+    let to = stg(app, |s| {
+        s.cast()
+            .into_iter()
+            .filter(|id| !s.off.contains(id))
+            .collect::<Vec<_>>()
+    });
     if to.is_empty() {
         return json!({ "ok": false, "error": "Nobody's chosen to send it to." });
     }
-    let names: Vec<Value> = with(app, |st| to.iter().map(|id| st.store.get(id).map(|c| c["name"].clone()).unwrap_or(Value::Null)).collect());
+    let names: Vec<Value> = with(app, |st| {
+        to.iter()
+            .map(|id| {
+                st.store
+                    .get(id)
+                    .map(|c| c["name"].clone())
+                    .unwrap_or(Value::Null)
+            })
+            .collect()
+    });
     for id in &to {
-        tell_robot(app, id, json!({ "kind": "ask", "prompt": prompt, "paths": paths, "to": names, "all": to.len() == stg(app, |s| s.cast().len()) }));
+        tell_robot(
+            app,
+            id,
+            json!({ "kind": "ask", "prompt": prompt, "paths": paths, "to": names, "all": to.len() == stg(app, |s| s.cast().len()) }),
+        );
     }
     json!({ "ok": true, "count": to.len() })
 }

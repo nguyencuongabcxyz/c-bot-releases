@@ -12,7 +12,13 @@ pub(super) fn trim_edges(s: &str) -> &str {
     s.trim_start_matches(lead).trim_end_matches(trail)
 }
 
-pub(super) fn catch(app: &AppHandle, raw: &str, source: &str, robot: Option<String>, context: &str) {
+pub(super) fn catch(
+    app: &AppHandle,
+    raw: &str,
+    source: &str,
+    robot: Option<String>,
+    context: &str,
+) {
     let text = trim_edges(raw).trim();
     let r = robot.as_deref();
     if text.is_empty() {
@@ -59,9 +65,14 @@ pub(super) fn find_meaning(app: &AppHandle, id: String, robot: Option<String>, q
     let app = app.clone();
     thread::spawn(move || {
         let looking = patch(vec![("status", json!("looking")), ("error", json!(""))]);
-        let Some(Some(word)) = words(&app, |w| w.vocab.update(&id, looking)) else { return };
+        let Some(Some(word)) = words(&app, |w| w.vocab.update(&id, looking)) else {
+            return;
+        };
         card::update(&app, &word);
-        let claude_path = settings(&app)["claudePath"].as_str().unwrap_or("").to_string();
+        let claude_path = settings(&app)["claudePath"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
         let (txt, context) = (text(&word["text"]), text(&word["context"]));
         let r = robot.as_deref();
         // the meaning comes back first: shown while the phrases, synonyms and family are still coming
@@ -77,7 +88,11 @@ pub(super) fn find_meaning(app: &AppHandle, id: String, robot: Option<String>, q
                     if w.vocab.get(&id).is_none() {
                         return Found::Gone;
                     }
-                    let twin = w.vocab.find(found["word"].as_str().unwrap_or("")).filter(|t| t["id"] != id.as_str() && t["status"] == "ready").cloned();
+                    let twin = w
+                        .vocab
+                        .find(found["word"].as_str().unwrap_or(""))
+                        .filter(|t| t["id"] != id.as_str() && t["status"] == "ready")
+                        .cloned();
                     if let Some(twin) = twin {
                         w.vocab.remove(&id);
                         return Found::Twin(twin);
@@ -88,7 +103,11 @@ pub(super) fn find_meaning(app: &AppHandle, id: String, robot: Option<String>, q
                     w.vocab.update(&id, fields);
                     // (dropped, as the Electron app's undefined: an old usage box, and old
                     // synonyms when this time's extras failed)
-                    let gone: &[&str] = if extras_failed { &["usage", "synonyms"] } else { &["usage"] };
+                    let gone: &[&str] = if extras_failed {
+                        &["usage", "synonyms"]
+                    } else {
+                        &["usage"]
+                    };
                     w.vocab.unset(&id, gone).map_or(Found::Gone, Found::Ready)
                 });
                 match outcome {
@@ -117,7 +136,11 @@ pub(super) fn find_meaning(app: &AppHandle, id: String, robot: Option<String>, q
                     card::update(&app, f);
                 }
                 if !quiet {
-                    tell(&app, r, json!({ "phase": "failed", "word": failed, "error": err }));
+                    tell(
+                        &app,
+                        r,
+                        json!({ "phase": "failed", "word": failed, "error": err }),
+                    );
                 }
             }
         }
@@ -144,9 +167,14 @@ pub(super) fn read_boxed(app: &AppHandle, robot: Option<String>, source: String,
     let app = app.clone();
     thread::spawn(move || {
         tell(&app, robot.as_deref(), json!({ "phase": "reading" }));
-        let claude_path = settings(&app)["claudePath"].as_str().unwrap_or("").to_string();
+        let claude_path = settings(&app)["claudePath"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
         match lookup::read_picture(&png, &claude_path) {
-            Ok((found, _)) if found.is_empty() => tell(&app, robot.as_deref(), json!({ "phase": "unreadable" })),
+            Ok((found, _)) if found.is_empty() => {
+                tell(&app, robot.as_deref(), json!({ "phase": "unreadable" }))
+            }
             Ok((found, sentence)) => catch(&app, &found, &source, robot, &sentence),
             Err(err) => {
                 eprintln!("[snip] reading failed: {err}");
@@ -176,7 +204,12 @@ pub(super) fn open_word(app: &AppHandle, id: &str, robot: Option<String>) -> boo
     if words(app, |w| w.quizzing.is_some()) == Some(true) {
         end_quiz(app, "ignored");
     }
-    let Some(Some(w)) = words(app, |w| w.vocab.update(id, patch(vec![("lastSeenAt", json!(now()))]))) else { return false };
+    let Some(Some(w)) = words(app, |w| {
+        w.vocab
+            .update(id, patch(vec![("lastSeenAt", json!(now()))]))
+    }) else {
+        return false;
+    };
     let spot = card_bounds(app, robot.as_deref()).map_or(Spot::Near(None), Spot::Bounds);
     let paint = color_of(app, robot.as_deref());
     card::open(app, flagged(w, &["known"]), robot, paint, spot);
@@ -194,7 +227,11 @@ pub(super) fn edits(p: &Value) -> Map<String, Value> {
         out.insert("senses".into(), json!(s));
     }
     if let Some(examples) = p["examples"].as_array() {
-        let e: Vec<Value> = examples.iter().take(6).map(|e| json!({ "en": cut(&e["en"], 400), "vi": cut(&e["vi"], 400) })).collect();
+        let e: Vec<Value> = examples
+            .iter()
+            .take(6)
+            .map(|e| json!({ "en": cut(&e["en"], 400), "vi": cut(&e["vi"], 400) }))
+            .collect();
         out.insert("examples".into(), json!(e));
     }
     if let Some(phrases) = p["phrases"].as_array() {
@@ -206,13 +243,18 @@ pub(super) fn edits(p: &Value) -> Map<String, Value> {
         out.insert("phrases".into(), json!(ph));
     }
     if let Some(tip) = p["tip"].as_str() {
-        out.insert("tip".into(), json!(tip.chars().take(400).collect::<String>()));
+        out.insert(
+            "tip".into(),
+            json!(tip.chars().take(400).collect::<String>()),
+        );
     }
     out
 }
 
 pub(super) fn on_card(app: &AppHandle, action: &str, payload: &Value) -> Value {
-    let Some(shown) = card::shown(app) else { return Value::Null };
+    let Some(shown) = card::shown(app) else {
+        return Value::Null;
+    };
     if action == "close" {
         card::close(app);
         return Value::Null;
@@ -228,7 +270,8 @@ pub(super) fn on_card(app: &AppHandle, action: &str, payload: &Value) -> Value {
         // the dream bubble: 📖 Details opens the whole card, ✓ I know this one skips it ahead
         "details" => {
             if let Some(w) = get(app, &id) {
-                let spot = card_bounds(app, robot.as_deref()).map_or(Spot::Near(None), Spot::Bounds);
+                let spot =
+                    card_bounds(app, robot.as_deref()).map_or(Spot::Near(None), Spot::Bounds);
                 let paint = color_of(app, robot.as_deref());
                 card::open(app, flagged(w, &["known"]), robot, paint, spot);
             }
@@ -237,7 +280,11 @@ pub(super) fn on_card(app: &AppHandle, action: &str, payload: &Value) -> Value {
         "know" => {
             let w = words(app, |w| w.vocab.know_it(&id, t)).flatten();
             if let Some(w) = &w {
-                tell(app, robot.as_deref(), json!({ "phase": "knowit", "word": w }));
+                tell(
+                    app,
+                    robot.as_deref(),
+                    json!({ "phase": "knowit", "word": w }),
+                );
             }
             count_changed(app);
             card::close_after(app, 900);
@@ -245,10 +292,16 @@ pub(super) fn on_card(app: &AppHandle, action: &str, payload: &Value) -> Value {
         }
         // the quiz card: ✓ Knew it / ✗ Forgot / ⏰ Later, or left unanswered
         "quiz" => {
-            if words(app, |w| w.quizzing.as_ref().is_some_and(|q| q.word_id == id)) != Some(true) {
+            if words(app, |w| {
+                w.quizzing.as_ref().is_some_and(|q| q.word_id == id)
+            }) != Some(true)
+            {
                 return Value::Null;
             }
-            let how = payload.as_str().filter(|h| ["knew", "forgot", "later", "ignored"].contains(h)).unwrap_or("ignored");
+            let how = payload
+                .as_str()
+                .filter(|h| ["knew", "forgot", "later", "ignored"].contains(h))
+                .unwrap_or("ignored");
             let done = end_quiz(app, how);
             match how {
                 "ignored" => card::close_after(app, 0),
@@ -260,20 +313,36 @@ pub(super) fn on_card(app: &AppHandle, action: &str, payload: &Value) -> Value {
         // ＋ by a synonym, an antonym or a family word: saved as a word of its own
         "add" => {
             let new: String = trim_edges(&text(payload)).trim().chars().take(60).collect();
-            let with = shown.word["word"].as_str().filter(|w| !w.is_empty()).or(shown.word["text"].as_str()).unwrap_or("").to_string();
+            let with = shown.word["word"]
+                .as_str()
+                .filter(|w| !w.is_empty())
+                .or(shown.word["text"].as_str())
+                .unwrap_or("")
+                .to_string();
             let added = words(app, |w| {
                 if new.is_empty() || w.vocab.find(&new).is_some() {
                     return None;
                 }
                 Some(w.vocab.add(&new, "", &format!("with “{with}”"), t))
             });
-            let Some(Some(added)) = added else { return json!(false) };
-            find_meaning(app, added["id"].as_str().unwrap_or("").to_string(), robot, true);
+            let Some(Some(added)) = added else {
+                return json!(false);
+            };
+            find_meaning(
+                app,
+                added["id"].as_str().unwrap_or("").to_string(),
+                robot,
+                true,
+            );
             json!(true)
         }
         "undo" => {
             words(app, |w| w.vocab.remove(&id));
-            tell(app, robot.as_deref(), json!({ "phase": "undone", "word": shown.word }));
+            tell(
+                app,
+                robot.as_deref(),
+                json!({ "phase": "undone", "word": shown.word }),
+            );
             count_changed(app);
             card::close_after(app, 700);
             json!(true)
@@ -290,7 +359,11 @@ pub(super) fn on_card(app: &AppHandle, action: &str, payload: &Value) -> Value {
         "ask" => {
             let robot = robot.or_else(|| hub::nearest_robot(app));
             let word = get(app, &id).unwrap_or(shown.word);
-            tell(app, robot.as_deref(), json!({ "phase": "ask", "word": word }));
+            tell(
+                app,
+                robot.as_deref(),
+                json!({ "phase": "ask", "word": word }),
+            );
             card::close(app);
             json!(true)
         }

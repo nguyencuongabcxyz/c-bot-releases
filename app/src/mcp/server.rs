@@ -15,7 +15,7 @@ use std::net::{Shutdown, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::tools;
 
@@ -27,7 +27,11 @@ pub enum Step {
     /// Answer it now.
     Reply(Value),
     /// A tools/call: ask the app, then answer (id: the JSON-RPC id).
-    Call { id: Value, tool: String, args: Value },
+    Call {
+        id: Value,
+        tool: String,
+        args: Value,
+    },
     /// Claude Code gave up on a call (the user stopped it): hang up on it.
     Cancel(Value),
     Nothing,
@@ -43,19 +47,35 @@ pub fn step(msg: &Value) -> Step {
         }
         return Step::Nothing;
     };
-    let reply = |result: Value| Step::Reply(json!({ "jsonrpc": "2.0", "id": id, "result": result }));
+    let reply =
+        |result: Value| Step::Reply(json!({ "jsonrpc": "2.0", "id": id, "result": result }));
     match method {
         "initialize" => {
-            let version = params["protocolVersion"].as_str().filter(|v| !v.is_empty()).unwrap_or("2024-11-05");
-            reply(json!({ "protocolVersion": version, "capabilities": { "tools": {} }, "serverInfo": { "name": "cbot", "version": "1.0.0" } }))
+            let version = params["protocolVersion"]
+                .as_str()
+                .filter(|v| !v.is_empty())
+                .unwrap_or("2024-11-05");
+            reply(
+                json!({ "protocolVersion": version, "capabilities": { "tools": {} }, "serverInfo": { "name": "cbot", "version": "1.0.0" } }),
+            )
         }
         "ping" => reply(json!({})),
         "tools/list" => reply(json!({ "tools": tools::list() })),
         "tools/call" => {
-            let args = params.get("arguments").filter(|a| !a.is_null()).cloned().unwrap_or(json!({}));
-            Step::Call { id, tool: params["name"].as_str().unwrap_or("").to_string(), args }
+            let args = params
+                .get("arguments")
+                .filter(|a| !a.is_null())
+                .cloned()
+                .unwrap_or(json!({}));
+            Step::Call {
+                id,
+                tool: params["name"].as_str().unwrap_or("").to_string(),
+                args,
+            }
         }
-        _ => Step::Reply(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": format!("No method {method}") } })),
+        _ => Step::Reply(
+            json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": format!("No method {method}") } }),
+        ),
     }
 }
 
@@ -98,20 +118,30 @@ impl Server {
             Err(e) => return fail(format!("C-Bot isn't reachable ({e}). Is it still running?")),
         };
         if let Ok(clone) = sock.try_clone() {
-            self.open.lock().unwrap_or_else(|e| e.into_inner()).insert(key_of(id), clone);
+            self.open
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(key_of(id), clone);
         }
         let request = json!({ "token": self.token, "from": self.robot, "tab": self.tab, "tool": tool, "args": args });
         let answer = (|| {
-            if writeln!(sock, "{request}").and_then(|_| sock.flush()).is_err() {
+            if writeln!(sock, "{request}")
+                .and_then(|_| sock.flush())
+                .is_err()
+            {
                 return fail("C-Bot closed the line before answering.".into());
             }
             let mut line = String::new();
             match BufReader::new(&sock).read_line(&mut line) {
-                Ok(n) if n > 0 && line.ends_with('\n') => serde_json::from_str(line.trim()).unwrap_or_else(|_| fail("C-Bot sent back something unreadable.".into())),
+                Ok(n) if n > 0 && line.ends_with('\n') => serde_json::from_str(line.trim())
+                    .unwrap_or_else(|_| fail("C-Bot sent back something unreadable.".into())),
                 _ => fail("C-Bot closed the line before answering.".into()),
             }
         })();
-        self.open.lock().unwrap_or_else(|e| e.into_inner()).remove(&key_of(id));
+        self.open
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&key_of(id));
         let _ = sock.shutdown(Shutdown::Both);
         answer
     }
@@ -141,7 +171,9 @@ pub fn run_if_asked() -> Option<i32> {
         if line.is_empty() {
             continue;
         }
-        let Ok(msg) = serde_json::from_str::<Value>(line) else { continue };
+        let Ok(msg) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
         match step(&msg) {
             Step::Reply(r) => server.send(&r),
             // (each on its own thread: several robots can be asked at once)
@@ -153,7 +185,12 @@ pub fn run_if_asked() -> Option<i32> {
                 });
             }
             Step::Cancel(id) => {
-                if let Some(sock) = server.open.lock().unwrap_or_else(|e| e.into_inner()).remove(&key_of(&id)) {
+                if let Some(sock) = server
+                    .open
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&key_of(&id))
+                {
                     let _ = sock.shutdown(Shutdown::Both);
                 }
             }
@@ -169,44 +206,96 @@ mod tests {
 
     #[test]
     fn it_introduces_itself_with_the_version_asked_for() {
-        let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": { "protocolVersion": "2025-06-18" } })) else { panic!() };
+        let Step::Reply(r) = step(
+            &json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": { "protocolVersion": "2025-06-18" } }),
+        ) else {
+            panic!()
+        };
         assert_eq!(r["id"], 0);
         assert_eq!(r["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(r["result"]["serverInfo"]["name"], "cbot");
-        let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize" })) else { panic!() };
+        let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize" }))
+        else {
+            panic!()
+        };
         assert_eq!(r["result"]["protocolVersion"], "2024-11-05");
     }
 
     #[test]
     fn it_lists_the_tools_read_only_but_typing_in_a_shell() {
-        let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": "a", "method": "tools/list" })) else { panic!() };
+        let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": "a", "method": "tools/list" }))
+        else {
+            panic!()
+        };
         let tools = r["result"]["tools"].as_array().unwrap();
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["list_robots", "ask_robot", "hand_off_task", "list_words", "save_words", "list_notes", "add_note", "terminal_read", "terminal_type", "terminal_run"]);
-        let read_only: Vec<&str> = tools.iter().filter(|t| t["annotations"]["readOnlyHint"] == true).map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            [
+                "list_robots",
+                "ask_robot",
+                "hand_off_task",
+                "list_words",
+                "save_words",
+                "list_notes",
+                "add_note",
+                "terminal_read",
+                "terminal_type",
+                "terminal_run"
+            ]
+        );
+        let read_only: Vec<&str> = tools
+            .iter()
+            .filter(|t| t["annotations"]["readOnlyHint"] == true)
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
         assert_eq!(read_only, names[..8]);
     }
 
     #[test]
     fn a_call_goes_to_the_app_and_comes_back_as_text() {
-        let s = step(&json!({ "jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": { "name": "ask_robot", "arguments": { "robot": "Bo", "message": "hi" } } }));
-        assert_eq!(s, Step::Call { id: json!(7), tool: "ask_robot".into(), args: json!({ "robot": "Bo", "message": "hi" }) });
+        let s = step(
+            &json!({ "jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": { "name": "ask_robot", "arguments": { "robot": "Bo", "message": "hi" } } }),
+        );
+        assert_eq!(
+            s,
+            Step::Call {
+                id: json!(7),
+                tool: "ask_robot".into(),
+                args: json!({ "robot": "Bo", "message": "hi" })
+            }
+        );
         let r = call_result(&json!(7), &json!({ "text": "Bo says:\nhello" }));
         assert_eq!(r["result"]["content"][0]["text"], "Bo says:\nhello");
         assert_eq!(r["result"]["isError"], false);
-        let r = call_result(&json!(7), &json!({ "text": "Not allowed.", "isError": true }));
+        let r = call_result(
+            &json!(7),
+            &json!({ "text": "Not allowed.", "isError": true }),
+        );
         assert_eq!(r["result"]["isError"], true);
     }
 
     #[test]
     fn notifications_get_no_answer_but_a_cancel_hangs_up() {
-        assert_eq!(step(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })), Step::Nothing);
-        assert_eq!(step(&json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": 7 } })), Step::Cancel(json!(7)));
+        assert_eq!(
+            step(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })),
+            Step::Nothing
+        );
+        assert_eq!(
+            step(
+                &json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": 7 } })
+            ),
+            Step::Cancel(json!(7))
+        );
     }
 
     #[test]
     fn an_unknown_method_is_an_error() {
-        let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": 3, "method": "resources/list" })) else { panic!() };
+        let Step::Reply(r) =
+            step(&json!({ "jsonrpc": "2.0", "id": 3, "method": "resources/list" }))
+        else {
+            panic!()
+        };
         assert_eq!(r["error"]["code"], -32601);
         assert_eq!(r["error"]["message"], "No method resources/list");
     }

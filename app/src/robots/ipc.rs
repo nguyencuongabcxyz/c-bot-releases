@@ -2,21 +2,21 @@
 //! chat, a Tauri command each (gui/ipc/commands.ts calls them). The other robot_* commands
 //! belong to the feature modules (features/vocab/mod.rs, walkers.rs, mcp/apps.rs…).
 
-use serde_json::{json, Map, Value};
 use serde::Deserialize;
+use serde_json::{Map, Value, json};
+use tauri::ipc::{InvokeBody, Request};
+use tauri::{AppHandle, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
-use tauri::{AppHandle, WebviewWindow};
-use tauri::ipc::{InvokeBody, Request};
 
 use crate::agents::personalities;
-use crate::features::{chat, notes, vocab};
 use crate::features::chat::side;
+use crate::features::{chat, notes, vocab};
 use crate::mcp::link;
 use crate::robots;
 use crate::robots::sender;
-use crate::runtime::{hub, with};
 use crate::runtime::util::patch;
+use crate::runtime::{hub, with};
 use crate::store;
 use crate::workbench::{files, shell};
 
@@ -29,7 +29,12 @@ type Answer = Result<Value, String>;
 pub fn robot_init(app: AppHandle, window: WebviewWindow) -> Answer {
     let id = sender(&window)?;
     shell::close(&app, &id); // (a page loaded afresh has no drawer showing the old one)
-    let (character, settings) = with(&app, |st| (st.store.get(&id).map(|c| robots::view(st, c)), st.store.settings().clone()));
+    let (character, settings) = with(&app, |st| {
+        (
+            st.store.get(&id).map(|c| robots::view(st, c)),
+            st.store.settings().clone(),
+        )
+    });
     Ok(json!({
         "character": character,
         "personalities": personalities::public(),
@@ -47,7 +52,12 @@ pub fn robot_init(app: AppHandle, window: WebviewWindow) -> Answer {
 // ---------------------------------------------------------------- its window
 
 #[tauri::command(async)]
-pub fn robot_expand(app: AppHandle, window: WebviewWindow, expanded: bool, opts: Option<Value>) -> Result<(), String> {
+pub fn robot_expand(
+    app: AppHandle,
+    window: WebviewWindow,
+    expanded: bool,
+    opts: Option<Value>,
+) -> Result<(), String> {
     robots::expand(&app, &sender(&window)?, expanded, &opts.unwrap_or_default());
     Ok(())
 }
@@ -72,7 +82,11 @@ pub fn robot_resize(app: AppHandle, window: WebviewWindow, step: Value) -> Resul
 }
 
 #[tauri::command(async)]
-pub fn robot_click_through(app: AppHandle, window: WebviewWindow, through: bool) -> Result<(), String> {
+pub fn robot_click_through(
+    app: AppHandle,
+    window: WebviewWindow,
+    through: bool,
+) -> Result<(), String> {
     robots::click_through(&app, &sender(&window)?, through);
     Ok(())
 }
@@ -86,7 +100,8 @@ pub fn robot_poke(app: AppHandle, window: WebviewWindow) -> Result<i64, String> 
         let mut stats = c["stats"].as_object().cloned().unwrap_or_default();
         let pokes = stats.get("pokes").and_then(Value::as_i64).unwrap_or(0) + 1;
         stats.insert("pokes".into(), json!(pokes));
-        st.store.update(&id, patch(vec![("stats", Value::Object(stats))]));
+        st.store
+            .update(&id, patch(vec![("stats", Value::Object(stats))]));
         Some(pokes)
     })
     .unwrap_or(0))
@@ -114,7 +129,11 @@ pub fn robot_open_link(app: AppHandle, url: Option<String>) {
 #[tauri::command(async)]
 pub fn robot_tab_new(app: AppHandle, window: WebviewWindow, temporary: Option<bool>) -> Answer {
     let id = sender(&window)?;
-    let fields = if temporary == Some(true) { patch(vec![("temporary", json!(true))]) } else { Map::new() };
+    let fields = if temporary == Some(true) {
+        patch(vec![("temporary", json!(true))])
+    } else {
+        Map::new()
+    };
     let tab = with(&app, |st| st.store.add_tab(&id, fields));
     Ok(match tab {
         Some(tab) => {
@@ -129,7 +148,9 @@ pub fn robot_tab_new(app: AppHandle, window: WebviewWindow, temporary: Option<bo
 pub fn robot_tab_close(app: AppHandle, window: WebviewWindow, tab_id: String) -> Answer {
     let id = sender(&window)?;
     if with(&app, |st| st.terminals.get(&id) == Some(&tab_id)) {
-        return Ok(json!({ "ok": false, "error": "That conversation is open in the terminal. Close the terminal first." }));
+        return Ok(
+            json!({ "ok": false, "error": "That conversation is open in the terminal. Close the terminal first." }),
+        );
     }
     let closing = with(&app, |st| st.store.tab(&id, &tab_id).cloned());
     if closing.as_ref().is_some_and(|t| t["remote"] == true) {
@@ -154,31 +175,56 @@ pub fn robot_tab_close(app: AppHandle, window: WebviewWindow, tab_id: String) ->
 pub fn robot_tab_reopen(app: AppHandle, window: WebviewWindow, tab_id: Option<String>) -> Answer {
     let id = sender(&window)?;
     let (tab, any_closed) = with(&app, |st| {
-        let any = st.store.get(&id).and_then(|c| c["closedTabs"].as_array()).is_some_and(|t| !t.is_empty());
+        let any = st
+            .store
+            .get(&id)
+            .and_then(|c| c["closedTabs"].as_array())
+            .is_some_and(|t| !t.is_empty());
         (st.store.reopen_tab(&id, tab_id.as_deref()), any)
     });
     let Some(tab) = tab else {
-        return Ok(json!({ "ok": false, "error": if any_closed { TOO_MANY_TABS } else { "No closed tabs to bring back." } }));
+        return Ok(
+            json!({ "ok": false, "error": if any_closed { TOO_MANY_TABS } else { "No closed tabs to bring back." } }),
+        );
     };
     robots::send_character(&app, &id);
     Ok(json!({ "ok": true, "tabId": tab["id"], "title": store::title_for(&tab) }))
 }
 
 #[tauri::command(async)]
-pub fn robot_tab_rename(app: AppHandle, window: WebviewWindow, tab_id: String, title: String) -> Result<(), String> {
+pub fn robot_tab_rename(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    title: String,
+) -> Result<(), String> {
     let id = sender(&window)?;
-    let title: String = title.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(40).collect();
-    with(&app, |st| st.store.update_tab(&id, &tab_id, patch(vec![("title", json!(title))])));
+    let title: String = title
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(40)
+        .collect();
+    with(&app, |st| {
+        st.store
+            .update_tab(&id, &tab_id, patch(vec![("title", json!(title))]))
+    });
     robots::send_character(&app, &id);
     Ok(())
 }
 
 #[tauri::command(async)]
-pub fn robot_tab_activate(app: AppHandle, window: WebviewWindow, tab_id: String) -> Result<(), String> {
+pub fn robot_tab_activate(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+) -> Result<(), String> {
     let id = sender(&window)?;
     with(&app, |st| {
         if st.store.tab(&id, &tab_id).is_some() {
-            st.store.update(&id, patch(vec![("activeTab", json!(tab_id))]));
+            st.store
+                .update(&id, patch(vec![("activeTab", json!(tab_id))]));
         }
     });
     Ok(())
@@ -186,7 +232,11 @@ pub fn robot_tab_activate(app: AppHandle, window: WebviewWindow, tab_id: String)
 
 /// A fresh conversation in that tab (none: every tab).
 #[tauri::command(async)]
-pub fn robot_reset(app: AppHandle, window: WebviewWindow, tab_id: Option<String>) -> Result<(), String> {
+pub fn robot_reset(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: Option<String>,
+) -> Result<(), String> {
     reset(&app, &sender(&window)?, tab_id.as_deref());
     Ok(())
 }
@@ -195,7 +245,13 @@ pub fn robot_reset(app: AppHandle, window: WebviewWindow, tab_id: Option<String>
 #[tauri::command(async)]
 pub fn robot_commands(app: AppHandle, window: WebviewWindow) -> Answer {
     let id = sender(&window)?;
-    Ok(with(&app, |st| st.store.get(&id).map(|c| c["claudeCommands"].clone()).filter(Value::is_array).unwrap_or(json!([]))))
+    Ok(with(&app, |st| {
+        st.store
+            .get(&id)
+            .map(|c| c["claudeCommands"].clone())
+            .filter(Value::is_array)
+            .unwrap_or(json!([]))
+    }))
 }
 
 // ---------------------------------------------------------------- the chat
@@ -215,15 +271,36 @@ pub struct AskArgs {
 #[tauri::command(async)]
 pub fn robot_ask(app: AppHandle, window: WebviewWindow, tab_id: String, ask: AskArgs) -> Answer {
     let attachments: Vec<Value> = ask.attachments.into_iter().map(Value::from).collect();
-    let kind = if ask.kind.as_deref() == Some("bonk") { "bonk" } else { "chat" };
+    let kind = if ask.kind.as_deref() == Some("bonk") {
+        "bonk"
+    } else {
+        "chat"
+    };
     let turn_id = ask.turn_id.filter(|t| !t.is_empty());
-    let ask = chat::Ask { prompt: ask.prompt.trim(), attachments: &attachments, turn_id, kind, tag: ask.tag.as_deref() };
+    let ask = chat::Ask {
+        prompt: ask.prompt.trim(),
+        attachments: &attachments,
+        turn_id,
+        kind,
+        tag: ask.tag.as_deref(),
+    };
     Ok(chat::ask(&app, &sender(&window)?, &tab_id, ask))
 }
 
 #[tauri::command(async)]
-pub fn robot_compact(app: AppHandle, window: WebviewWindow, tab_id: String, turn_id: String) -> Answer {
-    let ask = chat::Ask { prompt: "/compact", attachments: &[], turn_id: Some(turn_id), kind: "compact", tag: None };
+pub fn robot_compact(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    turn_id: String,
+) -> Answer {
+    let ask = chat::Ask {
+        prompt: "/compact",
+        attachments: &[],
+        turn_id: Some(turn_id),
+        kind: "compact",
+        tag: None,
+    };
     Ok(chat::ask(&app, &sender(&window)?, &tab_id, ask))
 }
 
@@ -239,12 +316,22 @@ pub fn robot_remote(app: AppHandle, window: WebviewWindow, tab_id: String, on: b
 }
 
 #[tauri::command(async)]
-pub fn robot_unqueue(app: AppHandle, window: WebviewWindow, tab_id: String, turn_id: String) -> Result<bool, String> {
+pub fn robot_unqueue(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    turn_id: String,
+) -> Result<bool, String> {
     Ok(chat::unqueue(&app, &sender(&window)?, &tab_id, &turn_id))
 }
 
 #[tauri::command(async)]
-pub fn robot_send_now(app: AppHandle, window: WebviewWindow, tab_id: String, turn_id: String) -> Result<bool, String> {
+pub fn robot_send_now(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    turn_id: String,
+) -> Result<bool, String> {
     Ok(chat::send_now(&app, &sender(&window)?, &tab_id, &turn_id))
 }
 
@@ -254,20 +341,55 @@ pub fn robot_brain(app: AppHandle, window: WebviewWindow, tab_id: String) -> Ans
 }
 
 #[tauri::command(async)]
-pub fn robot_set_brain(app: AppHandle, window: WebviewWindow, tab_id: String, patch: Value) -> Answer {
+pub fn robot_set_brain(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    patch: Value,
+) -> Answer {
     Ok(chat::set_brain(&app, &sender(&window)?, &tab_id, &patch))
 }
 
 /// Your answer to Claude's question card.
 #[tauri::command(async)]
-pub fn robot_answer(app: AppHandle, window: WebviewWindow, tab_id: String, request_id: String, answers: Value, items: Value) -> Result<bool, String> {
-    Ok(chat::answer(&app, &sender(&window)?, &tab_id, &request_id, &answers, &items))
+pub fn robot_answer(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    request_id: String,
+    answers: Value,
+    items: Value,
+) -> Result<bool, String> {
+    Ok(chat::answer(
+        &app,
+        &sender(&window)?,
+        &tab_id,
+        &request_id,
+        &answers,
+        &items,
+    ))
 }
 
 /// Your call on Claude's plan card: go ahead in a permission mode (`mode`), or keep planning (no mode) with notes.
 #[tauri::command(async)]
-pub fn robot_plan(app: AppHandle, window: WebviewWindow, tab_id: String, request_id: String, plan: String, mode: Option<String>, feedback: String) -> Answer {
-    Ok(chat::decide_plan(&app, &sender(&window)?, &tab_id, &request_id, &plan, mode.as_deref(), &feedback))
+pub fn robot_plan(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    request_id: String,
+    plan: String,
+    mode: Option<String>,
+    feedback: String,
+) -> Answer {
+    Ok(chat::decide_plan(
+        &app,
+        &sender(&window)?,
+        &tab_id,
+        &request_id,
+        &plan,
+        mode.as_deref(),
+        &feedback,
+    ))
 }
 
 /// Edit the last question: back to before it (its words come back, to edit and send again).
@@ -278,18 +400,44 @@ pub fn robot_rewind(app: AppHandle, window: WebviewWindow, tab_id: String) -> An
 
 /// A side question about an answer (features/chat/side.rs): in a thread asked before, or a new one.
 #[tauri::command(async)]
-pub fn robot_side_ask(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: Option<String>, at: Option<f64>, quote: Option<String>, text: String) -> Answer {
+pub fn robot_side_ask(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    thread_id: Option<String>,
+    at: Option<f64>,
+    quote: Option<String>,
+    text: String,
+) -> Answer {
     let at = at.map(|a| a.round() as i64);
-    Ok(side::ask(&app, &sender(&window)?, &tab_id, thread_id.as_deref(), at, quote.as_deref().unwrap_or(""), &text))
+    Ok(side::ask(
+        &app,
+        &sender(&window)?,
+        &tab_id,
+        thread_id.as_deref(),
+        at,
+        quote.as_deref().unwrap_or(""),
+        &text,
+    ))
 }
 
 #[tauri::command(async)]
-pub fn robot_side_cancel(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: String) -> Result<bool, String> {
+pub fn robot_side_cancel(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    thread_id: String,
+) -> Result<bool, String> {
     Ok(side::cancel(&app, &sender(&window)?, &tab_id, &thread_id))
 }
 
 #[tauri::command(async)]
-pub fn robot_side_remove(app: AppHandle, window: WebviewWindow, tab_id: String, thread_id: String) -> Result<bool, String> {
+pub fn robot_side_remove(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    thread_id: String,
+) -> Result<bool, String> {
     Ok(side::remove(&app, &sender(&window)?, &tab_id, &thread_id))
 }
 
@@ -312,7 +460,12 @@ pub fn robot_session(app: AppHandle, window: WebviewWindow, session_id: String) 
 }
 
 #[tauri::command(async)]
-pub fn robot_resume(app: AppHandle, window: WebviewWindow, tab_id: String, session_id: String) -> Answer {
+pub fn robot_resume(
+    app: AppHandle,
+    window: WebviewWindow,
+    tab_id: String,
+    session_id: String,
+) -> Answer {
     Ok(chat::resume(&app, &sender(&window)?, &tab_id, &session_id))
 }
 
@@ -323,56 +476,106 @@ pub fn robot_resume(app: AppHandle, window: WebviewWindow, tab_id: String, sessi
 pub fn robot_files(app: AppHandle, window: WebviewWindow, query: String) -> Answer {
     let folder = folder_of(&app, &sender(&window)?);
     let query: String = query.chars().take(200).collect();
-    Ok(if folder.is_empty() || !std::path::Path::new(&folder).exists() { json!([]) } else { files::search(&folder, &query, 40) })
+    Ok(
+        if folder.is_empty() || !std::path::Path::new(&folder).exists() {
+            json!([])
+        } else {
+            files::search(&folder, &query, 40)
+        },
+    )
 }
 
 /// Dropped or pasted files, with the previews for their chips.
 #[tauri::command(async)]
 pub fn robot_inspect_paths(paths: Vec<String>) -> Vec<Value> {
-    paths.iter().take(20).filter_map(|p| crate::workbench::paste::inspect(p)).collect()
+    paths
+        .iter()
+        .take(20)
+        .filter_map(|p| crate::workbench::paste::inspect(p))
+        .collect()
 }
 
 /// A pasted picture (the request's body, its extension in the `ext` header), saved with the
 /// chat's attachments.
 #[tauri::command(async)]
 pub fn robot_save_paste(app: AppHandle, request: Request<'_>) -> Answer {
-    let InvokeBody::Raw(bytes) = request.body() else { return Err("expected the picture's bytes".into()) };
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the picture's bytes".into());
+    };
     if bytes.is_empty() || bytes.len() >= 25 * 1024 * 1024 {
         return Ok(Value::Null);
     }
-    let ext = request.headers().get("ext").and_then(|v| v.to_str().ok()).unwrap_or("");
+    let ext = request
+        .headers()
+        .get("ext")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
     let dir = with(&app, |st| st.data_dir.join("attachments"));
-    Ok(files::save_paste(&dir, bytes, ext).map(crate::workbench::paste::with_thumb).unwrap_or(Value::Null))
+    Ok(files::save_paste(&dir, bytes, ext)
+        .map(crate::workbench::paste::with_thumb)
+        .unwrap_or(Value::Null))
 }
 
 /// The composer's ＋: files (or pictures) picked in the open dialog, as chips to send.
 #[tauri::command(async)]
-pub fn robot_pick_files(app: AppHandle, window: WebviewWindow, pictures: Option<bool>) -> Result<Vec<Value>, String> {
+pub fn robot_pick_files(
+    app: AppHandle,
+    window: WebviewWindow,
+    pictures: Option<bool>,
+) -> Result<Vec<Value>, String> {
     let id = sender(&window)?;
     let folder = folder_of(&app, &id);
-    let mut dialog = app.dialog().file().set_parent(&window).set_title(if pictures == Some(true) { "Pictures to show me" } else { "Files to show me" });
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_title(if pictures == Some(true) {
+            "Pictures to show me"
+        } else {
+            "Files to show me"
+        });
     if !folder.is_empty() {
         dialog = dialog.set_directory(&folder);
     }
     if pictures == Some(true) {
-        dialog = dialog.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+        dialog = dialog.add_filter(
+            "Pictures",
+            &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"],
+        );
     }
     let picked = dialog.blocking_pick_files().unwrap_or_default();
-    Ok(picked.into_iter().filter_map(|f| f.into_path().ok()).take(20).filter_map(|p| crate::workbench::paste::inspect(&p.to_string_lossy())).collect())
+    Ok(picked
+        .into_iter()
+        .filter_map(|f| f.into_path().ok())
+        .take(20)
+        .filter_map(|p| crate::workbench::paste::inspect(&p.to_string_lossy()))
+        .collect())
 }
 
 /// How tall you made the chat (CSS px; none: the height of the screen).
 #[tauri::command(async)]
-pub fn robot_chat_height(app: AppHandle, window: WebviewWindow, height: Option<f64>) -> Result<(), String> {
+pub fn robot_chat_height(
+    app: AppHandle,
+    window: WebviewWindow,
+    height: Option<f64>,
+) -> Result<(), String> {
     let id = sender(&window)?;
-    let h = height.filter(|h| h.is_finite() && *h >= 200.0).map(|h| json!(h.round())).unwrap_or(Value::Null);
-    with(&app, |st| st.store.update(&id, patch(vec![("chatHeight", h)])));
+    let h = height
+        .filter(|h| h.is_finite() && *h >= 200.0)
+        .map(|h| json!(h.round()))
+        .unwrap_or(Value::Null);
+    with(&app, |st| {
+        st.store.update(&id, patch(vec![("chatHeight", h)]))
+    });
     Ok(())
 }
 
 #[tauri::command(async)]
 pub fn robot_open_file(file: String, opts: Option<Value>) -> Value {
-    files::open_file(&file, opts.is_some_and(|o| o["reveal"].as_bool().unwrap_or(false)))
+    files::open_file(
+        &file,
+        opts.is_some_and(|o| o["reveal"].as_bool().unwrap_or(false)),
+    )
 }
 
 /// A file or folder opened in the chat's file viewer (files::read_for_view).
@@ -382,7 +585,12 @@ pub fn robot_read_file(app: AppHandle, path: String) -> Value {
 }
 
 pub fn folder_of(app: &AppHandle, id: &str) -> String {
-    with(app, |st| st.store.get(id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default()
+    with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["folder"].as_str().map(str::to_string))
+    })
+    .unwrap_or_default()
 }
 
 pub fn open_folder(app: &AppHandle, id: &str) {
@@ -396,7 +604,16 @@ pub fn open_folder(app: &AppHandle, id: &str) {
 /// conversation (main.js resetConversation).
 pub fn reset(app: &AppHandle, id: &str, tab_id: Option<&str>) {
     let (tabs, term) = with(app, |st| {
-        let tabs: Vec<String> = st.store.get(id).and_then(|c| c["tabs"].as_array()).map(|t| t.iter().filter_map(|t| t["id"].as_str().map(str::to_string)).collect()).unwrap_or_default();
+        let tabs: Vec<String> = st
+            .store
+            .get(id)
+            .and_then(|c| c["tabs"].as_array())
+            .map(|t| {
+                t.iter()
+                    .filter_map(|t| t["id"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
         (tabs, st.terminals.get(id).cloned())
     });
     if tab_id.is_some() && term.as_deref() == tab_id {
@@ -407,13 +624,22 @@ pub fn reset(app: &AppHandle, id: &str, tab_id: Option<&str>) {
         None => tabs.clone(),
     };
     for t in &chosen {
-        if with(app, |st| st.store.tab(id, t).is_some_and(|x| x["remote"] == true)) {
+        if with(app, |st| {
+            st.store.tab(id, t).is_some_and(|x| x["remote"] == true)
+        }) {
             chat::remote(app, id, t, false); // (a fresh start: not on claude.ai any more)
         }
         chat::close(app, id, t);
         let sides = with(app, |st| st.store.tab(id, t).map(side::sessions_of)).unwrap_or_default();
         side::forget(app, id, sides); // (its side questions start over too)
-        let fresh = patch(vec![("sessionId", Value::Null), ("history", json!([])), ("title", json!("")), ("tasks", json!([])), ("context", Value::Null), ("sides", json!([]))]);
+        let fresh = patch(vec![
+            ("sessionId", Value::Null),
+            ("history", json!([])),
+            ("title", json!("")),
+            ("tasks", json!([])),
+            ("context", Value::Null),
+            ("sides", json!([])),
+        ]);
         with(app, |st| st.store.update_tab(id, t, fresh));
     }
     if tab_id.is_none() {

@@ -7,12 +7,12 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::features::chat;
-use crate::platform::{presence, window};
 use crate::platform::window::Rect;
+use crate::platform::{presence, window};
 use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::{updater, with};
@@ -32,7 +32,15 @@ pub fn send_to_robot(app: &AppHandle, id: &str, channel: &str, payload: Value) {
 /// Is any of the robot's tabs answering?
 pub fn robot_busy(app: &AppHandle, id: &str) -> bool {
     let tabs: Vec<String> = with(app, |st| {
-        st.store.get(id).and_then(|c| c["tabs"].as_array()).map(|t| t.iter().filter_map(|t| t["id"].as_str().map(str::to_string)).collect()).unwrap_or_default()
+        st.store
+            .get(id)
+            .and_then(|c| c["tabs"].as_array())
+            .map(|t| {
+                t.iter()
+                    .filter_map(|t| t["id"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
     });
     with(app, |st| tabs.iter().any(|t| chat::is_busy(st, id, t)))
 }
@@ -69,14 +77,22 @@ pub fn nearest_robot(app: &AppHandle) -> Option<String> {
 /// out, else the one nearest the mouse, else any (main.js notesRobot). Out on the desk
 /// first; with every one away on the island, one of those (the island speaks for it).
 pub fn notes_robot(app: &AppHandle) -> Option<String> {
-    let pick = with(app, |st| st.store.settings()["notesRobot"].as_str().unwrap_or("").to_string());
+    let pick = with(app, |st| {
+        st.store.settings()["notesRobot"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    });
     let open = robots::open_ids(app);
     let shown = |id: &str| robots::hwnd_of(app, id).is_some_and(window::is_visible);
     let out = |id: &str| shown(id) && !robots::is_away(app, id);
     if open.contains(&pick) && out(&pick) {
         return Some(pick);
     }
-    if let Some(near) = nearest_robot(app).filter(|id| out(id)).or_else(|| open.iter().find(|id| out(id)).cloned()) {
+    if let Some(near) = nearest_robot(app)
+        .filter(|id| out(id))
+        .or_else(|| open.iter().find(|id| out(id)).cloned())
+    {
         return Some(near);
     }
     if open.contains(&pick) && shown(&pick) {
@@ -164,9 +180,13 @@ pub fn set_settings(app: &AppHandle, patch: Map<String, Value>) -> Value {
 /// Where an installed C-Bot is: this app's installer's place, else the Electron app's.
 fn installed_exe() -> Option<PathBuf> {
     let local = super::paths::local_data();
-    [local.join("C-Bot").join("C-Bot.exe"), local.join("C-Bot").join("c-bot.exe"), local.join("Programs").join("c-bot").join("C-Bot.exe")]
-        .into_iter()
-        .find(|p| p.is_file())
+    [
+        local.join("C-Bot").join("C-Bot.exe"),
+        local.join("C-Bot").join("c-bot.exe"),
+        local.join("Programs").join("c-bot").join("C-Bot.exe"),
+    ]
+    .into_iter()
+    .find(|p| p.is_file())
 }
 
 /// "Start with Windows" (setting startAtLogin, on unless turned off): C-Bot comes back with
@@ -178,7 +198,9 @@ pub fn apply_login_item(app: &AppHandle) {
     if std::env::var_os("CBOT_DATA_DIR").is_some() {
         return;
     }
-    let on = with(app, |st| st.store.settings()["startAtLogin"].as_bool() != Some(false));
+    let on = with(app, |st| {
+        st.store.settings()["startAtLogin"].as_bool() != Some(false)
+    });
     let result = if updater::installed() {
         use tauri_plugin_autostart::ManagerExt;
         let launcher = app.autolaunch();
@@ -194,10 +216,12 @@ pub fn apply_login_item(app: &AppHandle) {
             .set_app_path(&format!("\"{}\"", exe.display()))
             .set_windows_enable_mode(auto_launch::WindowsEnableMode::CurrentUser)
             .build();
-        launcher.map_err(|e| e.to_string()).and_then(|l| match (on, l.is_enabled().unwrap_or(false)) {
-            (true, _) => l.enable().map_err(|e| e.to_string()),
-            (false, true) => l.disable().map_err(|e| e.to_string()),
-            (false, false) => Ok(()),
+        launcher.map_err(|e| e.to_string()).and_then(|l| {
+            match (on, l.is_enabled().unwrap_or(false)) {
+                (true, _) => l.enable().map_err(|e| e.to_string()),
+                (false, true) => l.disable().map_err(|e| e.to_string()),
+                (false, false) => Ok(()),
+            }
         })
     };
     if let Err(err) = result {
@@ -215,17 +239,28 @@ fn recovered_notice(app: &AppHandle) {
         Some(match &r.from {
             Some(from) => (
                 "Your robots were recovered from a backup.",
-                format!("They came back from:\n{}\n\nThe damaged file was kept as:\n{}", from.display(), r.broken.display()),
+                format!(
+                    "They came back from:\n{}\n\nThe damaged file was kept as:\n{}",
+                    from.display(),
+                    r.broken.display()
+                ),
             ),
             None => (
                 "C-Bot's save file couldn't be read.",
-                format!("No backup could be read either, so C-Bot starts fresh.\n\nThe damaged file was kept as:\n{}", r.broken.display()),
+                format!(
+                    "No backup could be read either, so C-Bot starts fresh.\n\nThe damaged file was kept as:\n{}",
+                    r.broken.display()
+                ),
             ),
         })
     }) else {
         return;
     };
-    app.dialog().message(format!("{message}\n\n{detail}")).title("C-Bot").kind(MessageDialogKind::Warning).show(|_| {});
+    app.dialog()
+        .message(format!("{message}\n\n{detail}"))
+        .title("C-Bot")
+        .kind(MessageDialogKind::Warning)
+        .show(|_| {});
 }
 
 // ---------------------------------------------------------------- hotkeys
@@ -260,7 +295,13 @@ fn hub_state<R>(app: &AppHandle, f: impl FnOnce(&mut Hub) -> R) -> R {
 
 /// The keys a hotkey is set to (the setting, or its default).
 pub fn hotkey_keys(app: &AppHandle, setting: &str, default: &str) -> String {
-    with(app, |st| st.store.settings()[setting].as_str().filter(|s| !s.is_empty()).unwrap_or(default).to_string())
+    with(app, |st| {
+        st.store.settings()[setting]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(default)
+            .to_string()
+    })
 }
 
 /// Offer a hotkey: bound now, and again whenever its setting changes.
@@ -275,7 +316,12 @@ pub fn add_hotkey(app: &AppHandle, key: Hotkey) {
 }
 
 fn rebind_hotkey(app: &AppHandle, setting: &str) {
-    let key = hub_state(app, |h| h.hotkeys.iter().find(|b| b.key.setting == setting).map(|b| b.key.clone()));
+    let key = hub_state(app, |h| {
+        h.hotkeys
+            .iter()
+            .find(|b| b.key.setting == setting)
+            .map(|b| b.key.clone())
+    });
     if let Some(key) = key {
         add_hotkey(app, key);
     }
@@ -284,7 +330,12 @@ fn rebind_hotkey(app: &AppHandle, setting: &str) {
 /// Every hotkey, for the Workshop's Settings > Shortcuts and the tray: what it does, its
 /// keys, its default, whether it works (registered, not taken by another app).
 pub fn hotkey_list(app: &AppHandle) -> Value {
-    let list = hub_state(app, |h| h.hotkeys.iter().map(|b| (b.key.clone(), b.ok)).collect::<Vec<_>>());
+    let list = hub_state(app, |h| {
+        h.hotkeys
+            .iter()
+            .map(|b| (b.key.clone(), b.ok))
+            .collect::<Vec<_>>()
+    });
     Value::Array(
         list.into_iter()
             .map(|(k, ok)| json!({ "setting": k.setting, "label": k.label, "what": k.what, "key": hotkey_keys(app, k.setting, k.default), "def": k.default, "ok": ok }))
@@ -294,7 +345,12 @@ pub fn hotkey_list(app: &AppHandle) -> Value {
 
 /// One hotkey's keys and whether it works: (keys, ok).
 pub fn hotkey_status(app: &AppHandle, setting: &str) -> Option<(String, bool)> {
-    let found = hub_state(app, |h| h.hotkeys.iter().find(|b| b.key.setting == setting).map(|b| (b.key.default, b.ok)));
+    let found = hub_state(app, |h| {
+        h.hotkeys
+            .iter()
+            .find(|b| b.key.setting == setting)
+            .map(|b| (b.key.default, b.ok))
+    });
     found.map(|(def, ok)| (hotkey_keys(app, setting, def), ok))
 }
 
@@ -312,14 +368,16 @@ pub fn setup(app: &AppHandle) {
     apply_login_item(app);
     // checked every few seconds (main.js watchPresenting)
     let app = app.clone();
-    thread::spawn(move || loop {
-        let now = presence::presenting();
-        let changed = hub_state(&app, |h| std::mem::replace(&mut h.hush, now) != now);
-        if changed {
-            for id in robots::open_ids(&app) {
-                let _ = app.emit_to(robots::label_of(&id), "robot:hush", now);
+    thread::spawn(move || {
+        loop {
+            let now = presence::presenting();
+            let changed = hub_state(&app, |h| std::mem::replace(&mut h.hush, now) != now);
+            if changed {
+                for id in robots::open_ids(&app) {
+                    let _ = app.emit_to(robots::label_of(&id), "robot:hush", now);
+                }
             }
+            thread::sleep(Duration::from_secs(5));
         }
-        thread::sleep(Duration::from_secs(5));
     });
 }

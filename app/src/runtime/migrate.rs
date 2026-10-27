@@ -1,6 +1,6 @@
 //! Robots kept the way an older C-Bot kept them, brought up to date when the app starts.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::State;
 use super::util::patch;

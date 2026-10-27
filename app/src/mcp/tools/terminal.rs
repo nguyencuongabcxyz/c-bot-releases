@@ -2,7 +2,7 @@
 //! on screen (terminal_read), typing a command for the user to run (terminal_type), and running
 //! one (terminal_run). A conversation only ever reaches its own shells.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 
 use crate::workbench::shell;

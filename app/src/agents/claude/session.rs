@@ -10,11 +10,34 @@ impl Session {
         let session = Arc::new_cyclic(|me| Session {
             me: me.clone(),
             inner: Mutex::new(Inner {
-                opts, session_id, queue: VecDeque::new(), turn: None, displaced: None, own_uuids: HashSet::new(), pending_questions: HashMap::new(), pending_plans: HashMap::new(), controls: HashMap::new(),
-                task_inputs: HashMap::new(), agent_tools: HashSet::new(), agent_tasks: HashMap::new(), agent_running: HashSet::new(),
-                cost_so_far: 0.0, last_used: Instant::now(), proc: None, generation: 0, restart_before_next: false, closing: false,
-                text: String::new(), asides: AsideFilter::default(), streamed: HashSet::new(), mcp_tool_ids: HashSet::new(), auto_turns: 0,
-                last_uuid: None, tokens_done: 0, tokens_msg: 0, events: tx,
+                opts,
+                session_id,
+                queue: VecDeque::new(),
+                turn: None,
+                displaced: None,
+                own_uuids: HashSet::new(),
+                pending_questions: HashMap::new(),
+                pending_plans: HashMap::new(),
+                controls: HashMap::new(),
+                task_inputs: HashMap::new(),
+                agent_tools: HashSet::new(),
+                agent_tasks: HashMap::new(),
+                agent_running: HashSet::new(),
+                cost_so_far: 0.0,
+                last_used: Instant::now(),
+                proc: None,
+                generation: 0,
+                restart_before_next: false,
+                closing: false,
+                text: String::new(),
+                asides: AsideFilter::default(),
+                streamed: HashSet::new(),
+                mcp_tool_ids: HashSet::new(),
+                auto_turns: 0,
+                last_uuid: None,
+                tokens_done: 0,
+                tokens_msg: 0,
+                events: tx,
             }),
         });
         // events are handed to the handler one after another, on this thread
@@ -66,7 +89,15 @@ impl Session {
         // stdin stays open: questions go in as stream-json messages, and tool permission
         // requests come back to us ("stdio") so questions can be answered
         let mut args: Vec<String> = [
-            "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--input-format", "stream-json", "--permission-prompt-tool", "stdio",
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--input-format",
+            "stream-json",
+            "--permission-prompt-tool",
+            "stdio",
         ]
         .map(String::from)
         .to_vec();
@@ -123,14 +154,21 @@ impl Session {
             .spawn();
         let mut child = match spawned {
             Ok(c) => c,
-            Err(err) => return i.fail_all(&format!("Couldn't start Claude Code: {err}"), false, false),
+            Err(err) => {
+                return i.fail_all(&format!("Couldn't start Claude Code: {err}"), false, false);
+            }
         };
         i.generation += 1;
         let generation = i.generation;
         let stderr = Arc::new(Mutex::new(String::new()));
         let (stdout, err_pipe) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
         let killer = Killer::new(child.id());
-        i.proc = Some(Proc { generation, killer: killer.clone(), stdin: child.stdin.take(), stderr: stderr.clone() });
+        i.proc = Some(Proc {
+            generation,
+            killer: killer.clone(),
+            stdin: child.stdin.take(),
+            stderr: stderr.clone(),
+        });
 
         thread::spawn(move || {
             let mut err_pipe = err_pipe;
@@ -158,18 +196,23 @@ impl Session {
         });
         // learn the available models, effort levels and command descriptions
         let events = i.events.clone();
-        i.control(json!({ "subtype": "initialize" }), Box::new(move |r| {
-            if let Ok(info) = r {
-                let _ = events.send(("initialized".into(), info));
-            }
-        }));
+        i.control(
+            json!({ "subtype": "initialize" }),
+            Box::new(move |r| {
+                if let Ok(info) = r {
+                    let _ = events.send(("initialized".into(), info));
+                }
+            }),
+        );
         self.enable_remote(i);
     }
 
     // Remote Control on, for this process: the same remote session as before, if there was one.
     // The session outlives the process (a restart picks it up again); turning it off ends it.
     pub(super) fn enable_remote(&self, i: &mut Inner) {
-        let Some(name) = i.opts.remote.clone() else { return };
+        let Some(name) = i.opts.remote.clone() else {
+            return;
+        };
         if i.proc.is_none() {
             return;
         }
@@ -210,7 +253,10 @@ impl Session {
         if !on {
             i.opts.remote_session = None;
             if i.proc.is_some() {
-                i.control(json!({ "subtype": "remote_control", "enabled": false }), Box::new(|_| {}));
+                i.control(
+                    json!({ "subtype": "remote_control", "enabled": false }),
+                    Box::new(|_| {}),
+                );
             }
             i.emit("remote", json!({ "on": false }));
         } else if i.proc.is_some() {
@@ -221,7 +267,10 @@ impl Session {
             }
             if i.proc.is_none() {
                 i.opts.remote = None;
-                i.emit("remote", json!({ "on": false, "error": "Couldn't start Claude Code." }));
+                i.emit(
+                    "remote",
+                    json!({ "on": false, "error": "Couldn't start Claude Code." }),
+                );
             }
         }
     }
@@ -236,7 +285,11 @@ impl Session {
             if i.proc.as_ref().map(|p| p.generation) != Some(generation) {
                 return; // an old process we replaced
             }
-            let stderr = i.proc.take().map(|p| p.stderr.lock().unwrap().clone()).unwrap_or_default();
+            let stderr = i
+                .proc
+                .take()
+                .map(|p| p.stderr.lock().unwrap().clone())
+                .unwrap_or_default();
             // helpers die with the process: say so, or their cards would spin forever
             for id in i.agent_running.drain().collect::<Vec<_>>() {
                 i.emit("agent", json!({ "op": "done", "id": id, "status": "stopped", "summary": "Stopped: Claude Code closed before this helper finished." }));
@@ -247,7 +300,10 @@ impl Session {
                 } else if !stderr.trim().is_empty() {
                     stderr.trim().to_string()
                 } else {
-                    format!("Claude Code exited with code {}", code.map_or("?".into(), |c| c.to_string()))
+                    format!(
+                        "Claude Code exited with code {}",
+                        code.map_or("?".into(), |c| c.to_string())
+                    )
                 };
                 let missing = msg.to_lowercase().contains("no conversation found");
                 let closing = i.closing;
@@ -310,7 +366,9 @@ impl Session {
     pub fn interrupt(&self) -> Vec<String> {
         let mut i = self.lock();
         let dropped: Vec<String> = i.queue.drain(..).map(|(id, _)| id).collect();
-        if i.proc.is_some() && let Some(t) = i.turn.as_mut() {
+        if i.proc.is_some()
+            && let Some(t) = i.turn.as_mut()
+        {
             t.interrupted = true;
             i.control(json!({ "subtype": "interrupt" }), Box::new(|_| {}));
         }
@@ -328,10 +386,14 @@ impl Session {
     /// Answer this waiting question right away: stop the current answer and jump the queue.
     pub fn send_now(&self, turn_id: &str) -> bool {
         let mut i = self.lock();
-        let Some(pos) = i.queue.iter().position(|(id, _)| id == turn_id) else { return false };
+        let Some(pos) = i.queue.iter().position(|(id, _)| id == turn_id) else {
+            return false;
+        };
         let t = i.queue.remove(pos).unwrap();
         i.queue.push_front(t);
-        if i.proc.is_some() && let Some(t) = i.turn.as_mut() {
+        if i.proc.is_some()
+            && let Some(t) = i.turn.as_mut()
+        {
             t.interrupted = true;
             i.control(json!({ "subtype": "interrupt" }), Box::new(|_| {}));
         }
@@ -342,10 +404,14 @@ impl Session {
     /// of an event that the answer would have to come after).
     pub(super) fn control_wait(&self, request: Value) -> Result<Value, String> {
         let (tx, rx) = mpsc::channel();
-        self.lock().control(request, Box::new(move |r| {
-            let _ = tx.send(r);
-        }));
-        rx.recv_timeout(CONTROL_TIMEOUT).map_err(|_| "Claude Code didn't answer in time".to_string())?
+        self.lock().control(
+            request,
+            Box::new(move |r| {
+                let _ = tx.send(r);
+            }),
+        );
+        rx.recv_timeout(CONTROL_TIMEOUT)
+            .map_err(|_| "Claude Code didn't answer in time".to_string())?
     }
 
     pub fn set_model(&self, model: &str) -> Result<(), String> {
@@ -367,8 +433,14 @@ impl Session {
             i.proc.is_some()
         };
         if alive {
-            let level = if effort.is_empty() { Value::Null } else { json!(effort) };
-            self.control_wait(json!({ "subtype": "apply_flag_settings", "settings": { "effortLevel": level } }))?;
+            let level = if effort.is_empty() {
+                Value::Null
+            } else {
+                json!(effort)
+            };
+            self.control_wait(
+                json!({ "subtype": "apply_flag_settings", "settings": { "effortLevel": level } }),
+            )?;
         }
         Ok(())
     }
@@ -377,7 +449,10 @@ impl Session {
         let mut i = self.lock();
         i.opts.permission_mode = mode.into();
         if i.proc.is_some() {
-            i.control(json!({ "subtype": "set_permission_mode", "mode": mode }), Box::new(|_| {}));
+            i.control(
+                json!({ "subtype": "set_permission_mode", "mode": mode }),
+                Box::new(|_| {}),
+            );
         }
     }
 
@@ -400,7 +475,11 @@ impl Session {
 
     pub fn allow_dirs(&self, dirs: &[String]) {
         let mut i = self.lock();
-        let fresh: Vec<String> = dirs.iter().filter(|d| !i.opts.add_dirs.contains(d)).cloned().collect();
+        let fresh: Vec<String> = dirs
+            .iter()
+            .filter(|d| !i.opts.add_dirs.contains(d))
+            .cloned()
+            .collect();
         if fresh.is_empty() {
             return;
         }
@@ -413,7 +492,8 @@ impl Session {
         if !self.alive() {
             return None;
         }
-        self.control_wait(json!({ "subtype": "get_context_usage" })).ok()
+        self.control_wait(json!({ "subtype": "get_context_usage" }))
+            .ok()
     }
 
     /// answers: { [question text]: "Label" | "Label, Other label" | free text }
@@ -422,9 +502,14 @@ impl Session {
         if i.proc.is_none() {
             return false;
         }
-        let Some(mut input) = i.pending_questions.remove(request_id) else { return false };
+        let Some(mut input) = i.pending_questions.remove(request_id) else {
+            return false;
+        };
         input["answers"] = answers;
-        i.reply(request_id, json!({ "behavior": "allow", "updatedInput": input }));
+        i.reply(
+            request_id,
+            json!({ "behavior": "allow", "updatedInput": input }),
+        );
         true
     }
 
@@ -435,7 +520,9 @@ impl Session {
         if i.proc.is_none() {
             return false;
         }
-        let Some(input) = i.pending_plans.remove(request_id) else { return false };
+        let Some(input) = i.pending_plans.remove(request_id) else {
+            return false;
+        };
         match go_mode {
             Some(mode) => {
                 i.opts.permission_mode = mode.into();
@@ -449,7 +536,10 @@ impl Session {
 
 {notes}"),
                 };
-                i.reply(request_id, json!({ "behavior": "deny", "message": message }));
+                i.reply(
+                    request_id,
+                    json!({ "behavior": "deny", "message": message }),
+                );
             }
         }
         true
@@ -472,7 +562,9 @@ impl Session {
     }
 
     pub(super) fn line(&self, line: &str) {
-        let Ok(msg) = serde_json::from_str::<Value>(line) else { return };
+        let Ok(msg) = serde_json::from_str::<Value>(line) else {
+            return;
+        };
         let mut i = self.lock();
         if s(&msg, "type") == "control_response" {
             let r = &msg["response"];
@@ -481,7 +573,11 @@ impl Session {
                 if s(r, "subtype") == "success" {
                     reply(Ok(r.get("response").cloned().unwrap_or(json!({}))));
                 } else {
-                    reply(Err(if s(r, "error").is_empty() { "control request failed".into() } else { s(r, "error").to_string() }));
+                    reply(Err(if s(r, "error").is_empty() {
+                        "control request failed".into()
+                    } else {
+                        s(r, "error").to_string()
+                    }));
                 }
             }
             return;
@@ -529,7 +625,9 @@ impl Session {
             // a question it asked is no longer wanted (the answer was stopped)
             "control_cancel_request" => {
                 let id = s(&msg, "request_id").to_string();
-                if i.pending_questions.remove(&id).is_some() || i.pending_plans.remove(&id).is_some() {
+                if i.pending_questions.remove(&id).is_some()
+                    || i.pending_plans.remove(&id).is_some()
+                {
                     i.emit("request-cancelled", json!({ "requestId": id }));
                 }
             }
@@ -606,7 +704,11 @@ impl Session {
                 }
             }
             "user" => {
-                for block in msg["message"]["content"].as_array().cloned().unwrap_or_default() {
+                for block in msg["message"]["content"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                {
                     if s(&block, "type") != "tool_result" {
                         continue;
                     }
@@ -635,7 +737,9 @@ impl Session {
                         i.emit("tool-result", json!({ "id": id, "result": result }));
                     }
                     // a helper that ran in the foreground is done when its tool call returns
-                    if i.agent_tools.contains(&id) && !msg["tool_use_result"]["isAsync"].as_bool().unwrap_or(false) {
+                    if i.agent_tools.contains(&id)
+                        && !msg["tool_use_result"]["isAsync"].as_bool().unwrap_or(false)
+                    {
                         i.agent_running.remove(&id);
                         let status = if is_error { "failed" } else { "completed" };
                         i.emit("agent", json!({ "op": "done", "id": id, "status": status, "summary": result_text(&block["content"]) }));
@@ -651,7 +755,11 @@ impl Session {
                     i.emit("remote-state", msg["state"].clone());
                 }
                 // its permission mode changed by itself (it went into plan mode, a plan was approved)
-                if sub == "status" && let Some(mode) = msg["permissionMode"].as_str().filter(|m| *m != i.opts.permission_mode) {
+                if sub == "status"
+                    && let Some(mode) = msg["permissionMode"]
+                        .as_str()
+                        .filter(|m| *m != i.opts.permission_mode)
+                {
                     i.opts.permission_mode = mode.to_string();
                     i.emit("mode", json!(mode));
                 }
@@ -660,7 +768,10 @@ impl Session {
                 } else if sub == "init" {
                     // the slash commands Claude Code offers in this folder (skills, custom commands)
                     if let Some(cmds) = msg["slash_commands"].as_array() {
-                        i.emit("commands", Value::Array(cmds.iter().map(|n| json!({ "name": n })).collect()));
+                        i.emit(
+                            "commands",
+                            Value::Array(cmds.iter().map(|n| json!({ "name": n })).collect()),
+                        );
                     }
                     if msg["tools"].is_array() {
                         let chosen = i.opts.tools.is_some();
@@ -687,14 +798,22 @@ impl Session {
                 let total = msg["total_cost_usd"].as_f64().unwrap_or(0.0);
                 let cost = (total - i.cost_so_far).max(0.0);
                 i.cost_so_far = total;
-                let interrupted = turn.interrupted || s(&msg, "terminal_reason").starts_with("abort");
+                let interrupted =
+                    turn.interrupted || s(&msg, "terminal_reason").starts_with("abort");
                 let text = match i.text.trim() {
                     "" => strip_asides(s(&msg, "result")).trim().to_string(),
                     t => t.to_string(),
                 };
                 i.last_used = Instant::now();
-                let denials: Vec<Value> = msg["permission_denials"].as_array().map(|d| d.iter().map(|x| x["tool_name"].clone()).collect()).unwrap_or_default();
-                let session_id = if sid.is_empty() { json!(i.session_id) } else { json!(sid) };
+                let denials: Vec<Value> = msg["permission_denials"]
+                    .as_array()
+                    .map(|d| d.iter().map(|x| x["tool_name"].clone()).collect())
+                    .unwrap_or_default();
+                let session_id = if sid.is_empty() {
+                    json!(i.session_id)
+                } else {
+                    json!(sid)
+                };
                 i.emit("done", json!({
                     "turnId": turn.id, "text": text, "asides": i.asides.asides, "isError": msg["is_error"].as_bool().unwrap_or(false) && !interrupted,
                     "interrupted": interrupted, "costUsd": cost, "denials": denials, "sessionId": session_id, "uuid": i.last_uuid,

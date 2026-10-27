@@ -28,22 +28,22 @@ mod visits;
 pub use visits::*;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use chrono::{Datelike, Local, Timelike};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Manager};
 
 use crate::agents::personalities;
-use crate::features::{notes, vocab};
 use crate::features::chat::group;
+use crate::features::{notes, vocab};
 use crate::platform::{input, presence, window};
 use crate::robots;
+use crate::robots::walkers::{Errand, after, pick, random};
 use crate::robots::{maid, planes, walkers};
-use crate::robots::walkers::{after, Errand, pick, random};
 use crate::runtime::{hub, with};
 use crate::workbench::quick;
 
@@ -154,7 +154,9 @@ fn vset(app: &AppHandle, f: impl FnOnce(&mut Visit)) {
 
 /// Do this in ms, if the visit's still on (and its timers weren't cleared).
 fn later(app: &AppHandle, ms: u64, f: impl FnOnce(&AppHandle) + Send + 'static) {
-    let Some(epoch) = soc(app, |s| s.visit.as_ref().map(|v| v.epoch)) else { return };
+    let Some(epoch) = soc(app, |s| s.visit.as_ref().map(|v| v.epoch)) else {
+        return;
+    };
     after(app, ms, move |app| {
         if soc(app, |s| s.visit.as_ref().is_some_and(|v| v.epoch == epoch)) {
             f(app);
@@ -173,7 +175,14 @@ pub fn today() -> String {
 
 /// The days you work (the notes' workdays: 0 Sunday … 6 Saturday).
 pub fn workdays(settings: &Value) -> Vec<u32> {
-    settings["notesWorkdays"].as_array().map(|d| d.iter().filter_map(|x| x.as_u64().map(|x| x as u32)).collect()).unwrap_or_else(|| vec![1, 2, 3, 4, 5])
+    settings["notesWorkdays"]
+        .as_array()
+        .map(|d| {
+            d.iter()
+                .filter_map(|x| x.as_u64().map(|x| x as u32))
+                .collect()
+        })
+        .unwrap_or_else(|| vec![1, 2, 3, 4, 5])
 }
 
 fn within(mins: u32, w: (u32, u32)) -> bool {
@@ -183,7 +192,12 @@ fn within(mins: u32, w: (u32, u32)) -> bool {
 // ---------------------------------------------------------------- what they know
 
 fn level(app: &AppHandle) -> String {
-    with(app, |st| st.store.settings()["socialising"].as_str().unwrap_or("sometimes").to_string())
+    with(app, |st| {
+        st.store.settings()["socialising"]
+            .as_str()
+            .unwrap_or("sometimes")
+            .to_string()
+    })
 }
 
 fn kk(app: &AppHandle) -> f64 {
@@ -197,7 +211,11 @@ fn present() -> bool {
 /// You're working with C-Bot: a card, the notebook, Quick actions, the group chat or the
 /// housemaid's round.
 fn app_busy(app: &AppHandle) -> bool {
-    notes::notebook_open(app) || quick::is_open(app) || vocab::card_showing(app) || group::is_open(app) || maid::active(app)
+    notes::notebook_open(app)
+        || quick::is_open(app)
+        || vocab::card_showing(app)
+        || group::is_open(app)
+        || maid::active(app)
 }
 
 fn tell(app: &AppHandle, id: &str, payload: Value) {
@@ -205,16 +223,31 @@ fn tell(app: &AppHandle, id: &str, payload: Value) {
 }
 
 fn name_of(app: &AppHandle, id: &str) -> String {
-    with(app, |st| st.store.get(id).and_then(|c| c["name"].as_str().map(str::to_string))).unwrap_or_default()
+    with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["name"].as_str().map(str::to_string))
+    })
+    .unwrap_or_default()
 }
 
 /// One of the robot's lines of this kind, in its personality ({other}: the other's name).
 pub fn line(app: &AppHandle, id: &str, key: &str, other: &str) -> String {
-    let personality = with(app, |st| st.store.get(id).and_then(|c| c["personality"].as_str().map(str::to_string))).unwrap_or_default();
+    let personality = with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["personality"].as_str().map(str::to_string))
+    })
+    .unwrap_or_default();
     let all = personalities::all();
-    let Some(p) = all.get(&personality).or_else(|| all.values().next()) else { return String::new() };
+    let Some(p) = all.get(&personality).or_else(|| all.values().next()) else {
+        return String::new();
+    };
     let said = match &p["social"][key] {
-        Value::Array(lines) => pick(lines).and_then(Value::as_str).unwrap_or("").to_string(),
+        Value::Array(lines) => pick(lines)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
         Value::String(s) => s.clone(),
         _ => String::new(),
     };
@@ -249,7 +282,14 @@ fn live(app: &AppHandle) -> Vec<String> {
     robots::open_ids(app)
         .into_iter()
         .filter(|id| showing(app, id))
-        .filter(|id| soc(app, |s| s.reports.get(id).and_then(|r| r.at).is_some_and(|at| now.duration_since(at) < FRESH)))
+        .filter(|id| {
+            soc(app, |s| {
+                s.reports
+                    .get(id)
+                    .and_then(|r| r.at)
+                    .is_some_and(|at| now.duration_since(at) < FRESH)
+            })
+        })
         .collect()
 }
 
@@ -274,7 +314,10 @@ fn centre(app: &AppHandle, id: &str) -> Option<(f64, f64)> {
 
 fn same_screen(app: &AppHandle, a: &str, b: &str) -> bool {
     match (centre(app, a), centre(app, b)) {
-        (Some(ca), Some(cb)) => window::monitor_near(ca.0 as i32, ca.1 as i32).work == window::monitor_near(cb.0 as i32, cb.1 as i32).work,
+        (Some(ca), Some(cb)) => {
+            window::monitor_near(ca.0 as i32, ca.1 as i32).work
+                == window::monitor_near(cb.0 as i32, cb.1 as i32).work
+        }
         _ => false,
     }
 }
@@ -297,11 +340,17 @@ fn side_of(app: &AppHandle, from: &str, to: &str) -> &'static str {
 }
 
 fn face_for(side: &str) -> String {
-    if side == "L" { "right".into() } else { "left".into() }
+    if side == "L" {
+        "right".into()
+    } else {
+        "left".into()
+    }
 }
 
 fn in_visit(app: &AppHandle, id: &str) -> bool {
-    soc(app, |s| s.visit.as_ref().is_some_and(|v| v.a == id || v.b == id))
+    soc(app, |s| {
+        s.visit.as_ref().is_some_and(|v| v.a == id || v.b == id)
+    })
 }
 
 // ---------------------------------------------------------------- the reports
@@ -353,15 +402,26 @@ fn on_done(app: &AppHandle, id: &str) {
             continue;
         }
         let clapped = soc(app, |s| {
-            if s.last_clap.get(&o).is_some_and(|t| now.duration_since(*t) < CLAP_GAP) {
+            if s.last_clap
+                .get(&o)
+                .is_some_and(|t| now.duration_since(*t) < CLAP_GAP)
+            {
                 return false;
             }
             s.last_clap.insert(o.clone(), now);
             true
         });
         if clapped {
-            let text = if random() < 0.45 { line(app, &o, "clap", id) } else { String::new() };
-            tell(app, &o, json!({ "phase": "clap", "side": side_of(app, &o, id), "text": text }));
+            let text = if random() < 0.45 {
+                line(app, &o, "clap", id)
+            } else {
+                String::new()
+            };
+            tell(
+                app,
+                &o,
+                json!({ "phase": "clap", "side": side_of(app, &o, id), "text": text }),
+            );
         }
     }
 }
@@ -376,7 +436,11 @@ fn on_slept(app: &AppHandle, id: &str) {
         }
         if random() < 0.5 {
             let sleep_soon = rep(app, &o).idle_ms() > 90_000.0 && random() < 0.5;
-            tell(app, &o, json!({ "phase": "yawn", "side": side_of(app, &o, id), "sleepSoon": sleep_soon }));
+            tell(
+                app,
+                &o,
+                json!({ "phase": "yawn", "side": side_of(app, &o, id), "sleepSoon": sleep_soon }),
+            );
         }
     }
 }
@@ -394,24 +458,43 @@ pub fn milestone(app: &AppHandle, id: &str) {
 }
 
 fn try_wave(app: &AppHandle, now: Instant) -> bool {
-    let free: Vec<String> = live(app).into_iter().filter(|id| free_awake(app, id) && rep(app, id).idle_ms() > 15_000.0 && !in_visit(app, id)).collect();
+    let free: Vec<String> = live(app)
+        .into_iter()
+        .filter(|id| free_awake(app, id) && rep(app, id).idle_ms() > 15_000.0 && !in_visit(app, id))
+        .collect();
     for a in &free {
         for b in &free {
             if a >= b || !same_screen(app, a, b) || dist(app, a, b) > near() {
                 continue;
             }
             let key = format!("{a}|{b}");
-            if soc(app, |s| s.last_wave.get(&key).is_some_and(|t| now.duration_since(*t) < WAVE_PAIR_GAP)) {
+            if soc(app, |s| {
+                s.last_wave
+                    .get(&key)
+                    .is_some_and(|t| now.duration_since(*t) < WAVE_PAIR_GAP)
+            }) {
                 continue;
             }
             if random() > 0.05 * kk(app) {
                 continue;
             }
             soc(app, |s| s.last_wave.insert(key, now));
-            let (x, y) = if random() < 0.5 { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
-            tell(app, &x, json!({ "phase": "wave", "side": side_of(app, &x, &y) }));
+            let (x, y) = if random() < 0.5 {
+                (a.clone(), b.clone())
+            } else {
+                (b.clone(), a.clone())
+            };
+            tell(
+                app,
+                &x,
+                json!({ "phase": "wave", "side": side_of(app, &x, &y) }),
+            );
             after(app, 900, move |app| {
-                let back = if rep(app, &y).b("awake") { json!({ "phase": "wave-back", "side": side_of(app, &y, &x) }) } else { json!({ "phase": "stir" }) };
+                let back = if rep(app, &y).b("awake") {
+                    json!({ "phase": "wave-back", "side": side_of(app, &y, &x) })
+                } else {
+                    json!({ "phase": "stir" })
+                };
                 tell(app, &y, back);
             });
             return true;
@@ -449,7 +532,9 @@ pub fn clicked(app: &AppHandle, id: &str) -> bool {
 /// Its walker was picked up mid-visit: the visit's off (it's an ordinary walker now, till
 /// you put it back).
 pub fn held(app: &AppHandle, id: &str) {
-    if visit(app).is_some_and(|v| v.a == id || (v.mode == "goout" && v.out.as_ref().is_some_and(|o| o.contains(id)))) {
+    if visit(app).is_some_and(|v| {
+        v.a == id || (v.mode == "goout" && v.out.as_ref().is_some_and(|o| o.contains(id)))
+    }) {
         end_visit(app, "picked up");
     }
 }
@@ -493,21 +578,48 @@ fn try_scene(app: &AppHandle) -> bool {
     let day = today();
     let (lunch_day, tea_day) = soc(app, |s| (s.lunch_day.clone(), s.tea_day.clone()));
     let ids = live(app);
-    let organisers: Vec<&String> = ids.iter().filter(|id| free_awake(app, id) && rep(app, id).idle_ms() >= 45_000.0 && rep(app, id).wanders() && !in_visit(app, id)).collect();
+    let organisers: Vec<&String> = ids
+        .iter()
+        .filter(|id| {
+            free_awake(app, id)
+                && rep(app, id).idle_ms() >= 45_000.0
+                && rep(app, id).wanders()
+                && !in_visit(app, id)
+        })
+        .collect();
     for a in organisers {
         if random() > 0.06 * kk(app) {
             continue;
         }
         if lunch_day != day && (within(mins, SCENE_ORDER) || within(mins, SCENE_GOOUT)) {
             let out = within(mins, SCENE_GOOUT);
-            let hosts: Vec<&String> = ids.iter().filter(|b| *b != a && free_awake(app, b) && !in_visit(app, b) && same_screen(app, a, b) && (!out || rep(app, b).wanders())).collect();
+            let hosts: Vec<&String> = ids
+                .iter()
+                .filter(|b| {
+                    *b != a
+                        && free_awake(app, b)
+                        && !in_visit(app, b)
+                        && same_screen(app, a, b)
+                        && (!out || rep(app, b).wanders())
+                })
+                .collect();
             if let Some(b) = pick(&hosts) {
                 return scene(app, if out { "goout" } else { "order" }, a, b, vec![]);
             }
         }
         if tea_day != day && within(mins, SCENE_TEA) {
             // everyone at a desk on this screen, nearest first (the busy ones get the usual)
-            let mut stops: Vec<String> = ids.iter().filter(|b| *b != a && at_desk(app, b) && !rep(app, b).b("chat") && rep(app, b).b("awake") && same_screen(app, a, b)).cloned().collect();
+            let mut stops: Vec<String> = ids
+                .iter()
+                .filter(|b| {
+                    *b != a
+                        && at_desk(app, b)
+                        && !rep(app, b).b("chat")
+                        && rep(app, b).b("awake")
+                        && same_screen(app, a, b)
+                })
+                .cloned()
+                .collect();
             stops.sort_by(|x, y| dist(app, a, x).total_cmp(&dist(app, a, y)));
             if !stops.is_empty() {
                 let first = stops.remove(0);
@@ -520,7 +632,13 @@ fn try_scene(app: &AppHandle) -> bool {
 
 /// An office scene: order | goout | tea (a goes to b; tea: then the stops).
 pub fn scene(app: &AppHandle, kind: &str, a: &str, b: &str, stops: Vec<String>) -> bool {
-    soc(app, |s| if kind == "tea" { s.tea_day = today() } else { s.lunch_day = today() });
+    soc(app, |s| {
+        if kind == "tea" {
+            s.tea_day = today()
+        } else {
+            s.lunch_day = today()
+        }
+    });
     start(app, a, b, kind, stops, None)
 }
 
@@ -552,7 +670,11 @@ pub fn active(app: &AppHandle) -> bool {
 
 /// How a robot is (and what just happened to it).
 #[tauri::command(async)]
-pub fn social_report(app: AppHandle, window: tauri::WebviewWindow, report: Value) -> Result<(), String> {
+pub fn social_report(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    report: Value,
+) -> Result<(), String> {
     let id = robots::sender(&window)?;
     if report.is_object() {
         self::report(&app, &id, &report);
@@ -563,9 +685,11 @@ pub fn social_report(app: AppHandle, window: tauri::WebviewWindow, report: Value
 pub fn setup(app: &AppHandle) {
     app.manage(Mutex::new(Social::default()));
     let app = app.clone();
-    thread::spawn(move || loop {
-        thread::sleep(TICK);
-        tick(&app);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(TICK);
+            tick(&app);
+        }
     });
 }
 
@@ -598,7 +722,13 @@ mod tests {
 
     #[test]
     fn a_report_reads_as_it_was_sent() {
-        let r = Rep { v: json!({ "awake": true, "idleMs": 61000, "wanders": false }).as_object().cloned().unwrap_or_default(), at: None };
+        let r = Rep {
+            v: json!({ "awake": true, "idleMs": 61000, "wanders": false })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            at: None,
+        };
         assert!(r.b("awake"));
         assert!(!r.b("busy"));
         assert_eq!(r.idle_ms(), 61000.0);

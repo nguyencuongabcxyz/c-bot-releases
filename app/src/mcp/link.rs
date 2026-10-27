@@ -23,23 +23,23 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
-use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
+use super::tools::{self, err};
 use crate::platform::window;
 use crate::robots;
 use crate::robots::{planes, social, walkers};
-use crate::runtime::{hub, with};
 use crate::runtime::util::text;
+use crate::runtime::{hub, with};
 use crate::store::now_ms;
 use crate::workbench::shell;
-use super::tools::{self, err};
 
 const ANSWER_TIMEOUT_MS: u64 = 10 * 60_000;
 const EXCHANGE_KEEP_MS: i64 = 30 * 60_000; // a follow-up within this long goes to the same tab
@@ -88,10 +88,10 @@ struct Exchange {
 struct Link {
     token: String,
     port: Option<u16>,
-    pending: HashMap<String, Pending>,      // request id -> who's waiting for what
-    exchanges: HashMap<String, Exchange>,   // "from>to" -> the conversation a follow-up goes to
-    asked: HashMap<String, Vec<i64>>,       // robot id -> when it asked lately
-    tasks: Vec<Task>,                       // (in the order they were handed off)
+    pending: HashMap<String, Pending>, // request id -> who's waiting for what
+    exchanges: HashMap<String, Exchange>, // "from>to" -> the conversation a follow-up goes to
+    asked: HashMap<String, Vec<i64>>,  // robot id -> when it asked lately
+    tasks: Vec<Task>,                  // (in the order they were handed off)
     task_seq: u64,
 }
 
@@ -108,7 +108,12 @@ fn link<R>(app: &AppHandle, f: impl FnOnce(&mut Link) -> R) -> R {
 // ---------------------------------------------------------------- who's who
 
 fn name(app: &AppHandle, id: &str) -> String {
-    with(app, |st| st.store.get(id).and_then(|c| c["name"].as_str().map(str::to_string))).unwrap_or_else(|| "a robot".into())
+    with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["name"].as_str().map(str::to_string))
+    })
+    .unwrap_or_else(|| "a robot".into())
 }
 
 /// Its window is out on the desktop.
@@ -119,9 +124,21 @@ fn visible(app: &AppHandle, id: &str) -> bool {
 /// The robots on the desktop other than this one: (id, name, folder).
 pub(super) fn others(app: &AppHandle, from: &str) -> Vec<(String, String, String)> {
     let all: Vec<(String, String, String)> = with(app, |st| {
-        st.store.list().iter().map(|c| (c["id"].as_str().unwrap_or("").to_string(), c["name"].as_str().unwrap_or("").to_string(), c["folder"].as_str().unwrap_or("").to_string())).collect()
+        st.store
+            .list()
+            .iter()
+            .map(|c| {
+                (
+                    c["id"].as_str().unwrap_or("").to_string(),
+                    c["name"].as_str().unwrap_or("").to_string(),
+                    c["folder"].as_str().unwrap_or("").to_string(),
+                )
+            })
+            .collect()
     });
-    all.into_iter().filter(|(id, _, _)| id != from && visible(app, id)).collect()
+    all.into_iter()
+        .filter(|(id, _, _)| id != from && visible(app, id))
+        .collect()
 }
 
 /// How it is, for list_robots.
@@ -138,13 +155,20 @@ pub(super) fn status_of(app: &AppHandle, id: &str) -> &'static str {
 }
 
 /// The robot called that (exactly, else the start of its name, else part of it).
-fn find<'a>(robots: &'a [(String, String, String)], wanted: &str) -> Option<&'a (String, String, String)> {
+fn find<'a>(
+    robots: &'a [(String, String, String)],
+    wanted: &str,
+) -> Option<&'a (String, String, String)> {
     let w = wanted.trim().to_lowercase();
     robots
         .iter()
         .find(|r| r.1.to_lowercase() == w)
         .or_else(|| robots.iter().find(|r| r.1.to_lowercase().starts_with(&w)))
-        .or_else(|| robots.iter().find(|r| !w.is_empty() && r.1.to_lowercase().contains(&w)))
+        .or_else(|| {
+            robots
+                .iter()
+                .find(|r| !w.is_empty() && r.1.to_lowercase().contains(&w))
+        })
 }
 
 // ---------------------------------------------------------------- what the asked robot reads
@@ -178,7 +202,10 @@ fn note_for(others: &[(String, String, String)]) -> String {
     if others.is_empty() {
         return String::new();
     }
-    let list: Vec<String> = others.iter().map(|(_, n, f)| format!("{n} (looks after {f})")).collect();
+    let list: Vec<String> = others
+        .iter()
+        .map(|(_, n, f)| format!("{n} (looks after {f})"))
+        .collect();
     format!(
         "Other C-Bot robots on this desktop: {}. {}{}{}{}",
         list.join(", "),
@@ -200,8 +227,19 @@ fn handle(app: &AppHandle, req: &Value, conn: u64) -> Value {
         return err("Not allowed.");
     }
     let tool = req["tool"].as_str().unwrap_or("");
-    let args = if req["args"].is_object() { req["args"].clone() } else { json!({}) };
-    tools::call(app, &from, req["tab"].as_str().unwrap_or(""), tool, &args, conn)
+    let args = if req["args"].is_object() {
+        req["args"].clone()
+    } else {
+        json!({})
+    };
+    tools::call(
+        app,
+        &from,
+        req["tab"].as_str().unwrap_or(""),
+        tool,
+        &args,
+        conn,
+    )
 }
 
 /// Robot `from` asks another (ask_robot) or hands it a task (hand_off_task): the checks, the
@@ -209,44 +247,99 @@ fn handle(app: &AppHandle, req: &Value, conn: u64) -> Value {
 pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn: u64) -> Value {
     let from = from.to_string();
     let everyone: Vec<(String, String, String)> = with(app, |st| {
-        st.store.list().iter().map(|c| (c["id"].as_str().unwrap_or("").to_string(), c["name"].as_str().unwrap_or("").to_string(), c["folder"].as_str().unwrap_or("").to_string())).collect()
+        st.store
+            .list()
+            .iter()
+            .map(|c| {
+                (
+                    c["id"].as_str().unwrap_or("").to_string(),
+                    c["name"].as_str().unwrap_or("").to_string(),
+                    c["folder"].as_str().unwrap_or("").to_string(),
+                )
+            })
+            .collect()
     });
-    let candidates: Vec<(String, String, String)> = everyone.iter().filter(|c| c.0 != from).cloned().collect();
+    let candidates: Vec<(String, String, String)> =
+        everyone.iter().filter(|c| c.0 != from).cloned().collect();
     let target = find(&candidates, &text(&args["robot"])).cloned();
-    let title: String = if is_task { text(&args["title"]).split_whitespace().collect::<Vec<_>>().join(" ").chars().take(80).collect() } else { String::new() };
-    let message = text(if is_task { &args["details"] } else { &args["message"] }).trim().to_string();
+    let title: String = if is_task {
+        text(&args["title"])
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(80)
+            .collect()
+    } else {
+        String::new()
+    };
+    let message = text(if is_task {
+        &args["details"]
+    } else {
+        &args["message"]
+    })
+    .trim()
+    .to_string();
     if message.is_empty() {
-        return err(if is_task { "The task has no details." } else { "The message is empty." });
+        return err(if is_task {
+            "The task has no details."
+        } else {
+            "The message is empty."
+        });
     }
     if is_task && title.is_empty() {
         return err("The task needs a short title.");
     }
     let Some((to, to_name, _)) = target else {
         let names: Vec<String> = others(app, &from).into_iter().map(|o| o.1).collect();
-        let there = if names.is_empty() { "There are no other robots on the desktop.".to_string() } else { format!("On the desktop: {}.", names.join(", ")) };
-        return err(format!("There's no robot called \"{}\". {there}", text(&args["robot"])));
+        let there = if names.is_empty() {
+            "There are no other robots on the desktop.".to_string()
+        } else {
+            format!("On the desktop: {}.", names.join(", "))
+        };
+        return err(format!(
+            "There's no robot called \"{}\". {there}",
+            text(&args["robot"])
+        ));
     };
     if !visible(app, &to) {
-        return err(format!("{to_name} is put away (not on the desktop), so it can't answer. The user can bring it out from the tray."));
+        return err(format!(
+            "{to_name} is put away (not on the desktop), so it can't answer. The user can bring it out from the tray."
+        ));
     }
-    let (from_name, from_folder) = everyone.iter().find(|c| c.0 == from).map(|c| (c.1.clone(), c.2.clone())).unwrap_or_default();
+    let (from_name, from_folder) = everyone
+        .iter()
+        .find(|c| c.0 == from)
+        .map(|c| (c.1.clone(), c.2.clone()))
+        .unwrap_or_default();
     let now = now_ms();
 
     // the checks and the bookkeeping, in one go
     let (tx, rx) = mpsc::channel();
     let started = link(app, |l| {
         // who's waiting on this robot (it's answering them, maybe for others further up)
-        let upstream: HashSet<String> = l.pending.values().filter(|p| p.to == from).flat_map(|p| p.chain.iter().cloned()).collect();
+        let upstream: HashSet<String> = l
+            .pending
+            .values()
+            .filter(|p| p.to == from)
+            .flat_map(|p| p.chain.iter().cloned())
+            .collect();
         if upstream.contains(&to) {
-            return Err(format!("{to_name} is waiting on your answer (it asked you this), so you can't ask it: put what you need to know in your reply to it instead."));
+            return Err(format!(
+                "{to_name} is waiting on your answer (it asked you this), so you can't ask it: put what you need to know in your reply to it instead."
+            ));
         }
         if upstream.len() + 2 > CHAIN_MAX {
-            return Err(format!("That's {CHAIN_MAX} robots in one chain already: answer with what you know instead of asking further."));
+            return Err(format!(
+                "That's {CHAIN_MAX} robots in one chain already: answer with what you know instead of asking further."
+            ));
         }
         let times = l.asked.entry(from.clone()).or_default();
         times.retain(|t| now - t < ASKS_WINDOW_MS);
         if times.len() >= ASKS_MAX {
-            return Err(format!("That's {ASKS_MAX} messages in a few minutes: stop asking, and answer the user with what you have."));
+            return Err(format!(
+                "That's {ASKS_MAX} messages in a few minutes: stop asking, and answer the user with what you have."
+            ));
         }
         times.push(now);
 
@@ -256,7 +349,10 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
         } else {
             let key = format!("{from}>{to}");
             let fresh = args["new_conversation"].as_bool() == Some(true);
-            let ex = l.exchanges.get_mut(&key).filter(|ex| !fresh && now - ex.at <= EXCHANGE_KEEP_MS);
+            let ex = l
+                .exchanges
+                .get_mut(&key)
+                .filter(|ex| !fresh && now - ex.at <= EXCHANGE_KEEP_MS);
             let (id, first) = match ex {
                 Some(ex) => {
                     ex.at = now;
@@ -264,19 +360,44 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
                 }
                 None => (uuid::Uuid::new_v4().to_string(), true),
             };
-            l.exchanges.insert(key, Exchange { id: id.clone(), at: now });
+            l.exchanges.insert(
+                key,
+                Exchange {
+                    id: id.clone(),
+                    at: now,
+                },
+            );
             (id, first)
         };
         let req_id = uuid::Uuid::new_v4().to_string();
         let task = is_task.then(|| {
             l.task_seq += 1;
-            let t = Task { id: format!("t{}", l.task_seq), from: from.clone(), to: to.clone(), title: title.clone(), status: "sent", at: now, done_at: 0, report: String::new() };
+            let t = Task {
+                id: format!("t{}", l.task_seq),
+                from: from.clone(),
+                to: to.clone(),
+                title: title.clone(),
+                status: "sent",
+                at: now,
+                done_at: 0,
+                report: String::new(),
+            };
             l.tasks.push(t.clone());
             t
         });
         let mut chain = upstream;
         chain.insert(from.clone());
-        l.pending.insert(req_id.clone(), Pending { from: from.clone(), to: to.clone(), chain, conn, task: task.as_ref().map(|t| t.id.clone()), reply: tx });
+        l.pending.insert(
+            req_id.clone(),
+            Pending {
+                from: from.clone(),
+                to: to.clone(),
+                chain,
+                conn,
+                task: task.as_ref().map(|t| t.id.clone()),
+                reply: tx,
+            },
+        );
         Ok((req_id, exchange, first, task))
     });
     let (req_id, exchange, first, task) = match started {
@@ -286,18 +407,37 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
     if let Some(t) = &task {
         task_changed(app, t);
     }
-    let text = if is_task { task_text(&from_name, &from_folder, &title, &message) } else { message_text(&from_name, &from_folder, &message) };
-    let task_info = task.as_ref().map(|t| json!({ "id": t.id, "title": t.title }));
-    on_ask(app, &from, &to, json!({ "phase": "incoming", "reqId": req_id, "exchange": exchange, "first": first, "from": from_name, "text": text, "task": task_info }));
+    let text = if is_task {
+        task_text(&from_name, &from_folder, &title, &message)
+    } else {
+        message_text(&from_name, &from_folder, &message)
+    };
+    let task_info = task
+        .as_ref()
+        .map(|t| json!({ "id": t.id, "title": t.title }));
+    on_ask(
+        app,
+        &from,
+        &to,
+        json!({ "phase": "incoming", "reqId": req_id, "exchange": exchange, "first": first, "from": from_name, "text": text, "task": task_info }),
+    );
 
-    let wait = if is_task { TASK_TIMEOUT_MS } else { ANSWER_TIMEOUT_MS };
+    let wait = if is_task {
+        TASK_TIMEOUT_MS
+    } else {
+        ANSWER_TIMEOUT_MS
+    };
     match rx.recv_timeout(Duration::from_millis(wait)) {
         Ok(v) => v,
         Err(RecvTimeoutError::Timeout) => {
             let what = if is_task { "report" } else { "answer" };
-            let error = format!("No {what} from {to_name} after {} minutes (it may be waiting on the user in its chat).", wait / 60_000);
+            let error = format!(
+                "No {what} from {to_name} after {} minutes (it may be waiting on the user in its chat).",
+                wait / 60_000
+            );
             settle(app, &req_id, "", &error, false);
-            rx.recv_timeout(Duration::from_secs(1)).unwrap_or_else(|_| err(error))
+            rx.recv_timeout(Duration::from_secs(1))
+                .unwrap_or_else(|_| err(error))
         }
         Err(RecvTimeoutError::Disconnected) => err("Cancelled."),
     }
@@ -306,7 +446,14 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
 /// The message flies over as a paper plane; the asked robot takes it on in a tab of its own
 /// chat (main.js onAsk).
 fn on_ask(app: &AppHandle, from: &str, to: &str, incoming: Value) {
-    let hand = |id: &str, up: bool| hub::robot_rect(app, id).map(|r| (r.x as f64 + r.w as f64 / 2.0, r.y as f64 + r.h as f64 * if up { 0.3 } else { 0.42 }));
+    let hand = |id: &str, up: bool| {
+        hub::robot_rect(app, id).map(|r| {
+            (
+                r.x as f64 + r.w as f64 / 2.0,
+                r.y as f64 + r.h as f64 * if up { 0.3 } else { 0.42 },
+            )
+        })
+    };
     let req_id = text(&incoming["reqId"]);
     let to2 = to.to_string();
     let deliver = move |app: &AppHandle| {
@@ -326,7 +473,10 @@ fn on_ask(app: &AppHandle, from: &str, to: &str, incoming: Value) {
 fn started(app: &AppHandle, req_id: &str) {
     let changed = link(app, |l| {
         let task_id = l.pending.get(req_id)?.task.clone()?;
-        let t = l.tasks.iter_mut().find(|t| t.id == task_id && t.status == "sent")?;
+        let t = l
+            .tasks
+            .iter_mut()
+            .find(|t| t.id == task_id && t.status == "sent")?;
         t.status = "working";
         Some(t.clone())
     });
@@ -361,11 +511,19 @@ fn on_tasks(app: &AppHandle, ids: &[&str]) {
 /// The answer to a request (or why there is none): to the asking robot's tool, and onto
 /// the task's tag. False if nobody was waiting for it any more.
 fn settle(app: &AppHandle, req_id: &str, said: &str, error: &str, cancelled: bool) -> bool {
-    let Some(p) = link(app, |l| l.pending.remove(req_id)) else { return false };
+    let Some(p) = link(app, |l| l.pending.remove(req_id)) else {
+        return false;
+    };
     let said = said.trim();
     let to_name = name(app, &p.to);
     if let Some(task_id) = &p.task {
-        let status = if cancelled { "cancelled" } else if !error.is_empty() { "failed" } else { "done" };
+        let status = if cancelled {
+            "cancelled"
+        } else if !error.is_empty() {
+            "failed"
+        } else {
+            "done"
+        };
         let report = if error.is_empty() { said } else { error };
         let changed = link(app, |l| {
             let t = l.tasks.iter_mut().find(|t| &t.id == task_id)?;
@@ -383,9 +541,20 @@ fn settle(app: &AppHandle, req_id: &str, said: &str, error: &str, cancelled: boo
         return true;
     }
     let answer = if !error.is_empty() {
-        err(format!("{to_name} couldn't {}: {error}", if p.task.is_some() { "do the task" } else { "answer" }))
+        err(format!(
+            "{to_name} couldn't {}: {error}",
+            if p.task.is_some() {
+                "do the task"
+            } else {
+                "answer"
+            }
+        ))
     } else {
-        let lead = if p.task.is_some() { "finished the task. Its report" } else { "says" };
+        let lead = if p.task.is_some() {
+            "finished the task. Its report"
+        } else {
+            "says"
+        };
         json!({ "text": format!("{to_name} {lead}:\n{}", if said.is_empty() { "(an empty answer)" } else { said }) })
     };
     let _ = p.reply.send(answer);
@@ -398,8 +567,14 @@ fn settle(app: &AppHandle, req_id: &str, said: &str, error: &str, cancelled: boo
 /// The answer flies back as a paper plane.
 fn on_answered(app: &AppHandle, from: &str, to: &str) {
     if let (Some(r1), Some(r2)) = (hub::robot_rect(app, to), hub::robot_rect(app, from)) {
-        let a = (r1.x as f64 + r1.w as f64 / 2.0, r1.y as f64 + r1.h as f64 * 0.42);
-        let b = (r2.x as f64 + r2.w as f64 / 2.0, r2.y as f64 + r2.h as f64 * 0.3);
+        let a = (
+            r1.x as f64 + r1.w as f64 / 2.0,
+            r1.y as f64 + r1.h as f64 * 0.42,
+        );
+        let b = (
+            r2.x as f64 + r2.w as f64 / 2.0,
+            r2.y as f64 + r2.h as f64 * 0.3,
+        );
         planes::fly(app, a, b, None);
     }
 }
@@ -433,7 +608,13 @@ fn connection(app: &AppHandle, mut sock: TcpStream, conn: u64) {
                 thread::spawn(move || {
                     let mut buf = [0u8; 64];
                     while matches!(watch.read(&mut buf), Ok(n) if n > 0) {}
-                    let mine: Vec<String> = link(&app, |l| l.pending.iter().filter(|(_, p)| p.conn == conn).map(|(k, _)| k.clone()).collect());
+                    let mine: Vec<String> = link(&app, |l| {
+                        l.pending
+                            .iter()
+                            .filter(|(_, p)| p.conn == conn)
+                            .map(|(k, _)| k.clone())
+                            .collect()
+                    });
                     for req_id in mine {
                         settle(&app, &req_id, "", "", true);
                     }
@@ -454,13 +635,25 @@ fn connection(app: &AppHandle, mut sock: TcpStream, conn: u64) {
 pub fn note(app: &AppHandle, id: &str) -> Option<String> {
     let others = note_for(&others(app, id));
     let desk = format!("{DESK_NOTE}\n{}", shell::NOTE);
-    Some(if others.is_empty() { desk } else { format!("{others}\n{desk}") })
+    Some(if others.is_empty() {
+        desk
+    } else {
+        format!("{others}\n{desk}")
+    })
 }
 
 /// The --mcp-config file of one of its conversations.
 fn config_file(app: &AppHandle, id: &str, tab: &str) -> PathBuf {
-    let safe = |s: &str| s.chars().filter(|c| c.is_ascii_alphanumeric() || "-_".contains(*c)).collect::<String>();
-    with(app, |st| st.data_dir.join("robot-link")).join(format!("mcp-{}-{}.json", safe(id), safe(tab)))
+    let safe = |s: &str| {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric() || "-_".contains(*c))
+            .collect::<String>()
+    };
+    with(app, |st| st.data_dir.join("robot-link")).join(format!(
+        "mcp-{}-{}.json",
+        safe(id),
+        safe(tab)
+    ))
 }
 
 /// The --mcp-config file giving this conversation's Claude Code the other-robots tools
@@ -476,7 +669,8 @@ pub fn mcp_config(app: &AppHandle, id: &str, tab: &str) -> Option<String> {
         "args": [crate::mcp::server::FLAG, id, port.to_string(), tab],
         "env": { "CBOT_TOKEN": token },
     } } });
-    let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, cfg.to_string()));
+    let written =
+        std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, cfg.to_string()));
     if let Err(e) = written {
         eprintln!("[robots] cannot set up the robot tools: {e}");
         return None;
@@ -491,7 +685,13 @@ pub fn forget_tab(app: &AppHandle, id: &str, tab: &str) {
 
 /// The tasks robot id handed off or was handed, as its desk shows them.
 pub fn tasks_for(app: &AppHandle, id: &str) -> Value {
-    let tasks: Vec<Task> = link(app, |l| l.tasks.iter().filter(|t| t.from == id || t.to == id).cloned().collect());
+    let tasks: Vec<Task> = link(app, |l| {
+        l.tasks
+            .iter()
+            .filter(|t| t.from == id || t.to == id)
+            .cloned()
+            .collect()
+    });
     Value::Array(
         tasks
             .into_iter()
@@ -513,18 +713,29 @@ pub fn robot_tasks(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value
 
 /// A robot's answer to another robot's message (only the robot it went to can answer it).
 #[tauri::command(async)]
-pub fn robots_answer(app: AppHandle, window: tauri::WebviewWindow, answer: Value) -> Result<(), String> {
+pub fn robots_answer(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    answer: Value,
+) -> Result<(), String> {
     let id = robots::sender(&window)?;
     let req_id = text(&answer["reqId"]);
     if link(&app, |l| l.pending.get(&req_id).is_some_and(|p| p.to == id)) {
-        let error = if answer["error"].is_null() || answer["error"] == false { String::new() } else { text(&answer["error"]) };
+        let error = if answer["error"].is_null() || answer["error"] == false {
+            String::new()
+        } else {
+            text(&answer["error"])
+        };
         settle(&app, &req_id, &text(&answer["text"]), &error, false);
     }
     Ok(())
 }
 
 pub fn setup(app: &AppHandle) {
-    let mut state = Link { token: uuid::Uuid::new_v4().simple().to_string(), ..Default::default() };
+    let mut state = Link {
+        token: uuid::Uuid::new_v4().simple().to_string(),
+        ..Default::default()
+    };
     // a private line for the robots' tools: this machine only, with a password
     match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => {
@@ -542,7 +753,14 @@ mod tests {
     use super::*;
 
     fn bots() -> Vec<(String, String, String)> {
-        [("1", "Captain", "C:\\a"), ("2", "Bolt", "C:\\b"), ("3", "Robo Bob", "C:\\c")].iter().map(|(i, n, f)| (i.to_string(), n.to_string(), f.to_string())).collect()
+        [
+            ("1", "Captain", "C:\\a"),
+            ("2", "Bolt", "C:\\b"),
+            ("3", "Robo Bob", "C:\\c"),
+        ]
+        .iter()
+        .map(|(i, n, f)| (i.to_string(), n.to_string(), f.to_string()))
+        .collect()
     }
 
     #[test]
@@ -568,7 +786,9 @@ mod tests {
         let m = message_text("Captain", "C:\\a", "Where's the config?");
         assert!(m.starts_with("📨 Message from Captain, another C-Bot robot (it looks after C:\\a), on the user's behalf:\n\nWhere's the config?\n\nReply to Captain directly"));
         let t = task_text("Captain", "C:\\a", "Add /orders", "A GET endpoint.");
-        assert!(t.starts_with("📋 Task from Captain: Add /orders\n\nCaptain is another C-Bot robot"));
+        assert!(
+            t.starts_with("📋 Task from Captain: Add /orders\n\nCaptain is another C-Bot robot")
+        );
         assert!(t.contains("\n\nA GET endpoint.\n\nDo the work here"));
     }
 
@@ -577,8 +797,15 @@ mod tests {
         assert_eq!(
             tools::allowed(),
             [
-                "mcp__cbot__ask_robot", "mcp__cbot__list_robots", "mcp__cbot__hand_off_task", "mcp__cbot__list_words", "mcp__cbot__save_words",
-                "mcp__cbot__list_notes", "mcp__cbot__add_note", "mcp__cbot__terminal_read", "mcp__cbot__terminal_type",
+                "mcp__cbot__ask_robot",
+                "mcp__cbot__list_robots",
+                "mcp__cbot__hand_off_task",
+                "mcp__cbot__list_words",
+                "mcp__cbot__save_words",
+                "mcp__cbot__list_notes",
+                "mcp__cbot__add_note",
+                "mcp__cbot__terminal_read",
+                "mcp__cbot__terminal_type",
             ]
         );
     }

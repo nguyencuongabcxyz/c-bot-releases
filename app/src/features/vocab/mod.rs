@@ -26,16 +26,16 @@ use std::thread;
 use std::time::Duration;
 
 use chrono::{Local, Timelike};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
 
 use crate::platform::window;
 use crate::platform::window::Rect;
 use crate::robots;
 use crate::robots::{social, walkers};
-use crate::runtime::{hub, with};
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::{only, patch, text};
+use crate::runtime::{hub, with};
 use crate::store::saved::Saved;
 use crate::ui::{tray, views};
 use crate::workbench::{capture, snip};
@@ -92,7 +92,11 @@ fn tell(app: &AppHandle, id: Option<&str>, payload: Value) {
 
 fn color_of(app: &AppHandle, id: Option<&str>) -> Option<String> {
     let id = id?;
-    with(app, |st| st.store.get(id).and_then(|c| c["color"].as_str().map(str::to_string)))
+    with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["color"].as_str().map(str::to_string))
+    })
 }
 
 /// The word with these flags on it (known, quiz, dream: how the card shows it).
@@ -111,7 +115,9 @@ fn get(app: &AppHandle, id: &str) -> Option<Value> {
 
 /// The count and the words in sight changed: every robot hears, the tray and My words too.
 fn count_changed(app: &AppHandle) {
-    let Some((count, sight)) = words(app, |w| (w.vocab.count(), w.vocab.sight_words())) else { return };
+    let Some((count, sight)) = words(app, |w| (w.vocab.count(), w.vocab.sight_words())) else {
+        return;
+    };
     for id in robots::open_ids(app) {
         tell(app, Some(&id), json!({ "phase": "count", "count": count }));
         tell(app, Some(&id), json!({ "phase": "sight", "words": sight }));
@@ -130,8 +136,13 @@ fn distance(r: Rect, (cx, cy): (i32, i32)) -> f64 {
 /// A robot free to quiz you: the tutor if it's free, else the free robot nearest the mouse.
 /// With none out on the desk, one away on the robot island (it asks from there).
 fn free_robot(app: &AppHandle) -> Option<String> {
-    let free = |id: &str| robots::is_showing(app, id) && !walkers::has(app, id) && !hub::robot_busy(app, id);
-    let tutor = settings(app)["vocabTutor"].as_str().unwrap_or("").to_string();
+    let free = |id: &str| {
+        robots::is_showing(app, id) && !walkers::has(app, id) && !hub::robot_busy(app, id)
+    };
+    let tutor = settings(app)["vocabTutor"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
     if !tutor.is_empty() && free(&tutor) {
         return Some(tutor);
     }
@@ -139,7 +150,12 @@ fn free_robot(app: &AppHandle) -> Option<String> {
     robots::open_ids(app)
         .into_iter()
         .filter(|id| free(id))
-        .filter_map(|id| Some((distance(window::window_rect(robots::hwnd_of(app, &id)?), cursor), id)))
+        .filter_map(|id| {
+            Some((
+                distance(window::window_rect(robots::hwnd_of(app, &id)?), cursor),
+                id,
+            ))
+        })
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, id)| id)
         .or_else(|| away_robot(app, &tutor))
@@ -166,7 +182,10 @@ fn sleeping_robot(app: &AppHandle) -> Option<String> {
         }
         robots::is_showing(app, id) && !robots::is_awake(app, id)
     };
-    let tutor = settings(app)["vocabTutor"].as_str().unwrap_or("").to_string();
+    let tutor = settings(app)["vocabTutor"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
     if !tutor.is_empty() && asleep(&tutor) {
         return Some(tutor);
     }
@@ -174,7 +193,12 @@ fn sleeping_robot(app: &AppHandle) -> Option<String> {
     robots::open_ids(app)
         .into_iter()
         .filter(|id| asleep(id))
-        .map(|id| (hub::robot_rect(app, &id).map_or(f64::INFINITY, |r| distance(r, cursor)), id))
+        .map(|id| {
+            (
+                hub::robot_rect(app, &id).map_or(f64::INFINITY, |r| distance(r, cursor)),
+                id,
+            )
+        })
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, id)| id)
         .or_else(|| away_robot(app, &tutor)) // (all away on the island: it dreams from there)
@@ -184,7 +208,9 @@ fn sleeping_robot(app: &AppHandle) -> Option<String> {
 /// desk, or beside the robot island it's away on (as big all the same: the full card).
 fn card_bounds(app: &AppHandle, id: Option<&str>) -> Option<Rect> {
     let id = id?;
-    let away = robots::is_away(app, id).then(|| crate::robots::island::strip_rect(app)).flatten();
+    let away = robots::is_away(app, id)
+        .then(|| crate::robots::island::strip_rect(app))
+        .flatten();
     let desk = away.or_else(|| robots::desk_rect(app, id))?;
     let chat_open = away.is_none() && with(app, |st| st.robots.get(id).is_some_and(|r| r.expanded));
     let m = window::monitor_near(desk.x + desk.w / 2, desk.y + desk.h / 2);
@@ -204,7 +230,10 @@ fn show_card(app: &AppHandle, word: Value, robot: Option<String>) {
 /// Where a card for this robot goes: chat-sized by its desk, or beside the island it's away
 /// on (hub::robot_rect), or by the mouse.
 fn card_spot(app: &AppHandle, robot: Option<&str>) -> Spot {
-    card_bounds(app, robot).map_or_else(|| Spot::Near(robot.and_then(|r| hub::robot_rect(app, r))), Spot::Bounds)
+    card_bounds(app, robot).map_or_else(
+        || Spot::Near(robot.and_then(|r| hub::robot_rect(app, r))),
+        Spot::Bounds,
+    )
 }
 
 /// A robot away on the island: the island says what it's showing you.
@@ -218,16 +247,31 @@ fn island_says(app: &AppHandle, robot: &str, kind: &str, word: &Value) {
 
 /// A word to quiz you on when you ask for one: a due one, or else one you're still learning.
 fn quiz_pick(app: &AppHandle, n: usize) -> Option<Value> {
-    words(app, |w| w.vocab.next_due(now()).or_else(|| walkers::pick(&w.vocab.in_sight(n)).cloned())).flatten()
+    words(app, |w| {
+        w.vocab
+            .next_due(now())
+            .or_else(|| walkers::pick(&w.vocab.in_sight(n)).cloned())
+    })
+    .flatten()
 }
 
 /// A sleeping robot dreams of a word that's due, and a dream bubble beside it shows the word,
 /// its meaning and an example. (From a robot's menu it shows even if that robot is awake.)
 fn start_dream(app: &AppHandle, word: Option<Value>, robot: Option<String>) -> bool {
-    let (Some(word), Some(robot)) = (word, robot) else { return false };
+    let (Some(word), Some(robot)) = (word, robot) else {
+        return false;
+    };
     let id = word["id"].as_str().unwrap_or("").to_string();
     // shown: it counts as seen, the next time is further off
-    let Some(Some(seen)) = words(app, |w| if w.quizzing.is_some() { None } else { w.vocab.dreamt(&id, now()) }) else { return false };
+    let Some(Some(seen)) = words(app, |w| {
+        if w.quizzing.is_some() {
+            None
+        } else {
+            w.vocab.dreamt(&id, now())
+        }
+    }) else {
+        return false;
+    };
     // sleepwalking: it stops and mumbles it where it is, and the bubble goes there
     if walkers::has(app, &robot) {
         walkers::dream(app, &robot, seen["word"].as_str().unwrap_or(""));
@@ -237,19 +281,36 @@ fn start_dream(app: &AppHandle, word: Option<Value>, robot: Option<String>) -> b
     let near = hub::robot_rect(app, &robot);
     let paint = color_of(app, Some(&robot));
     island_says(app, &robot, "word", &seen);
-    card::open(app, flagged(seen, &["dream", "known"]), Some(robot), paint, Spot::Near(near));
+    card::open(
+        app,
+        flagged(seen, &["dream", "known"]),
+        Some(robot),
+        paint,
+        Spot::Near(near),
+    );
     count_changed(app);
     true
 }
 
 fn start_quiz(app: &AppHandle, word: Option<Value>, asked: bool, robot: Option<String>) -> bool {
-    let (Some(word), Some(robot)) = (word, robot) else { return false };
+    let (Some(word), Some(robot)) = (word, robot) else {
+        return false;
+    };
     if words(app, |w| w.quizzing.is_some()) == Some(true) {
         end_quiz(app, "ignored");
     }
     let word_id = word["id"].as_str().unwrap_or("").to_string();
-    words(app, |w| w.quizzing = Some(Quiz { word_id, robot_id: robot.clone() }));
-    tell(app, Some(&robot), json!({ "phase": "quiz", "word": word, "asked": asked }));
+    words(app, |w| {
+        w.quizzing = Some(Quiz {
+            word_id,
+            robot_id: robot.clone(),
+        })
+    });
+    tell(
+        app,
+        Some(&robot),
+        json!({ "phase": "quiz", "word": word, "asked": asked }),
+    );
     let spot = card_spot(app, Some(&robot));
     let paint = color_of(app, Some(&robot));
     island_says(app, &robot, "quiz", &word);
@@ -260,7 +321,9 @@ fn start_quiz(app: &AppHandle, word: Option<Value>, asked: bool, robot: Option<S
 /// A quiz straight away (the tray, a robot's menu, My words): a due word, or else one you've
 /// seen least, from a robot that's free. False if there's no word or no robot.
 fn quiz_now_from(app: &AppHandle) -> bool {
-    let Some(word) = quiz_pick(app, 3) else { return false };
+    let Some(word) = quiz_pick(app, 3) else {
+        return false;
+    };
     if words(app, |w| w.quizzing.is_some()) != Some(false) {
         return false;
     }
@@ -272,21 +335,48 @@ fn quiz_now_from(app: &AppHandle) -> bool {
 }
 
 /// What a celebration there is now: (learnt, streak) milestones reached, and what to save.
-fn milestones(stats: &Value, settings: &Value) -> Option<(i64, i64, Map<String, Value>, &'static str)> {
+fn milestones(
+    stats: &Value,
+    settings: &Value,
+) -> Option<(i64, i64, Map<String, Value>, &'static str)> {
     let done = &settings["vocabMilestones"];
-    let (done_learnt, done_streak) = (done["learnt"].as_i64().unwrap_or(0), done["streak"].as_i64().unwrap_or(0));
-    let (st_learnt, st_streak) = (stats["learnt"].as_i64().unwrap_or(0), stats["streak"].as_i64().unwrap_or(0));
-    let learnt = LEARNT_MILESTONES.iter().copied().rfind(|&n| st_learnt >= n && n > done_learnt).unwrap_or(0);
-    let streak = STREAK_MILESTONES.iter().copied().rfind(|&n| st_streak >= n && n > done_streak).unwrap_or(0);
+    let (done_learnt, done_streak) = (
+        done["learnt"].as_i64().unwrap_or(0),
+        done["streak"].as_i64().unwrap_or(0),
+    );
+    let (st_learnt, st_streak) = (
+        stats["learnt"].as_i64().unwrap_or(0),
+        stats["streak"].as_i64().unwrap_or(0),
+    );
+    let learnt = LEARNT_MILESTONES
+        .iter()
+        .copied()
+        .rfind(|&n| st_learnt >= n && n > done_learnt)
+        .unwrap_or(0);
+    let streak = STREAK_MILESTONES
+        .iter()
+        .copied()
+        .rfind(|&n| st_streak >= n && n > done_streak)
+        .unwrap_or(0);
     if learnt == 0 && streak == 0 {
         return None;
     }
     let or = |a: i64, b: i64| if a != 0 { a } else { b };
-    let mut save = patch(vec![("vocabMilestones", json!({ "learnt": or(learnt, done_learnt), "streak": or(streak, done_streak) }))]);
+    let mut save = patch(vec![(
+        "vocabMilestones",
+        json!({ "learnt": or(learnt, done_learnt), "streak": or(streak, done_streak) }),
+    )]);
     // the 🎓 graduation cap (an accessory) once you've learnt 10
-    let unlocked = if learnt >= 10 && settings["vocabRewards"]["gradcap"].as_bool() != Some(true) { "gradcap" } else { "" };
+    let unlocked = if learnt >= 10 && settings["vocabRewards"]["gradcap"].as_bool() != Some(true) {
+        "gradcap"
+    } else {
+        ""
+    };
     if !unlocked.is_empty() {
-        let mut rewards = settings["vocabRewards"].as_object().cloned().unwrap_or_default();
+        let mut rewards = settings["vocabRewards"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
         rewards.insert("gradcap".into(), json!(true));
         save.insert("vocabRewards".into(), Value::Object(rewards));
     }
@@ -295,10 +385,18 @@ fn milestones(stats: &Value, settings: &Value) -> Option<(i64, i64, Map<String, 
 
 /// A celebration when you've learnt 10, 25, 50… words or kept a streak going.
 fn check_milestones(app: &AppHandle, robot: Option<&str>) {
-    let Some(stats) = words(app, |w| w.vocab.stats(now())) else { return };
-    let Some((learnt, streak, save, unlocked)) = milestones(&stats, &settings(app)) else { return };
+    let Some(stats) = words(app, |w| w.vocab.stats(now())) else {
+        return;
+    };
+    let Some((learnt, streak, save, unlocked)) = milestones(&stats, &settings(app)) else {
+        return;
+    };
     hub::set_settings(app, save);
-    tell(app, robot, json!({ "phase": "milestone", "learnt": learnt, "streak": streak, "unlocked": unlocked }));
+    tell(
+        app,
+        robot,
+        json!({ "phase": "milestone", "learnt": learnt, "streak": streak, "unlocked": unlocked }),
+    );
     if let Some(r) = robot {
         social::milestone(app, r);
     }
@@ -318,7 +416,11 @@ fn end_quiz(app: &AppHandle, how: &str) -> Option<Value> {
         Some((q.robot_id, word))
     })??;
     if let Some(w) = &word {
-        tell(app, Some(&robot), json!({ "phase": "answered", "how": how, "word": w, "wait": words::due_of(w) - t }));
+        tell(
+            app,
+            Some(&robot),
+            json!({ "phase": "answered", "how": how, "word": w, "wait": words::due_of(w) - t }),
+        );
     }
     count_changed(app); // (what's in sight changes as you learn)
     if how == "knew" || how == "forgot" {
@@ -345,7 +447,11 @@ fn open_words_window(app: &AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    let built = views::builder(app, WORDS, "words", &[]).title("My words — C-Bot").inner_size(560.0, 720.0).min_inner_size(420.0, 420.0).build();
+    let built = views::builder(app, WORDS, "words", &[])
+        .title("My words — C-Bot")
+        .inner_size(560.0, 720.0)
+        .min_inner_size(420.0, 420.0)
+        .build();
     if let Err(err) = built {
         eprintln!("[words] couldn't open My words: {err}");
     }
@@ -353,8 +459,21 @@ fn open_words_window(app: &AppHandle) {
 
 fn words_list_of(app: &AppHandle) -> Value {
     let s = settings(app);
-    let (rows, stats) = words(app, |w| (w.vocab.list().iter().map(words::word_row).collect::<Vec<_>>(), w.vocab.stats(now()))).unwrap_or_default();
-    let hours = s["vocabHours"].as_array().filter(|h| h.len() == 2).map_or(json!([9, 18]), |h| json!(h));
+    let (rows, stats) = words(app, |w| {
+        (
+            w.vocab
+                .list()
+                .iter()
+                .map(words::word_row)
+                .collect::<Vec<_>>(),
+            w.vocab.stats(now()),
+        )
+    })
+    .unwrap_or_default();
+    let hours = s["vocabHours"]
+        .as_array()
+        .filter(|h| h.len() == 2)
+        .map_or(json!([9, 18]), |h| json!(h));
     json!({ "words": rows, "stats": stats, "hotkey": hotkey(app), "reminders": dreams::enabled(&s), "hours": hours })
 }
 
@@ -365,7 +484,11 @@ fn words_settings_of(app: &AppHandle, p: &Value) -> Value {
         out.insert("vocabReminders".into(), json!(on));
     }
     if let Some(h) = p["hours"].as_array() {
-        let hours: Vec<i64> = h.iter().filter_map(Value::as_i64).filter(|x| (0..=24).contains(x)).collect();
+        let hours: Vec<i64> = h
+            .iter()
+            .filter_map(Value::as_i64)
+            .filter(|x| (0..=24).contains(x))
+            .collect();
         if h.len() == 2 && hours.len() == 2 && hours[0] < hours[1] {
             out.insert("vocabHours".into(), json!(hours));
         }
@@ -380,15 +503,25 @@ fn words_settings_of(app: &AppHandle, p: &Value) -> Value {
 fn export(app: &AppHandle) -> Value {
     use tauri_plugin_dialog::DialogExt;
     use tauri_plugin_opener::OpenerExt;
-    let name = format!("my-english-words-{}.csv", chrono::Utc::now().format("%Y-%m-%d"));
-    let mut dialog = app.dialog().file().set_title("Export my words").set_file_name(&name).add_filter("CSV (Anki, Quizlet, Excel)", &["csv"]);
+    let name = format!(
+        "my-english-words-{}.csv",
+        chrono::Utc::now().format("%Y-%m-%d")
+    );
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("Export my words")
+        .set_file_name(&name)
+        .add_filter("CSV (Anki, Quizlet, Excel)", &["csv"]);
     if let Ok(docs) = app.path().document_dir() {
         dialog = dialog.set_directory(docs);
     }
     if let Some(w) = app.get_webview_window(WORDS) {
         dialog = dialog.set_parent(&w);
     }
-    let Some(path) = dialog.blocking_save_file().and_then(|f| f.into_path().ok()) else { return Value::Null };
+    let Some(path) = dialog.blocking_save_file().and_then(|f| f.into_path().ok()) else {
+        return Value::Null;
+    };
     let rows = words(app, |w| words::csv(&w.vocab.list())).unwrap_or_default();
     if let Err(err) = std::fs::write(&path, rows) {
         eprintln!("[words] couldn't export: {err}");
@@ -471,26 +604,47 @@ pub fn card_showing(app: &AppHandle) -> bool {
 pub fn list_for_chat(app: &AppHandle, query: &str, limit: usize) -> String {
     let Some((all, learnt)) = words(app, |w| {
         let all = w.vocab.list();
-        let learnt = all.iter().filter(|x| x["status"] == "ready" && words::step_of(x) >= words::LEARNT_STEP).count();
+        let learnt = all
+            .iter()
+            .filter(|x| x["status"] == "ready" && words::step_of(x) >= words::LEARNT_STEP)
+            .count();
         (all, learnt)
     }) else {
         return "Your word list isn't loaded yet.".into();
     };
     if all.is_empty() {
-        return format!("You haven't saved any English words yet. Select one anywhere and press {} to catch it, or ask me to save it.", hotkey(app));
+        return format!(
+            "You haven't saved any English words yet. Select one anywhere and press {} to catch it, or ask me to save it.",
+            hotkey(app)
+        );
     }
     let found: Vec<&Value> = all.iter().filter(|w| words::matches(w, query)).collect();
     let q = query.trim();
     if found.is_empty() {
         return format!("None of your {} saved words matches \"{q}\".", all.len());
     }
-    let shown: Vec<String> = found.iter().take(limit).map(|w| words::chat_line(w)).collect();
+    let shown: Vec<String> = found
+        .iter()
+        .take(limit)
+        .map(|w| words::chat_line(w))
+        .collect();
     let head = if q.is_empty() {
         format!("You have {} saved words ({learnt} learnt).", all.len())
     } else {
-        format!("{} of your {} saved words match \"{q}\".", found.len(), all.len())
+        format!(
+            "{} of your {} saved words match \"{q}\".",
+            found.len(),
+            all.len()
+        )
     };
-    let more = if found.len() > shown.len() { format!("\n…and {} more (newest shown first).", found.len() - shown.len()) } else { String::new() };
+    let more = if found.len() > shown.len() {
+        format!(
+            "\n…and {} more (newest shown first).",
+            found.len() - shown.len()
+        )
+    } else {
+        String::new()
+    };
     format!("{head}\n{}{more}", shown.join("\n"))
 }
 
@@ -499,21 +653,34 @@ pub fn list_for_chat(app: &AppHandle, query: &str, limit: usize) -> String {
 /// does. What happened to each, for the chat.
 pub fn save_for_chat(app: &AppHandle, robot_id: &str, list: &[String], context: &str) -> String {
     const SOURCE: &str = "C-Bot chat";
-    let wanted: Vec<String> = list.iter().map(|w| trim_edges(w).trim().to_string()).filter(|w| !w.is_empty()).collect();
+    let wanted: Vec<String> = list
+        .iter()
+        .map(|w| trim_edges(w).trim().to_string())
+        .filter(|w| !w.is_empty())
+        .collect();
     if wanted.is_empty() {
         return "There was no word to save.".into();
     }
     let too_long = |w: &str| w.encode_utf16().count() > 60 || w.split_whitespace().count() > 5;
     if let [one] = wanted.as_slice() {
         if too_long(one) {
-            return format!("\"{one}\" is too long to save: a word or a short phrase (up to 5 words) only.");
+            return format!(
+                "\"{one}\" is too long to save: a word or a short phrase (up to 5 words) only."
+            );
         }
-        let known = words(app, |w| w.vocab.find(one).is_some_and(|k| k["status"] == "ready")).unwrap_or(false);
+        let known = words(app, |w| {
+            w.vocab.find(one).is_some_and(|k| k["status"] == "ready")
+        })
+        .unwrap_or(false);
         catch(app, one, SOURCE, Some(robot_id.to_string()), context);
         return if known {
-            format!("\"{one}\" was already in your words: its card is up again, and it'll come up for review sooner.")
+            format!(
+                "\"{one}\" was already in your words: its card is up again, and it'll come up for review sooner."
+            )
         } else {
-            format!("Saved \"{one}\" to your words. Its meaning is being looked up now and will be on its card in a moment.")
+            format!(
+                "Saved \"{one}\" to your words. Its meaning is being looked up now and will be on its card in a moment."
+            )
         };
     }
     let t = now();
@@ -521,10 +688,19 @@ pub fn save_for_chat(app: &AppHandle, robot_id: &str, list: &[String], context: 
     let mut added = vec![];
     for one in wanted.iter().take(10) {
         if too_long(one) {
-            lines.push(format!("- \"{one}\": too long (a word or a phrase of up to 5 words)"));
+            lines.push(format!(
+                "- \"{one}\": too long (a word or a phrase of up to 5 words)"
+            ));
             continue;
         }
-        let new = words(app, |w| if w.vocab.find(one).is_some() { None } else { Some(w.vocab.add(one, context, SOURCE, t)) }).flatten();
+        let new = words(app, |w| {
+            if w.vocab.find(one).is_some() {
+                None
+            } else {
+                Some(w.vocab.add(one, context, SOURCE, t))
+            }
+        })
+        .flatten();
         match new {
             Some(word) => {
                 added.push(text(&word["id"]));
@@ -534,7 +710,10 @@ pub fn save_for_chat(app: &AppHandle, robot_id: &str, list: &[String], context: 
         }
     }
     if wanted.len() > 10 {
-        lines.push(format!("- (the other {} weren't saved: up to 10 at a time)", wanted.len() - 10));
+        lines.push(format!(
+            "- (the other {} weren't saved: up to 10 at a time)",
+            wanted.len() - 10
+        ));
     }
     if !added.is_empty() {
         count_changed(app);
@@ -562,26 +741,37 @@ mod tests {
     fn milestones_reached() {
         let s = json!({});
         assert!(milestones(&json!({ "learnt": 9, "streak": 2 }), &s).is_none());
-        let (learnt, streak, save, unlocked) = milestones(&json!({ "learnt": 12, "streak": 3 }), &s).unwrap();
+        let (learnt, streak, save, unlocked) =
+            milestones(&json!({ "learnt": 12, "streak": 3 }), &s).unwrap();
         assert_eq!((learnt, streak, unlocked), (10, 3, "gradcap"));
-        assert_eq!(save["vocabMilestones"], json!({ "learnt": 10, "streak": 3 }));
+        assert_eq!(
+            save["vocabMilestones"],
+            json!({ "learnt": 10, "streak": 3 })
+        );
         assert_eq!(save["vocabRewards"], json!({ "gradcap": true }));
         // already celebrated: only what's new, the cap only once
         let s = json!({ "vocabMilestones": { "learnt": 10, "streak": 3 }, "vocabRewards": { "gradcap": true, "other": 1 } });
         assert!(milestones(&json!({ "learnt": 24, "streak": 6 }), &s).is_none());
-        let (learnt, streak, save, unlocked) = milestones(&json!({ "learnt": 30, "streak": 6 }), &s).unwrap();
+        let (learnt, streak, save, unlocked) =
+            milestones(&json!({ "learnt": 30, "streak": 6 }), &s).unwrap();
         assert_eq!((learnt, streak, unlocked), (25, 0, ""));
-        assert_eq!(save["vocabMilestones"], json!({ "learnt": 25, "streak": 3 }));
+        assert_eq!(
+            save["vocabMilestones"],
+            json!({ "learnt": 25, "streak": 3 })
+        );
         assert!(save.get("vocabRewards").is_none());
         // a long way past several: the biggest
-        let (_, streak, _, _) = milestones(&json!({ "learnt": 0, "streak": 40 }), &json!({})).unwrap();
+        let (_, streak, _, _) =
+            milestones(&json!({ "learnt": 0, "streak": 40 }), &json!({})).unwrap();
         assert_eq!(streak, 30);
     }
 
     #[test]
     fn card_edits_cut_to_size() {
         let long = "x".repeat(500);
-        let e = edits(&json!({ "senses": [{ "pos": "adj", "vi": long.clone(), "en": "careful" }], "tip": long, "phrases": [{}, {}, {}, {}, {}, {}, {}] }));
+        let e = edits(
+            &json!({ "senses": [{ "pos": "adj", "vi": long.clone(), "en": "careful" }], "tip": long, "phrases": [{}, {}, {}, {}, {}, {}, {}] }),
+        );
         assert_eq!(e["senses"][0]["vi"].as_str().unwrap().len(), 300);
         assert_eq!(e["tip"].as_str().unwrap().len(), 400);
         assert_eq!(e["phrases"].as_array().unwrap().len(), 6);

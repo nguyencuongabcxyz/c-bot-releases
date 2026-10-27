@@ -9,9 +9,9 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
+use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
-use tauri::{AppHandle, Manager};
 
 use crate::features::chat;
 use crate::runtime::with;
@@ -46,8 +46,13 @@ pub fn installed() -> bool {
     if cfg!(debug_assertions) {
         return false;
     }
-    let Ok(exe) = std::env::current_exe() else { return false };
-    !exe.ancestors().any(|d| d.file_name().is_some_and(|n| n.eq_ignore_ascii_case("target")))
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    !exe.ancestors().any(|d| {
+        d.file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("target"))
+    })
 }
 
 pub fn status(app: &AppHandle) -> Status {
@@ -88,8 +93,15 @@ pub fn check(app: &AppHandle) {
                     s.checking = false;
                     s.ready = Some(version.clone());
                 });
-                let body = format!("Version {version} installs when C-Bot restarts. Right-click the tray icon → Restart to update.");
-                let _ = app.notification().builder().title("C-Bot update ready").body(body).show();
+                let body = format!(
+                    "Version {version} installs when C-Bot restarts. Right-click the tray icon → Restart to update."
+                );
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("C-Bot update ready")
+                    .body(body)
+                    .show();
             }
             Err(err) => {
                 eprintln!("[update] {err}");
@@ -105,10 +117,15 @@ pub fn check(app: &AppHandle) {
 /// Ask GitHub; a newer version is downloaded (and its signature checked) right away.
 async fn fetch(app: &AppHandle) -> Result<Option<String>, String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
-    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else { return Ok(None) };
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
     let version = update.version.clone();
     set_status(app, |s| s.last = format!("downloading {version}…"));
-    let bytes = update.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    let bytes = update
+        .download(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
     updates(app, |u| u.downloaded = Some((update, bytes)));
     Ok(Some(version))
 }
@@ -116,7 +133,9 @@ async fn fetch(app: &AppHandle) -> Result<Option<String>, String> {
 /// Run the downloaded installer (quietly) and leave: everything is saved first, as the
 /// installer needs C-Bot gone. restart: start the new version once it's in.
 fn install(app: &AppHandle, restart: bool) {
-    let Some(Some((update, bytes))) = updates(app, |u| u.downloaded.take()) else { return };
+    let Some(Some((update, bytes))) = updates(app, |u| u.downloaded.take()) else {
+        return;
+    };
     chat::close_all(app);
     with(app, |st| st.store.flush());
     // (on success this doesn't come back: the installer takes over)
@@ -146,8 +165,10 @@ pub fn setup(app: &AppHandle) {
         return;
     }
     let app = app.clone();
-    thread::spawn(move || loop {
-        check(&app);
-        thread::sleep(CHECK_EVERY);
+    thread::spawn(move || {
+        loop {
+            check(&app);
+            thread::sleep(CHECK_EVERY);
+        }
     });
 }

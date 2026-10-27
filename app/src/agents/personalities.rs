@@ -16,10 +16,26 @@ pub fn all() -> &'static Map<String, Value> {
 /// What the robot pages get: everything but the prompt and the social lines.
 pub fn public() -> Value {
     const KEYS: [&str; 14] = [
-        "label", "emoji", "greetings", "sleepy", "pokes", "annoyed", "bonked", "done", "oops", "hungry", "yum", "bored", "sleeptalk", "quips",
+        "label",
+        "emoji",
+        "greetings",
+        "sleepy",
+        "pokes",
+        "annoyed",
+        "bonked",
+        "done",
+        "oops",
+        "hungry",
+        "yum",
+        "bored",
+        "sleeptalk",
+        "quips",
     ];
     let out = all().iter().map(|(key, p)| {
-        let picked: Map<String, Value> = KEYS.iter().filter_map(|k| Some((k.to_string(), p.get(*k)?.clone()))).collect();
+        let picked: Map<String, Value> = KEYS
+            .iter()
+            .filter_map(|k| Some((k.to_string(), p.get(*k)?.clone())))
+            .collect();
         (key.clone(), Value::Object(picked))
     });
     Value::Object(out.collect())
@@ -27,7 +43,10 @@ pub fn public() -> Value {
 
 /// What Claude Code is told about the robot it's playing (--append-system-prompt).
 pub fn system_prompt_for(c: &Value) -> String {
-    let p = all().get(c["personality"].as_str().unwrap_or("")).or_else(|| all().get("cheerful")).unwrap();
+    let p = all()
+        .get(c["personality"].as_str().unwrap_or(""))
+        .or_else(|| all().get("cheerful"))
+        .unwrap();
     [
         format!(
             "You are \"{}\", a small cartoon robot that lives on the user's desktop and looks after the folder {}.",
@@ -45,5 +64,9 @@ pub fn system_prompt_for(c: &Value) -> String {
 
 /// The emoji a robot of this personality shows in menus.
 pub fn emoji(personality: &str) -> &'static str {
-    all().get(personality).and_then(|p| p.get("emoji")).and_then(Value::as_str).unwrap_or("🤖")
+    all()
+        .get(personality)
+        .and_then(|p| p.get("emoji"))
+        .and_then(Value::as_str)
+        .unwrap_or("🤖")
 }

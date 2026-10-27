@@ -35,7 +35,12 @@ fn layout(app: &AppHandle) -> Vec<Screen> {
             let (p, s, w) = (m.position(), m.size(), m.work_area());
             (
                 [p.x, p.y, s.width as i32, s.height as i32],
-                [w.position.x, w.position.y, w.size.width as i32, w.size.height as i32],
+                [
+                    w.position.x,
+                    w.position.y,
+                    w.size.width as i32,
+                    w.size.height as i32,
+                ],
                 (m.scale_factor() * 100.0).round() as u32,
             )
         })

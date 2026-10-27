@@ -14,7 +14,6 @@ use crate::platform::process;
 use crate::platform::process::NoWindow;
 use crate::runtime::paths;
 
-
 const NAMES: [&str; 2] = ["claude.exe", "claude.cmd"];
 
 #[derive(Clone)]
@@ -29,22 +28,37 @@ fn is_file(p: &Path) -> bool {
 
 fn dirs(dir: &Path) -> Vec<PathBuf> {
     std::fs::read_dir(dir)
-        .map(|rd| rd.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).map(|e| e.path()).collect())
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .map(|e| e.path())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 fn env_path(name: &str) -> Option<PathBuf> {
-    std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from)
+    std::env::var_os(name)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
 }
 
 /// "2.1.308" before "2.1.304" before "2.0.99"; names that aren't versions last.
 fn newest_first(a: &Path, b: &Path) -> std::cmp::Ordering {
     let parts = |p: &Path| -> Vec<i64> {
-        p.file_name().and_then(|n| n.to_str()).unwrap_or("").split('.').map(|x| x.parse().unwrap_or(-1)).collect()
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .split('.')
+            .map(|x| x.parse().unwrap_or(-1))
+            .collect()
     };
     let (va, vb) = (parts(a), parts(b));
     for i in 0..va.len().max(vb.len()) {
-        let (x, y) = (va.get(i).copied().unwrap_or(-1), vb.get(i).copied().unwrap_or(-1));
+        let (x, y) = (
+            va.get(i).copied().unwrap_or(-1),
+            vb.get(i).copied().unwrap_or(-1),
+        );
         if x != y {
             return y.cmp(&x);
         }
@@ -57,8 +71,17 @@ fn install_spots() -> Vec<(PathBuf, &'static str)> {
     let (home, local, roaming) = (paths::home(), paths::local_data(), paths::data());
     let mut spots = vec![
         (home.join(".local").join("bin"), "Claude Code installer"),
-        (home.join(".claude").join("local"), "Claude Code (local install)"),
-        (home.join(".claude").join("local").join("node_modules").join(".bin"), "Claude Code (local install)"),
+        (
+            home.join(".claude").join("local"),
+            "Claude Code (local install)",
+        ),
+        (
+            home.join(".claude")
+                .join("local")
+                .join("node_modules")
+                .join(".bin"),
+            "Claude Code (local install)",
+        ),
     ];
     if let Some(prefix) = env_path("npm_config_prefix") {
         spots.push((prefix, "npm"));
@@ -68,12 +91,20 @@ fn install_spots() -> Vec<(PathBuf, &'static str)> {
         spots.push((nvm, "npm (nvm)"));
     }
     spots.push((PathBuf::from("C:\\nvm4w\\nodejs"), "npm (nvm)"));
-    spots.push((env_path("ProgramFiles").unwrap_or_else(|| "C:\\Program Files".into()).join("nodejs"), "npm"));
+    spots.push((
+        env_path("ProgramFiles")
+            .unwrap_or_else(|| "C:\\Program Files".into())
+            .join("nodejs"),
+        "npm",
+    ));
     spots.push((local.join("Volta").join("bin"), "Volta"));
     spots.push((local.join("pnpm"), "pnpm"));
     spots.push((local.join("Yarn").join("bin"), "Yarn"));
     spots.push((home.join("scoop").join("shims"), "Scoop"));
-    spots.push((local.join("Microsoft").join("WinGet").join("Links"), "WinGet"));
+    spots.push((
+        local.join("Microsoft").join("WinGet").join("Links"),
+        "WinGet",
+    ));
     spots.push((home.join(".bun").join("bin"), "Bun"));
     spots
 }
@@ -83,12 +114,29 @@ fn install_spots() -> Vec<(PathBuf, &'static str)> {
 fn fresh_path() -> Vec<PathBuf> {
     let mut parts = vec![std::env::var("PATH").unwrap_or_default()];
     // (reg.exe by its full path: with a bare PATH, plain `reg` isn't found either)
-    let reg = env_path("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()).join("System32").join("reg.exe");
-    for key in ["HKCU\\Environment", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"] {
-        let Ok(out) = Command::new(&reg).args(["query", key, "/v", "Path"]).no_window().output() else { continue };
+    let reg = env_path("SystemRoot")
+        .unwrap_or_else(|| "C:\\Windows".into())
+        .join("System32")
+        .join("reg.exe");
+    for key in [
+        "HKCU\\Environment",
+        "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+    ] {
+        let Ok(out) = Command::new(&reg)
+            .args(["query", key, "/v", "Path"])
+            .no_window()
+            .output()
+        else {
+            continue;
+        };
         let text = String::from_utf8_lossy(&out.stdout);
-        let line = text.lines().find(|l| l.trim_start().to_ascii_lowercase().starts_with("path"));
-        if let Some(value) = line.and_then(|l| l.split_once("REG_").map(|(_, rest)| rest)).and_then(|r| r.split_once(char::is_whitespace)) {
+        let line = text
+            .lines()
+            .find(|l| l.trim_start().to_ascii_lowercase().starts_with("path"));
+        if let Some(value) = line
+            .and_then(|l| l.split_once("REG_").map(|(_, rest)| rest))
+            .and_then(|r| r.split_once(char::is_whitespace))
+        {
             parts.push(expand_vars(value.1.trim()));
         }
     }
@@ -134,12 +182,23 @@ fn expand_vars(s: &str) -> String {
 /// The newest version wins.
 fn desktop_app_copies() -> Vec<PathBuf> {
     let (local, roaming) = (paths::local_data(), paths::data());
-    let mut roots: Vec<PathBuf> = dirs(&local.join("Claude-Data")).into_iter().map(|d| d.join("claude-code")).collect();
+    let mut roots: Vec<PathBuf> = dirs(&local.join("Claude-Data"))
+        .into_iter()
+        .map(|d| d.join("claude-code"))
+        .collect();
     roots.push(roaming.join("Claude").join("claude-code"));
     roots.push(local.join("Claude").join("claude-code"));
     for d in dirs(&local.join("Packages")) {
-        if d.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().starts_with("claude_")) {
-            roots.push(d.join("LocalCache").join("Roaming").join("Claude").join("claude-code"));
+        if d.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.to_ascii_lowercase().starts_with("claude_"))
+        {
+            roots.push(
+                d.join("LocalCache")
+                    .join("Roaming")
+                    .join("Claude")
+                    .join("claude-code"),
+            );
         }
     }
     let mut found: Vec<(PathBuf, PathBuf)> = vec![];
@@ -163,18 +222,27 @@ fn search() -> Option<Found> {
     for (dir, source) in install_spots() {
         for n in NAMES {
             if is_file(&dir.join(n)) {
-                return Some(Found { path: dir.join(n), source: source.into() });
+                return Some(Found {
+                    path: dir.join(n),
+                    source: source.into(),
+                });
             }
         }
     }
     for dir in fresh_path() {
         for n in NAMES {
             if is_file(&dir.join(n)) {
-                return Some(Found { path: dir.join(n), source: "PATH".into() });
+                return Some(Found {
+                    path: dir.join(n),
+                    source: "PATH".into(),
+                });
             }
         }
     }
-    desktop_app_copies().into_iter().next().map(|path| Found { path, source: "Claude desktop app".into() })
+    desktop_app_copies().into_iter().next().map(|path| Found {
+        path,
+        source: "Claude desktop app".into(),
+    })
 }
 
 static CACHED: Mutex<Option<Found>> = Mutex::new(None);
@@ -183,7 +251,10 @@ static CACHED: Mutex<Option<Found>> = Mutex::new(None);
 /// `fresh` skips the cache (the Workshop's "Search again").
 pub fn locate(chosen: &str, fresh: bool) -> Option<Found> {
     if !chosen.is_empty() && is_file(Path::new(chosen)) {
-        return Some(Found { path: chosen.into(), source: "picked by you".into() });
+        return Some(Found {
+            path: chosen.into(),
+            source: "picked by you".into(),
+        });
     }
     let mut cached = CACHED.lock().unwrap();
     if !fresh && let Some(c) = cached.as_ref().filter(|c| is_file(&c.path)) {
@@ -207,16 +278,28 @@ pub fn check(file: &Path) -> Result<String, String> {
     if !is_file(file) {
         return Err("That file doesn't exist.".into());
     }
-    let not_claude = || "That doesn't look like Claude Code (it didn't answer `--version` like Claude Code does).".to_string();
+    let not_claude = || {
+        "That doesn't look like Claude Code (it didn't answer `--version` like Claude Code does)."
+            .to_string()
+    };
     // (a .cmd runs through cmd.exe: std does that, quoting it safely)
-    let Ok(mut child) = Command::new(file).arg("--version").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).no_window().spawn() else {
+    let Ok(mut child) = Command::new(file)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .no_window()
+        .spawn()
+    else {
         return Err(not_claude());
     };
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if started.elapsed() < Duration::from_secs(15) => std::thread::sleep(Duration::from_millis(50)),
+            Ok(None) if started.elapsed() < Duration::from_secs(15) => {
+                std::thread::sleep(Duration::from_millis(50))
+            }
             _ => {
                 process::kill_tree(child.id());
                 let _ = child.wait();

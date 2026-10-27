@@ -7,13 +7,24 @@ use super::*;
 /// In the middle of the screen the host robot is on (physical px).
 pub(super) fn place(app: &AppHandle, host: Option<&str>) -> Rect {
     let saved = with(app, |st| st.store.settings()["groupChatSize"].clone());
-    let near = host.and_then(|h| hub::robot_rect(app, h)).map(|r| (r.x + r.w / 2, r.y + r.h / 2)).unwrap_or_else(window::cursor);
+    let near = host
+        .and_then(|h| hub::robot_rect(app, h))
+        .map(|r| (r.x + r.w / 2, r.y + r.h / 2))
+        .unwrap_or_else(window::cursor);
     let m = window::monitor_near(near.0, near.1);
     let s = m.scale;
     let w = MIN_SIZE.0.max(saved["w"].as_f64().unwrap_or(SIZE.0));
-    let h = MIN_SIZE.1.max(saved["h"].as_f64().unwrap_or(SIZE.1)).min(m.work.h as f64 / s - 16.0);
+    let h = MIN_SIZE
+        .1
+        .max(saved["h"].as_f64().unwrap_or(SIZE.1))
+        .min(m.work.h as f64 / s - 16.0);
     let (pw, ph) = ((w * s).round() as i32, (h * s).round() as i32);
-    Rect { x: m.work.x + (m.work.w - pw) / 2, y: m.work.y + (m.work.h - ph) / 2, w: pw, h: ph }
+    Rect {
+        x: m.work.x + (m.work.w - pw) / 2,
+        y: m.work.y + (m.work.h - ph) / 2,
+        w: pw,
+        h: ph,
+    }
 }
 
 pub(super) fn build_window(app: &AppHandle) {
@@ -40,7 +51,12 @@ pub(super) fn build_window(app: &AppHandle) {
                 return;
             }
             // (ready to show: placed, then shown)
-            let host = act(&app2, |g, _| g.chat.as_ref().map(|c| c.host_id.clone()).or(g.host.clone()));
+            let host = act(&app2, |g, _| {
+                g.chat
+                    .as_ref()
+                    .map(|c| c.host_id.clone())
+                    .or(g.host.clone())
+            });
             if let Ok(hwnd) = w.hwnd() {
                 window::set_bounds(hwnd.0 as isize, place(&app2, host.as_deref()));
             }
@@ -95,8 +111,16 @@ pub(super) fn end(g: &mut Group, env: &mut Env) {
 
 /// The meeting room: beside the group chat window (left if there's room, else right, else above).
 pub(super) fn room_bounds(near: Rect, n: usize, wa: Rect, s: f64) -> Rect {
-    let (w, h) =if n > 4 { (640.0, 380.0) } else { (540.0, 340.0) };
-    let (w, h, gap) = ((w * s).round() as i32, (h * s).round() as i32, (ROOM_GAP * s).round() as i32);
+    let (w, h) = if n > 4 {
+        (640.0, 380.0)
+    } else {
+        (540.0, 340.0)
+    };
+    let (w, h, gap) = (
+        (w * s).round() as i32,
+        (h * s).round() as i32,
+        (ROOM_GAP * s).round() as i32,
+    );
     let mut x = near.x - w - gap;
     let mut y = near.y + near.h - h;
     if x < wa.x {
@@ -106,7 +130,12 @@ pub(super) fn room_bounds(near: Rect, n: usize, wa: Rect, s: f64) -> Rect {
         x = near.x + (near.w - w) / 2; // (nor there: above it)
         y = near.y - h - gap;
     }
-    Rect { x: x.max(wa.x).min(wa.right() - w), y: y.max(wa.y).min(wa.bottom() - h), w, h }
+    Rect {
+        x: x.max(wa.x).min(wa.right() - w),
+        y: y.max(wa.y).min(wa.bottom() - h),
+        w,
+        h,
+    }
 }
 
 pub(super) fn open_room(app: &AppHandle, people: Value, room_gen: u64) {

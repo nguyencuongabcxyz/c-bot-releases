@@ -7,8 +7,8 @@
 
 use serde_json::Value;
 
-use crate::platform::{input, presence};
 use super::words::MIN;
+use crate::platform::{input, presence};
 
 pub const TICK_MS: u64 = 30_000;
 const DREAM_GAP: i64 = 20 * MIN; // at most one dream this often
@@ -47,7 +47,12 @@ pub struct DreamClock {
 impl DreamClock {
     pub fn new(now: i64, day: &str) -> DreamClock {
         // the first one a few minutes after C-Bot starts
-        DreamClock { last_at: now - DREAM_GAP + 3 * MIN, last_word: String::new(), day: day.to_string(), today: 0 }
+        DreamClock {
+            last_at: now - DREAM_GAP + 3 * MIN,
+            last_word: String::new(),
+            day: day.to_string(),
+            today: 0,
+        }
     }
 
     /// May a robot dream now? (`ok`: dreams are on, you're in your hours, at the PC, and no

@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use crate::platform::window;
@@ -62,12 +62,20 @@ pub fn bounds_beside(near: Rect, wa: Rect, scale: f64, size: (f64, f64)) -> Rect
 /// How big you made it (settings.notebookSize, CSS px), not smaller than it can be.
 fn size_of(settings: &Value) -> (f64, f64) {
     let saved = &settings["notebookSize"];
-    let pick = |k: &str, def: f64, min: f64| saved[k].as_f64().filter(|v| *v != 0.0).unwrap_or(def).max(min);
+    let pick = |k: &str, def: f64, min: f64| {
+        saved[k]
+            .as_f64()
+            .filter(|v| *v != 0.0)
+            .unwrap_or(def)
+            .max(min)
+    };
     (pick("w", SIZE.0, MIN_SIZE.0), pick("h", SIZE.1, MIN_SIZE.1))
 }
 
 fn place(app: &AppHandle) {
-    let Some(Some((hwnd, near))) = book(app, |b| Some((b.hwnd?, b.ctx.near))) else { return };
+    let Some(Some((hwnd, near))) = book(app, |b| Some((b.hwnd?, b.ctx.near))) else {
+        return;
+    };
     let (near, m) = place::around(near);
     let size = size_of(&with(app, |st| st.store.settings().clone()));
     let r = bounds_beside(near, m.work, m.scale, size);
@@ -77,7 +85,9 @@ fn place(app: &AppHandle) {
 
 /// Show it: taking the focus (a click, the hotkey), or not (a reminder).
 fn show(app: &AppHandle, activate: bool) {
-    let Some(w) = app.get_webview_window(LABEL) else { return };
+    let Some(w) = app.get_webview_window(LABEL) else {
+        return;
+    };
     if activate {
         let _ = w.show();
         let _ = w.set_focus();
@@ -131,7 +141,9 @@ fn build(app: &AppHandle, activate: bool) {
             return;
         }
     };
-    let Ok(hwnd) = window.hwnd().map(|h| h.0 as isize) else { return };
+    let Ok(hwnd) = window.hwnd().map(|h| h.0 as isize) else {
+        return;
+    };
     book(app, |b| {
         b.hwnd = Some(hwnd);
         b.focused = false;
@@ -207,7 +219,11 @@ pub fn ctx(app: &AppHandle) -> Ctx {
 /// The reminder banner was dealt with (snoozed, done for today): dropped from the page.
 pub fn clear_reminder(app: &AppHandle) {
     book(app, |b| b.ctx.reminder = Value::Null);
-    let _ = app.emit_to(LABEL, "notebook:open", json!({ "focus": null, "reminder": null }));
+    let _ = app.emit_to(
+        LABEL,
+        "notebook:open",
+        json!({ "focus": null, "reminder": null }),
+    );
 }
 
 /// Keep the note just deleted (for Undo), or take it back.
@@ -227,28 +243,85 @@ pub fn setup(app: &AppHandle) {
 mod tests {
     use super::*;
 
-    const WA: Rect = Rect { x: 0, y: 0, w: 1920, h: 1040 };
+    const WA: Rect = Rect {
+        x: 0,
+        y: 0,
+        w: 1920,
+        h: 1040,
+    };
 
     #[test]
     fn beside_the_robot() {
         // a robot in the bottom-right corner: on its left, bottoms lined up
-        let robot = Rect { x: 1590, y: 740, w: 300, h: 290 };
-        assert_eq!(bounds_beside(robot, WA, 1.0, SIZE), Rect { x: 1242, y: 570, w: 340, h: 460 });
+        let robot = Rect {
+            x: 1590,
+            y: 740,
+            w: 300,
+            h: 290,
+        };
+        assert_eq!(
+            bounds_beside(robot, WA, 1.0, SIZE),
+            Rect {
+                x: 1242,
+                y: 570,
+                w: 340,
+                h: 460
+            }
+        );
         // at the left edge: on its right
-        let robot = Rect { x: 20, y: 740, w: 300, h: 290 };
-        assert_eq!(bounds_beside(robot, WA, 1.0, SIZE), Rect { x: 328, y: 570, w: 340, h: 460 });
+        let robot = Rect {
+            x: 20,
+            y: 740,
+            w: 300,
+            h: 290,
+        };
+        assert_eq!(
+            bounds_beside(robot, WA, 1.0, SIZE),
+            Rect {
+                x: 328,
+                y: 570,
+                w: 340,
+                h: 460
+            }
+        );
         // high up: kept on the screen
-        let robot = Rect { x: 1000, y: 10, w: 300, h: 100 };
+        let robot = Rect {
+            x: 1000,
+            y: 10,
+            w: 300,
+            h: 100,
+        };
         assert_eq!(bounds_beside(robot, WA, 1.0, SIZE).y, 8);
         // at 150%, made bigger, taller than the screen
-        let r = bounds_beside(Rect { x: 2400, y: 1100, w: 450, h: 435 }, Rect { x: 0, y: 0, w: 2880, h: 1560 }, 1.5, (400.0, 2000.0));
+        let r = bounds_beside(
+            Rect {
+                x: 2400,
+                y: 1100,
+                w: 450,
+                h: 435,
+            },
+            Rect {
+                x: 0,
+                y: 0,
+                w: 2880,
+                h: 1560,
+            },
+            1.5,
+            (400.0, 2000.0),
+        );
         assert_eq!((r.w, r.h, r.y), (600, 1560 - 24, 12));
     }
 
     #[test]
     fn its_size() {
         assert_eq!(size_of(&json!({})), SIZE);
-        assert_eq!(size_of(&json!({ "notebookSize": { "w": 500, "h": 0 } })), (500.0, SIZE.1));
-        assert_eq!(size_of(&json!({ "notebookSize": { "w": 100, "h": 100 } })), MIN_SIZE);
+        assert_eq!(
+            size_of(&json!({ "notebookSize": { "w": 500, "h": 0 } })),
+            (500.0, SIZE.1)
+        );
+        assert_eq!(
+            size_of(&json!({ "notebookSize": { "w": 100, "h": 100 } })),
+            MIN_SIZE
+        );
     }
 }

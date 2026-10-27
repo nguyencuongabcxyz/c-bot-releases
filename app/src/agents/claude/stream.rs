@@ -40,7 +40,11 @@ impl Inner {
     }
 
     pub(super) fn emit_text(&mut self, t: &str) {
-        let t = if self.text.is_empty() { t.trim_start() } else { t }; // an aside at the very start leaves blank lines
+        let t = if self.text.is_empty() {
+            t.trim_start()
+        } else {
+            t
+        }; // an aside at the very start leaves blank lines
         if t.is_empty() {
             return;
         }
@@ -50,14 +54,23 @@ impl Inner {
 
     pub(super) fn separate(&mut self) {
         if !self.text.is_empty() && !self.text.ends_with("\n\n") {
-            let gap = if self.text.ends_with('\n') { "\n" } else { "\n\n" };
+            let gap = if self.text.ends_with('\n') {
+                "\n"
+            } else {
+                "\n\n"
+            };
             self.append_text(gap);
         }
     }
 
     pub(super) fn begin_turn(&mut self, id: String, uuid: Option<String>) {
         let started = uuid.is_none();
-        self.turn = Some(Turn { id: id.clone(), interrupted: false, uuid: uuid.unwrap_or_default(), started });
+        self.turn = Some(Turn {
+            id: id.clone(),
+            interrupted: false,
+            uuid: uuid.unwrap_or_default(),
+            started,
+        });
         self.text.clear();
         self.asides = AsideFilter::default();
         self.streamed.clear();
@@ -75,7 +88,13 @@ impl Inner {
     }
 
     pub(super) fn fail_all(&mut self, message: &str, cancelled: bool, session_missing: bool) {
-        let mut ids: Vec<String> = self.turn.take().into_iter().chain(self.displaced.take()).map(|t| t.id).collect();
+        let mut ids: Vec<String> = self
+            .turn
+            .take()
+            .into_iter()
+            .chain(self.displaced.take())
+            .map(|t| t.id)
+            .collect();
         ids.extend(self.queue.drain(..).map(|(id, _)| id));
         for id in ids {
             self.emit("fail", json!({ "turnId": id, "message": message, "cancelled": cancelled, "sessionMissing": session_missing }));
@@ -90,7 +109,10 @@ impl Inner {
                 self.task_inputs.insert(s(block, "id").to_string(), input);
             }
             "TaskUpdate" if !input["taskId"].is_null() => {
-                let id = input["taskId"].as_str().map(str::to_string).unwrap_or_else(|| input["taskId"].to_string());
+                let id = input["taskId"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| input["taskId"].to_string());
                 self.emit("task", json!({ "op": "update", "id": id, "status": input["status"], "subject": input["subject"], "activeForm": input["activeForm"] }));
             }
             "TodoWrite" => {
@@ -104,9 +126,19 @@ impl Inner {
     }
 
     pub(super) fn task_result(&mut self, block: &Value) {
-        let Some(input) = self.task_inputs.remove(s(block, "tool_use_id")) else { return };
+        let Some(input) = self.task_inputs.remove(s(block, "tool_use_id")) else {
+            return;
+        };
         let text = result_text(&block["content"]);
-        let id = text.find('#').map(|i| text[i + 1..].chars().take_while(char::is_ascii_digit).collect::<String>()).filter(|d| !d.is_empty());
+        let id = text
+            .find('#')
+            .map(|i| {
+                text[i + 1..]
+                    .chars()
+                    .take_while(char::is_ascii_digit)
+                    .collect::<String>()
+            })
+            .filter(|d| !d.is_empty());
         if let Some(id) = id {
             self.emit("task", json!({ "op": "create", "id": id, "subject": input["subject"], "activeForm": input["activeForm"], "status": "pending" }));
         }
@@ -121,7 +153,11 @@ impl Inner {
         let id = s(block, "id").to_string();
         self.agent_tools.insert(id.clone());
         self.agent_running.insert(id.clone());
-        let description = if s(input, "description").is_empty() { "Helper" } else { s(input, "description") };
+        let description = if s(input, "description").is_empty() {
+            "Helper"
+        } else {
+            s(input, "description")
+        };
         self.emit("agent", json!({
             "op": "start", "id": id, "parent": parent, "description": description, "kind": s(input, "subagent_type"),
             "prompt": s(input, "prompt"), "background": input["run_in_background"].as_bool().unwrap_or(false),
@@ -134,14 +170,21 @@ impl Inner {
         if s(msg, "type") != "assistant" {
             return;
         }
-        for block in msg["message"]["content"].as_array().cloned().unwrap_or_default() {
+        for block in msg["message"]["content"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
             match s(&block, "type") {
                 "tool_use" => {
                     self.agent_start(&block, Some(&id)); // a helper sending its own helper
                     self.emit("agent", json!({ "op": "step", "id": id, "tool": block["name"], "detail": describe_tool(s(&block, "name"), &block["input"]) }));
                 }
                 "text" if !s(&block, "text").trim().is_empty() => {
-                    self.emit("agent", json!({ "op": "text", "id": id, "text": block["text"] }));
+                    self.emit(
+                        "agent",
+                        json!({ "op": "text", "id": id, "text": block["text"] }),
+                    );
                 }
                 _ => {}
             }
@@ -151,7 +194,13 @@ impl Inner {
     // Claude Code's task events for helpers: started, progress, finished
     pub(super) fn agent_task(&mut self, msg: &Value) {
         let task_id = s(msg, "task_id").to_string();
-        let id = if !s(msg, "tool_use_id").is_empty() { s(msg, "tool_use_id").to_string() } else if let Some(id) = self.agent_tasks.get(&task_id) { id.clone() } else { return };
+        let id = if !s(msg, "tool_use_id").is_empty() {
+            s(msg, "tool_use_id").to_string()
+        } else if let Some(id) = self.agent_tasks.get(&task_id) {
+            id.clone()
+        } else {
+            return;
+        };
         if !task_id.is_empty() {
             self.agent_tasks.insert(task_id, id.clone());
         }
@@ -171,11 +220,21 @@ impl Inner {
                 self.agent_running.insert(id.clone());
                 self.emit("agent", json!({ "op": "start", "id": id, "description": msg["description"], "kind": s(msg, "subagent_type"), "prompt": s(msg, "prompt"), "background": msg["is_backgrounded"].as_bool().unwrap_or(false) }));
             }
-            "task_progress" => self.emit("agent", usage(json!({ "op": "progress", "id": id, "activity": s(msg, "description") }))),
-            "task_updated" if !msg["patch"]["status"].is_null() => self.emit("agent", json!({ "op": "status", "id": id, "status": msg["patch"]["status"] })),
+            "task_progress" => self.emit(
+                "agent",
+                usage(json!({ "op": "progress", "id": id, "activity": s(msg, "description") })),
+            ),
+            "task_updated" if !msg["patch"]["status"].is_null() => self.emit(
+                "agent",
+                json!({ "op": "status", "id": id, "status": msg["patch"]["status"] }),
+            ),
             "task_notification" => {
                 self.agent_running.remove(&id);
-                let status = if s(msg, "status").is_empty() { "completed" } else { s(msg, "status") };
+                let status = if s(msg, "status").is_empty() {
+                    "completed"
+                } else {
+                    s(msg, "status")
+                };
                 self.emit("agent", usage(json!({ "op": "done", "id": id, "status": status, "summary": s(msg, "summary"), "outputFile": s(msg, "output_file") })));
             }
             _ => {}
@@ -193,18 +252,33 @@ impl Inner {
             return;
         }
         if s(req, "tool_name") == "AskUserQuestion" && req["input"]["questions"].is_array() {
-            self.pending_questions.insert(request_id.clone(), req["input"].clone());
-            self.emit("question", json!({ "requestId": request_id, "questions": req["input"]["questions"] }));
+            self.pending_questions
+                .insert(request_id.clone(), req["input"].clone());
+            self.emit(
+                "question",
+                json!({ "requestId": request_id, "questions": req["input"]["questions"] }),
+            );
             return;
         }
         // a plan, finished: it waits for your go-ahead (or your notes) before anything changes
         if s(req, "tool_name") == "ExitPlanMode" {
-            self.pending_plans.insert(request_id.clone(), req["input"].clone());
+            self.pending_plans
+                .insert(request_id.clone(), req["input"].clone());
             self.emit("plan", json!({ "requestId": request_id, "plan": s(&req["input"], "plan"), "file": s(&req["input"], "planFilePath") }));
             return;
         }
-        let mode = if self.opts.permission_mode.is_empty() { "default" } else { &self.opts.permission_mode };
-        let message = format!("{} needs permission this robot doesn't have (mode: {mode}).", s(req, "tool_name"));
-        self.reply(&request_id, json!({ "behavior": "deny", "message": message }));
+        let mode = if self.opts.permission_mode.is_empty() {
+            "default"
+        } else {
+            &self.opts.permission_mode
+        };
+        let message = format!(
+            "{} needs permission this robot doesn't have (mode: {mode}).",
+            s(req, "tool_name")
+        );
+        self.reply(
+            &request_id,
+            json!({ "behavior": "deny", "message": message }),
+        );
     }
 }

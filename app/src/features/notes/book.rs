@@ -7,7 +7,7 @@
 //! Nothing here touches a window or a file: the module saves when `dirty` says so.
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone, Timelike};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub const MIN: i64 = 60_000;
 const DAY: i64 = 24 * 60 * MIN;
@@ -39,13 +39,19 @@ fn important(n: &Value) -> bool {
 
 /// A moment as your local time.
 pub fn local(ms: i64) -> DateTime<Local> {
-    Local.timestamp_millis_opt(ms).earliest().unwrap_or_else(Local::now)
+    Local
+        .timestamp_millis_opt(ms)
+        .earliest()
+        .unwrap_or_else(Local::now)
 }
 
 /// The start of that date where you are (ms).
 fn midnight(date: NaiveDate) -> i64 {
     let naive = date.and_hms_opt(0, 0, 0).unwrap_or_default();
-    Local.from_local_datetime(&naive).earliest().map_or(0, |d| d.timestamp_millis())
+    Local
+        .from_local_datetime(&naive)
+        .earliest()
+        .map_or(0, |d| d.timestamp_millis())
 }
 
 pub fn start_of_day(d: DateTime<Local>) -> i64 {
@@ -96,11 +102,16 @@ impl Notes {
         if !self.data["notes"].is_array() {
             self.data["notes"] = json!([]);
         }
-        self.data["notes"].as_array_mut().expect("just made an array")
+        self.data["notes"]
+            .as_array_mut()
+            .expect("just made an array")
     }
 
     fn find_mut(&mut self, id: &str) -> Option<&mut serde_json::Map<String, Value>> {
-        self.all_mut().iter_mut().find(|n| str_of(n, "id") == id)?.as_object_mut()
+        self.all_mut()
+            .iter_mut()
+            .find(|n| str_of(n, "id") == id)?
+            .as_object_mut()
     }
 
     /// Every note, newest first.
@@ -116,8 +127,17 @@ impl Notes {
 
     /// The ones still to do: important first, then oldest first (they've waited longest).
     pub fn open(&self) -> Vec<Value> {
-        let mut open: Vec<Value> = self.all().iter().filter(|n| done_at(n).is_none()).cloned().collect();
-        open.sort_by(|a, b| important(b).cmp(&important(a)).then(created(a).cmp(&created(b))));
+        let mut open: Vec<Value> = self
+            .all()
+            .iter()
+            .filter(|n| done_at(n).is_none())
+            .cloned()
+            .collect();
+        open.sort_by(|a, b| {
+            important(b)
+                .cmp(&important(a))
+                .then(created(a).cmp(&created(b)))
+        });
         open
     }
 
@@ -166,7 +186,9 @@ impl Notes {
 
     /// Ticked off (or back to do): the note, and whether that changed anything.
     pub fn set_done(&mut self, id: &str, done: bool, now: i64) -> (Option<Value>, bool) {
-        let Some(n) = self.find_mut(id) else { return (None, false) };
+        let Some(n) = self.find_mut(id) else {
+            return (None, false);
+        };
         let was = n.get("doneAt").and_then(ms).is_some_and(|d| d != 0);
         if was == done {
             return (Some(Value::Object(n.clone())), false);
@@ -222,7 +244,11 @@ impl Notes {
         let open = self.open();
         // important first, then the newest (what you just jotted down is what you want to see)
         let mut shown = open.clone();
-        shown.sort_by(|a, b| important(b).cmp(&important(a)).then(created(b).cmp(&created(a))));
+        shown.sort_by(|a, b| {
+            important(b)
+                .cmp(&important(a))
+                .then(created(b).cmp(&created(a)))
+        });
         let items: Vec<Value> = shown
             .iter()
             .take(max)
@@ -233,7 +259,11 @@ impl Notes {
 
     /// Taken on or after `since` (ms).
     pub fn taken_since(&self, since: i64) -> Vec<Value> {
-        self.all().iter().filter(|n| created(n) >= since).cloned().collect()
+        self.all()
+            .iter()
+            .filter(|n| created(n) >= since)
+            .cloned()
+            .collect()
     }
 
     /// Which day each reminder last went off, saved with the notes.
@@ -271,7 +301,9 @@ pub struct Cfg {
 /// "17:30" → minutes after midnight (bad input: 17:30).
 pub fn minutes_of(hm: &str) -> u32 {
     let parsed = hm.split_once(':').and_then(|(h, m)| {
-        let ok = (1..=2).contains(&h.len()) && m.len() == 2 && h.chars().chain(m.chars()).all(|c| c.is_ascii_digit());
+        let ok = (1..=2).contains(&h.len())
+            && m.len() == 2
+            && h.chars().chain(m.chars()).all(|c| c.is_ascii_digit());
         if !ok {
             return None;
         }
@@ -309,11 +341,27 @@ pub fn gather(notes: &Notes, kind: &str, d: DateTime<Local>, c: &Cfg) -> Value {
     let open = notes.open();
     let morning = kind == "morning";
     let today = start_of_day(d);
-    let since = if morning { last_workday_start(d, &c.workdays) } else { today };
-    let taken: Vec<Value> = notes.taken_since(since).into_iter().filter(|n| !morning || created(n) < today).collect();
+    let since = if morning {
+        last_workday_start(d, &c.workdays)
+    } else {
+        today
+    };
+    let taken: Vec<Value> = notes
+        .taken_since(since)
+        .into_iter()
+        .filter(|n| !morning || created(n) < today)
+        .collect();
     let carried: &[Value] = if morning && !c.carry { &[] } else { &open };
-    let ids: Vec<&str> = carried.iter().chain(taken.iter()).map(|n| str_of(n, "id")).collect();
-    let list: Vec<Value> = notes.list().into_iter().filter(|n| ids.contains(&str_of(n, "id"))).collect();
+    let ids: Vec<&str> = carried
+        .iter()
+        .chain(taken.iter())
+        .map(|n| str_of(n, "id"))
+        .collect();
+    let list: Vec<Value> = notes
+        .list()
+        .into_iter()
+        .filter(|n| ids.contains(&str_of(n, "id")))
+        .collect();
     json!({ "kind": kind, "notes": list, "open": open.len(), "today": notes.taken_since(today).len(), "taken": taken.len(), "since": since })
 }
 
@@ -333,7 +381,13 @@ pub struct NoteClock {
 impl NoteClock {
     /// Which reminder is due at time d, if any (a put-off one that's due is taken). Once it's
     /// been shown (or there was nothing to show), `shown` books it.
-    pub fn due(&mut self, notes: &Notes, c: &Cfg, d: DateTime<Local>, present: bool) -> Option<Due> {
+    pub fn due(
+        &mut self,
+        notes: &Notes,
+        c: &Cfg,
+        d: DateTime<Local>,
+        present: bool,
+    ) -> Option<Due> {
         if !c.on || !present {
             return None;
         }
@@ -344,7 +398,10 @@ impl NoteClock {
             }
             let kind = kind.clone();
             self.pending = None;
-            return Some(Due { kind, snoozed: true });
+            return Some(Due {
+                kind,
+                snoozed: true,
+            });
         }
         if !c.workdays.contains(&d.weekday().num_days_from_sunday()) {
             return None;
@@ -353,10 +410,20 @@ impl NoteClock {
         let mins = d.hour() * 60 + d.minute();
         // end of the day first: if it's already past it, the morning one has had its chance
         if mins >= c.evening && d.hour() < EVENING_UNTIL && notes.reminded("evening") != day {
-            return Some(Due { kind: "evening".into(), snoozed: false });
+            return Some(Due {
+                kind: "evening".into(),
+                snoozed: false,
+            });
         }
-        if c.morning && d.hour() >= MORNING_FROM && mins < c.evening && notes.reminded("morning") != day {
-            return Some(Due { kind: "morning".into(), snoozed: false });
+        if c.morning
+            && d.hour() >= MORNING_FROM
+            && mins < c.evening
+            && notes.reminded("morning") != day
+        {
+            return Some(Due {
+                kind: "morning".into(),
+                snoozed: false,
+            });
         }
         None
     }
@@ -393,15 +460,28 @@ mod tests {
 
     /// A local time on a date (2026-10-26 is a Monday).
     fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
-        Local.with_ymd_and_hms(y, mo, d, h, mi, 0).earliest().unwrap()
+        Local
+            .with_ymd_and_hms(y, mo, d, h, mi, 0)
+            .earliest()
+            .unwrap()
     }
 
     fn note(n: &mut Notes, text: &str, when: DateTime<Local>) -> String {
-        n.add(text, false, "", when.timestamp_millis()).unwrap()["id"].as_str().unwrap().to_string()
+        n.add(text, false, "", when.timestamp_millis()).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
     }
 
     /// One check as notes.js check() makes it: what went off (fire: could it be shown).
-    fn check(clock: &mut NoteClock, notes: &mut Notes, c: &Cfg, d: DateTime<Local>, present: bool, fire: bool) -> Option<String> {
+    fn check(
+        clock: &mut NoteClock,
+        notes: &mut Notes,
+        c: &Cfg,
+        d: DateTime<Local>,
+        present: bool,
+        fire: bool,
+    ) -> Option<String> {
         let due = clock.due(notes, c, d, present)?;
         let info = gather(notes, &due.kind, d, c);
         let shown = info["notes"].as_array().unwrap().is_empty() || fire;
@@ -417,29 +497,65 @@ mod tests {
         let mut n = Notes::from(None, 0);
         assert!(n.add("   ", false, "", 1).is_none());
         assert!(n.add("!!", false, "", 1).is_none());
-        let a = n.add("!! call Bob\r\nabout lunch ", false, "x".repeat(200).as_str(), 5).unwrap();
+        let a = n
+            .add(
+                "!! call Bob\r\nabout lunch ",
+                false,
+                "x".repeat(200).as_str(),
+                5,
+            )
+            .unwrap();
         assert_eq!(a["text"], "call Bob\nabout lunch");
         assert_eq!(a["important"], true);
         assert_eq!(a["source"].as_str().unwrap().len(), 120);
         assert_eq!(a["doneAt"], Value::Null);
         let id = a["id"].as_str().unwrap();
-        let b = n.update(id, &json!({ "text": "  ", "important": false, "working": true })).unwrap();
-        assert_eq!((b["text"].clone(), b["important"].clone(), b["working"].clone()), (json!("call Bob\nabout lunch"), json!(false), json!(true)));
-        assert!(n.update(id, &json!({ "working": false })).unwrap().get("working").is_none());
-        assert_eq!(n.add(&"y".repeat(3000), false, "", 6).unwrap()["text"].as_str().unwrap().len(), MAX_LEN);
+        let b = n
+            .update(
+                id,
+                &json!({ "text": "  ", "important": false, "working": true }),
+            )
+            .unwrap();
+        assert_eq!(
+            (
+                b["text"].clone(),
+                b["important"].clone(),
+                b["working"].clone()
+            ),
+            (json!("call Bob\nabout lunch"), json!(false), json!(true))
+        );
+        assert!(
+            n.update(id, &json!({ "working": false }))
+                .unwrap()
+                .get("working")
+                .is_none()
+        );
+        assert_eq!(
+            n.add(&"y".repeat(3000), false, "", 6).unwrap()["text"]
+                .as_str()
+                .unwrap()
+                .len(),
+            MAX_LEN
+        );
     }
 
     #[test]
     fn done_undone_removed_restored() {
         let mut n = Notes::from(None, 0);
-        let id = n.add("a", false, "", 1).unwrap()["id"].as_str().unwrap().to_string();
+        let id = n.add("a", false, "", 1).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
         n.update(&id, &json!({ "working": true }));
         let (note, changed) = n.set_done(&id, true, 100);
         assert!(changed);
         assert_eq!(note.as_ref().unwrap()["doneAt"], 100);
         assert!(note.unwrap().get("working").is_none());
         assert!(!n.set_done(&id, true, 200).1); // (already done)
-        assert_eq!(n.set_done(&id, false, 300).0.unwrap()["doneAt"], Value::Null);
+        assert_eq!(
+            n.set_done(&id, false, 300).0.unwrap()["doneAt"],
+            Value::Null
+        );
         assert_eq!(n.set_done("nope", true, 1), (None, false));
         let gone = n.remove(&id).unwrap();
         assert!(n.get(&id).is_none());
@@ -454,17 +570,44 @@ mod tests {
     fn important_first_then_oldest_and_the_board_newest() {
         let mut n = Notes::from(None, 0);
         let t = at(2026, 10, 26, 9, 0).timestamp_millis();
-        for (i, text) in ["one", "two", "!three", "four", "five", "six", "seven"].iter().enumerate() {
+        for (i, text) in ["one", "two", "!three", "four", "five", "six", "seven"]
+            .iter()
+            .enumerate()
+        {
             n.add(text, false, "", t + i as i64);
         }
         let done = n.list()[0]["id"].as_str().unwrap().to_string(); // seven
         n.set_done(&done, true, t + 100);
         let open: Vec<Value> = n.open().iter().map(|x| x["text"].clone()).collect();
-        assert_eq!(open, vec![json!("three"), json!("one"), json!("two"), json!("four"), json!("five"), json!("six")]);
+        assert_eq!(
+            open,
+            vec![
+                json!("three"),
+                json!("one"),
+                json!("two"),
+                json!("four"),
+                json!("five"),
+                json!("six")
+            ]
+        );
         let board = n.board(5, t + DAY);
         assert_eq!(board["total"], 6);
-        let shown: Vec<Value> = board["items"].as_array().unwrap().iter().map(|x| x["text"].clone()).collect();
-        assert_eq!(shown, vec![json!("three"), json!("six"), json!("five"), json!("four"), json!("two")]);
+        let shown: Vec<Value> = board["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["text"].clone())
+            .collect();
+        assert_eq!(
+            shown,
+            vec![
+                json!("three"),
+                json!("six"),
+                json!("five"),
+                json!("four"),
+                json!("two")
+            ]
+        );
         assert_eq!(board["items"][0]["age"], 1);
         assert_eq!(board["items"][0]["working"], false);
     }
@@ -481,11 +624,14 @@ mod tests {
     #[test]
     fn done_notes_go_after_a_month() {
         let now = at(2026, 10, 26, 9, 0).timestamp_millis();
-        let n = Notes::from(Some(json!({ "notes": [
+        let n = Notes::from(
+            Some(json!({ "notes": [
             { "id": "old", "text": "a", "createdAt": 1, "doneAt": now - 31 * DAY },
             { "id": "recent", "text": "b", "createdAt": 1, "doneAt": now - 29 * DAY },
             { "id": "open", "text": "c", "createdAt": 1, "doneAt": null, "working": true },
-        ] })), now);
+        ] })),
+            now,
+        );
         let ids: Vec<Value> = n.list().iter().map(|x| x["id"].clone()).collect();
         assert_eq!(ids.len(), 2);
         assert!(n.get("old").is_none());
@@ -502,19 +648,33 @@ mod tests {
         for bad in ["24:00", "12:60", "noon", "", "1730", "12:5", "123:00"] {
             assert_eq!(minutes_of(bad), 1050, "{bad}");
         }
-        let c = cfg(&json!({ "notesEvening": "18:15", "notesMorning": false, "notesWorkdays": [1, 3] }));
-        assert_eq!((c.on, c.evening, c.morning, c.workdays.clone(), c.carry), (true, 1095, false, vec![1, 3], true));
+        let c = cfg(
+            &json!({ "notesEvening": "18:15", "notesMorning": false, "notesWorkdays": [1, 3] }),
+        );
+        assert_eq!(
+            (c.on, c.evening, c.morning, c.workdays.clone(), c.carry),
+            (true, 1095, false, vec![1, 3], true)
+        );
     }
 
     #[test]
     fn the_last_workday() {
         let wd = [1, 2, 3, 4, 5];
         // Monday: back to Friday
-        assert_eq!(last_workday_start(at(2026, 10, 26, 9, 0), &wd), at(2026, 10, 23, 0, 0).timestamp_millis());
+        assert_eq!(
+            last_workday_start(at(2026, 10, 26, 9, 0), &wd),
+            at(2026, 10, 23, 0, 0).timestamp_millis()
+        );
         // Wednesday: Tuesday
-        assert_eq!(last_workday_start(at(2026, 10, 28, 9, 0), &wd), at(2026, 10, 27, 0, 0).timestamp_millis());
+        assert_eq!(
+            last_workday_start(at(2026, 10, 28, 9, 0), &wd),
+            at(2026, 10, 27, 0, 0).timestamp_millis()
+        );
         // no workdays at all: yesterday
-        assert_eq!(last_workday_start(at(2026, 10, 28, 9, 0), &[]), at(2026, 10, 27, 0, 0).timestamp_millis());
+        assert_eq!(
+            last_workday_start(at(2026, 10, 28, 9, 0), &[]),
+            at(2026, 10, 27, 0, 0).timestamp_millis()
+        );
     }
 
     #[test]
@@ -529,16 +689,36 @@ mod tests {
         let mon_morning = at(2026, 10, 26, 9, 0);
         let info = gather(&n, "morning", mon_morning, &c);
         // taken since Friday (before today), plus every open one (carried over)
-        let ids: Vec<Value> = info["notes"].as_array().unwrap().iter().map(|x| x["id"].clone()).collect();
-        assert_eq!(ids, vec![json!(mon), json!(fri_done), json!(fri), json!(thu)]);
-        assert_eq!((info["open"].clone(), info["today"].clone(), info["taken"].clone()), (json!(3), json!(1), json!(2)));
+        let ids: Vec<Value> = info["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["id"].clone())
+            .collect();
+        assert_eq!(
+            ids,
+            vec![json!(mon), json!(fri_done), json!(fri), json!(thu)]
+        );
+        assert_eq!(
+            (
+                info["open"].clone(),
+                info["today"].clone(),
+                info["taken"].clone()
+            ),
+            (json!(3), json!(1), json!(2))
+        );
         // without carrying: only what was taken since the last workday
         let c2 = cfg(&json!({ "notesCarry": false }));
         let info = gather(&n, "morning", mon_morning, &c2);
         assert_eq!(info["notes"].as_array().unwrap().len(), 2);
         // the evening: today's, plus every open one
         let info = gather(&n, "evening", at(2026, 10, 26, 18, 0), &c2);
-        let ids: Vec<Value> = info["notes"].as_array().unwrap().iter().map(|x| x["id"].clone()).collect();
+        let ids: Vec<Value> = info["notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["id"].clone())
+            .collect();
         assert_eq!(ids, vec![json!(mon), json!(fri), json!(thu)]);
     }
 
@@ -549,22 +729,55 @@ mod tests {
         note(&mut n, "left over", at(2026, 10, 23, 10, 0));
         let mut clock = NoteClock::default();
         // too early, away, a weekend: nothing
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 5, 59), true, true), None);
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 0), false, true), None);
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 25, 9, 0), true, true), None);
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 5, 59), true, true),
+            None
+        );
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 0), false, true),
+            None
+        );
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 25, 9, 0), true, true),
+            None
+        );
         // couldn't be shown (the robot's busy): tried again on the next check
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 0), true, false), None);
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 1), true, true), Some("morning".into()));
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 2), true, true), None);
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 0), true, false),
+            None
+        );
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 1), true, true),
+            Some("morning".into())
+        );
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 2), true, true),
+            None
+        );
         // the end of the day
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 17, 29), true, true), None);
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 17, 30), true, true), Some("evening".into()));
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 17, 31), true, true), None);
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 17, 29), true, true),
+            None
+        );
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 17, 30), true, true),
+            Some("evening".into())
+        );
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 17, 31), true, true),
+            None
+        );
         // first at the PC after the evening: the evening one (and no morning one after it)
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 27, 19, 0), true, true), Some("evening".into()));
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 27, 19, 0), true, true),
+            Some("evening".into())
+        );
         assert_eq!(n.reminded("morning"), "2026-10-27");
         // too late in the evening: the next morning covers it
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 28, 22, 0), true, true), None);
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 28, 22, 0), true, true),
+            None
+        );
     }
 
     #[test]
@@ -572,7 +785,10 @@ mod tests {
         let c = cfg(&json!({}));
         let mut n = Notes::from(None, 0);
         let mut clock = NoteClock::default();
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 0), true, false), Some("morning".into()));
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 0), true, false),
+            Some("morning".into())
+        );
         assert_eq!(n.reminded("morning"), "2026-10-26");
     }
 
@@ -583,20 +799,48 @@ mod tests {
         note(&mut n, "a", at(2026, 10, 26, 8, 0));
         let mut clock = NoteClock::default();
         let six = at(2026, 10, 26, 18, 0);
-        assert_eq!(check(&mut clock, &mut n, &c, six, true, true), Some("evening".into()));
+        assert_eq!(
+            check(&mut clock, &mut n, &c, six, true, true),
+            Some("evening".into())
+        );
         clock.snooze("evening", 15, six.timestamp_millis());
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 14), true, true), None);
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 15), true, true), Some("evening".into()));
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 30), true, true), None);
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 14), true, true),
+            None
+        );
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 15), true, true),
+            Some("evening".into())
+        );
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 30), true, true),
+            None
+        );
         // put off, then done for today: nothing more
         clock.snooze("evening", 15, six.timestamp_millis());
         clock.done_for_today(&mut n, six);
-        assert_eq!(check(&mut clock, &mut n, &c, at(2026, 10, 26, 19, 0), true, true), None);
+        assert_eq!(
+            check(&mut clock, &mut n, &c, at(2026, 10, 26, 19, 0), true, true),
+            None
+        );
         // turned off
         let off = cfg(&json!({ "notesReminders": false }));
-        assert_eq!(check(&mut clock, &mut n, &off, at(2026, 10, 27, 9, 0), true, true), None);
+        assert_eq!(
+            check(&mut clock, &mut n, &off, at(2026, 10, 27, 9, 0), true, true),
+            None
+        );
         // no morning ones
         let no_morning = cfg(&json!({ "notesMorning": false }));
-        assert_eq!(check(&mut clock, &mut n, &no_morning, at(2026, 10, 27, 9, 0), true, true), None);
+        assert_eq!(
+            check(
+                &mut clock,
+                &mut n,
+                &no_morning,
+                at(2026, 10, 27, 9, 0),
+                true,
+                true
+            ),
+            None
+        );
     }
 }

@@ -6,7 +6,9 @@ use super::*;
 // ---------------------------------------------------------------- what the page asks
 
 pub fn is_busy(st: &crate::runtime::State, id: &str, tab_id: &str) -> bool {
-    st.chats.get(&key_of(id, tab_id)).is_some_and(|c| c.session.busy())
+    st.chats
+        .get(&key_of(id, tab_id))
+        .is_some_and(|c| c.session.busy())
 }
 
 pub fn close(app: &AppHandle, id: &str, tab_id: &str) {
@@ -19,7 +21,12 @@ pub fn close(app: &AppHandle, id: &str, tab_id: &str) {
 pub fn close_robot(app: &AppHandle, id: &str) {
     let prefix = format!("{id}|");
     let gone: Vec<Arc<Chat>> = with(app, |st| {
-        let keys: Vec<String> = st.chats.keys().filter(|k| k.starts_with(&prefix)).cloned().collect();
+        let keys: Vec<String> = st
+            .chats
+            .keys()
+            .filter(|k| k.starts_with(&prefix))
+            .cloned()
+            .collect();
         keys.iter().filter_map(|k| st.chats.remove(k)).collect()
     });
     for chat in gone {
@@ -30,15 +37,32 @@ pub fn close_robot(app: &AppHandle, id: &str) {
 /// A new permission mode from the Workshop or the robot's menu: its live conversations
 /// switch now (the next ones start with it), and its tabs forget the modes picked in them.
 pub fn set_permission_mode(app: &AppHandle, id: &str, mode: &str) {
-    let tabs: Vec<String> = with(app, |st| st.store.get(id).and_then(|c| c["tabs"].as_array().cloned()).unwrap_or_default())
-        .iter().filter(|t| !t["permissionMode"].is_null()).filter_map(|t| t["id"].as_str().map(str::to_string)).collect();
+    let tabs: Vec<String> = with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["tabs"].as_array().cloned())
+            .unwrap_or_default()
+    })
+    .iter()
+    .filter(|t| !t["permissionMode"].is_null())
+    .filter_map(|t| t["id"].as_str().map(str::to_string))
+    .collect();
     for tab_id in tabs {
-        with(app, |st| st.store.update_tab(id, &tab_id, patch(vec![("permissionMode", Value::Null)])));
+        with(app, |st| {
+            st.store
+                .update_tab(id, &tab_id, patch(vec![("permissionMode", Value::Null)]))
+        });
         tell(app, id, &tab_id, json!({ "type": "mode", "mode": mode }));
     }
     let prefix = format!("{id}|");
     // (side questions stay read-only)
-    let live: Vec<Arc<Chat>> = with(app, |st| st.chats.iter().filter(|(k, _)| k.starts_with(&prefix) && !side::is_side(k)).map(|(_, c)| c.clone()).collect());
+    let live: Vec<Arc<Chat>> = with(app, |st| {
+        st.chats
+            .iter()
+            .filter(|(k, _)| k.starts_with(&prefix) && !side::is_side(k))
+            .map(|(_, c)| c.clone())
+            .collect()
+    });
     for chat in live {
         chat.session.set_permission_mode(mode);
     }
@@ -59,7 +83,12 @@ pub fn rewind(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         let before = &history[..last];
         let talked = before.iter().any(|h| h["role"] == "assistant");
         // the answer before it, where the conversation picks up again
-        let at = before.iter().rev().find(|h| h["role"] == "assistant").and_then(|h| h["uuid"].as_str()).map(str::to_string);
+        let at = before
+            .iter()
+            .rev()
+            .find(|h| h["role"] == "assistant")
+            .and_then(|h| h["uuid"].as_str())
+            .map(str::to_string);
         Some((last, history[last].clone(), talked, at))
     });
     let Some((last, question, talked, at)) = found else {
@@ -71,7 +100,12 @@ pub fn rewind(app: &AppHandle, id: &str, tab_id: &str) -> Value {
     close(app, id, tab_id);
     let dropped = with(app, |st| {
         let tab = st.store.tab(id, tab_id).cloned()?;
-        let kept: Vec<Value> = tab["history"].as_array()?.iter().take(last).cloned().collect();
+        let kept: Vec<Value> = tab["history"]
+            .as_array()?
+            .iter()
+            .take(last)
+            .cloned()
+            .collect();
         // (side questions about the answers taken out go with them)
         let (sides, dropped) = side::kept_for(&tab, &kept);
         let mut fields = vec![("history", Value::Array(kept)), ("sides", sides)];
@@ -98,17 +132,28 @@ pub fn close_all(app: &AppHandle) {
 
 /// Close conversations nobody has used for a while; they resume on the next question.
 pub fn close_idle(app: AppHandle) {
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_secs(60));
-        let idle: Vec<Arc<Chat>> = with(&app, |st| {
-            let keys: Vec<String> = st.chats.iter().filter(|(_, c)| {
-                let s = &c.session;
-                !s.busy() && s.helpers_running() == 0 && s.alive() && !s.remote() && s.idle_for() > IDLE_CLOSE
-            }).map(|(k, _)| k.clone()).collect();
-            keys.iter().filter_map(|k| st.chats.remove(k)).collect()
-        });
-        for chat in idle {
-            chat.session.close();
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(60));
+            let idle: Vec<Arc<Chat>> = with(&app, |st| {
+                let keys: Vec<String> = st
+                    .chats
+                    .iter()
+                    .filter(|(_, c)| {
+                        let s = &c.session;
+                        !s.busy()
+                            && s.helpers_running() == 0
+                            && s.alive()
+                            && !s.remote()
+                            && s.idle_for() > IDLE_CLOSE
+                    })
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                keys.iter().filter_map(|k| st.chats.remove(k)).collect()
+            });
+            for chat in idle {
+                chat.session.close();
+            }
         }
     });
 }
@@ -119,11 +164,17 @@ pub struct Ask<'a> {
     pub attachments: &'a [Value], // (paths of files dropped on it)
     pub turn_id: Option<String>,  // (none: a new one)
     pub kind: &'a str,            // chat, bonk (starting over, quicker), compact
-    pub tag: Option<&'a str>,     // a line kept above your message (sent to everyone on the stage: who got it)
+    pub tag: Option<&'a str>, // a line kept above your message (sent to everyone on the stage: who got it)
 }
 
 pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
-    let Ask { prompt, attachments, turn_id, kind, tag } = ask;
+    let Ask {
+        prompt,
+        attachments,
+        turn_id,
+        kind,
+        tag,
+    } = ask;
     let Some((c, settings)) = with(app, |st| {
         st.store.tab(id, tab_id)?;
         Some((st.store.get(id)?.clone(), st.store.settings().clone()))
@@ -144,24 +195,64 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
     let turn_id = turn_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     // Files fed to the robot: name them in the prompt and let Claude Code read their folders.
-    let dropped: Vec<Value> = attachments.iter().filter_map(|a| a.as_str()).filter_map(files::inspect).take(20).collect();
+    let dropped: Vec<Value> = attachments
+        .iter()
+        .filter_map(|a| a.as_str())
+        .filter_map(files::inspect)
+        .take(20)
+        .collect();
     let mut full = prompt.to_string();
-    let list = |fs: &[Value]| fs.iter().map(|f| format!("- {}{}", f["path"].as_str().unwrap_or(""), if f["isDir"] == true { " (folder)" } else { "" })).collect::<Vec<_>>().join("\n");
+    let list = |fs: &[Value]| {
+        fs.iter()
+            .map(|f| {
+                format!(
+                    "- {}{}",
+                    f["path"].as_str().unwrap_or(""),
+                    if f["isDir"] == true { " (folder)" } else { "" }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     if !dropped.is_empty() {
-        let (this, it) = if dropped.len() == 1 { ("this", "it") } else { ("these", "them") };
-        full += &format!("\n\n[The user dropped {this} onto you. Read {it} as needed:]\n{}", list(&dropped));
+        let (this, it) = if dropped.len() == 1 {
+            ("this", "it")
+        } else {
+            ("these", "them")
+        };
+        full += &format!(
+            "\n\n[The user dropped {this} onto you. Read {it} as needed:]\n{}",
+            list(&dropped)
+        );
     }
     // files mentioned with @ in the message: spell out exactly which ones
-    let dropped_paths: Vec<String> = dropped.iter().map(|f| files::normalize(Path::new(f["path"].as_str().unwrap_or("")))).collect();
-    let mentioned: Vec<Value> = files::mentioned(&folder, prompt).into_iter().filter(|p| !dropped_paths.contains(p)).filter_map(|p| files::inspect(&p)).collect();
+    let dropped_paths: Vec<String> = dropped
+        .iter()
+        .map(|f| files::normalize(Path::new(f["path"].as_str().unwrap_or(""))))
+        .collect();
+    let mentioned: Vec<Value> = files::mentioned(&folder, prompt)
+        .into_iter()
+        .filter(|p| !dropped_paths.contains(p))
+        .filter_map(|p| files::inspect(&p))
+        .collect();
     if !mentioned.is_empty() {
         let it = if mentioned.len() == 1 { "it" } else { "them" };
-        full += &format!("\n\n[Files the user mentioned with @. Read {it} as needed:]\n{}", list(&mentioned));
+        full += &format!(
+            "\n\n[Files the user mentioned with @. Read {it} as needed:]\n{}",
+            list(&mentioned)
+        );
     }
     let mut add_dirs: Vec<String> = vec![];
     for f in dropped.iter().chain(&mentioned) {
         let p = f["path"].as_str().unwrap_or("");
-        let dir = if f["isDir"] == true { p.to_string() } else { Path::new(p).parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default() };
+        let dir = if f["isDir"] == true {
+            p.to_string()
+        } else {
+            Path::new(p)
+                .parent()
+                .map(|d| d.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
         if !dir.is_empty() && !files::is_inside(&dir, &folder) && !add_dirs.contains(&dir) {
             add_dirs.push(dir);
         }
@@ -169,10 +260,17 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
 
     with(app, |st| {
         if kind == "bonk" {
-            st.store.push_history(id, tab_id, json!({ "role": "note", "text": "🔨 Bonked! Starting over, quicker." }));
+            st.store.push_history(
+                id,
+                tab_id,
+                json!({ "role": "note", "text": "🔨 Bonked! Starting over, quicker." }),
+            );
         }
         if kind == "chat" {
-            let fed: Vec<Value> = dropped.iter().map(|f| json!({ "name": f["name"], "isDir": f["isDir"], "isImage": f["isImage"] })).collect();
+            let fed: Vec<Value> = dropped
+                .iter()
+                .map(|f| json!({ "name": f["name"], "isDir": f["isDir"], "isImage": f["isImage"] }))
+                .collect();
             let mut entry = json!({ "role": "user", "text": prompt, "files": fed });
             if let Some(tag) = tag.filter(|t| !t.is_empty()) {
                 entry["tag"] = json!(tag.chars().take(200).collect::<String>());
@@ -181,7 +279,8 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
             let mut stats = c["stats"].as_object().cloned().unwrap_or_default();
             let n = stats.get("questions").and_then(Value::as_i64).unwrap_or(0) + 1;
             stats.insert("questions".into(), json!(n));
-            st.store.update(id, patch(vec![("stats", Value::Object(stats))]));
+            st.store
+                .update(id, patch(vec![("stats", Value::Object(stats))]));
         }
     });
 
@@ -190,7 +289,14 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
     };
     chat.session.set_system_prompt(&prompt_for(app, &c)); // personality changes (and who else is out) apply from the next question
     chat.session.allow_dirs(&add_dirs);
-    chat.book.lock().unwrap().turns.insert(turn_id.clone(), TurnInfo { prompt: full.clone(), kind: kind.into(), retried: false });
+    chat.book.lock().unwrap().turns.insert(
+        turn_id.clone(),
+        TurnInfo {
+            prompt: full.clone(),
+            kind: kind.into(),
+            retried: false,
+        },
+    );
     let queued = chat.session.ask(full, turn_id.clone());
     json!({ "ok": true, "turnId": turn_id, "queued": queued })
 }
@@ -210,7 +316,17 @@ pub fn remote(app: &AppHandle, id: &str, tab_id: &str, on: bool) -> Value {
         return json!({ "ok": false, "error": "That conversation is gone." });
     };
     if !on {
-        with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("remote", json!(false)), ("remoteSession", Value::Null), ("remoteUrl", Value::Null)])));
+        with(app, |st| {
+            st.store.update_tab(
+                id,
+                tab_id,
+                patch(vec![
+                    ("remote", json!(false)),
+                    ("remoteSession", Value::Null),
+                    ("remoteUrl", Value::Null),
+                ]),
+            )
+        });
         match chat_of(app, id, tab_id) {
             Some(chat) => chat.session.set_remote(None),
             None => tell(app, id, tab_id, json!({ "type": "remote", "on": false })),
@@ -227,7 +343,10 @@ pub fn remote(app: &AppHandle, id: &str, tab_id: &str, on: bool) -> Value {
     let Some(chat) = chat_for(app, id, tab_id) else {
         return json!({ "ok": false, "error": "I can't find Claude Code anywhere on this computer." });
     };
-    with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("remote", json!(true))])));
+    with(app, |st| {
+        st.store
+            .update_tab(id, tab_id, patch(vec![("remote", json!(true))]))
+    });
     chat.session.set_remote(Some(remote_name(&c)));
     json!({ "ok": true })
 }
@@ -235,10 +354,19 @@ pub fn remote(app: &AppHandle, id: &str, tab_id: &str, on: bool) -> Value {
 /// When C-Bot starts: conversations left with Remote Control on are reachable again.
 pub fn revive_remote(app: &AppHandle) {
     let tabs: Vec<(String, String)> = with(app, |st| {
-        st.store.list().iter().flat_map(|c| {
-            let id = c["id"].as_str().unwrap_or("").to_string();
-            c["tabs"].as_array().into_iter().flatten().filter(|t| t["remote"] == true).map(move |t| (id.clone(), t["id"].as_str().unwrap_or("").to_string()))
-        }).collect()
+        st.store
+            .list()
+            .iter()
+            .flat_map(|c| {
+                let id = c["id"].as_str().unwrap_or("").to_string();
+                c["tabs"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|t| t["remote"] == true)
+                    .map(move |t| (id.clone(), t["id"].as_str().unwrap_or("").to_string()))
+            })
+            .collect()
     });
     for (id, tab_id) in tabs {
         if let Some(chat) = chat_for(app, &id, &tab_id) {
@@ -249,9 +377,16 @@ pub fn revive_remote(app: &AppHandle) {
 
 /// Stop: interrupt the current answer; questions typed ahead come back unsent.
 pub fn cancel(app: &AppHandle, id: &str, tab_id: &str) -> Value {
-    let dropped = chat_of(app, id, tab_id).map(|c| c.session.interrupt()).unwrap_or_default();
+    let dropped = chat_of(app, id, tab_id)
+        .map(|c| c.session.interrupt())
+        .unwrap_or_default();
     if !dropped.is_empty() {
-        tell(app, id, tab_id, json!({ "type": "dropped", "turnIds": dropped }));
+        tell(
+            app,
+            id,
+            tab_id,
+            json!({ "type": "dropped", "turnIds": dropped }),
+        );
     }
     json!(dropped)
 }
@@ -269,8 +404,18 @@ pub fn brain(app: &AppHandle, id: &str, tab_id: &str) -> Value {
     let Some((models, model, effort, mode, trusted)) = with(app, |st| {
         let c = st.store.get(id)?;
         let tab = st.store.tab(id, tab_id)?;
-        let model = tab["model"].as_str().or(c["model"].as_str()).unwrap_or("").to_string();
-        Some((st.model_choices.clone(), model, tab["effort"].as_str().unwrap_or("").to_string(), mode_of(c, tab).to_string(), allowed_mode(c, "bypassPermissions")))
+        let model = tab["model"]
+            .as_str()
+            .or(c["model"].as_str())
+            .unwrap_or("")
+            .to_string();
+        Some((
+            st.model_choices.clone(),
+            model,
+            tab["effort"].as_str().unwrap_or("").to_string(),
+            mode_of(c, tab).to_string(),
+            allowed_mode(c, "bypassPermissions"),
+        ))
     }) else {
         return Value::Null;
     };
@@ -284,22 +429,33 @@ pub fn set_brain(app: &AppHandle, id: &str, tab_id: &str, p: &Value) -> Value {
     let chat = chat_of(app, id, tab_id);
     let result = (|| -> Result<(), String> {
         if let Some(model) = p["model"].as_str() {
-            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("model", json!(model))])));
+            with(app, |st| {
+                st.store
+                    .update_tab(id, tab_id, patch(vec![("model", json!(model))]))
+            });
             if let Some(c) = &chat {
                 c.session.set_model(model)?;
             }
         }
         if let Some(effort) = p["effort"].as_str() {
-            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("effort", json!(effort))])));
+            with(app, |st| {
+                st.store
+                    .update_tab(id, tab_id, patch(vec![("effort", json!(effort))]))
+            });
             if let Some(c) = &chat {
                 c.session.set_effort(effort)?;
             }
         }
         if let Some(mode) = p["permissionMode"].as_str() {
-            if !with(app, |st| st.store.get(id).is_some_and(|c| allowed_mode(c, mode))) {
+            if !with(app, |st| {
+                st.store.get(id).is_some_and(|c| allowed_mode(c, mode))
+            }) {
                 return Err("This robot isn't trusted with that. Change its permissions in the Robot Workshop.".into());
             }
-            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))])));
+            with(app, |st| {
+                st.store
+                    .update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))]))
+            });
             if let Some(c) = &chat {
                 c.session.set_permission_mode(mode);
             }
@@ -313,34 +469,60 @@ pub fn set_brain(app: &AppHandle, id: &str, tab_id: &str, p: &Value) -> Value {
 }
 
 /// The user answered a question Claude Code asked mid-task.
-pub fn answer(app: &AppHandle, id: &str, tab_id: &str, request_id: &str, answers: &Value, items: &Value) -> bool {
+pub fn answer(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    request_id: &str,
+    answers: &Value,
+    items: &Value,
+) -> bool {
     if !answers.is_object() {
         return false;
     }
-    let ok = chat_of(app, id, tab_id).is_some_and(|c| c.session.answer(request_id, answers.clone()));
+    let ok =
+        chat_of(app, id, tab_id).is_some_and(|c| c.session.answer(request_id, answers.clone()));
     if ok && let Some(items) = items.as_array() {
         let items: Vec<Value> = items.iter().take(8).cloned().collect();
-        with(app, |st| st.store.push_history(id, tab_id, json!({ "role": "qa", "items": items })));
+        with(app, |st| {
+            st.store
+                .push_history(id, tab_id, json!({ "role": "qa", "items": items }))
+        });
     }
     ok
 }
 
 /// Your call on a plan it made: go ahead (in this permission mode) or keep planning, with notes.
 /// The plan and what you said are kept in the history.
-pub fn decide_plan(app: &AppHandle, id: &str, tab_id: &str, request_id: &str, plan: &str, go_mode: Option<&str>, feedback: &str) -> Value {
+pub fn decide_plan(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    request_id: &str,
+    plan: &str,
+    go_mode: Option<&str>,
+    feedback: &str,
+) -> Value {
     if let Some(mode) = go_mode
-        && !with(app, |st| st.store.get(id).is_some_and(|c| allowed_mode(c, mode) && mode != "plan"))
+        && !with(app, |st| {
+            st.store
+                .get(id)
+                .is_some_and(|c| allowed_mode(c, mode) && mode != "plan")
+        })
     {
         return json!({ "ok": false, "error": "This robot isn't trusted with that." });
     }
     let feedback: String = feedback.chars().take(4000).collect();
-    if !chat_of(app, id, tab_id).is_some_and(|c| c.session.decide_plan(request_id, go_mode, &feedback)) {
+    if !chat_of(app, id, tab_id)
+        .is_some_and(|c| c.session.decide_plan(request_id, go_mode, &feedback))
+    {
         return json!({ "ok": false });
     }
     let plan: String = plan.chars().take(20000).collect();
     with(app, |st| {
         if let Some(mode) = go_mode {
-            st.store.update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))]));
+            st.store
+                .update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))]));
         }
         st.store.push_history(id, tab_id, json!({ "role": "plan", "plan": plan, "approved": go_mode.is_some(), "mode": go_mode, "feedback": feedback }));
     });
@@ -352,7 +534,9 @@ pub fn decide_plan(app: &AppHandle, id: &str, tab_id: &str, request_id: &str, pl
 
 /// Past conversations in the robot's folder, newest first.
 pub fn sessions(app: &AppHandle, id: &str) -> Value {
-    let Some(c) = with(app, |st| st.store.get(id).cloned()) else { return json!([]) };
+    let Some(c) = with(app, |st| st.store.get(id).cloned()) else {
+        return json!([]);
+    };
     let folder = c["folder"].as_str().unwrap_or("");
     if folder.is_empty() {
         return json!([]);
@@ -360,19 +544,45 @@ pub fn sessions(app: &AppHandle, id: &str) -> Value {
     // sessions open in a tab are always the robot's, even if they predate session tracking
     let tabs = c["tabs"].as_array().cloned().unwrap_or_default();
     // (a temporary chat's aren't listed: they go when it closes)
-    let mut temporary: Vec<String> = tabs.iter().filter(|t| t["temporary"] == true).flat_map(sessions_of).collect();
+    let mut temporary: Vec<String> = tabs
+        .iter()
+        .filter(|t| t["temporary"] == true)
+        .flat_map(sessions_of)
+        .collect();
     // (nor are side questions: each is a branch of the conversation it's beside)
-    temporary.extend(tabs.iter().chain(c["closedTabs"].as_array().into_iter().flatten()).flat_map(side::sessions_of));
-    let tabs: Vec<Value> = tabs.into_iter().filter(|t| t["temporary"] != true).collect();
-    let open: HashMap<String, Value> = tabs.iter().filter_map(|t| Some((t["sessionId"].as_str()?.to_string(), t["id"].clone()))).collect();
-    let mut mine: Vec<String> = c["sessionIds"].as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_string)).collect();
+    temporary.extend(
+        tabs.iter()
+            .chain(c["closedTabs"].as_array().into_iter().flatten())
+            .flat_map(side::sessions_of),
+    );
+    let tabs: Vec<Value> = tabs
+        .into_iter()
+        .filter(|t| t["temporary"] != true)
+        .collect();
+    let open: HashMap<String, Value> = tabs
+        .iter()
+        .filter_map(|t| Some((t["sessionId"].as_str()?.to_string(), t["id"].clone())))
+        .collect();
+    let mut mine: Vec<String> = c["sessionIds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s.as_str().map(str::to_string))
+        .collect();
     mine.extend(open.keys().cloned());
-    let active_session = tabs.iter().find(|t| t["id"] == c["activeTab"]).and_then(|t| t["sessionId"].as_str()).map(str::to_string);
-    let rows = transcripts::list(folder, &mine, 60).into_iter().filter(|s| !temporary.iter().any(|t| s["id"] == t.as_str())).map(|mut s| {
-        let sid = s["id"].as_str().unwrap_or("").to_string();
-        s["current"] = json!(active_session.as_deref() == Some(sid.as_str()));
-        s["tabId"] = open.get(&sid).cloned().unwrap_or(Value::Null);
-        s
-    });
+    let active_session = tabs
+        .iter()
+        .find(|t| t["id"] == c["activeTab"])
+        .and_then(|t| t["sessionId"].as_str())
+        .map(str::to_string);
+    let rows = transcripts::list(folder, &mine, 60)
+        .into_iter()
+        .filter(|s| !temporary.iter().any(|t| s["id"] == t.as_str()))
+        .map(|mut s| {
+            let sid = s["id"].as_str().unwrap_or("").to_string();
+            s["current"] = json!(active_session.as_deref() == Some(sid.as_str()));
+            s["tabId"] = open.get(&sid).cloned().unwrap_or(Value::Null);
+            s
+        });
     Value::Array(rows.collect())
 }

@@ -7,7 +7,7 @@
 //! - Others: none yet (macOS has its dictation, Linux nothing: Whisper, run here, would do
 //!   for both, and then the page shows the listening itself).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::WebviewWindow;
 
 #[cfg(windows)]
@@ -21,7 +21,11 @@ mod engine {
 
     /// Win+H, into the robot's window (in front, its chat box focused): voice typing opens there.
     pub fn start() -> Result<(), String> {
-        if input::press(&[Key::Meta, Key::Char('H')]) { Ok(()) } else { Err("Windows wouldn't start voice typing.".into()) }
+        if input::press(&[Key::Meta, Key::Char('H')]) {
+            Ok(())
+        } else {
+            Err("Windows wouldn't start voice typing.".into())
+        }
     }
 }
 

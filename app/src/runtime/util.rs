@@ -4,7 +4,11 @@ use serde_json::{Map, Value};
 
 /// A command only one window may send (the palette's, the snip screen's…).
 pub fn only(window: &tauri::WebviewWindow, label: &str) -> Result<(), String> {
-    if window.label() == label { Ok(()) } else { Err(format!("only {label} may ask that, not {}", window.label())) }
+    if window.label() == label {
+        Ok(())
+    } else {
+        Err(format!("only {label} may ask that, not {}", window.label()))
+    }
 }
 
 /// A value as text, as JS's String() would make it ('' for null).

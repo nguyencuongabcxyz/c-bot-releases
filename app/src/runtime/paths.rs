@@ -11,7 +11,7 @@ use super::with;
 
 struct Dirs {
     home: PathBuf,
-    data: PathBuf,       // %APPDATA% on Windows, ~/Library/Application Support, ~/.local/share
+    data: PathBuf, // %APPDATA% on Windows, ~/Library/Application Support, ~/.local/share
     local_data: PathBuf, // %LOCALAPPDATA% on Windows (the same as data elsewhere)
 }
 
@@ -32,7 +32,11 @@ fn dirs() -> &'static Dirs {
     // (before init, as in the tests: std's own idea of home)
     DIRS.get_or_init(|| {
         let home = std::env::home_dir().unwrap_or_default();
-        Dirs { data: home.clone(), local_data: home.clone(), home }
+        Dirs {
+            data: home.clone(),
+            local_data: home.clone(),
+            home,
+        }
     })
 }
 
@@ -54,10 +58,23 @@ pub fn local_data() -> PathBuf {
 /// The folders pictures in the chat may come from: the user's home, temp, pasted
 /// screenshots and the robots' folders. Not, say, C:\Windows. (The file viewer too.)
 pub fn picture_roots(app: &AppHandle) -> Vec<String> {
-    let mut roots = vec![home().to_string_lossy().into_owned(), std::env::temp_dir().to_string_lossy().into_owned()];
+    let mut roots = vec![
+        home().to_string_lossy().into_owned(),
+        std::env::temp_dir().to_string_lossy().into_owned(),
+    ];
     with(app, |st| {
-        roots.push(st.data_dir.join("attachments").to_string_lossy().into_owned());
-        roots.extend(st.store.list().iter().filter_map(|c| c["folder"].as_str().map(str::to_string)));
+        roots.push(
+            st.data_dir
+                .join("attachments")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        roots.extend(
+            st.store
+                .list()
+                .iter()
+                .filter_map(|c| c["folder"].as_str().map(str::to_string)),
+        );
     });
     roots
 }

@@ -14,17 +14,17 @@ use std::thread;
 use std::time::Duration;
 
 use chrono::{Datelike, Local, Timelike};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
 use crate::agents::personalities;
-use crate::features::{notes, vocab};
 use crate::features::chat::group;
-use crate::platform::{input, presence, window};
+use crate::features::{notes, vocab};
 use crate::platform::window::Rect;
+use crate::platform::{input, presence, window};
 use crate::robots;
+use crate::robots::walkers::{Errand, after, pick};
 use crate::robots::{social, walkers};
-use crate::robots::walkers::{after, Errand, pick};
 use crate::runtime::{hub, util, with};
 use crate::workbench::quick;
 
@@ -35,14 +35,30 @@ const AWAY_AFTER: u64 = 120; // s without touching mouse or keyboard: you're not
 const TICK: Duration = Duration::from_secs(30);
 const DUST_MS: u64 = 7000; // at each desk
 
-const FREE: [&str; 3] = ["Evening clean-up! 🧹", "Feet up, please! 🧹", "Time for a little tidy! ✨"];
+const FREE: [&str; 3] = [
+    "Evening clean-up! 🧹",
+    "Feet up, please! 🧹",
+    "Time for a little tidy! ✨",
+];
 const CHAT: [&str; 2] = ["Just a quick dust! 🧹", "Don’t mind me! ✨"];
 const BUSY: [&str; 2] = ["Don’t mind me, keep going! 🧹", "I’ll work around you! ✨"];
 const ASLEEP: [&str; 2] = ["Shh… 🤫", "Sleep tight, I’ll be quick…"];
-const AWAY: [&str; 2] = ["Nobody home? I’ll tidy anyway! 🧹", "Out for a walk? A clean desk for when you’re back!"];
+const AWAY: [&str; 2] = [
+    "Nobody home? I’ll tidy anyway! 🧹",
+    "Out for a walk? A clean desk for when you’re back!",
+];
 const DONE: [&str; 3] = ["All sparkly! ✨", "There, spotless! 🌟", "Much better! ✨"];
-const BYE: [&str; 3] = ["Good night, everyone! 🌙", "See you tomorrow! 👋", "All tidy! Have a nice evening! 🌙"];
-const CLICK: [&str; 4] = ["Almost done! ✨", "Mind the duster! 🧹", "A tidy desk, a tidy mind!", "Hi there! Just tidying up 🧹"];
+const BYE: [&str; 3] = [
+    "Good night, everyone! 🌙",
+    "See you tomorrow! 👋",
+    "All tidy! Have a nice evening! 🌙",
+];
+const CLICK: [&str; 4] = [
+    "Almost done! ✨",
+    "Mind the duster! 🧹",
+    "A tidy desk, a tidy mind!",
+    "Hi there! Just tidying up 🧹",
+];
 
 /// Her look (a soft pink robot in the classic black-and-white uniform); `size`: as big as
 /// the smallest robot, so she doesn't tower over them.
@@ -95,7 +111,9 @@ fn md<R>(app: &AppHandle, f: impl FnOnce(&mut Maid) -> R) -> R {
 
 /// Do this in ms, if her round's still on.
 fn later(app: &AppHandle, ms: u64, f: impl FnOnce(&AppHandle) + Send + 'static) {
-    let Some(epoch) = md(app, |m| m.round.as_ref().map(|r| r.epoch)) else { return };
+    let Some(epoch) = md(app, |m| m.round.as_ref().map(|r| r.epoch)) else {
+        return;
+    };
     after(app, ms, move |app| {
         if md(app, |m| m.round.as_ref().is_some_and(|r| r.epoch == epoch)) {
             f(app);
@@ -126,7 +144,12 @@ fn size_k(size: &str) -> f64 {
 
 /// The robot's thank-you line (its personality's maidThanks).
 fn thanks_of(app: &AppHandle, id: &str) -> String {
-    let personality = with(app, |st| st.store.get(id).and_then(|c| c["personality"].as_str().map(str::to_string))).unwrap_or_default();
+    let personality = with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["personality"].as_str().map(str::to_string))
+    })
+    .unwrap_or_default();
     let all = personalities::all();
     all.get(&personality)
         .or_else(|| all.values().next())
@@ -141,7 +164,11 @@ fn begin(app: &AppHandle) -> bool {
         return false;
     }
     // the desks on the screen of the first one, left to right
-    let mut all: Vec<(String, Rect)> = robots::open_ids(app).into_iter().filter(|id| showing(app, id)).filter_map(|id| Some((id.clone(), robots::desk_rect(app, &id)?))).collect();
+    let mut all: Vec<(String, Rect)> = robots::open_ids(app)
+        .into_iter()
+        .filter(|id| showing(app, id))
+        .filter_map(|id| Some((id.clone(), robots::desk_rect(app, &id)?)))
+        .collect();
     if all.is_empty() {
         return false;
     }
@@ -161,19 +188,38 @@ fn begin(app: &AppHandle) -> bool {
     // as big as the smallest robot, so she doesn't tower over them
     let size = ids
         .iter()
-        .map(|id| with(app, |st| st.store.get(id).and_then(|c| c["size"].as_str().map(str::to_string))).unwrap_or_else(|| "normal".into()))
+        .map(|id| {
+            with(app, |st| {
+                st.store
+                    .get(id)
+                    .and_then(|c| c["size"].as_str().map(str::to_string))
+            })
+            .unwrap_or_else(|| "normal".into())
+        })
         .min_by(|a, b| size_k(a).total_cmp(&size_k(b)))
         .unwrap_or_else(|| "normal".into());
     let k = size_k(&size);
-    let from = (wa.x as f64 + 30.0 * k * s, (first.y as f64 + first.h as f64 * 0.93).min(wa.bottom() as f64 - 8.0 * s));
+    let from = (
+        wa.x as f64 + 30.0 * k * s,
+        (first.y as f64 + first.h as f64 * 0.93).min(wa.bottom() as f64 - 8.0 * s),
+    );
     if !walkers::arrive(app, ID, from, look(&size), k) {
         return false;
     }
     md(app, |m| {
         m.gens += 1;
-        m.round = Some(Round { ids, i: 0, epoch: m.gens, wa, at: None });
+        m.round = Some(Round {
+            ids,
+            i: 0,
+            epoch: m.gens,
+            wa,
+            at: None,
+        });
     });
-    with(app, |st| st.store.update_settings(util::patch(vec![("maidDay", json!(social::today()))])));
+    with(app, |st| {
+        st.store
+            .update_settings(util::patch(vec![("maidDay", json!(social::today()))]))
+    });
     later(app, 1200, next);
     true
 }
@@ -181,7 +227,9 @@ fn begin(app: &AppHandle) -> bool {
 /// On to the next desk (from the left, she stands on its left; after the last one, she leaves).
 fn next(app: &AppHandle) {
     loop {
-        let Some(id) = md(app, |m| m.round.as_ref().map(|r| r.ids.get(r.i).cloned())) else { return };
+        let Some(id) = md(app, |m| m.round.as_ref().map(|r| r.ids.get(r.i).cloned())) else {
+            return;
+        };
         let Some(id) = id else { return leave(app) };
         let desk = robots::desk_rect(app, &id).filter(|_| showing(app, &id));
         let Some(r) = desk else {
@@ -190,8 +238,15 @@ fn next(app: &AppHandle) {
         };
         // (at the desk's left end, a little back, facing it: she reaches up and wipes the clear
         // end of the desk top, left of the robot)
-        let spot = (r.x as f64 + r.w as f64 * 0.1, r.y as f64 + r.h as f64 * 0.87);
-        let errand = Errand { face: Some("right".into()), on_arrive: Some(Box::new(move |app: &AppHandle| tidy(app, &id))), ..Errand::default() };
+        let spot = (
+            r.x as f64 + r.w as f64 * 0.1,
+            r.y as f64 + r.h as f64 * 0.87,
+        );
+        let errand = Errand {
+            face: Some("right".into()),
+            on_arrive: Some(Box::new(move |app: &AppHandle| tidy(app, &id))),
+            ..Errand::default()
+        };
         if !walkers::walk_to(app, ID, spot, errand) {
             end(app);
         }
@@ -219,7 +274,9 @@ fn tidy(app: &AppHandle, id: &str) {
     if !active(app) {
         return;
     }
-    md(app, |m| m.round.as_mut().map(|r| r.at = Some(id.to_string())));
+    md(app, |m| {
+        m.round.as_mut().map(|r| r.at = Some(id.to_string()))
+    });
     let status = social::peek(app, id).unwrap_or_else(|| json!({}));
     let mood = mood_of(&status);
     let lines: &[&str] = match mood {
@@ -230,8 +287,14 @@ fn tidy(app: &AppHandle, id: &str) {
         _ => &FREE,
     };
     walkers::say(app, ID, &say_line(lines), 2400);
-    tell(app, id, json!({ "phase": "tidy", "side": "L", "mood": mood, "thanks": thanks_of(app, id) }));
-    later(app, 500, |app| walkers::pose(app, ID, "dust", Some("right")));
+    tell(
+        app,
+        id,
+        json!({ "phase": "tidy", "side": "L", "mood": mood, "thanks": thanks_of(app, id) }),
+    );
+    later(app, 500, |app| {
+        walkers::pose(app, ID, "dust", Some("right"))
+    });
     let who = id.to_string();
     later(app, DUST_MS, move |app| {
         walkers::pose(app, ID, "stand", Some("toward")); // (turns round to say so)
@@ -248,13 +311,25 @@ fn tidy(app: &AppHandle, id: &str) {
 /// Good night, and off by the nearest edge of the screen.
 fn leave(app: &AppHandle) {
     let wa = md(app, |m| m.round.as_ref().map(|r| r.wa));
-    let (Some(feet), Some(wa)) = (walkers::feet(app, ID), wa) else { return end(app) };
+    let (Some(feet), Some(wa)) = (walkers::feet(app, ID), wa) else {
+        return end(app);
+    };
     let s = window::monitor_near(feet.0 as i32, feet.1 as i32).scale;
     let right = feet.0 - wa.x as f64 > wa.right() as f64 - feet.0;
     walkers::say(app, ID, &say_line(&BYE), 2400);
     later(app, 900, move |app| {
-        let to = (if right { wa.right() as f64 - 20.0 * s } else { wa.x as f64 + 20.0 * s }, feet.1);
-        let errand = Errand { on_arrive: Some(Box::new(|app: &AppHandle| walkers::close(app, ID))), ..Errand::default() };
+        let to = (
+            if right {
+                wa.right() as f64 - 20.0 * s
+            } else {
+                wa.x as f64 + 20.0 * s
+            },
+            feet.1,
+        );
+        let errand = Errand {
+            on_arrive: Some(Box::new(|app: &AppHandle| walkers::close(app, ID))),
+            ..Errand::default()
+        };
         if !walkers::walk_to(app, ID, to, errand) {
             end(app);
         }
@@ -263,7 +338,9 @@ fn leave(app: &AppHandle) {
 
 /// Her round is over (or cut short): the desk she was at stops sparkling.
 fn end(app: &AppHandle) {
-    let Some(round) = md(app, |m| m.round.take()) else { return };
+    let Some(round) = md(app, |m| m.round.take()) else {
+        return;
+    };
     if let Some(at) = round.at {
         tell(app, &at, json!({ "phase": "tidy-end" }));
     }
@@ -272,7 +349,14 @@ fn end(app: &AppHandle) {
 
 /// Is she due (5 pm on a workday, she hasn't been today, and you're there to see her)?
 /// weekday: 0 Sunday; mins: minutes into the day.
-fn due_at(settings: &Value, weekday: u32, mins: u32, today: &str, idle_secs: u64, presenting: bool) -> bool {
+fn due_at(
+    settings: &Value,
+    weekday: u32,
+    mins: u32,
+    today: &str,
+    idle_secs: u64,
+    presenting: bool,
+) -> bool {
     if settings["maid"] == json!(false) || settings["maidDay"].as_str() == Some(today) {
         return false;
     }
@@ -288,12 +372,23 @@ fn due_at(settings: &Value, weekday: u32, mins: u32, today: &str, idle_secs: u64
 fn due(app: &AppHandle) -> bool {
     let settings = with(app, |st| st.store.settings().clone());
     let now = Local::now();
-    due_at(&settings, now.weekday().num_days_from_sunday(), now.hour() * 60 + now.minute(), &social::today(), input::idle_secs(), presence::presenting())
+    due_at(
+        &settings,
+        now.weekday().num_days_from_sunday(),
+        now.hour() * 60 + now.minute(),
+        &social::today(),
+        input::idle_secs(),
+        presence::presenting(),
+    )
 }
 
 /// A visit going on, or you're working with C-Bot: she waits.
 fn busy(app: &AppHandle) -> bool {
-    social::active(app) || notes::notebook_open(app) || quick::is_open(app) || vocab::card_showing(app) || group::is_open(app)
+    social::active(app)
+        || notes::notebook_open(app)
+        || quick::is_open(app)
+        || vocab::card_showing(app)
+        || group::is_open(app)
 }
 
 /// She's on her round.
@@ -329,10 +424,12 @@ pub fn gone(app: &AppHandle, id: &str) {
 pub fn setup(app: &AppHandle) {
     app.manage(Mutex::new(Maid::default()));
     let app = app.clone();
-    thread::spawn(move || loop {
-        thread::sleep(TICK);
-        if due(&app) && !busy(&app) {
-            begin(&app);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(TICK);
+            if due(&app) && !busy(&app) {
+                begin(&app);
+            }
         }
     });
 }
@@ -349,13 +446,34 @@ mod tests {
         assert!(!due_at(&s, 1, 16 * 60 + 59, "x", 0, false)); // too early
         assert!(!due_at(&s, 1, 18 * 60 + 30, "x", 0, false)); // too late
         assert!(!due_at(&s, 0, 17 * 60 + 5, "x", 0, false)); // Sunday
-        assert!(due_at(&json!({ "notesWorkdays": [0] }), 0, 17 * 60 + 5, "x", 0, false));
+        assert!(due_at(
+            &json!({ "notesWorkdays": [0] }),
+            0,
+            17 * 60 + 5,
+            "x",
+            0,
+            false
+        ));
     }
 
     #[test]
     fn once_a_day_and_only_when_youre_there() {
-        assert!(!due_at(&json!({ "maidDay": "Mon Oct 26 2026" }), 1, 17 * 60, "Mon Oct 26 2026", 0, false));
-        assert!(!due_at(&json!({ "maid": false }), 1, 17 * 60, "x", 0, false));
+        assert!(!due_at(
+            &json!({ "maidDay": "Mon Oct 26 2026" }),
+            1,
+            17 * 60,
+            "Mon Oct 26 2026",
+            0,
+            false
+        ));
+        assert!(!due_at(
+            &json!({ "maid": false }),
+            1,
+            17 * 60,
+            "x",
+            0,
+            false
+        ));
         assert!(!due_at(&json!({}), 1, 17 * 60, "x", 300, false)); // away
         assert!(!due_at(&json!({}), 1, 17 * 60, "x", 0, true)); // presenting
     }
@@ -364,7 +482,10 @@ mod tests {
     fn her_lines_fit_the_robots_mood() {
         assert_eq!(mood_of(&json!({ "away": true, "awake": true })), "away");
         assert_eq!(mood_of(&json!({})), "asleep");
-        assert_eq!(mood_of(&json!({ "awake": true, "busy": true, "chat": true })), "busy");
+        assert_eq!(
+            mood_of(&json!({ "awake": true, "busy": true, "chat": true })),
+            "busy"
+        );
         assert_eq!(mood_of(&json!({ "awake": true, "chat": true })), "chat");
         assert_eq!(mood_of(&json!({ "awake": true })), "free");
     }

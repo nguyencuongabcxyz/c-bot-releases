@@ -4,16 +4,16 @@
 //! [wave 1: input]
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri::AppHandle;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-use crate::platform::{clipboard, input, window};
 use crate::platform::input::Key;
+use crate::platform::{clipboard, input, window};
 
 /// What was selected in the app in front when a hotkey went: its text, that app's window
 /// title, and its window (to paste a result back into).
@@ -37,10 +37,20 @@ fn bound() -> &'static Mutex<HashMap<String, Shortcut>> {
 fn code_of(key: &str) -> Option<(Code, bool)> {
     use Code::*;
     let k = key.to_ascii_lowercase();
-    let letters = [KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL, KeyM, KeyN, KeyO, KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ];
-    let digits = [Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9];
-    let numpad = [Numpad0, Numpad1, Numpad2, Numpad3, Numpad4, Numpad5, Numpad6, Numpad7, Numpad8, Numpad9];
-    let fkeys = [F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24];
+    let letters = [
+        KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL, KeyM, KeyN, KeyO,
+        KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ,
+    ];
+    let digits = [
+        Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9,
+    ];
+    let numpad = [
+        Numpad0, Numpad1, Numpad2, Numpad3, Numpad4, Numpad5, Numpad6, Numpad7, Numpad8, Numpad9,
+    ];
+    let fkeys = [
+        F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18, F19, F20,
+        F21, F22, F23, F24,
+    ];
     let mut chars = k.chars();
     if let (Some(c), None) = (chars.next(), chars.next()) {
         if c.is_ascii_lowercase() {
@@ -145,14 +155,19 @@ pub fn parse_accelerator(accel: &str) -> Option<Shortcut> {
         Some(h) => (h, true),
         None => (accel, accel == "+"),
     };
-    let mut parts: Vec<&str> = if head.is_empty() || head == "+" { vec![] } else { head.split('+').map(str::trim).collect() };
+    let mut parts: Vec<&str> = if head.is_empty() || head == "+" {
+        vec![]
+    } else {
+        head.split('+').map(str::trim).collect()
+    };
     if tail_plus {
         parts.push("+");
     }
     for part in parts {
         match part.to_ascii_lowercase().as_str() {
             "" => return None,
-            "ctrl" | "control" | "commandorcontrol" | "cmdorctrl" | "cmdorcontrol" | "commandorctrl" => mods |= Modifiers::CONTROL,
+            "ctrl" | "control" | "commandorcontrol" | "cmdorctrl" | "cmdorcontrol"
+            | "commandorctrl" => mods |= Modifiers::CONTROL,
             "alt" | "option" | "altgr" => mods |= Modifiers::ALT,
             "shift" => mods |= Modifiers::SHIFT,
             "super" | "meta" | "cmd" | "command" | "win" => mods |= Modifiers::SUPER,
@@ -178,7 +193,11 @@ fn key_of(accel: &str) -> Option<Key> {
     if last.eq_ignore_ascii_case("space") {
         return Some(Key::Space);
     }
-    if let Some(n) = last.strip_prefix(['F', 'f']).and_then(|n| n.parse::<u8>().ok()).filter(|n| (1..=24).contains(n)) {
+    if let Some(n) = last
+        .strip_prefix(['F', 'f'])
+        .and_then(|n| n.parse::<u8>().ok())
+        .filter(|n| (1..=24).contains(n))
+    {
         return Some(Key::F(n));
     }
     match last.as_bytes() {
@@ -200,15 +219,20 @@ pub fn register(app: &AppHandle, name: &str, keys: &str, run: fn(&AppHandle)) ->
     };
     // (the handler runs on the main thread: what it does — waiting for keys, opening
     // windows, reading the clipboard — goes on a thread of its own)
-    let res = app.global_shortcut().on_shortcut(shortcut, move |app, _, event| {
-        if event.state == ShortcutState::Pressed {
-            let app = app.clone();
-            thread::spawn(move || run(&app));
-        }
-    });
+    let res = app
+        .global_shortcut()
+        .on_shortcut(shortcut, move |app, _, event| {
+            if event.state == ShortcutState::Pressed {
+                let app = app.clone();
+                thread::spawn(move || run(&app));
+            }
+        });
     match res {
         Ok(()) => {
-            bound().lock().unwrap_or_else(|e| e.into_inner()).insert(name.to_string(), shortcut);
+            bound()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(name.to_string(), shortcut);
             true
         }
         Err(err) => {
@@ -220,7 +244,10 @@ pub fn register(app: &AppHandle, name: &str, keys: &str, run: fn(&AppHandle)) ->
 
 /// Unbind a hotkey bound under this name (if it is).
 pub fn unregister(app: &AppHandle, name: &str) {
-    let old = bound().lock().unwrap_or_else(|e| e.into_inner()).remove(name);
+    let old = bound()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(name);
     if let Some(shortcut) = old {
         let _ = app.global_shortcut().unregister(shortcut);
     }
@@ -261,7 +288,12 @@ impl Drop for Borrowed {
 pub fn tidy(text: &str, keep_lines: bool) -> String {
     if keep_lines {
         let unix = text.replace("\r\n", "\n").replace('\r', "\n");
-        unix.split('\n').map(|l| l.trim_end_matches([' ', '\t'])).collect::<Vec<_>>().join("\n").trim().to_string()
+        unix.split('\n')
+            .map(|l| l.trim_end_matches([' ', '\t']))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string()
     } else {
         text.split_whitespace().collect::<Vec<_>>().join(" ")
     }
@@ -272,7 +304,13 @@ pub fn tidy(text: &str, keep_lines: bool) -> String {
 pub fn read_selection(_app: &AppHandle, hotkey_keys: &str, keep_lines: bool) -> Selection {
     let source = foreground_title();
     let hwnd = window::foreground();
-    let Some(_borrowed) = Borrowed::take() else { return Selection { text: String::new(), source, hwnd } };
+    let Some(_borrowed) = Borrowed::take() else {
+        return Selection {
+            text: String::new(),
+            source,
+            hwnd,
+        };
+    };
     input::wait_released(key_of(hotkey_keys));
     clipboard::clear();
     let before = clipboard::sequence();
@@ -288,7 +326,11 @@ pub fn read_selection(_app: &AppHandle, hotkey_keys: &str, keep_lines: bool) -> 
             break;
         }
     }
-    Selection { text: tidy(&text, keep_lines), source, hwnd }
+    Selection {
+        text: tidy(&text, keep_lines),
+        source,
+        hwnd,
+    }
     // (the clipboard goes back as it was as _borrowed drops)
 }
 
@@ -297,7 +339,9 @@ pub fn paste_into(hwnd: isize, text: &str) -> bool {
     if !window::is_window(hwnd) {
         return false;
     }
-    let Some(_borrowed) = Borrowed::take() else { return false };
+    let Some(_borrowed) = Borrowed::take() else {
+        return false;
+    };
     if !clipboard::set_text(text) {
         return false;
     }
@@ -333,16 +377,37 @@ mod tests {
         let ca = Modifiers::CONTROL | Modifiers::ALT;
         assert_eq!(parse_accelerator("Ctrl+Alt+W"), sc(ca, Code::KeyW));
         assert_eq!(parse_accelerator("ctrl+alt+b"), sc(ca, Code::KeyB));
-        assert_eq!(parse_accelerator("CommandOrControl+Shift+Space"), sc(Modifiers::CONTROL | Modifiers::SHIFT, Code::Space));
-        assert_eq!(parse_accelerator("Alt+Plus"), sc(Modifiers::ALT, Code::Equal));
-        assert_eq!(parse_accelerator("Ctrl++"), sc(Modifiers::CONTROL | Modifiers::SHIFT, Code::Equal));
-        assert_eq!(parse_accelerator("Ctrl+Alt+?"), sc(ca | Modifiers::SHIFT, Code::Slash));
+        assert_eq!(
+            parse_accelerator("CommandOrControl+Shift+Space"),
+            sc(Modifiers::CONTROL | Modifiers::SHIFT, Code::Space)
+        );
+        assert_eq!(
+            parse_accelerator("Alt+Plus"),
+            sc(Modifiers::ALT, Code::Equal)
+        );
+        assert_eq!(
+            parse_accelerator("Ctrl++"),
+            sc(Modifiers::CONTROL | Modifiers::SHIFT, Code::Equal)
+        );
+        assert_eq!(
+            parse_accelerator("Ctrl+Alt+?"),
+            sc(ca | Modifiers::SHIFT, Code::Slash)
+        );
         assert_eq!(parse_accelerator("Ctrl+Alt+1"), sc(ca, Code::Digit1));
-        assert_eq!(parse_accelerator("Ctrl+F12"), sc(Modifiers::CONTROL, Code::F12));
+        assert_eq!(
+            parse_accelerator("Ctrl+F12"),
+            sc(Modifiers::CONTROL, Code::F12)
+        );
         assert_eq!(parse_accelerator("Ctrl+Alt+Up"), sc(ca, Code::ArrowUp));
         assert_eq!(parse_accelerator("Ctrl+Alt+num5"), sc(ca, Code::Numpad5));
-        assert_eq!(parse_accelerator("Ctrl+Alt+PageDown"), sc(ca, Code::PageDown));
-        assert_eq!(parse_accelerator("Super+Shift+S"), sc(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyS));
+        assert_eq!(
+            parse_accelerator("Ctrl+Alt+PageDown"),
+            sc(ca, Code::PageDown)
+        );
+        assert_eq!(
+            parse_accelerator("Super+Shift+S"),
+            sc(Modifiers::SUPER | Modifiers::SHIFT, Code::KeyS)
+        );
         assert_eq!(parse_accelerator("Ctrl+Alt+,"), sc(ca, Code::Comma));
         assert_eq!(parse_accelerator("F9"), sc(Modifiers::empty(), Code::F9));
         // not hotkeys
@@ -368,7 +433,10 @@ mod tests {
     #[test]
     fn tidying() {
         assert_eq!(tidy("  hello \r\n  world\t", false), "hello world");
-        assert_eq!(tidy("\r\nline one  \r\n\tline two\t\rthree\n\n", true), "line one\n\tline two\nthree");
+        assert_eq!(
+            tidy("\r\nline one  \r\n\tline two\t\rthree\n\n", true),
+            "line one\n\tline two\nthree"
+        );
         assert_eq!(tidy("", true), "");
     }
 }

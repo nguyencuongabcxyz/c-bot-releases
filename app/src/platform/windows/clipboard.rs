@@ -6,14 +6,16 @@ use std::io::Cursor;
 use std::thread;
 use std::time::Duration;
 
-use image::{DynamicImage, ImageFormat};
 use image::codecs::bmp::BmpDecoder;
+use image::{DynamicImage, ImageFormat};
 use windows_sys::Win32::Foundation::{GlobalFree, HANDLE};
 use windows_sys::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber, IsClipboardFormatAvailable,
-    OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber,
+    IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
 };
-use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
+use windows_sys::Win32::System::Memory::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
+};
 use windows_sys::Win32::System::Ole::{CF_DIB, CF_HDROP, CF_UNICODETEXT};
 
 use crate::platform::image::{opaque_if_blank, png_bytes};
@@ -109,7 +111,12 @@ fn from_wide(units: &[u16]) -> String {
 }
 
 fn units_of(bytes: &[u8]) -> Vec<u16> {
-    bytes.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect()
+    bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&c| u16::from_le_bytes(c))
+        .collect()
 }
 
 /// A named format's number ("HTML Format", "PNG", "FileNameW"…).
@@ -133,13 +140,19 @@ pub fn sequence() -> u32 {
 
 /// The text on the clipboard ('' if none).
 pub fn text() -> String {
-    let Some(open) = Open::new() else { return String::new() };
-    open.get(CF_UNICODETEXT as u32).map(|b| from_wide(&units_of(&b))).unwrap_or_default()
+    let Some(open) = Open::new() else {
+        return String::new();
+    };
+    open.get(CF_UNICODETEXT as u32)
+        .map(|b| from_wide(&units_of(&b)))
+        .unwrap_or_default()
 }
 
 /// Put text on the clipboard (and nothing else).
 pub fn set_text(text: &str) -> bool {
-    let Some(open) = Open::new() else { return false };
+    let Some(open) = Open::new() else {
+        return false;
+    };
     open.empty();
     let bytes: Vec<u8> = wide(text).iter().flat_map(|u| u.to_le_bytes()).collect();
     open.put(CF_UNICODETEXT as u32, &bytes)
@@ -158,7 +171,15 @@ pub struct Saved(Vec<(u32, Vec<u8>)>);
 
 fn kept_formats() -> Vec<u32> {
     let mut f = vec![CF_UNICODETEXT as u32, CF_DIB as u32, CF_HDROP as u32];
-    for name in ["HTML Format", "Rich Text Format", "PNG", "Preferred DropEffect", "FileNameW", "FileName", "Shell IDList Array"] {
+    for name in [
+        "HTML Format",
+        "Rich Text Format",
+        "PNG",
+        "Preferred DropEffect",
+        "FileNameW",
+        "FileName",
+        "Shell IDList Array",
+    ] {
         match format_id(name) {
             0 => {}
             id => f.push(id),
@@ -168,8 +189,16 @@ fn kept_formats() -> Vec<u32> {
 }
 
 pub fn save() -> Saved {
-    let Some(open) = Open::new() else { return Saved(vec![]) };
-    Saved(kept_formats().into_iter().filter(|&f| has(f)).filter_map(|f| Some((f, open.get(f)?))).collect())
+    let Some(open) = Open::new() else {
+        return Saved(vec![]);
+    };
+    Saved(
+        kept_formats()
+            .into_iter()
+            .filter(|&f| has(f))
+            .filter_map(|f| Some((f, open.get(f)?)))
+            .collect(),
+    )
 }
 
 /// Put back what save() kept (an empty clipboard if it was empty).
@@ -186,20 +215,36 @@ pub fn restore(saved: Saved) {
 /// The paths in a CF_HDROP (a DROPFILES header, then nul-separated names ending in an
 /// empty one; UTF-16 when fWide).
 pub fn parse_hdrop(buf: &[u8]) -> Vec<String> {
-    let u32_at = |i: usize| buf.get(i..i + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
-    let (Some(offset), Some(wide)) = (u32_at(0), u32_at(16)) else { return vec![] };
-    let Some(list) = buf.get(offset as usize..) else { return vec![] };
+    let u32_at = |i: usize| {
+        buf.get(i..i + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    let (Some(offset), Some(wide)) = (u32_at(0), u32_at(16)) else {
+        return vec![];
+    };
+    let Some(list) = buf.get(offset as usize..) else {
+        return vec![];
+    };
     let names: Vec<String> = if wide != 0 {
-        units_of(list).split(|&u| u == 0).take_while(|s| !s.is_empty()).map(String::from_utf16_lossy).collect()
+        units_of(list)
+            .split(|&u| u == 0)
+            .take_while(|s| !s.is_empty())
+            .map(String::from_utf16_lossy)
+            .collect()
     } else {
-        list.split(|&b| b == 0).take_while(|s| !s.is_empty()).map(|s| String::from_utf8_lossy(s).into_owned()).collect()
+        list.split(|&b| b == 0)
+            .take_while(|s| !s.is_empty())
+            .map(|s| String::from_utf8_lossy(s).into_owned())
+            .collect()
     };
     names
 }
 
 /// Files copied in Explorer (CF_HDROP; else the older single FileNameW).
 pub fn files() -> Vec<String> {
-    let Some(open) = Open::new() else { return vec![] };
+    let Some(open) = Open::new() else {
+        return vec![];
+    };
     if let Some(drop) = open.get(CF_HDROP as u32) {
         let paths = parse_hdrop(&drop);
         if !paths.is_empty() {
@@ -208,7 +253,12 @@ pub fn files() -> Vec<String> {
     }
     match format_id("FileNameW") {
         0 => vec![],
-        id => open.get(id).map(|b| from_wide(&units_of(&b))).filter(|p| !p.is_empty()).into_iter().collect(),
+        id => open
+            .get(id)
+            .map(|b| from_wide(&units_of(&b)))
+            .filter(|p| !p.is_empty())
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -239,10 +289,16 @@ pub fn image_png() -> Option<Vec<u8>> {
             0 => None,
             id => open.get(id),
         };
-        let dib = if png.is_none() { open.get(CF_DIB as u32) } else { None };
+        let dib = if png.is_none() {
+            open.get(CF_DIB as u32)
+        } else {
+            None
+        };
         (png, dib)
     }; // (closed before the decoding: other apps wait while it's open)
-    if let Some(png) = png.filter(|b| image::load_from_memory_with_format(b, ImageFormat::Png).is_ok()) {
+    if let Some(png) =
+        png.filter(|b| image::load_from_memory_with_format(b, ImageFormat::Png).is_ok())
+    {
         return Some(png);
     }
     png_bytes(&decode_dib(&dib?)?)
@@ -260,7 +316,9 @@ mod tests {
         buf.extend((wide as u32).to_le_bytes()); // fWide
         for n in names {
             if wide {
-                n.encode_utf16().chain([0]).for_each(|u| buf.extend(u.to_le_bytes()));
+                n.encode_utf16()
+                    .chain([0])
+                    .for_each(|u| buf.extend(u.to_le_bytes()));
             } else {
                 buf.extend(n.as_bytes());
                 buf.push(0);
@@ -272,7 +330,10 @@ mod tests {
 
     #[test]
     fn hdrop_wide_and_narrow() {
-        let names = ["C:\\Users\\me\\Pictures\\cat ü.png", "D:\\work\\report.docx"];
+        let names = [
+            "C:\\Users\\me\\Pictures\\cat ü.png",
+            "D:\\work\\report.docx",
+        ];
         assert_eq!(parse_hdrop(&hdrop(&names, true)), names);
         assert_eq!(parse_hdrop(&hdrop(&["C:\\a.txt"], false)), ["C:\\a.txt"]);
         assert!(parse_hdrop(&hdrop(&[], true)).is_empty());

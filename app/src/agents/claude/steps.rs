@@ -30,30 +30,80 @@ pub(super) fn s<'a>(v: &'a Value, key: &str) -> &'a str {
 pub fn describe_tool(name: &str, input: &Value) -> String {
     let base = |p: &str| p.rsplit(['\\', '/']).next().unwrap_or("").to_string();
     match name {
-        "Read" | "Write" | "Edit" | "NotebookEdit" => base(if s(input, "file_path").is_empty() { s(input, "notebook_path") } else { s(input, "file_path") }),
-        "Bash" | "PowerShell" => short(if s(input, "description").is_empty() { s(input, "command") } else { s(input, "description") }, 48),
+        "Read" | "Write" | "Edit" | "NotebookEdit" => base(if s(input, "file_path").is_empty() {
+            s(input, "notebook_path")
+        } else {
+            s(input, "file_path")
+        }),
+        "Bash" | "PowerShell" => short(
+            if s(input, "description").is_empty() {
+                s(input, "command")
+            } else {
+                s(input, "description")
+            },
+            48,
+        ),
         "Grep" | "Glob" => short(s(input, "pattern"), 32),
         "WebSearch" => short(s(input, "query"), 48),
         "WebFetch" => {
             let url = s(input, "url");
-            url.split_once("://").and_then(|(_, rest)| rest.split('/').next()).filter(|h| !h.is_empty()).map(str::to_string).unwrap_or_else(|| short(url, 48))
+            url.split_once("://")
+                .and_then(|(_, rest)| rest.split('/').next())
+                .filter(|h| !h.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| short(url, 48))
         }
         "Task" | "Agent" => short(s(input, "description"), 48),
         "TodoWrite" => "updating the to-do list".into(),
         // (the other robots' tools by their short names)
-        "ToolSearch" => short(&s(input, "query").trim_start_matches("select:").replace("mcp__cbot__", "").split(',').collect::<Vec<_>>().join(", "), 48),
+        "ToolSearch" => short(
+            &s(input, "query")
+                .trim_start_matches("select:")
+                .replace("mcp__cbot__", "")
+                .split(',')
+                .collect::<Vec<_>>()
+                .join(", "),
+            48,
+        ),
         "TaskCreate" => short(s(input, "subject"), 48),
         "TaskUpdate" => {
-            let id = input.get("taskId").map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).unwrap_or_default();
+            let id = input
+                .get("taskId")
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| v.to_string())
+                })
+                .unwrap_or_default();
             let status = s(input, "status");
-            if status.is_empty() { format!("#{id}") } else { format!("#{id} → {}", status.replacen('_', " ", 1)) }
+            if status.is_empty() {
+                format!("#{id}")
+            } else {
+                format!("#{id} → {}", status.replacen('_', " ", 1))
+            }
         }
-        "Skill" => skill_label(if s(input, "skill").is_empty() { s(input, "name") } else { s(input, "skill") }),
-        "mcp__cbot__ask_robot" => format!("{}: {}", s(input, "robot"), short(s(input, "message"), 48)),
-        "mcp__cbot__hand_off_task" => format!("{}: {}", s(input, "robot"), short(s(input, "title"), 48)),
+        "Skill" => skill_label(if s(input, "skill").is_empty() {
+            s(input, "name")
+        } else {
+            s(input, "skill")
+        }),
+        "mcp__cbot__ask_robot" => {
+            format!("{}: {}", s(input, "robot"), short(s(input, "message"), 48))
+        }
+        "mcp__cbot__hand_off_task" => {
+            format!("{}: {}", s(input, "robot"), short(s(input, "title"), 48))
+        }
         "mcp__cbot__list_words" => short(s(input, "query"), 32),
         "mcp__cbot__save_words" => {
-            let words: Vec<String> = input.get("words").and_then(Value::as_array).map(|a| a.iter().filter_map(|w| w.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            let words: Vec<String> = input
+                .get("words")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|w| w.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
             short(&words.join(", "), 48)
         }
         "mcp__cbot__add_note" => short(s(input, "text"), 48),
@@ -111,11 +161,16 @@ impl AsideFilter {
                 text.push_str(&self.take(self.buf.len() - keep));
                 break;
             };
-            let close = self.buf[open + OPEN.len()..].find(CLOSE).map(|c| c + open + OPEN.len());
+            let close = self.buf[open + OPEN.len()..]
+                .find(CLOSE)
+                .map(|c| c + open + OPEN.len());
             text.push_str(self.take(open).trim_end_matches([' ', '\t'])); // drop the remark's indentation
             let Some(close) = close else { break }; // wait for the rest of the remark
             let end = close - open;
-            let aside = self.buf[OPEN.len()..end].split_whitespace().collect::<Vec<_>>().join(" ");
+            let aside = self.buf[OPEN.len()..end]
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
             if !aside.is_empty() {
                 asides.push(aside);
             }
@@ -137,12 +192,16 @@ impl AsideFilter {
 
 /// How much of the end of `s` could be the start of `tag`.
 pub(super) fn partial_suffix(s: &str, tag: &str) -> usize {
-    (1..tag.len().min(s.len() + 1)).rev().find(|&n| s.is_char_boundary(s.len() - n) && tag.starts_with(&s[s.len() - n..])).unwrap_or(0)
+    (1..tag.len().min(s.len() + 1))
+        .rev()
+        .find(|&n| s.is_char_boundary(s.len() - n) && tag.starts_with(&s[s.len() - n..]))
+        .unwrap_or(0)
 }
 
 pub fn strip_asides(s: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"(^|\n)[ \t]*<aside>(?s:.*?)</aside>[ \t]*(?:\n|$)").unwrap());
+    let re = RE
+        .get_or_init(|| Regex::new(r"(^|\n)[ \t]*<aside>(?s:.*?)</aside>[ \t]*(?:\n|$)").unwrap());
     re.replace_all(s, "$1").into_owned()
 }
 
@@ -151,7 +210,11 @@ mod killer_tests {
     use super::*;
 
     fn sleeper() -> std::process::Child {
-        Command::new("cmd").args(["/c", "ping -n 30 127.0.0.1 >nul"]).no_window().spawn().unwrap()
+        Command::new("cmd")
+            .args(["/c", "ping -n 30 127.0.0.1 >nul"])
+            .no_window()
+            .spawn()
+            .unwrap()
     }
 
     #[test]
@@ -239,7 +302,11 @@ pub(super) fn output_text(content: &Value) -> String {
         } else if MEDIA.contains(&ty) {
             String::new()
         } else if ty == "tool_reference" {
-            let name = if s(x, "tool_name").is_empty() { s(x, "name") } else { s(x, "tool_name") };
+            let name = if s(x, "tool_name").is_empty() {
+                s(x, "name")
+            } else {
+                s(x, "tool_name")
+            };
             format!("Loaded the tool {name}").trim().to_string()
         } else if !ty.is_empty() {
             format!("[{ty}]")
@@ -247,18 +314,37 @@ pub(super) fn output_text(content: &Value) -> String {
             String::new()
         }
     };
-    content.as_array().map(|a| a.iter().map(part).filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n")).unwrap_or_default()
+    content
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(part)
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default()
 }
 
 /// The pictures (Read on an image, a screenshot) and documents (Read on a PDF) in a
 /// tool result: [{ kind: image, mimeType, data } | { kind: document, mimeType, size }]
 pub(super) fn output_media(content: &Value) -> Value {
-    let Some(items) = content.as_array() else { return json!([]) };
+    let Some(items) = content.as_array() else {
+        return json!([]);
+    };
     let mut out = vec![];
     for x in items {
         let src = x.get("source").unwrap_or(&Value::Null);
-        let mime = if s(src, "media_type").is_empty() { s(x, "mimeType") } else { s(src, "media_type") };
-        let data = if src.get("data").is_some_and(Value::is_string) { s(src, "data") } else { s(x, "data") };
+        let mime = if s(src, "media_type").is_empty() {
+            s(x, "mimeType")
+        } else {
+            s(src, "media_type")
+        };
+        let data = if src.get("data").is_some_and(Value::is_string) {
+            s(src, "data")
+        } else {
+            s(x, "data")
+        };
         let ty = s(x, "type");
         if ty == "image" && !data.is_empty() && is_image_mime(mime) {
             out.push(json!({ "kind": "image", "mimeType": mime, "data": data }));
@@ -272,7 +358,9 @@ pub(super) fn output_media(content: &Value) -> Value {
 }
 
 pub fn is_image_mime(m: &str) -> bool {
-    m.strip_prefix("image/").is_some_and(|t| !t.is_empty() && t.chars().all(|c| c.is_alphanumeric() || "_.+-".contains(c)))
+    m.strip_prefix("image/").is_some_and(|t| {
+        !t.is_empty() && t.chars().all(|c| c.is_alphanumeric() || "_.+-".contains(c))
+    })
 }
 
 pub(super) fn result_text(content: &Value) -> String {
@@ -289,10 +377,23 @@ pub(super) fn edit_diff(r: &Value) -> Option<Value> {
     const MAX_LINES: usize = 400;
     let file = r.get("filePath")?.as_str()?;
     let created = s(r, "type") == "create";
-    let mut hunks: Vec<Value> = r.get("structuredPatch").and_then(Value::as_array).cloned().unwrap_or_default();
-    if hunks.is_empty() && created && let Some(content) = r.get("content").and_then(Value::as_str) {
-        let body = content.strip_suffix("\r\n").or_else(|| content.strip_suffix('\n')).unwrap_or(content);
-        let lines: Vec<Value> = body.split('\n').map(|l| json!(format!("+{}", l.strip_suffix('\r').unwrap_or(l)))).collect();
+    let mut hunks: Vec<Value> = r
+        .get("structuredPatch")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if hunks.is_empty()
+        && created
+        && let Some(content) = r.get("content").and_then(Value::as_str)
+    {
+        let body = content
+            .strip_suffix("\r\n")
+            .or_else(|| content.strip_suffix('\n'))
+            .unwrap_or(content);
+        let lines: Vec<Value> = body
+            .split('\n')
+            .map(|l| json!(format!("+{}", l.strip_suffix('\r').unwrap_or(l))))
+            .collect();
         hunks = vec![json!({ "oldStart": 0, "newStart": 1, "lines": lines })];
     }
     if hunks.is_empty() {
@@ -301,7 +402,18 @@ pub(super) fn edit_diff(r: &Value) -> Option<Value> {
     let (mut budget, mut added, mut removed, mut truncated) = (MAX_LINES, 0, 0, false);
     let mut out = vec![];
     for h in &hunks {
-        let lines: Vec<String> = h["lines"].as_array().map(|l| l.iter().map(|x| x.as_str().map(str::to_string).unwrap_or_else(|| x.to_string())).collect()).unwrap_or_default();
+        let lines: Vec<String> = h["lines"]
+            .as_array()
+            .map(|l| {
+                l.iter()
+                    .map(|x| {
+                        x.as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| x.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         for l in &lines {
             if l.starts_with('+') {
                 added += 1;
@@ -313,12 +425,24 @@ pub(super) fn edit_diff(r: &Value) -> Option<Value> {
             truncated = true;
             continue;
         }
-        let kept: Vec<String> = lines.iter().take(budget).map(|l| if l.chars().count() > 400 { format!("{}…", l.chars().take(400).collect::<String>()) } else { l.clone() }).collect();
+        let kept: Vec<String> = lines
+            .iter()
+            .take(budget)
+            .map(|l| {
+                if l.chars().count() > 400 {
+                    format!("{}…", l.chars().take(400).collect::<String>())
+                } else {
+                    l.clone()
+                }
+            })
+            .collect();
         if kept.len() < lines.len() {
             truncated = true;
         }
         budget -= kept.len();
         out.push(json!({ "oldStart": h["oldStart"].as_i64().unwrap_or(0), "newStart": h["newStart"].as_i64().unwrap_or(0), "lines": kept }));
     }
-    Some(json!({ "file": file, "created": created, "added": added, "removed": removed, "hunks": out, "truncated": truncated }))
+    Some(
+        json!({ "file": file, "created": created, "added": added, "removed": removed, "hunks": out, "truncated": truncated }),
+    )
 }

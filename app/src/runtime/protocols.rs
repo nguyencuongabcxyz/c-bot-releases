@@ -4,9 +4,9 @@ use std::thread;
 
 use tauri::{Builder, Wry};
 
+use super::paths::picture_roots;
 use crate::mcp::apps;
 use crate::workbench::files;
-use super::paths::picture_roots;
 
 pub fn register(builder: Builder<Wry>) -> Builder<Wry> {
     builder

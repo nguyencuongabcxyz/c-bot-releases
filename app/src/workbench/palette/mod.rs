@@ -12,23 +12,23 @@
 
 pub mod drone;
 
-use std::sync::{Mutex, OnceLock};
 use std::sync::mpsc::{self, Sender};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use crate::features::{notes, vocab};
-use crate::platform::{clipboard, window};
 use crate::platform::window::Rect;
-use crate::runtime::{hub, with};
+use crate::platform::{clipboard, window};
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::only;
-use crate::workbench::{capture, quick, snip};
+use crate::runtime::{hub, with};
 use crate::workbench::quick::{MAX_TEXT, slice16};
+use crate::workbench::{capture, quick, snip};
 
 const LABEL: &str = "palette";
 const W: f64 = 320.0; // (CSS px)
@@ -52,9 +52,9 @@ struct Ctx {
 #[derive(Default)]
 struct Palette {
     ctx: Option<Ctx>,
-    height: f64,     // what the page asked for (CSS px)
-    at: (i32, i32),  // the mouse when it opened
-    ready: bool,     // the page has loaded (it asked for palette:init)
+    height: f64,                                 // what the page asked for (CSS px)
+    at: (i32, i32),                              // the mouse when it opened
+    ready: bool,                                 // the page has loaded (it asked for palette:init)
     staged: Option<(u64, Sender<Option<Rect>>)>, // while it draws (hidden): settles where it will open
     seq: u64,
     drone_out: bool, // the drone's out, hovering over the menu
@@ -65,11 +65,16 @@ static PALETTE: Mutex<Option<Palette>> = Mutex::new(None);
 
 fn pal<R>(f: impl FnOnce(&mut Palette) -> R) -> R {
     let mut guard = PALETTE.lock().unwrap_or_else(|e| e.into_inner());
-    f(guard.get_or_insert_with(|| Palette { height: 300.0, ..Palette::default() }))
+    f(guard.get_or_insert_with(|| Palette {
+        height: 300.0,
+        ..Palette::default()
+    }))
 }
 
 fn hwnd(app: &AppHandle) -> Option<isize> {
-    app.get_webview_window(LABEL).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize)
+    app.get_webview_window(LABEL)
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| h.0 as isize)
 }
 
 // ---------------------------------------------------------------- where it goes
@@ -121,8 +126,10 @@ fn edges() -> &'static Regex {
 fn items_for(text: &str) -> Vec<Value> {
     let one = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let word = edges().replace_all(&one, "").to_string();
-    let wordy = !word.is_empty() && word.encode_utf16().count() <= 60 && word.split(' ').count() <= 5;
-    let item = |id: &str, icon: &str, label: &str| json!({ "id": id, "icon": icon, "label": label });
+    let wordy =
+        !word.is_empty() && word.encode_utf16().count() <= 60 && word.split(' ').count() <= 5;
+    let item =
+        |id: &str, icon: &str, label: &str| json!({ "id": id, "icon": icon, "label": label });
     if one.is_empty() {
         return vec![
             item("screen", "scan", "Ask about part of the screen"),
@@ -135,7 +142,11 @@ fn items_for(text: &str) -> Vec<Value> {
     }
     let mut items = vec![json!({ "heading": "With what you selected" })];
     if wordy {
-        items.push(item("word", "book-plus", &format!("Save “{word}” to my words")));
+        items.push(item(
+            "word",
+            "book-plus",
+            &format!("Save “{word}” to my words"),
+        ));
     }
     items.extend([
         json!({ "id": "refine", "icon": "wand", "label": "Refine it", "hint": "polished, professional…" }),
@@ -157,26 +168,58 @@ fn view(ctx: &Ctx) -> Value {
 
 /// The chat tab's draft for "Ask a robot about it".
 fn ask_prompt(source: &str, text: &str) -> String {
-    let about = if source.is_empty() { String::new() } else { format!(" in {source}") };
-    [format!("About this text I selected{about}:"), String::new(), "---".into(), text.into(), "---".into(), String::new(), String::new()].join("\n")
+    let about = if source.is_empty() {
+        String::new()
+    } else {
+        format!(" in {source}")
+    };
+    [
+        format!("About this text I selected{about}:"),
+        String::new(),
+        "---".into(),
+        text.into(),
+        "---".into(),
+        String::new(),
+        String::new(),
+    ]
+    .join("\n")
 }
 
 /// What picking an item does (main.js onPaletteAction).
 fn on_pick(app: &AppHandle, id: &str, ctx: Ctx) {
-    let Ctx { text, source, hwnd, robot_id, .. } = ctx;
+    let Ctx {
+        text,
+        source,
+        hwnd,
+        robot_id,
+        ..
+    } = ctx;
     match id {
         "word" => vocab::catch_word(app, &text, &source, robot_id),
         "refine" | "translate" | "explain" | "summarise" => {
-            let ctx = quick::ctx_for(app, text, source, hwnd, robot_id, Some(json!({ "action": id })));
+            let ctx = quick::ctx_for(
+                app,
+                text,
+                source,
+                hwnd,
+                robot_id,
+                Some(json!({ "action": id })),
+            );
             quick::open_with(app, ctx);
         }
         "note" => notes::take_note(app, robot_id, slice16(&text, 2000), &source),
         "ask" => {
             // a new chat tab with the text in it, for you to say what you want to know
-            let Some(r) = hub::chatty_robot(app, robot_id.as_deref()) else { return };
+            let Some(r) = hub::chatty_robot(app, robot_id.as_deref()) else {
+                return;
+            };
             quick::tell_notes_later(app, &r, ask_prompt(&source, &text));
         }
-        "screen" => snip::ask_screen(app, robot_id.or_else(|| hub::nearest_robot(app)), Some(source)),
+        "screen" => snip::ask_screen(
+            app,
+            robot_id.or_else(|| hub::nearest_robot(app)),
+            Some(source),
+        ),
         "box-word" => vocab::box_word(app, robot_id.or_else(|| hub::nearest_robot(app)), source),
         "new-note" => notes::open_notebook(app, robot_id, Some("add")),
         "quick" => {
@@ -278,7 +321,9 @@ fn reveal(app: &AppHandle) {
     if pal(|p| p.ctx.is_none()) {
         return;
     }
-    let Some(w) = app.get_webview_window(LABEL) else { return };
+    let Some(w) = app.get_webview_window(LABEL) else {
+        return;
+    };
     place(app);
     let _ = w.show();
     let _ = w.set_focus();
@@ -287,7 +332,12 @@ fn reveal(app: &AppHandle) {
     if pal(|p| p.drone_out) {
         let b = window::window_rect(h);
         let s = window::scale_of(h);
-        drone::hover(app, b.x as f64 + b.w as f64 / 2.0, b.y as f64 + 6.0 * s, b.w as f64 - 12.0 * s);
+        drone::hover(
+            app,
+            b.x as f64 + b.w as f64 / 2.0,
+            b.y as f64 + 6.0 * s,
+            b.w as f64 - 12.0 * s,
+        );
     }
 }
 
@@ -347,7 +397,14 @@ fn open_on(app: &AppHandle, sel: capture::Selection, robot_id: Option<String>, f
     let text = slice16(&sel.text, MAX_TEXT).to_string();
     let hwnd = if text.is_empty() { 0 } else { sel.hwnd };
     let items = items_for(&text);
-    let ctx = Ctx { text, source: sel.source, hwnd, robot_id: robot_id.clone(), items, projected: flying };
+    let ctx = Ctx {
+        text,
+        source: sel.source,
+        hwnd,
+        robot_id: robot_id.clone(),
+        items,
+        projected: flying,
+    };
     let Some(spot) = stage(app, ctx) else { return }; // (closed meanwhile)
     if flying {
         let m = window::monitor_near(spot.x + spot.w / 2, spot.y + spot.h / 2);
@@ -358,10 +415,19 @@ fn open_on(app: &AppHandle, sel: capture::Selection, robot_id: Option<String>, f
             None => (wa.right() as f64 - 40.0 * s, wa.bottom() as f64),
         };
         // (30: the drone page's hover gap)
-        let to = (spot.x as f64 + spot.w as f64 / 2.0, spot.y as f64 + (6.0 - 30.0) * s);
+        let to = (
+            spot.x as f64 + spot.w as f64 / 2.0,
+            spot.y as f64 + (6.0 - 30.0) * s,
+        );
         let paint = robot_id
             .as_deref()
-            .and_then(|id| with(app, |st| st.store.get(id).and_then(|c| c["color"].as_str().map(str::to_string))))
+            .and_then(|id| {
+                with(app, |st| {
+                    st.store
+                        .get(id)
+                        .and_then(|c| c["color"].as_str().map(str::to_string))
+                })
+            })
             .filter(|c| !c.is_empty())
             .unwrap_or_else(|| PAINT.into());
         pal(|p| p.drone_out = true);
@@ -392,7 +458,11 @@ pub fn palette_init(window: tauri::WebviewWindow) -> Result<Value, String> {
 
 /// How tall the menu came out (CSS px): the window takes that size, where it goes.
 #[tauri::command(async)]
-pub fn palette_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
+pub fn palette_size(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    height: f64,
+) -> Result<(), String> {
     only(&window, LABEL)?;
     if !height.is_finite() {
         return Ok(());
@@ -411,9 +481,15 @@ pub fn palette_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -
 }
 
 #[tauri::command(async)]
-pub fn palette_pick(app: AppHandle, window: tauri::WebviewWindow, id: String) -> Result<bool, String> {
+pub fn palette_pick(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    id: String,
+) -> Result<bool, String> {
     only(&window, LABEL)?;
-    let Some(picked) = pal(|p| p.ctx.clone()) else { return Ok(false) };
+    let Some(picked) = pal(|p| p.ctx.clone()) else {
+        return Ok(false);
+    };
     close(&app);
     // (a moment for the menu to go, so whatever opens next gets the focus)
     thread::spawn(move || {
@@ -431,13 +507,16 @@ pub fn palette_close(app: AppHandle, window: tauri::WebviewWindow) -> Result<boo
 }
 
 pub fn setup(app: &AppHandle) {
-    hub::add_hotkey(app, Hotkey {
-        setting: "paletteHotkey",
-        label: "Action menu",
-        what: "Every action in one menu, by the mouse",
-        default: "Ctrl+Alt+C",
-        run: open,
-    });
+    hub::add_hotkey(
+        app,
+        Hotkey {
+            setting: "paletteHotkey",
+            label: "Action menu",
+            what: "Every action in one menu, by the mouse",
+            default: "Ctrl+Alt+C",
+            run: open,
+        },
+    );
     // ready before the first hotkey, without slowing the start
     let app = app.clone();
     thread::spawn(move || {
@@ -451,26 +530,58 @@ pub fn setup(app: &AppHandle) {
 mod tests {
     use super::*;
 
-    const WA: Rect = Rect { x: 0, y: 0, w: 1920, h: 1040 };
+    const WA: Rect = Rect {
+        x: 0,
+        y: 0,
+        w: 1920,
+        h: 1040,
+    };
 
     fn ids(items: &[Value]) -> Vec<&str> {
-        items.iter().map(|i| i["id"].as_str().or(i["heading"].as_str()).unwrap_or("")).collect()
+        items
+            .iter()
+            .map(|i| i["id"].as_str().or(i["heading"].as_str()).unwrap_or(""))
+            .collect()
     }
 
     #[test]
     fn nothing_selected() {
-        assert_eq!(ids(&items_for("")), ["screen", "box-word", "new-note", "quick", "words", "notes"]);
-        assert_eq!(ids(&items_for("  \n\t ")), ["screen", "box-word", "new-note", "quick", "words", "notes"]);
+        assert_eq!(
+            ids(&items_for("")),
+            ["screen", "box-word", "new-note", "quick", "words", "notes"]
+        );
+        assert_eq!(
+            ids(&items_for("  \n\t ")),
+            ["screen", "box-word", "new-note", "quick", "words", "notes"]
+        );
     }
 
     #[test]
     fn a_word_or_some_text() {
         let items = items_for("  “serendipity,” ");
-        assert_eq!(ids(&items), ["With what you selected", "word", "refine", "translate", "explain", "summarise", "note", "ask", "Anything", "screen", "words"]);
+        assert_eq!(
+            ids(&items),
+            [
+                "With what you selected",
+                "word",
+                "refine",
+                "translate",
+                "explain",
+                "summarise",
+                "note",
+                "ask",
+                "Anything",
+                "screen",
+                "words"
+            ]
+        );
         assert_eq!(items[1]["label"], "Save “serendipity” to my words");
         assert_eq!(items[2]["hint"], "polished, professional…");
         // a phrase of up to five words can be saved too
-        assert_eq!(items_for("break the\nice")[1]["label"], "Save “break the ice” to my words");
+        assert_eq!(
+            items_for("break the\nice")[1]["label"],
+            "Save “break the ice” to my words"
+        );
         // a sentence is too long to be a word
         let long = items_for("This is a whole sentence of more than five words.");
         assert_eq!(ids(&long)[1], "refine");
@@ -482,20 +593,55 @@ mod tests {
     #[test]
     fn by_the_mouse() {
         // below and right of the mouse
-        assert_eq!(plan((500, 400), 300.0, WA, 1.0), Rect { x: 512, y: 414, w: 320, h: 300 });
+        assert_eq!(
+            plan((500, 400), 300.0, WA, 1.0),
+            Rect {
+                x: 512,
+                y: 414,
+                w: 320,
+                h: 300
+            }
+        );
         // near the right edge: left of it; near the bottom: above it
-        assert_eq!(plan((1800, 900), 300.0, WA, 1.0), Rect { x: 1800 - 320 - 12, y: 900 - 300 - 14, w: 320, h: 300 });
+        assert_eq!(
+            plan((1800, 900), 300.0, WA, 1.0),
+            Rect {
+                x: 1800 - 320 - 12,
+                y: 900 - 300 - 14,
+                w: 320,
+                h: 300
+            }
+        );
         // taller than the screen: as tall as fits
         let r = plan((10, 10), 5000.0, WA, 1.0);
         assert_eq!((r.x, r.y, r.h), (22, 10, 1020));
         // on a 150% screen
-        let wa = Rect { x: -2560, y: 0, w: 2560, h: 1400 };
-        assert_eq!(plan((-2000, 100), 200.0, wa, 1.5), Rect { x: -2000 + 18, y: 121, w: 480, h: 300 });
+        let wa = Rect {
+            x: -2560,
+            y: 0,
+            w: 2560,
+            h: 1400,
+        };
+        assert_eq!(
+            plan((-2000, 100), 200.0, wa, 1.5),
+            Rect {
+                x: -2000 + 18,
+                y: 121,
+                w: 480,
+                h: 300
+            }
+        );
     }
 
     #[test]
     fn ask_draft() {
-        assert_eq!(ask_prompt("Outlook", "hi"), "About this text I selected in Outlook:\n\n---\nhi\n---\n\n");
-        assert_eq!(ask_prompt("", "hi"), "About this text I selected:\n\n---\nhi\n---\n\n");
+        assert_eq!(
+            ask_prompt("Outlook", "hi"),
+            "About this text I selected in Outlook:\n\n---\nhi\n---\n\n"
+        );
+        assert_eq!(
+            ask_prompt("", "hi"),
+            "About this text I selected:\n\n---\nhi\n---\n\n"
+        );
     }
 }

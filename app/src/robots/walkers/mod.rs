@@ -23,16 +23,16 @@ pub use errands::*;
 
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hasher};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::platform::{input, window};
 use crate::platform::window::Rect;
+use crate::platform::{input, window};
 use crate::robots;
 use crate::robots::{maid, social};
 use crate::runtime::with;
@@ -53,12 +53,22 @@ const TICK: Duration = Duration::from_millis(33);
 const SPEED_WALK: f64 = 70.0; // px/s at size 1
 const SPEED_SLEEPWALK: f64 = 32.0;
 // what it does when it gets somewhere: (gait, min s, max s)
-const PAUSES_AWAKE: [(&str, f64, f64); 4] = [("stand", 1.5, 3.5), ("look", 2.5, 4.0), ("wave", 1.6, 2.2), ("sit", 5.0, 9.0)];
+const PAUSES_AWAKE: [(&str, f64, f64); 4] = [
+    ("stand", 1.5, 3.5),
+    ("look", 2.5, 4.0),
+    ("wave", 1.6, 2.2),
+    ("sit", 5.0, 9.0),
+];
 const PAUSES_ASLEEP: [(&str, f64, f64); 2] = [("stand", 2.5, 5.0), ("sit", 6.0, 11.0)];
 // a stroll lasts this long (s), then it walks back to its desk by itself (put down
 // somewhere else, it gets a fresh stroll from there)
 const ROAM: (f64, f64) = (120.0, 240.0);
-const BACK_LINES: [&str; 4] = ["Back to work! 💼", "Break over!", "Better get back to my desk…", "OK, back to it! 💻"];
+const BACK_LINES: [&str; 4] = [
+    "Back to work! 💼",
+    "Break over!",
+    "Better get back to my desk…",
+    "OK, back to it! 💻",
+];
 // the page never said it's drawn: take over anyway; the desk never said go: give up
 const HANDOFF_WAIT: Duration = Duration::from_secs(3);
 const CANCEL_WAIT: Duration = Duration::from_secs(6);
@@ -78,7 +88,12 @@ pub struct Errand {
 
 impl Default for Errand {
     fn default() -> Self {
-        Errand { gait: None, speed_k: 1.0, face: None, on_arrive: None }
+        Errand {
+            gait: None,
+            speed_k: 1.0,
+            face: None,
+            on_arrive: None,
+        }
     }
 }
 
@@ -92,9 +107,9 @@ enum Pause {
 struct Walker {
     hwnd: isize,
     label: String,
-    k: f64,         // its size (1: normal)
-    s: f64,         // its screen's scale
-    bw: i32,        // the box (physical px)
+    k: f64,  // its size (1: normal)
+    s: f64,  // its screen's scale
+    bw: i32, // the box (physical px)
     bh: i32,
     x: f64, // the box's top left (physical px)
     y: f64,
@@ -170,7 +185,14 @@ fn size_k(size: &str) -> f64 {
 
 /// A robot's size factor (the Workshop's "Size").
 pub fn size_of(app: &AppHandle, id: &str) -> f64 {
-    size_k(&with(app, |st| st.store.get(id).and_then(|c| c["size"].as_str().map(str::to_string))).unwrap_or_default())
+    size_k(
+        &with(app, |st| {
+            st.store
+                .get(id)
+                .and_then(|c| c["size"].as_str().map(str::to_string))
+        })
+        .unwrap_or_default(),
+    )
 }
 
 /// What a walker needs to look like its robot (main.js walkerLook).
@@ -180,7 +202,10 @@ fn look_of(c: &Value) -> Value {
 
 fn desk_of(app: &AppHandle, id: &str) -> Option<Desk> {
     let hwnd = robots::hwnd_of(app, id)?;
-    Some(Desk { rect: window::window_rect(hwnd), s: window::scale_of(hwnd) })
+    Some(Desk {
+        rect: window::window_rect(hwnd),
+        s: window::scale_of(hwnd),
+    })
 }
 
 // ---------------------------------------------------------------- the pure parts
@@ -205,22 +230,36 @@ fn over_character(x: f64, y: f64, bw: f64, bh: f64, ks: f64, p: (f64, f64)) -> b
 /// Dropped on its desk (its middle over the desk window, give or take `pad`)?
 fn over_desk(x: f64, y: f64, bw: f64, bh: f64, desk: Rect, pad: f64) -> bool {
     let (cx, cy) = (x + bw / 2.0, y + bh * 0.6);
-    cx > desk.x as f64 - pad && cx < desk.right() as f64 + pad && cy > desk.y as f64 - pad && cy < desk.bottom() as f64 + pad
+    cx > desk.x as f64 - pad
+        && cx < desk.right() as f64 + pad
+        && cy > desk.y as f64 - pad
+        && cy < desk.bottom() as f64 + pad
 }
 
 fn clamp_into(x: f64, y: f64, bw: i32, bh: i32, wa: Rect) -> (f64, f64) {
-    (x.max(wa.x as f64).min((wa.right() - bw) as f64), y.max(wa.y as f64).min((wa.bottom() - bh) as f64))
+    (
+        x.max(wa.x as f64).min((wa.right() - bw) as f64),
+        y.max(wa.y as f64).min((wa.bottom() - bh) as f64),
+    )
 }
 
 // ---------------------------------------------------------------- one walker
 
 impl Walker {
     fn rect(&self) -> Rect {
-        Rect { x: self.x.round() as i32, y: self.y.round() as i32, w: self.bw, h: self.bh }
+        Rect {
+            x: self.x.round() as i32,
+            y: self.y.round() as i32,
+            w: self.bw,
+            h: self.bh,
+        }
     }
 
     fn feet(&self) -> (f64, f64) {
-        (self.x + self.bw as f64 / 2.0, self.y + self.bh as f64 * FEET)
+        (
+            self.x + self.bw as f64 / 2.0,
+            self.y + self.bh as f64 * FEET,
+        )
     }
 
     fn place(&self, fx: &mut Vec<Fx>) {
@@ -232,7 +271,9 @@ impl Walker {
     }
 
     fn set_gait(&mut self, gait: &str, heading: Option<&str>, fx: &mut Vec<Fx>) {
-        let heading = heading.map(str::to_string).unwrap_or_else(|| self.heading.clone());
+        let heading = heading
+            .map(str::to_string)
+            .unwrap_or_else(|| self.heading.clone());
         if gait == self.gait && heading == self.heading {
             return;
         }
@@ -276,7 +317,10 @@ impl Walker {
 
     /// An errand: walk to where its feet should be (screen px), then on_arrive.
     fn errand_to(&mut self, feet: (f64, f64), errand: Errand) {
-        self.target = (feet.0 - self.bw as f64 / 2.0, feet.1 - self.bh as f64 * FEET);
+        self.target = (
+            feet.0 - self.bw as f64 / 2.0,
+            feet.1 - self.bh as f64 * FEET,
+        );
         self.errand = Some(errand);
         self.pause = Pause::No;
     }
@@ -302,7 +346,10 @@ fn say_fx(w: &Walker, fx: &mut Vec<Fx>, text: &str, ms: u64) {
 
 fn dock_errand(id: &str) -> Errand {
     let id = id.to_string();
-    Errand { on_arrive: Some(Box::new(move |app: &AppHandle| dock(app, &id))), ..Errand::default() }
+    Errand {
+        on_arrive: Some(Box::new(move |app: &AppHandle| dock(app, &id))),
+        ..Errand::default()
+    }
 }
 
 /// One step along its route (main walker.js step).
@@ -331,7 +378,13 @@ fn step(id: &str, w: &mut Walker, now: Instant, desk: Option<&Desk>, fx: &mut Ve
     }
     let (dx, dy) = (w.target.0 - w.x, w.target.1 - w.y);
     let dist = dx.hypot(dy);
-    let speed = if w.asleep { SPEED_SLEEPWALK } else { SPEED_WALK } * w.k * w.s * w.errand.as_ref().map_or(1.0, |e| e.speed_k);
+    let speed = if w.asleep {
+        SPEED_SLEEPWALK
+    } else {
+        SPEED_WALK
+    } * w.k
+        * w.s
+        * w.errand.as_ref().map_or(1.0, |e| e.speed_k);
     let move_by = speed * TICK.as_secs_f64();
     if dist <= move_by {
         w.x = w.target.0;
@@ -347,16 +400,28 @@ fn step(id: &str, w: &mut Walker, now: Instant, desk: Option<&Desk>, fx: &mut Ve
             return;
         }
         // there: stop for a bit, doing something
-        let pauses: &[(&str, f64, f64)] = if w.asleep { &PAUSES_ASLEEP } else { &PAUSES_AWAKE };
+        let pauses: &[(&str, f64, f64)] = if w.asleep {
+            &PAUSES_ASLEEP
+        } else {
+            &PAUSES_AWAKE
+        };
         let (gait, a, b) = pick(pauses).copied().unwrap_or(("stand", 2.0, 3.0));
-        let heading = if gait == "stand" || gait == "sit" { Some("toward") } else { None };
+        let heading = if gait == "stand" || gait == "sit" {
+            Some("toward")
+        } else {
+            None
+        };
         w.set_gait(gait, heading, fx);
         w.pause = Pause::Until(now + Duration::from_secs_f64(rand_in(a, b)));
         return;
     }
     w.x += dx / dist * move_by;
     w.y += dy / dist * move_by;
-    let gait = w.errand.as_ref().and_then(|e| e.gait.clone()).unwrap_or_else(|| if w.asleep { "sleepwalk" } else { "walk" }.into());
+    let gait = w
+        .errand
+        .as_ref()
+        .and_then(|e| e.gait.clone())
+        .unwrap_or_else(|| if w.asleep { "sleepwalk" } else { "walk" }.into());
     w.set_gait(&gait, Some(heading_to(dx, dy)), fx);
     w.place(fx);
 }
@@ -425,8 +490,15 @@ pub fn random() -> f64 {
     static STATE: AtomicU64 = AtomicU64::new(0);
     let mut x = STATE.load(Ordering::Relaxed);
     if x == 0 {
-        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1);
-        x = std::collections::hash_map::RandomState::new().build_hasher().finish() ^ nanos | 1;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(1);
+        x = std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish()
+            ^ nanos
+            | 1;
     }
     x ^= x << 13;
     x ^= x >> 7;
@@ -461,7 +533,13 @@ pub fn after(app: &AppHandle, ms: u64, f: impl FnOnce(&AppHandle) + Send + 'stat
 /// It's getting up to leave: the walker window is made now, hidden, so it's loaded and drawn
 /// by the time the character has stood up and turned (go()). A visitor with no desk:
 /// `at` is where its feet start, `k` its size.
-fn prepare(app: &AppHandle, id: &str, asleep: bool, at: Option<(f64, f64)>, k: Option<f64>) -> bool {
+fn prepare(
+    app: &AppHandle,
+    id: &str,
+    asleep: bool,
+    at: Option<(f64, f64)>,
+    k: Option<f64>,
+) -> bool {
     // (one at a time: wander-prep and wander can come close together)
     static BUILD: Mutex<()> = Mutex::new(());
     let _one = BUILD.lock().unwrap_or_else(|e| e.into_inner());
@@ -471,7 +549,10 @@ fn prepare(app: &AppHandle, id: &str, asleep: bool, at: Option<(f64, f64)>, k: O
     let desk = desk_of(app, id);
     let feet = match (at, desk) {
         (Some(p), _) => p,
-        (None, Some(d)) => (d.rect.x as f64 + d.rect.w as f64 * 0.55, d.rect.y as f64 + d.rect.h as f64 * 0.85), // (roughly; go() puts it exactly)
+        (None, Some(d)) => (
+            d.rect.x as f64 + d.rect.w as f64 * 0.55,
+            d.rect.y as f64 + d.rect.h as f64 * 0.85,
+        ), // (roughly; go() puts it exactly)
         (None, None) => return false,
     };
     let k = k.unwrap_or_else(|| size_of(app, id));
@@ -483,7 +564,12 @@ fn prepare(app: &AppHandle, id: &str, asleep: bool, at: Option<(f64, f64)>, k: O
     if app.get_webview_window(&label).is_some() {
         return false; // (the last one's still closing)
     }
-    let name = with(app, |st| st.store.get(id).and_then(|c| c["name"].as_str().map(str::to_string))).unwrap_or_else(|| "C-Bot".into());
+    let name = with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["name"].as_str().map(str::to_string))
+    })
+    .unwrap_or_else(|| "C-Bot".into());
     let built = views::builder(app, &label, "walker", &[("id", id)])
         .title(format!("{name} (out for a walk)"))
         .transparent(true)
@@ -513,7 +599,15 @@ fn prepare(app: &AppHandle, id: &str, asleep: bool, at: Option<(f64, f64)>, k: O
         }
     };
     veil(app, hwnd, true);
-    window::set_bounds(hwnd, Rect { x: x.round() as i32, y: y.round() as i32, w: bw, h: bh });
+    window::set_bounds(
+        hwnd,
+        Rect {
+            x: x.round() as i32,
+            y: y.round() as i32,
+            w: bw,
+            h: bh,
+        },
+    );
     let (app2, id2) = (app.clone(), id.to_string());
     window.on_window_event(move |e| {
         if let tauri::WindowEvent::Destroyed = e {
@@ -526,11 +620,35 @@ fn prepare(app: &AppHandle, id: &str, asleep: bool, at: Option<(f64, f64)>, k: O
     });
     let gait = if asleep { "sleepwalk" } else { "walk" };
     let w = Walker {
-        hwnd, label, k, s, bw, bh, x, y, asleep,
-        gait: gait.into(), heading: "right".into(), // (it sets off walking right, as it turned at the desk)
-        target: (x, y), pause: Pause::No, held: None, errand: None, roam_until: None, home: None,
-        going: false, ready: false, shown: false, docking: None, npc: false, look: None,
-        through: None, over: false, cancel_at: Some(Instant::now() + CANCEL_WAIT), handoff_at: None, forwarded: None, eyes: None,
+        hwnd,
+        label,
+        k,
+        s,
+        bw,
+        bh,
+        x,
+        y,
+        asleep,
+        gait: gait.into(),
+        heading: "right".into(), // (it sets off walking right, as it turned at the desk)
+        target: (x, y),
+        pause: Pause::No,
+        held: None,
+        errand: None,
+        roam_until: None,
+        home: None,
+        going: false,
+        ready: false,
+        shown: false,
+        docking: None,
+        npc: false,
+        look: None,
+        through: None,
+        over: false,
+        cancel_at: Some(Instant::now() + CANCEL_WAIT),
+        handoff_at: None,
+        forwarded: None,
+        eyes: None,
     };
     ws(app, |m| m.insert(id.to_string(), w));
     tray::refresh(app);
@@ -540,7 +658,13 @@ fn prepare(app: &AppHandle, id: &str, asleep: bool, at: Option<(f64, f64)>, k: O
 /// Stood up and turned at the desk, feet on `feet` (desk-window CSS px): put the walker's
 /// feet on that very spot and take over as soon as it's drawn (at once, if it already is).
 /// An errand: where to (screen px) and how.
-fn go(app: &AppHandle, id: &str, asleep: bool, feet: Option<(f64, f64)>, errand: Option<(Option<(f64, f64)>, Errand)>) -> bool {
+fn go(
+    app: &AppHandle,
+    id: &str,
+    asleep: bool,
+    feet: Option<(f64, f64)>,
+    errand: Option<(Option<(f64, f64)>, Errand)>,
+) -> bool {
     if !has(app, id) && !prepare(app, id, asleep, None, None) {
         return false;
     }
@@ -557,14 +681,20 @@ fn go(app: &AppHandle, id: &str, asleep: bool, feet: Option<(f64, f64)>, errand:
         let wa = w.area(desk.as_ref());
         w.target = (
             (w.x + rand_in(260.0, 520.0) * w.k * w.s).min((wa.right() - w.bw) as f64),
-            (w.y + rand_in(-60.0, 60.0) * w.s).max(wa.y as f64).min((wa.bottom() - w.bh) as f64),
+            (w.y + rand_in(-60.0, 60.0) * w.s)
+                .max(wa.y as f64)
+                .min((wa.bottom() - w.bh) as f64),
         );
         let on_errand = errand.is_some();
         if let Some((Some(to), e)) = errand {
             w.errand_to(to, e);
         }
         // (an errand's own code sends it home)
-        w.roam_until = if on_errand { None } else { Some(now + Duration::from_secs_f64(rand_in(ROAM.0, ROAM.1))) };
+        w.roam_until = if on_errand {
+            None
+        } else {
+            Some(now + Duration::from_secs_f64(rand_in(ROAM.0, ROAM.1)))
+        };
         if w.ready {
             take_over(id, w, fx);
         } else {
@@ -605,7 +735,10 @@ pub fn arrive(app: &AppHandle, id: &str, from: (f64, f64), look: Value, k: f64) 
 /// back from their desk are dealt with.
 fn tick(app: &AppHandle, now: Instant) {
     let ids: Vec<String> = ws(app, |m| m.keys().cloned().collect());
-    let desks: HashMap<String, Option<Desk>> = ids.iter().map(|id| (id.clone(), desk_of(app, id))).collect();
+    let desks: HashMap<String, Option<Desk>> = ids
+        .iter()
+        .map(|id| (id.clone(), desk_of(app, id)))
+        .collect();
     let mut fx = vec![];
     ws(app, |m| {
         for (id, w) in m.iter_mut() {
@@ -627,7 +760,13 @@ fn tick(app: &AppHandle, now: Instant) {
                 }
                 continue;
             }
-            step(id, w, now, desks.get(id).copied().flatten().as_ref(), &mut fx);
+            step(
+                id,
+                w,
+                now,
+                desks.get(id).copied().flatten().as_ref(),
+                &mut fx,
+            );
         }
     });
     run(app, fx);
@@ -639,14 +778,23 @@ fn clock(app: AppHandle) {
     let mut checked = Instant::now();
     loop {
         let out = ws(&app, |m| !m.is_empty());
-        thread::sleep(if out { TICK } else { Duration::from_millis(250) });
+        thread::sleep(if out {
+            TICK
+        } else {
+            Duration::from_millis(250)
+        });
         let now = Instant::now();
         if now.duration_since(checked) >= Duration::from_secs(1) {
             checked = now;
             input::idle_secs(); // (keeps the away-from-the-PC clock accurate)
             // Above the robots' windows (main.js keepOnTop): a robot that wakes up comes to the
             // front, and its window, see-through as it is, would hide a walker behind it.
-            for hwnd in ws(&app, |m| m.values().filter(|w| w.shown).map(|w| w.hwnd).collect::<Vec<_>>()) {
+            for hwnd in ws(&app, |m| {
+                m.values()
+                    .filter(|w| w.shown)
+                    .map(|w| w.hwnd)
+                    .collect::<Vec<_>>()
+            }) {
                 window::set_topmost(hwnd);
                 if window::is_veiled(hwnd) {
                     veil(&app, hwnd, false); // (out: it's seen, whatever became of the first unveiling)
@@ -668,7 +816,9 @@ fn errand_from(id: &str, v: &Value) -> (Option<(f64, f64)>, Errand) {
         gait: v["gait"].as_str().map(str::to_string),
         speed_k: v["speedK"].as_f64().unwrap_or(1.0),
         face: v["face"].as_str().map(str::to_string),
-        on_arrive: Some(Box::new(move |app: &AppHandle| social::errand_arrived(app, &who))),
+        on_arrive: Some(Box::new(move |app: &AppHandle| {
+            social::errand_arrived(app, &who)
+        })),
     };
     (to, errand)
 }
@@ -691,26 +841,64 @@ mod tests {
     fn only_the_character_catches_the_mouse() {
         let (bw, bh) = (190.0, 250.0);
         let feet = (bw / 2.0, bh * FEET); // (225)
-        assert!(over_character(0.0, 0.0, bw, bh, 1.0, (feet.0, feet.1 - 100.0)));
-        assert!(!over_character(0.0, 0.0, bw, bh, 1.0, (feet.0 + 60.0, feet.1 - 100.0)));
+        assert!(over_character(
+            0.0,
+            0.0,
+            bw,
+            bh,
+            1.0,
+            (feet.0, feet.1 - 100.0)
+        ));
+        assert!(!over_character(
+            0.0,
+            0.0,
+            bw,
+            bh,
+            1.0,
+            (feet.0 + 60.0, feet.1 - 100.0)
+        ));
         assert!(!over_character(0.0, 0.0, bw, bh, 1.0, (feet.0, 20.0)));
         // twice as big: twice as wide a catch
-        assert!(over_character(0.0, 0.0, bw * 2.0, bh * 2.0, 2.0, (bw + 90.0, bh * 2.0 * FEET - 10.0)));
+        assert!(over_character(
+            0.0,
+            0.0,
+            bw * 2.0,
+            bh * 2.0,
+            2.0,
+            (bw + 90.0, bh * 2.0 * FEET - 10.0)
+        ));
     }
 
     #[test]
     fn dropped_near_its_desk_docks() {
-        let desk = Rect { x: 1000, y: 600, w: 300, h: 290 };
+        let desk = Rect {
+            x: 1000,
+            y: 600,
+            w: 300,
+            h: 290,
+        };
         // its middle over the desk
         assert!(over_desk(1050.0, 600.0, 190.0, 250.0, desk, 24.0));
         // just off the edge, inside the pad
-        assert!(over_desk(1300.0 - 95.0 + 20.0, 600.0, 190.0, 250.0, desk, 24.0));
+        assert!(over_desk(
+            1300.0 - 95.0 + 20.0,
+            600.0,
+            190.0,
+            250.0,
+            desk,
+            24.0
+        ));
         assert!(!over_desk(500.0, 600.0, 190.0, 250.0, desk, 24.0));
     }
 
     #[test]
     fn kept_on_the_screen() {
-        let wa = Rect { x: 0, y: 0, w: 1920, h: 1040 };
+        let wa = Rect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1040,
+        };
         assert_eq!(clamp_into(-50.0, 2000.0, 190, 250, wa), (0.0, 790.0));
         assert_eq!(clamp_into(100.0, 100.0, 190, 250, wa), (100.0, 100.0));
     }

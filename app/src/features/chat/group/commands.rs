@@ -12,7 +12,12 @@ pub fn groupchat_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Va
 
 /// A button or the box in the chat window: start, chime in, wrap up, stop, copy…
 #[tauri::command(async)]
-pub fn groupchat_act(app: AppHandle, window: tauri::WebviewWindow, action: String, p: Option<Value>) -> Result<Value, String> {
+pub fn groupchat_act(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    p: Option<Value>,
+) -> Result<Value, String> {
     only(&window, LABEL)?;
     Ok(act_on(&app, &action, &p.unwrap_or_default()))
 }
@@ -21,7 +26,13 @@ pub fn groupchat_act(app: AppHandle, window: tauri::WebviewWindow, action: Strin
 #[tauri::command(async)]
 pub fn meeting_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
     only(&window, ROOM)?;
-    Ok(act(&app, |g, _| g.chat.as_ref().filter(|c| c.room_open).and_then(|c| c.room_info.clone()).unwrap_or(Value::Null)))
+    Ok(act(&app, |g, _| {
+        g.chat
+            .as_ref()
+            .filter(|c| c.room_open)
+            .and_then(|c| c.room_info.clone())
+            .unwrap_or(Value::Null)
+    }))
 }
 
 pub(super) fn act_on(app: &AppHandle, action: &str, p: &Value) -> Value {
@@ -49,15 +60,29 @@ pub(super) fn act_on(app: &AppHandle, action: &str, p: &Value) -> Value {
             json!(true)
         }),
         "copy" => {
-            let t = act(app, |g, _| g.chat.as_ref().and_then(|c| Some(format!("{}\n\n{}", c.topic, c.summary.as_ref().filter(|s| !s.is_empty())?))));
+            let t = act(app, |g, _| {
+                g.chat.as_ref().and_then(|c| {
+                    Some(format!(
+                        "{}\n\n{}",
+                        c.topic,
+                        c.summary.as_ref().filter(|s| !s.is_empty())?
+                    ))
+                })
+            });
             json!(t.is_some_and(|t| clipboard::set_text(&t)))
         }
         "copy-all" => {
             let t = act(app, |g, _| {
                 let c = g.chat.as_ref()?;
                 let mut lines = vec![format!("Group chat: {}", c.topic), String::new()];
-                for m in c.log.iter().filter(|m| !m["text"].as_str().unwrap_or("").is_empty() && m["who"] != "system") {
-                    let who = if m["who"] == "summary" { format!("Summary ({})", text(&m["name"])) } else { text(&m["name"]) };
+                for m in c.log.iter().filter(|m| {
+                    !m["text"].as_str().unwrap_or("").is_empty() && m["who"] != "system"
+                }) {
+                    let who = if m["who"] == "summary" {
+                        format!("Summary ({})", text(&m["name"]))
+                    } else {
+                        text(&m["name"])
+                    };
                     lines.push(format!("{who}: {}", text(&m["text"])));
                 }
                 Some(lines.join("\n\n"))
@@ -65,7 +90,15 @@ pub(super) fn act_on(app: &AppHandle, action: &str, p: &Value) -> Value {
             json!(t.is_some_and(|t| clipboard::set_text(&t)))
         }
         "save-note" => {
-            let t = act(app, |g, _| g.chat.as_ref().and_then(|c| Some(format!("👥 {}\n\n{}", c.topic, c.summary.as_ref().filter(|s| !s.is_empty())?))));
+            let t = act(app, |g, _| {
+                g.chat.as_ref().and_then(|c| {
+                    Some(format!(
+                        "👥 {}\n\n{}",
+                        c.topic,
+                        c.summary.as_ref().filter(|s| !s.is_empty())?
+                    ))
+                })
+            });
             let Some(t) = t else { return json!(false) };
             let note = notes::add(app, &t, "Robot group chat");
             json!(!note.is_null() && note != false)

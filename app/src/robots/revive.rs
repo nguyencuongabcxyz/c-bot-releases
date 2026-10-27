@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
-use crate::platform::{presence, webview, window};
 use crate::platform::webview::Failure;
+use crate::platform::{presence, webview, window};
 use crate::robots;
 use crate::runtime::with;
 
@@ -48,7 +48,11 @@ struct Pulse {
 
 impl Pulse {
     fn new() -> Self {
-        Pulse { at: Instant::now(), hidden_since: None, nudged: None }
+        Pulse {
+            at: Instant::now(),
+            hidden_since: None,
+            nudged: None,
+        }
     }
 }
 
@@ -101,7 +105,9 @@ pub fn rebuild(app: &AppHandle, id: &str, why: &str) {
         ok
     });
     if !allowed {
-        eprintln!("[revive] {id}: {why}, but it was built again {REBUILDS} times lately; leaving it be");
+        eprintln!(
+            "[revive] {id}: {why}, but it was built again {REBUILDS} times lately; leaving it be"
+        );
         return;
     }
     eprintln!("[revive] {id}: {why}; building its window again");
@@ -131,7 +137,9 @@ pub fn rebuild(app: &AppHandle, id: &str, why: &str) {
 /// (each hears it too); the rest are closed, and their features make them again when wanted.
 fn clear_dead_windows(app: &AppHandle) {
     let first = rv(app, |r| {
-        let first = r.browser_gone.is_none_or(|t| t.elapsed() > BROWSER_GONE_ONCE);
+        let first = r
+            .browser_gone
+            .is_none_or(|t| t.elapsed() > BROWSER_GONE_ONCE);
         if first {
             r.browser_gone = Some(Instant::now());
         }
@@ -172,7 +180,11 @@ pub fn robot_alive(app: AppHandle, window: WebviewWindow, hidden: bool) -> Resul
     rv(&app, |r| {
         let p = r.pulses.entry(id).or_insert_with(Pulse::new);
         p.at = Instant::now();
-        p.hidden_since = if hidden { p.hidden_since.or(Some(p.at)) } else { None };
+        p.hidden_since = if hidden {
+            p.hidden_since.or(Some(p.at))
+        } else {
+            None
+        };
     });
     Ok(())
 }
@@ -198,7 +210,9 @@ pub fn setup(app: &AppHandle) {
             last = Instant::now();
             // asleep or locked, the pages may well say nothing, or that they're hidden
             if slept || presence::locked() {
-                rv(&app, |r| r.pulses.values_mut().for_each(|p| *p = Pulse::new()));
+                rv(&app, |r| {
+                    r.pulses.values_mut().for_each(|p| *p = Pulse::new())
+                });
                 continue;
             }
             let mut silent = vec![];
@@ -214,7 +228,10 @@ pub fn setup(app: &AppHandle) {
                     } else if p.at.elapsed() > SILENT {
                         *p = Pulse::new();
                         silent.push(id.clone());
-                    } else if !away && p.hidden_since.is_some_and(|t| t.elapsed() > HIDDEN_FOR) && p.nudged.is_none_or(|t| t.elapsed() > NUDGE_EVERY) {
+                    } else if !away
+                        && p.hidden_since.is_some_and(|t| t.elapsed() > HIDDEN_FOR)
+                        && p.nudged.is_none_or(|t| t.elapsed() > NUDGE_EVERY)
+                    {
                         p.nudged = Some(Instant::now());
                         nudges.push(id.clone());
                     }

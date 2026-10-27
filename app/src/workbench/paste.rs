@@ -7,9 +7,9 @@ use std::io::Cursor;
 use std::path::Path;
 
 use base64::Engine;
-use image::{ImageFormat, ImageReader};
 use image::imageops::FilterType;
-use serde_json::{json, Value};
+use image::{ImageFormat, ImageReader};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 
 use crate::platform::clipboard;
@@ -25,7 +25,11 @@ const MAX_FILES: usize = 20;
 /// (what nativeImage.resize did with just one side given: the other follows).
 pub fn thumb_size(w: u32, h: u32) -> (u32, u32) {
     let (w, h) = (w.max(1) as f64, h.max(1) as f64);
-    let (tw, th) = if h > w { (w * 64.0 / h, 64.0) } else { (96.0, h * 96.0 / w) };
+    let (tw, th) = if h > w {
+        (w * 64.0 / h, 64.0)
+    } else {
+        (96.0, h * 96.0 / w)
+    };
     ((tw.round() as u32).max(1), (th.round() as u32).max(1))
 }
 
@@ -35,19 +39,31 @@ pub fn thumbnail(path: &str) -> Option<String> {
     if !meta.is_file() || meta.len() >= MAX_THUMB_SOURCE {
         return None;
     }
-    let img = ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?;
+    let img = ImageReader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()?
+        .decode()
+        .ok()?;
     let (w, h) = thumb_size(img.width(), img.height());
     let small = img.resize_exact(w, h, FilterType::Triangle);
     let mut png = Cursor::new(Vec::new());
     small.write_to(&mut png, ImageFormat::Png).ok()?;
-    Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png.into_inner())))
+    Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png.into_inner())
+    ))
 }
 
 /// A file chip's entry (files::inspect) with its preview, when it's a picture
 /// (main.js inspectPath with thumb).
 pub fn with_thumb(mut entry: Value) -> Value {
     let picture = entry["isImage"].as_bool().unwrap_or(false);
-    if let Some(thumb) = entry["path"].as_str().filter(|_| picture).and_then(thumbnail) {
+    if let Some(thumb) = entry["path"]
+        .as_str()
+        .filter(|_| picture)
+        .and_then(thumbnail)
+    {
         entry["thumb"] = json!(thumb);
     }
     entry
@@ -68,9 +84,21 @@ pub fn has_something() -> bool {
 fn entries(app: &AppHandle) -> Value {
     if let Some(png) = clipboard::image_png() {
         let dir = with(app, |st| st.data_dir.join("attachments"));
-        return Value::Array(files::save_paste(&dir, &png, "png").map(with_thumb).into_iter().collect());
+        return Value::Array(
+            files::save_paste(&dir, &png, "png")
+                .map(with_thumb)
+                .into_iter()
+                .collect(),
+        );
     }
-    Value::Array(clipboard::files().iter().filter(|p| Path::new(p).is_absolute()).take(MAX_FILES).filter_map(|p| inspect(p)).collect())
+    Value::Array(
+        clipboard::files()
+            .iter()
+            .filter(|p| Path::new(p).is_absolute())
+            .take(MAX_FILES)
+            .filter_map(|p| inspect(p))
+            .collect(),
+    )
 }
 
 /// A robot's "Paste screenshot / file from clipboard", or Ctrl+V with files copied in Explorer.
@@ -100,10 +128,14 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cbot-thumb-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("wide.png");
-        image::RgbImage::from_pixel(300, 100, image::Rgb([200, 30, 30])).save(&file).unwrap();
+        image::RgbImage::from_pixel(300, 100, image::Rgb([200, 30, 30]))
+            .save(&file)
+            .unwrap();
         let url = thumbnail(&file.to_string_lossy()).expect("a preview");
         assert!(url.starts_with("data:image/png;base64,"));
-        let bytes = base64::engine::general_purpose::STANDARD.decode(&url["data:image/png;base64,".len()..]).unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&url["data:image/png;base64,".len()..])
+            .unwrap();
         let small = image::load_from_memory(&bytes).unwrap();
         assert_eq!((small.width(), small.height()), (96, 32));
         // not a picture, or not there

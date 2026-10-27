@@ -11,21 +11,33 @@ pub fn around(near: Option<Rect>) -> (Rect, Monitor) {
         let (x, y) = window::cursor();
         Rect { x, y, w: 0, h: 0 }
     });
-    (near, window::monitor_near(near.x + near.w / 2, near.y + near.h / 2))
+    (
+        near,
+        window::monitor_near(near.x + near.w / 2, near.y + near.h / 2),
+    )
 }
 
 /// Its size in physical px (CSS px at `scale`), no taller than the work area leaves room for.
 fn sized(wa: Rect, scale: f64, size: (f64, f64), gap: i32) -> (i32, i32) {
-    ((size.0 * scale).round() as i32, ((size.1 * scale).round() as i32).min(wa.h - 2 * gap))
+    (
+        (size.0 * scale).round() as i32,
+        ((size.1 * scale).round() as i32).min(wa.h - 2 * gap),
+    )
 }
 
 /// Beside `near`, on the side with room (left first), bottoms lined up; inside `wa`.
 pub fn beside(near: Rect, wa: Rect, scale: f64, size: (f64, f64), gap: f64) -> Rect {
     let gap = (gap * scale).round() as i32;
     let (w, h) = sized(wa, scale, size, gap);
-    let x = if near.x - w - gap >= wa.x { near.x - w - gap } else { near.right() + gap };
+    let x = if near.x - w - gap >= wa.x {
+        near.x - w - gap
+    } else {
+        near.right() + gap
+    };
     let x = x.max(wa.x + gap).min(wa.right() - w - gap);
-    let y = (near.bottom() - h).max(wa.y + gap).min(wa.bottom() - h - gap);
+    let y = (near.bottom() - h)
+        .max(wa.y + gap)
+        .min(wa.bottom() - h - gap);
     Rect { x, y, w, h }
 }
 
@@ -38,7 +50,11 @@ pub fn above_or_beside(near: Rect, wa: Rect, scale: f64, size: (f64, f64), gap: 
     let (x, y) = if near.y - h - gap >= wa.y {
         (clamp_x(near.x + near.w / 2 - w / 2), near.y - h - gap)
     } else {
-        let x = if near.x - w - gap >= wa.x { near.x - w - gap } else { near.x + near.w + gap };
+        let x = if near.x - w - gap >= wa.x {
+            near.x - w - gap
+        } else {
+            near.x + near.w + gap
+        };
         (clamp_x(x), clamp_y(near.y + near.h - h))
     };
     Rect { x, y, w, h }

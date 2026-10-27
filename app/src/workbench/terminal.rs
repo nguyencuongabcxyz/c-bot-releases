@@ -8,12 +8,12 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Child;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agents::claude;
@@ -21,8 +21,8 @@ use crate::agents::claude::{locate, transcripts};
 use crate::features::chat;
 use crate::platform::process;
 use crate::robots;
-use crate::runtime::{State, with};
 use crate::runtime::util::patch;
+use crate::runtime::{State, with};
 use crate::ui::workshop;
 
 const POLL: Duration = Duration::from_millis(700);
@@ -39,21 +39,46 @@ pub fn tab_of(st: &State, id: &str) -> Option<String> {
 /// Characters that would break out of cmd.exe quoting.
 /// Claude Code's arguments: the conversation resumed, its model and permission mode.
 fn claude_args(session_id: &str, model: &str, permission_mode: &str) -> Vec<String> {
-    let mode = if permission_mode == "default" { "" } else { permission_mode };
+    let mode = if permission_mode == "default" {
+        ""
+    } else {
+        permission_mode
+    };
     // ids, model names and aliases (opus[1m]) and modes only: a value with anything else in it
     // is left out together with its flag, so Claude Code still starts (on its own default)
-    let fits = |v: &str| !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || "_.:-[]".contains(c));
-    [("--resume", session_id), ("--model", model), ("--permission-mode", mode)]
-        .into_iter()
-        .filter(|(_, v)| fits(v))
-        .map(|(flag, v)| format!("{flag} {v}"))
-        .collect()
+    let fits = |v: &str| {
+        !v.is_empty()
+            && v.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_.:-[]".contains(c))
+    };
+    [
+        ("--resume", session_id),
+        ("--model", model),
+        ("--permission-mode", mode),
+    ]
+    .into_iter()
+    .filter(|(_, v)| fits(v))
+    .map(|(flag, v)| format!("{flag} {v}"))
+    .collect()
 }
 
 /// Full Claude Code in a terminal window of its own (platform::process::in_terminal): its
 /// Child ends when that window closes.
-fn launch(claude_path: &str, folder: &str, session_id: &str, model: &str, permission_mode: &str, title: &str) -> std::io::Result<Child> {
-    process::in_terminal(title, folder, claude_path, &claude_args(session_id, model, permission_mode), claude::clean_env())
+fn launch(
+    claude_path: &str,
+    folder: &str,
+    session_id: &str,
+    model: &str,
+    permission_mode: &str,
+    title: &str,
+) -> std::io::Result<Child> {
+    process::in_terminal(
+        title,
+        folder,
+        claude_path,
+        &claude_args(session_id, model, permission_mode),
+        claude::clean_env(),
+    )
 }
 
 // ---------------------------------------------------------------- following its transcript
@@ -83,7 +108,15 @@ pub struct Mirror {
 
 impl Mirror {
     pub fn new(dir: PathBuf, session_id: Option<String>, since: SystemTime) -> Mirror {
-        Mirror { dir, session_id, since, offset: None, partial: vec![], last_line: None, said_idle: true }
+        Mirror {
+            dir,
+            session_id,
+            since,
+            offset: None,
+            partial: vec![],
+            last_line: None,
+            said_idle: true,
+        }
     }
 
     fn file(&self, id: &str) -> PathBuf {
@@ -93,14 +126,23 @@ impl Mirror {
     // The terminal either keeps appending to our session or starts a new one (a fresh
     // robot, or /clear in the terminal): follow whichever appeared since launch.
     fn pick_session(&mut self, out: &mut Vec<Seen>) {
-        let Ok(entries) = fs::read_dir(&self.dir) else { return };
-        let since = self.since.checked_sub(Duration::from_secs(2)).unwrap_or(self.since);
+        let Ok(entries) = fs::read_dir(&self.dir) else {
+            return;
+        };
+        let since = self
+            .since
+            .checked_sub(Duration::from_secs(2))
+            .unwrap_or(self.since);
         let mut newest: Option<(String, SystemTime)> = None;
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            let Some(id) = name.strip_suffix(".jsonl") else { continue };
+            let Some(id) = name.strip_suffix(".jsonl") else {
+                continue;
+            };
             let Ok(meta) = e.metadata() else { continue };
-            let (Ok(born), Ok(modified)) = (meta.created(), meta.modified()) else { continue };
+            let (Ok(born), Ok(modified)) = (meta.created(), meta.modified()) else {
+                continue;
+            };
             if born >= since && newest.as_ref().is_none_or(|(_, m)| modified > *m) {
                 newest = Some((id.to_string(), modified));
             }
@@ -119,9 +161,13 @@ impl Mirror {
     pub fn poll(&mut self) -> Vec<Seen> {
         let mut out = vec![];
         self.pick_session(&mut out);
-        let Some(id) = self.session_id.clone() else { return out };
+        let Some(id) = self.session_id.clone() else {
+            return out;
+        };
         let file = self.file(&id);
-        let Ok(size) = fs::metadata(&file).map(|m| m.len()) else { return out };
+        let Ok(size) = fs::metadata(&file).map(|m| m.len()) else {
+            return out;
+        };
         let offset = *self.offset.get_or_insert(size); // an existing conversation: only what happens from now on
         if size > offset {
             let mut buf = vec![0u8; (size - offset).min(READ_MAX) as usize];
@@ -161,15 +207,27 @@ fn line_events(line: &str) -> Option<Vec<Seen>> {
     }
     let content = &o["message"]["content"];
     if ty == "user" {
-        let typed = content.is_string() || content.as_array().is_some_and(|a| a.iter().any(|b| b["type"] == "text"));
+        let typed = content.is_string()
+            || content
+                .as_array()
+                .is_some_and(|a| a.iter().any(|b| b["type"] == "text"));
         return Some(if typed { vec![Seen::Prompt] } else { vec![] });
     }
     let mut out = vec![];
     for b in content.as_array().into_iter().flatten() {
         match b["type"].as_str() {
             Some("tool_use") if b["name"] == "AskUserQuestion" => out.push(Seen::Question),
-            Some("tool_use") => out.push(Seen::Tool { name: b["name"].as_str().unwrap_or("").to_string(), input: b.get("input").filter(|i| !i.is_null()).cloned().unwrap_or(json!({})) }),
-            Some("text") if !b["text"].as_str().unwrap_or("").trim().is_empty() => out.push(Seen::Text),
+            Some("tool_use") => out.push(Seen::Tool {
+                name: b["name"].as_str().unwrap_or("").to_string(),
+                input: b
+                    .get("input")
+                    .filter(|i| !i.is_null())
+                    .cloned()
+                    .unwrap_or(json!({})),
+            }),
+            Some("text") if !b["text"].as_str().unwrap_or("").trim().is_empty() => {
+                out.push(Seen::Text)
+            }
             _ => {}
         }
     }
@@ -203,12 +261,22 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
     let Some((c, tab, open, busy, settings)) = with(app, |st| {
         let c = st.store.get(id)?.clone();
         let tab = st.store.tab(id, tab_id)?.clone();
-        Some((c, tab, st.terminals.get(id).cloned(), chat::is_busy(st, id, tab_id), st.store.settings().clone()))
+        Some((
+            c,
+            tab,
+            st.terminals.get(id).cloned(),
+            chat::is_busy(st, id, tab_id),
+            st.store.settings().clone(),
+        ))
     }) else {
         return json!({ "ok": false, "error": "Unknown conversation" });
     };
     if let Some(open) = open {
-        return if open == tab_id { json!({ "ok": true, "already": true }) } else { json!({ "ok": false, "error": "Another tab already has the terminal open. Close it first." }) };
+        return if open == tab_id {
+            json!({ "ok": true, "already": true })
+        } else {
+            json!({ "ok": false, "error": "Another tab already has the terminal open. Close it first." })
+        };
     }
     if busy {
         return json!({ "ok": false, "error": "I'm still answering here. Stop me first, then we can move to the terminal." });
@@ -224,16 +292,31 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
     let session_id = tab["sessionId"].as_str().unwrap_or("").to_string();
     let title = format!("C-Bot - {}", c["name"].as_str().unwrap_or("Robo"));
     let since = SystemTime::now();
-    let mut child = match launch(&claude_path.to_string_lossy(), &folder, &session_id, c["model"].as_str().unwrap_or(""), chat::mode_of(&c, &tab), &title) {
+    let mut child = match launch(
+        &claude_path.to_string_lossy(),
+        &folder,
+        &session_id,
+        c["model"].as_str().unwrap_or(""),
+        chat::mode_of(&c, &tab),
+        &title,
+    ) {
         Ok(child) => child,
-        Err(e) => return json!({ "ok": false, "error": format!("I couldn't open a terminal: {e}") }),
+        Err(e) => {
+            return json!({ "ok": false, "error": format!("I couldn't open a terminal: {e}") });
+        }
     };
 
     let running = Arc::new(AtomicBool::new(true));
-    with(app, |st| st.terminals.insert(id.to_string(), tab_id.to_string()));
+    with(app, |st| {
+        st.terminals.insert(id.to_string(), tab_id.to_string())
+    });
     open_state(app, |o| o.running.insert(id.to_string(), running.clone()));
     // the robot acts out what Claude does there
-    let mut mirror = Mirror::new(transcripts::project_dir(&folder), Some(session_id).filter(|s| !s.is_empty()), since);
+    let mut mirror = Mirror::new(
+        transcripts::project_dir(&folder),
+        Some(session_id).filter(|s| !s.is_empty()),
+        since,
+    );
     let (app2, id2, tab2) = (app.clone(), id.to_string(), tab_id.to_string());
     thread::spawn(move || {
         while running.load(Ordering::Relaxed) {
@@ -248,11 +331,15 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
                 };
                 match seen {
                     Seen::Session(sid) => with(&app2, |st| {
-                        st.store.update_tab(&id2, &tab2, patch(vec![("sessionId", json!(sid))]));
+                        st.store
+                            .update_tab(&id2, &tab2, patch(vec![("sessionId", json!(sid))]));
                         st.store.remember_session(&id2, &sid);
                     }),
                     Seen::Prompt => say("prompt", json!({})),
-                    Seen::Tool { name, input } => say("tool", json!({ "name": name, "detail": claude::describe_tool(&name, &input) })),
+                    Seen::Tool { name, input } => say(
+                        "tool",
+                        json!({ "name": name, "detail": claude::describe_tool(&name, &input) }),
+                    ),
                     Seen::Question => say("question", json!({})),
                     Seen::Text => say("text", json!({})),
                     Seen::Idle => say("idle", json!({})),
@@ -266,36 +353,61 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         let _ = child.wait();
         close_terminal(&app3, &id3);
     });
-    tell(app, id, tab_id, json!({ "type": "terminal", "state": "opened" }));
+    tell(
+        app,
+        id,
+        tab_id,
+        json!({ "type": "terminal", "state": "opened" }),
+    );
     workshop::notify(app);
     json!({ "ok": true })
 }
 
 /// The terminal closed: pick the conversation back up so the tab shows what happened there.
 fn close_terminal(app: &AppHandle, id: &str) {
-    let Some(tab_id) = with(app, |st| st.terminals.remove(id)) else { return };
+    let Some(tab_id) = with(app, |st| st.terminals.remove(id)) else {
+        return;
+    };
     if let Some(running) = open_state(app, |o| o.running.remove(id)) {
         running.store(false, Ordering::Relaxed);
     }
     let Some((folder, session_id)) = with(app, |st| {
         let c = st.store.get(id)?;
         let tab = st.store.tab(id, &tab_id)?;
-        Some((c["folder"].as_str().unwrap_or("").to_string(), tab["sessionId"].as_str().unwrap_or("").to_string()))
+        Some((
+            c["folder"].as_str().unwrap_or("").to_string(),
+            tab["sessionId"].as_str().unwrap_or("").to_string(),
+        ))
     }) else {
         return;
     };
-    if let Some(session) = Some(session_id).filter(|s| !s.is_empty()).and_then(|sid| transcripts::read(&folder, &sid, 60)) {
+    if let Some(session) = Some(session_id)
+        .filter(|s| !s.is_empty())
+        .and_then(|sid| transcripts::read(&folder, &sid, 60))
+    {
         let history = chat::history_of(&session);
-        with(app, |st| st.store.update_tab(id, &tab_id, patch(vec![("history", history)])));
+        with(app, |st| {
+            st.store
+                .update_tab(id, &tab_id, patch(vec![("history", history)]))
+        });
     }
     robots::send_character(app, id);
-    tell(app, id, &tab_id, json!({ "type": "terminal", "state": "closed" }));
+    tell(
+        app,
+        id,
+        &tab_id,
+        json!({ "type": "terminal", "state": "closed" }),
+    );
     workshop::notify(app);
 }
 
 /// Open that tab's conversation in full Claude Code, in a terminal.
 #[tauri::command(async)]
-pub fn robot_terminal(app: AppHandle, window: tauri::WebviewWindow, tab_id: String) -> Result<Value, String> {
+pub fn robot_terminal(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    tab_id: String,
+) -> Result<Value, String> {
     Ok(open_terminal(&app, &robots::sender(&window)?, &tab_id))
 }
 
@@ -308,34 +420,80 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    fn command_line(claude: &str, folder: &str, session_id: &str, model: &str, mode: &str, title: &str) -> String {
+    fn command_line(
+        claude: &str,
+        folder: &str,
+        session_id: &str,
+        model: &str,
+        mode: &str,
+        title: &str,
+    ) -> String {
         process::terminal_line(title, folder, claude, &claude_args(session_id, model, mode))
     }
 
     #[test]
     fn the_command_line_opens_claude_in_its_folder_safely() {
-        let line = command_line("C:\\Users\\me\\claude.exe", "C:\\work\\my \"app\"", "0f1e2d3c-aaaa-bbbb-cccc-123456789012", "opus", "acceptEdits", "C-Bot - Bo & co");
+        let line = command_line(
+            "C:\\Users\\me\\claude.exe",
+            "C:\\work\\my \"app\"",
+            "0f1e2d3c-aaaa-bbbb-cccc-123456789012",
+            "opus",
+            "acceptEdits",
+            "C-Bot - Bo & co",
+        );
         assert_eq!(
             line,
             "/d /s /c \"start \"C-Bot - Bo  co\" /WAIT /D \"C:\\work\\my app\" \"C:\\Users\\me\\claude.exe\" --resume 0f1e2d3c-aaaa-bbbb-cccc-123456789012 --model opus --permission-mode acceptEdits\""
         );
         // the default mode is left out, and a value with anything odd in it goes with its flag
         let line = command_line("claude", "C:\\w", "", "my model; rm", "default", "t");
-        assert_eq!(line, "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\"\"");
+        assert_eq!(
+            line,
+            "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\"\""
+        );
         let line = command_line("claude", "C:\\w", "s1", "x&y", "plan", "t");
-        assert_eq!(line, "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\" --resume s1 --permission-mode plan\"");
+        assert_eq!(
+            line,
+            "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\" --resume s1 --permission-mode plan\""
+        );
         // a model alias with a context size, as Claude Code takes it
         let line = command_line("claude", "C:\\w", "", "opus[1m]", "", "t");
-        assert_eq!(line, "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\" --model opus[1m]\"");
+        assert_eq!(
+            line,
+            "/d /s /c \"start \"t\" /WAIT /D \"C:\\w\" \"claude\" --model opus[1m]\""
+        );
     }
 
     #[test]
     fn transcript_lines_become_what_the_robot_acts_out() {
-        assert_eq!(line_events(r#"{"type":"user","message":{"content":"hi"}}"#), Some(vec![Seen::Prompt]));
-        assert_eq!(line_events(r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"x"}]}}"#), Some(vec![]));
+        assert_eq!(
+            line_events(r#"{"type":"user","message":{"content":"hi"}}"#),
+            Some(vec![Seen::Prompt])
+        );
+        assert_eq!(
+            line_events(
+                r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"x"}]}}"#
+            ),
+            Some(vec![])
+        );
         let a = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Let me look"},{"type":"tool_use","name":"Read","input":{"file_path":"C:/a/b.rs"}},{"type":"tool_use","name":"AskUserQuestion","input":{}}]}}"#;
-        assert_eq!(line_events(a), Some(vec![Seen::Text, Seen::Tool { name: "Read".into(), input: json!({ "file_path": "C:/a/b.rs" }) }, Seen::Question]));
-        assert_eq!(line_events(r#"{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"x"}]}}"#), None);
+        assert_eq!(
+            line_events(a),
+            Some(vec![
+                Seen::Text,
+                Seen::Tool {
+                    name: "Read".into(),
+                    input: json!({ "file_path": "C:/a/b.rs" })
+                },
+                Seen::Question
+            ])
+        );
+        assert_eq!(
+            line_events(
+                r#"{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"x"}]}}"#
+            ),
+            None
+        );
         assert_eq!(line_events(r#"{"type":"summary"}"#), None);
         assert_eq!(line_events("not json"), None);
     }
@@ -349,7 +507,11 @@ mod tests {
         let sid = "11111111-2222-3333-4444-555555555555";
         let mut f = fs::File::create(dir.join(format!("{sid}.jsonl"))).unwrap();
         writeln!(f, r#"{{"type":"user","message":{{"content":"hello"}}}}"#).unwrap();
-        write!(f, r#"{{"type":"assistant","message":{{"content":[{{"type":"text","#).unwrap(); // (half a line)
+        write!(
+            f,
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"text","#
+        )
+        .unwrap(); // (half a line)
         f.flush().unwrap();
         assert_eq!(m.poll(), vec![Seen::Session(sid.into()), Seen::Prompt]);
         writeln!(f, r#""text":"Hi!"}}]}}}}"#).unwrap();

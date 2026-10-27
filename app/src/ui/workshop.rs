@@ -6,18 +6,18 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::thread;
 
-use serde_json::{json, Map, Value};
-use tauri_plugin_dialog::DialogExt;
-use tauri::{AppHandle, Emitter, Manager};
+use serde_json::{Map, Value, json};
 use tauri::window::Color;
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::agents::claude::locate;
 use crate::agents::personalities;
 use crate::features::{chat, notes};
 use crate::robots;
 use crate::robots::ipc;
-use crate::runtime::{hub, with};
 use crate::runtime::util::patch;
+use crate::runtime::{hub, with};
 use crate::ui::{tray, views};
 
 const LABEL: &str = "manager";
@@ -34,7 +34,9 @@ pub const PERMISSION_MODES: [(&str, &str); 4] = [
 /// build like them (runtime/migrate.rs kit_like).
 const OLD_LOOKS: [&str; 6] = ["robot", "custom", "loopy", "cat", "nerd", "girl"];
 const SIZES: [&str; 4] = ["small", "normal", "large", "huge"];
-const KIT_SLOTS: [&str; 11] = ["head", "face", "top", "body", "arms", "base", "finish", "clothes", "neck", "extra", "specs"];
+const KIT_SLOTS: [&str; 11] = [
+    "head", "face", "top", "body", "arms", "base", "finish", "clothes", "neck", "extra", "specs",
+];
 const KIT_COLOURS: [&str; 5] = ["second", "accent", "eye", "cloth", "hair"];
 
 /// The notes' reminder settings until you change them (notes.js DEFAULTS).
@@ -142,9 +144,13 @@ pub fn mgr_pick_claude(app: AppHandle) -> Value {
 #[tauri::command(async)]
 pub fn mgr_find_claude(app: AppHandle) -> Value {
     let chosen = with(&app, |st| {
-        let chosen = st.store.settings()["claudePath"].as_str().unwrap_or("").to_string();
+        let chosen = st.store.settings()["claudePath"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
         if !chosen.is_empty() && !std::path::Path::new(&chosen).exists() {
-            st.store.update_settings(patch(vec![("claudePath", json!(""))]));
+            st.store
+                .update_settings(patch(vec![("claudePath", json!(""))]));
             return String::new();
         }
         chosen
@@ -157,11 +163,27 @@ pub fn mgr_find_claude(app: AppHandle) -> Value {
 /// Everything the Workshop shows (main.js mgr:state).
 fn state(app: &AppHandle) -> Value {
     let (characters, settings) = with(app, |st| {
-        let characters: Vec<Value> = st.store.list().iter().map(|c| robots::view(st, c)).collect();
+        let characters: Vec<Value> = st
+            .store
+            .list()
+            .iter()
+            .map(|c| robots::view(st, c))
+            .collect();
         (characters, st.store.settings().clone())
     });
-    let personalities: Map<String, Value> = personalities::all().iter().map(|(k, p)| (k.clone(), json!({ "label": p["label"], "emoji": p["emoji"] }))).collect();
-    let modes: Map<String, Value> = PERMISSION_MODES.iter().map(|(k, label)| (k.to_string(), json!(label))).collect();
+    let personalities: Map<String, Value> = personalities::all()
+        .iter()
+        .map(|(k, p)| {
+            (
+                k.clone(),
+                json!({ "label": p["label"], "emoji": p["emoji"] }),
+            )
+        })
+        .collect();
+    let modes: Map<String, Value> = PERMISSION_MODES
+        .iter()
+        .map(|(k, label)| (k.to_string(), json!(label)))
+        .collect();
     let note_ok = hub::hotkey_status(app, "noteHotkey").is_none_or(|(_, ok)| ok);
     let mut out = json!({
         "characters": characters,
@@ -179,7 +201,12 @@ fn state(app: &AppHandle) -> Value {
 
 /// Where Claude Code is, for the Workshop: { claudePath, claudeSource }.
 fn claude_info(app: &AppHandle) -> Value {
-    let chosen = with(app, |st| st.store.settings()["claudePath"].as_str().unwrap_or("").to_string());
+    let chosen = with(app, |st| {
+        st.store.settings()["claudePath"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    });
     match locate::locate(&chosen, false) {
         Some(f) => json!({ "claudePath": f.path.to_string_lossy(), "claudeSource": f.source }),
         None => json!({ "claudePath": null, "claudeSource": "" }),
@@ -191,8 +218,15 @@ fn home() -> PathBuf {
 }
 
 fn pick_folder(app: &AppHandle, current: &str) -> Option<String> {
-    let mut dialog = app.dialog().file().set_title("Which folder should this robot live in?");
-    dialog = dialog.set_directory(if current.is_empty() { home() } else { PathBuf::from(current) });
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("Which folder should this robot live in?");
+    dialog = dialog.set_directory(if current.is_empty() {
+        home()
+    } else {
+        PathBuf::from(current)
+    });
     if let Some(w) = app.get_webview_window(LABEL) {
         dialog = dialog.set_parent(&w);
     }
@@ -213,7 +247,9 @@ fn pick_claude(app: &AppHandle) -> Value {
     if let Some(w) = app.get_webview_window(LABEL) {
         dialog = dialog.set_parent(&w);
     }
-    let Some(file) = dialog.blocking_pick_file().and_then(|f| f.into_path().ok()) else { return json!({ "ok": false }) };
+    let Some(file) = dialog.blocking_pick_file().and_then(|f| f.into_path().ok()) else {
+        return json!({ "ok": false });
+    };
     match locate::check(&file) {
         Ok(version) => {
             let path = file.to_string_lossy().into_owned();
@@ -227,7 +263,9 @@ fn pick_claude(app: &AppHandle) -> Value {
 // ---------------------------------------------------------------- the robots
 
 fn hex_colour(v: &Value) -> bool {
-    v.as_str().is_some_and(|s| s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit()))
+    v.as_str().is_some_and(|s| {
+        s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+    })
 }
 
 /// Only what a robot may have, in the shapes it may have it (main.js sanitize).
@@ -236,7 +274,14 @@ pub fn sanitize(fields: &Value) -> Map<String, Value> {
     let s = |k: &str| fields.get(k).and_then(Value::as_str);
     if let Some(name) = s("name") {
         let name: String = name.trim().chars().take(24).collect();
-        out.insert("name".into(), json!(if name.is_empty() { "Robo".to_string() } else { name }));
+        out.insert(
+            "name".into(),
+            json!(if name.is_empty() {
+                "Robo".to_string()
+            } else {
+                name
+            }),
+        );
     }
     if let Some(folder) = s("folder") {
         out.insert("folder".into(), json!(folder));
@@ -262,9 +307,14 @@ pub fn sanitize(fields: &Value) -> Map<String, Value> {
     if body == "kit" || old {
         out.insert("body".into(), json!("kit"));
     }
-    let kit_given = fields.get("kit").is_some_and(|k| !k.is_null() && k != false && k != "" && k != 0);
+    let kit_given = fields
+        .get("kit")
+        .is_some_and(|k| !k.is_null() && k != false && k != "" && k != 0);
     if old && !kit_given {
-        out.insert("kit".into(), crate::runtime::migrate::kit_like(body, s("color").unwrap_or("")));
+        out.insert(
+            "kit".into(),
+            crate::runtime::migrate::kit_like(body, s("color").unwrap_or("")),
+        );
     }
     // a robot built from parts: a part name per slot and its colours (office3d/kit3d.ts knows the parts)
     if let Some(given) = fields.get("kit").filter(|k| k.is_object() || k.is_array()) {
@@ -325,26 +375,51 @@ fn delete(app: &AppHandle, id: &str) {
 /// A robot changed (the Workshop, or its own menu's personality and permissions): what's
 /// live follows (main.js updateCharacter). Its new self, or null if there's no such robot.
 pub fn update_character(app: &AppHandle, id: &str, changes: Map<String, Value>) -> Value {
-    let Some(before) = with(app, |st| st.store.get(id).cloned()) else { return Value::Null };
-    let str_of = |k: &str| changes.get(k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(str::to_string);
-    let folder_changed = str_of("folder").is_some_and(|f| Some(f.as_str()) != before["folder"].as_str());
-    let new_size = str_of("size").filter(|s| s.as_str() != before["size"].as_str().unwrap_or("normal"));
+    let Some(before) = with(app, |st| st.store.get(id).cloned()) else {
+        return Value::Null;
+    };
+    let str_of = |k: &str| {
+        changes
+            .get(k)
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    let folder_changed =
+        str_of("folder").is_some_and(|f| Some(f.as_str()) != before["folder"].as_str());
+    let new_size =
+        str_of("size").filter(|s| s.as_str() != before["size"].as_str().unwrap_or("normal"));
     let new_mode = str_of("permissionMode");
     with(app, |st| st.store.update(id, changes));
     if folder_changed {
         // a new folder means new conversations: Claude Code keeps them per folder
         chat::close_robot(app, id);
         with(app, |st| {
-            let tabs: Vec<String> = st.store.get(id).and_then(|c| c["tabs"].as_array()).map(|t| t.iter().filter_map(|t| t["id"].as_str().map(str::to_string)).collect()).unwrap_or_default();
+            let tabs: Vec<String> = st
+                .store
+                .get(id)
+                .and_then(|c| c["tabs"].as_array())
+                .map(|t| {
+                    t.iter()
+                        .filter_map(|t| t["id"].as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
             for t in tabs {
-                st.store.update_tab(id, &t, patch(vec![("sessionId", Value::Null)]));
+                st.store
+                    .update_tab(id, &t, patch(vec![("sessionId", Value::Null)]));
             }
         });
     } else if let Some(mode) = new_mode {
         chat::set_permission_mode(app, id, &mode);
     }
     if robots::hwnd_of(app, id).is_some() {
-        let name = with(app, |st| st.store.get(id).and_then(|c| c["name"].as_str().map(str::to_string))).unwrap_or_default();
+        let name = with(app, |st| {
+            st.store
+                .get(id)
+                .and_then(|c| c["name"].as_str().map(str::to_string))
+        })
+        .unwrap_or_default();
         robots::set_title(app, id, &name);
         if let Some(size) = new_size {
             // a new size grows (or shrinks) round its feet

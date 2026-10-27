@@ -22,7 +22,9 @@ pub fn setup(app: &AppHandle) {
             return;
         };
         loop {
-            awake.hold(with(&app, |st| st.chats.values().any(|c| c.session.remote())));
+            awake.hold(with(&app, |st| {
+                st.chats.values().any(|c| c.session.remote())
+            }));
             thread::sleep(EVERY);
         }
     });

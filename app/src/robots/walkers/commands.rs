@@ -6,30 +6,61 @@ use super::*;
 
 /// The walker whose window (walker-<id>) sent a command.
 pub(super) fn walker_of(window: &tauri::WebviewWindow) -> Result<String, String> {
-    window.label().strip_prefix("walker-").map(str::to_string).ok_or_else(|| format!("{} isn't a walker's window", window.label()))
+    window
+        .label()
+        .strip_prefix("walker-")
+        .map(str::to_string)
+        .ok_or_else(|| format!("{} isn't a walker's window", window.label()))
 }
 
 /// The robot gets ready to go for a walk round the screen (asleep: it sleepwalks).
 #[tauri::command(async)]
-pub fn robot_wander_prep(app: AppHandle, window: tauri::WebviewWindow, opts: Value) -> Result<bool, String> {
+pub fn robot_wander_prep(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    opts: Value,
+) -> Result<bool, String> {
     let id = robots::sender(&window)?;
-    Ok(prepare(&app, &id, opts["asleep"].as_bool().unwrap_or(false), None, None))
+    Ok(prepare(
+        &app,
+        &id,
+        opts["asleep"].as_bool().unwrap_or(false),
+        None,
+        None,
+    ))
 }
 
 /// It sets off (from where its feet are, if the page says).
 #[tauri::command(async)]
-pub fn robot_wander(app: AppHandle, window: tauri::WebviewWindow, opts: Value) -> Result<bool, String> {
+pub fn robot_wander(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    opts: Value,
+) -> Result<bool, String> {
     let id = robots::sender(&window)?;
     let f = &opts["feet"];
-    let feet = f["x"].as_f64().zip(f["y"].as_f64()).filter(|(x, y)| x.is_finite() && y.is_finite());
+    let feet = f["x"]
+        .as_f64()
+        .zip(f["y"].as_f64())
+        .filter(|(x, y)| x.is_finite() && y.is_finite());
     // (off to visit another robot's desk: social.rs has its errand)
     let errand = social::errand_for(&app, &id).map(|v| errand_from(&id, &v));
-    Ok(go(&app, &id, opts["asleep"].as_bool().unwrap_or(false), feet, errand))
+    Ok(go(
+        &app,
+        &id,
+        opts["asleep"].as_bool().unwrap_or(false),
+        feet,
+        errand,
+    ))
 }
 
 /// The desk tells its walker something.
 #[tauri::command(async)]
-pub fn robot_walker(app: AppHandle, window: tauri::WebviewWindow, what: String) -> Result<(), String> {
+pub fn robot_walker(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    what: String,
+) -> Result<(), String> {
     let id = robots::sender(&window)?;
     match what.as_str() {
         "wave" => wave(&app, &id),
@@ -45,10 +76,17 @@ pub fn robot_walker(app: AppHandle, window: tauri::WebviewWindow, what: String) 
 #[tauri::command(async)]
 pub fn walker_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
     let id = walker_of(&window)?;
-    let found = ws(&app, |m| m.get(&id).map(|w| (w.look.clone(), w.gait.clone(), w.heading.clone(), w.asleep)));
-    let Some((look, gait, heading, asleep)) = found else { return Ok(json!({})) };
+    let found = ws(&app, |m| {
+        m.get(&id)
+            .map(|w| (w.look.clone(), w.gait.clone(), w.heading.clone(), w.asleep))
+    });
+    let Some((look, gait, heading, asleep)) = found else {
+        return Ok(json!({}));
+    };
     let character = look.or_else(|| with(&app, |st| st.store.get(&id).map(look_of)));
-    Ok(json!({ "character": character, "gait": if gait.is_empty() { "stand".into() } else { gait }, "heading": heading, "asleep": asleep }))
+    Ok(
+        json!({ "character": character, "gait": if gait.is_empty() { "stand".into() } else { gait }, "heading": heading, "asleep": asleep }),
+    )
 }
 
 /// Its first frame is drawn: take over from the desk (now, or once it's told to go).
@@ -66,7 +104,11 @@ pub fn walker_ready(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), 
 
 /// Only the character catches the mouse; the rest of the box lets clicks through.
 #[tauri::command(async)]
-pub fn walker_through(app: AppHandle, window: tauri::WebviewWindow, through: bool) -> Result<(), String> {
+pub fn walker_through(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    through: bool,
+) -> Result<(), String> {
     let id = walker_of(&window)?;
     with_walker(&app, &id, |w, fx| {
         if w.held.is_none() {
@@ -77,7 +119,11 @@ pub fn walker_through(app: AppHandle, window: tauri::WebviewWindow, through: boo
 }
 
 #[tauri::command(async)]
-pub fn walker_drag(app: AppHandle, window: tauri::WebviewWindow, step: Value) -> Result<(), String> {
+pub fn walker_drag(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    step: Value,
+) -> Result<(), String> {
     drag(&app, &walker_of(&window)?, &step);
     Ok(())
 }
@@ -96,7 +142,10 @@ pub fn walker_click(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), 
 /// the press).
 pub(super) fn drag(app: &AppHandle, id: &str, p: &Value) {
     let desk = desk_of(app, id);
-    let (dx, dy) = (p["dx"].as_f64().unwrap_or(0.0), p["dy"].as_f64().unwrap_or(0.0));
+    let (dx, dy) = (
+        p["dx"].as_f64().unwrap_or(0.0),
+        p["dy"].as_f64().unwrap_or(0.0),
+    );
     let now = Instant::now();
     let mut docks = false;
     with_walker(app, id, |w, fx| {
@@ -108,7 +157,9 @@ pub(super) fn drag(app: &AppHandle, id: &str, p: &Value) {
                 w.held = Some((w.x, w.y));
                 if w.errand.is_some() || w.pause == Pause::Forever {
                     let who = id.to_string();
-                    fx.push(Fx::Run(Box::new(move |app: &AppHandle| social::held(app, &who))));
+                    fx.push(Fx::Run(Box::new(move |app: &AppHandle| {
+                        social::held(app, &who)
+                    })));
                 }
                 w.errand = None;
                 w.set_through(false, fx); // carried: it keeps the mouse till it's put down
@@ -121,9 +172,14 @@ pub(super) fn drag(app: &AppHandle, id: &str, p: &Value) {
                 w.y = hy + dy * w.s;
                 w.place(fx);
                 // the desk lights up while it's over it (the desk page shows a "drop me here" glow)
-                let over = desk.is_some_and(|d| over_desk(w.x, w.y, w.bw as f64, w.bh as f64, d.rect, 24.0 * d.s));
+                let over = desk.is_some_and(|d| {
+                    over_desk(w.x, w.y, w.bw as f64, w.bh as f64, d.rect, 24.0 * d.s)
+                });
                 if over != w.over && desk.is_some() {
-                    fx.push(Fx::Robot(id.to_string(), if over { "dock-hover" } else { "dock-leave" }.into()));
+                    fx.push(Fx::Robot(
+                        id.to_string(),
+                        if over { "dock-hover" } else { "dock-leave" }.into(),
+                    ));
                 }
                 w.over = over;
             }
@@ -131,7 +187,9 @@ pub(super) fn drag(app: &AppHandle, id: &str, p: &Value) {
                 if w.held.take().is_none() {
                     return;
                 }
-                let over_now = desk.is_some_and(|d| over_desk(w.x, w.y, w.bw as f64, w.bh as f64, d.rect, 24.0 * d.s));
+                let over_now = desk.is_some_and(|d| {
+                    over_desk(w.x, w.y, w.bw as f64, w.bh as f64, d.rect, 24.0 * d.s)
+                });
                 if w.over || over_now {
                     docks = true;
                     return;

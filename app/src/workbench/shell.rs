@@ -12,13 +12,13 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Sender};
 use std::sync::Mutex;
+use std::sync::mpsc::{self, Sender};
 use std::thread;
 use std::time::Duration;
 
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
-use serde_json::{json, Value};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 use crate::agents::claude;
@@ -57,7 +57,12 @@ impl Shells {
 
     /// Out of the list: the shells picked.
     fn take(&mut self, pick: impl Fn(u64, &Shell) -> bool) -> Vec<Shell> {
-        let sids: Vec<u64> = self.open.iter().filter(|(s, sh)| pick(**s, sh)).map(|(s, _)| *s).collect();
+        let sids: Vec<u64> = self
+            .open
+            .iter()
+            .filter(|(s, sh)| pick(**s, sh))
+            .map(|(s, _)| *s)
+            .collect();
         sids.iter().filter_map(|s| self.open.remove(s)).collect()
     }
 }
@@ -84,7 +89,11 @@ struct Kind {
 
 /// PowerShell 7 when it's installed, else the Windows PowerShell every Windows has.
 fn powershell() -> PathBuf {
-    let on_path = std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join("pwsh.exe")).find(|f| f.is_file()));
+    let on_path = std::env::var_os("PATH").and_then(|p| {
+        std::env::split_paths(&p)
+            .map(|d| d.join("pwsh.exe"))
+            .find(|f| f.is_file())
+    });
     on_path.unwrap_or_else(|| {
         let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
         PathBuf::from(root).join(r"System32\WindowsPowerShell\v1.0\powershell.exe")
@@ -97,7 +106,12 @@ fn git_bash() -> Option<PathBuf> {
     let mut roots: Vec<PathBuf> = vec![];
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path).filter(|d| d.join("git.exe").is_file()) {
-            roots.extend(dir.ancestors().skip(1).take(2).map(std::path::Path::to_path_buf));
+            roots.extend(
+                dir.ancestors()
+                    .skip(1)
+                    .take(2)
+                    .map(std::path::Path::to_path_buf),
+            );
         }
     }
     for var in ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"] {
@@ -108,18 +122,34 @@ fn git_bash() -> Option<PathBuf> {
     {
         roots.push(crate::runtime::paths::local_data().join(r"Programs\Git"));
     }
-    roots.into_iter().map(|r| r.join(r"bin\bash.exe")).find(|f| f.is_file())
+    roots
+        .into_iter()
+        .map(|r| r.join(r"bin\bash.exe"))
+        .find(|f| f.is_file())
 }
 
 /// The kind of shell asked for ("bash": Git Bash; anything else: PowerShell), if there is one.
 fn kind(which: &str) -> Option<Kind> {
     if which == "bash" {
         // (a login shell, as Git Bash opens, that stays in the folder: CHERE_INVOKING)
-        return git_bash().map(|exe| Kind { exe, args: &["--login", "-i"], env: &[("CHERE_INVOKING", "1"), ("TERM", "xterm-256color")], name: "bash".into() });
+        return git_bash().map(|exe| Kind {
+            exe,
+            args: &["--login", "-i"],
+            env: &[("CHERE_INVOKING", "1"), ("TERM", "xterm-256color")],
+            name: "bash".into(),
+        });
     }
     let exe = powershell();
-    let name = exe.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "shell".into());
-    Some(Kind { exe, args: &["-NoLogo"], env: &[], name })
+    let name = exe
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "shell".into());
+    Some(Kind {
+        exe,
+        args: &["-NoLogo"],
+        env: &[],
+        name,
+    })
 }
 
 /// The kinds of shell there are here, for the drawer's menu.
@@ -133,7 +163,12 @@ pub fn robot_shell_kinds() -> Value {
 }
 
 fn size(cols: u16, rows: u16) -> PtySize {
-    PtySize { cols: cols.clamp(20, 500), rows: rows.clamp(4, 300), pixel_width: 0, pixel_height: 0 }
+    PtySize {
+        cols: cols.clamp(20, 500),
+        rows: rows.clamp(4, 300),
+        pixel_width: 0,
+        pixel_height: 0,
+    }
 }
 
 /// What has come in so far as text: all of it but a character cut off at the end, which
@@ -149,7 +184,14 @@ fn take_text(buf: &mut Vec<u8>) -> String {
     text
 }
 
-fn start(app: &AppHandle, id: &str, tab: &str, which: &str, cols: u16, rows: u16) -> Result<(u64, String), String> {
+fn start(
+    app: &AppHandle,
+    id: &str,
+    tab: &str,
+    which: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(u64, String), String> {
     if !with(app, |st| st.store.tab(id, tab).is_some()) {
         return Err("That conversation has closed.".into());
     }
@@ -160,9 +202,16 @@ fn start(app: &AppHandle, id: &str, tab: &str, which: &str, cols: u16, rows: u16
     if shells(app, |s| s.open.values().filter(|sh| sh.robot == id).count()) >= MOST {
         return Err(format!("That's {MOST} shells already: close one first."));
     }
-    let Kind { exe, args, env, name } = kind(which).ok_or("Git Bash isn't installed here (it comes with Git for Windows).")?;
+    let Kind {
+        exe,
+        args,
+        env,
+        name,
+    } = kind(which).ok_or("Git Bash isn't installed here (it comes with Git for Windows).")?;
 
-    let pair = native_pty_system().openpty(size(cols, rows)).map_err(|e| format!("Couldn't make a console: {e}"))?;
+    let pair = native_pty_system()
+        .openpty(size(cols, rows))
+        .map_err(|e| format!("Couldn't make a console: {e}"))?;
     let mut cmd = CommandBuilder::new(&exe);
     cmd.args(args);
     cmd.cwd(&folder);
@@ -173,7 +222,10 @@ fn start(app: &AppHandle, id: &str, tab: &str, which: &str, cols: u16, rows: u16
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let mut child = pair.slave.spawn_command(cmd).map_err(|e| format!("Couldn't start {name}: {e}"))?;
+    let mut child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("Couldn't start {name}: {e}"))?;
     drop(pair.slave);
     let job = Job::new().ok_or("Couldn't make a job object")?;
     if let Some(pid) = child.process_id() {
@@ -185,7 +237,17 @@ fn start(app: &AppHandle, id: &str, tab: &str, which: &str, cols: u16, rows: u16
 
     let sid = shells(app, |s| {
         s.seq += 1;
-        s.open.insert(s.seq, Shell { robot: id.to_string(), tab: tab.to_string(), master: pair.master, writer, killer, _job: job });
+        s.open.insert(
+            s.seq,
+            Shell {
+                robot: id.to_string(),
+                tab: tab.to_string(),
+                master: pair.master,
+                writer,
+                killer,
+                _job: job,
+            },
+        );
         s.seq
     });
     let label = label_of(id);
@@ -202,7 +264,11 @@ fn start(app: &AppHandle, id: &str, tab: &str, which: &str, cols: u16, rows: u16
                     pending.extend_from_slice(&buf[..n]);
                     let data = take_text(&mut pending);
                     if !data.is_empty() {
-                        let _ = app2.emit_to(&label2, "robot:shell", json!({ "sid": sid, "kind": "data", "data": data }));
+                        let _ = app2.emit_to(
+                            &label2,
+                            "robot:shell",
+                            json!({ "sid": sid, "kind": "data", "data": data }),
+                        );
                     }
                 }
             }
@@ -212,7 +278,11 @@ fn start(app: &AppHandle, id: &str, tab: &str, which: &str, cols: u16, rows: u16
     let app2 = app.clone();
     thread::spawn(move || {
         let code = child.wait().map(|s| s.exit_code()).unwrap_or(1);
-        let _ = app2.emit_to(&label, "robot:shell", json!({ "sid": sid, "kind": "exit", "code": code }));
+        let _ = app2.emit_to(
+            &label,
+            "robot:shell",
+            json!({ "sid": sid, "kind": "exit", "code": code }),
+        );
         let gone = shells(&app2, |s| s.open.remove(&sid));
         drop(gone); // (outside the lock: closing the console can take a moment)
     });
@@ -233,7 +303,9 @@ pub fn close(app: &AppHandle, id: &str) {
 
 /// A conversation's shells end with it.
 pub fn close_tab(app: &AppHandle, id: &str, tab: &str) {
-    end(shells(app, |s| s.take(|_, sh| sh.robot == id && sh.tab == tab)));
+    end(shells(app, |s| {
+        s.take(|_, sh| sh.robot == id && sh.tab == tab)
+    }));
 }
 
 pub fn close_all(app: &AppHandle) {
@@ -245,16 +317,37 @@ pub fn close_all(app: &AppHandle) {
 /// A new shell in the robot's folder (a new tab in its drawer), for one of its conversations:
 /// kind "bash" is Git Bash, else PowerShell.
 #[tauri::command(async)]
-pub fn robot_shell_open(app: AppHandle, window: WebviewWindow, cols: u16, rows: u16, tab_id: String, kind: Option<String>) -> Result<Value, String> {
+pub fn robot_shell_open(
+    app: AppHandle,
+    window: WebviewWindow,
+    cols: u16,
+    rows: u16,
+    tab_id: String,
+    kind: Option<String>,
+) -> Result<Value, String> {
     let id = sender(&window)?;
-    Ok(match start(&app, &id, &tab_id, kind.as_deref().unwrap_or(""), cols, rows) {
-        Ok((sid, name)) => json!({ "ok": true, "sid": sid, "shell": name }),
-        Err(error) => json!({ "ok": false, "error": error }),
-    })
+    Ok(
+        match start(
+            &app,
+            &id,
+            &tab_id,
+            kind.as_deref().unwrap_or(""),
+            cols,
+            rows,
+        ) {
+            Ok((sid, name)) => json!({ "ok": true, "sid": sid, "shell": name }),
+            Err(error) => json!({ "ok": false, "error": error }),
+        },
+    )
 }
 
 #[tauri::command(async)]
-pub fn robot_shell_write(app: AppHandle, window: WebviewWindow, sid: u64, data: String) -> Result<(), String> {
+pub fn robot_shell_write(
+    app: AppHandle,
+    window: WebviewWindow,
+    sid: u64,
+    data: String,
+) -> Result<(), String> {
     let id = sender(&window)?;
     shells(&app, |s| {
         if let Some(sh) = s.of(&id, sid) {
@@ -266,7 +359,13 @@ pub fn robot_shell_write(app: AppHandle, window: WebviewWindow, sid: u64, data: 
 }
 
 #[tauri::command(async)]
-pub fn robot_shell_resize(app: AppHandle, window: WebviewWindow, sid: u64, cols: u16, rows: u16) -> Result<(), String> {
+pub fn robot_shell_resize(
+    app: AppHandle,
+    window: WebviewWindow,
+    sid: u64,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
     let id = sender(&window)?;
     shells(&app, |s| {
         if let Some(sh) = s.of(&id, sid) {
@@ -278,9 +377,15 @@ pub fn robot_shell_resize(app: AppHandle, window: WebviewWindow, sid: u64, cols:
 
 /// One of its shells ends (no sid: all of them).
 #[tauri::command(async)]
-pub fn robot_shell_close(app: AppHandle, window: WebviewWindow, sid: Option<u64>) -> Result<(), String> {
+pub fn robot_shell_close(
+    app: AppHandle,
+    window: WebviewWindow,
+    sid: Option<u64>,
+) -> Result<(), String> {
     let id = sender(&window)?;
-    end(shells(&app, |s| s.take(|s, sh| sh.robot == id && sid.is_none_or(|x| x == s))));
+    end(shells(&app, |s| {
+        s.take(|s, sh| sh.robot == id && sid.is_none_or(|x| x == s))
+    }));
     Ok(())
 }
 
@@ -302,7 +407,9 @@ const SLACK: Duration = Duration::from_secs(20); // (the page's own time to answ
 pub fn tool(app: &AppHandle, robot: &str, tab: &str, tool: &str, args: &Value) -> Value {
     let err = |text: &str| json!({ "text": text, "isError": true });
     if tab.is_empty() {
-        return err("This conversation started before C-Bot gave it a terminal. Start a new conversation (or ask again after /clear) to use it.");
+        return err(
+            "This conversation started before C-Bot gave it a terminal. Start a new conversation (or ask again after /clear) to use it.",
+        );
     }
     if !with(app, |st| st.store.tab(robot, tab).is_some()) {
         return err("This conversation has closed.");
@@ -311,22 +418,41 @@ pub fn tool(app: &AppHandle, robot: &str, tab: &str, tool: &str, args: &Value) -
     if app.get_webview_window(&label).is_none() {
         return err("My window is closed, so there's no terminal.");
     }
-    let wait = if tool == "terminal_run" { args["wait"].as_f64().filter(|w| w.is_finite()).unwrap_or(15.0).clamp(1.0, 300.0) } else { 0.0 };
+    let wait = if tool == "terminal_run" {
+        args["wait"]
+            .as_f64()
+            .filter(|w| w.is_finite())
+            .unwrap_or(15.0)
+            .clamp(1.0, 300.0)
+    } else {
+        0.0
+    };
     let (tx, rx) = mpsc::channel();
     let req = shells(app, |s| {
         s.ask_seq += 1;
         s.asks.insert(s.ask_seq, (robot.to_string(), tx));
         s.ask_seq
     });
-    let _ = app.emit_to(&label, "robot:shell-ask", json!({ "req": req, "tool": tool, "tab": tab, "args": args, "wait": wait }));
-    let answer = rx.recv_timeout(Duration::from_secs_f64(wait) + SLACK).unwrap_or_else(|_| err("The terminal didn't answer in time."));
+    let _ = app.emit_to(
+        &label,
+        "robot:shell-ask",
+        json!({ "req": req, "tool": tool, "tab": tab, "args": args, "wait": wait }),
+    );
+    let answer = rx
+        .recv_timeout(Duration::from_secs_f64(wait) + SLACK)
+        .unwrap_or_else(|_| err("The terminal didn't answer in time."));
     shells(app, |s| s.asks.remove(&req));
     answer
 }
 
 /// The page's answer to a terminal_* call (only the robot it went to can answer it).
 #[tauri::command(async)]
-pub fn robot_shell_reply(app: AppHandle, window: WebviewWindow, req: u64, answer: Value) -> Result<(), String> {
+pub fn robot_shell_reply(
+    app: AppHandle,
+    window: WebviewWindow,
+    req: u64,
+    answer: Value,
+) -> Result<(), String> {
     let id = sender(&window)?;
     shells(&app, |s| {
         if let Some((_, tx)) = s.asks.get(&req).filter(|(robot, _)| *robot == id) {
@@ -353,7 +479,11 @@ mod tests {
     #[test]
     fn powershell_runs_in_the_folder_and_ends_with_its_job() {
         // (pieced together, so the echo of the line typed doesn't count as the answer)
-        round_trip("powershell", b"'cbot-' + 'ok:' + (Split-Path -Leaf (Get-Location))\r", "cbot-ok:");
+        round_trip(
+            "powershell",
+            b"'cbot-' + 'ok:' + (Split-Path -Leaf (Get-Location))\r",
+            "cbot-ok:",
+        );
     }
 
     #[test]
@@ -361,13 +491,18 @@ mod tests {
         if git_bash().is_none() {
             return; // (no Git for Windows here)
         }
-        round_trip("bash", b"echo cbot-$((40+2)):$(basename \"$PWD\")\r", "cbot-42:");
+        round_trip(
+            "bash",
+            b"echo cbot-$((40+2)):$(basename \"$PWD\")\r",
+            "cbot-42:",
+        );
     }
 
     /// A shell of that kind, started as the drawer starts one, in a folder of its own: what's
     /// typed in it answers `want` followed by the folder's name.
     fn round_trip(which: &str, typed: &[u8], want: &str) {
-        let dir = std::env::temp_dir().join(format!("cbot-shell-test-{which}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("cbot-shell-test-{which}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let k = kind(which).unwrap();
         let pair = native_pty_system().openpty(size(80, 24)).unwrap();
@@ -395,14 +530,23 @@ mod tests {
         let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
         let mut seen = String::new();
         while !seen.contains("\x1b[6n") {
-            assert!(std::time::Instant::now() < until, "the console never asked: {seen:?}");
-            seen.push_str(&rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap_or_default());
+            assert!(
+                std::time::Instant::now() < until,
+                "the console never asked: {seen:?}"
+            );
+            seen.push_str(
+                &rx.recv_timeout(std::time::Duration::from_secs(20))
+                    .unwrap_or_default(),
+            );
         }
         writer.write_all(b"\x1b[1;1R").unwrap();
         writer.write_all(typed).unwrap();
         let want = format!("{want}{}", dir.file_name().unwrap().to_string_lossy());
         while !seen.contains(&want) {
-            assert!(std::time::Instant::now() < until, "no answer from the shell: {seen:?}");
+            assert!(
+                std::time::Instant::now() < until,
+                "no answer from the shell: {seen:?}"
+            );
             if let Ok(t) = rx.recv_timeout(std::time::Duration::from_millis(200)) {
                 seen.push_str(&t);
             }

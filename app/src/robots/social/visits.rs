@@ -6,7 +6,9 @@ use super::*;
 
 pub(super) fn try_visit(app: &AppHandle, now: Instant) -> bool {
     let gap = visit_gap(&level(app));
-    if soc(app, |s| s.visit.is_some() || s.last_visit.is_some_and(|t| now.duration_since(t) < gap)) {
+    if soc(app, |s| {
+        s.visit.is_some() || s.last_visit.is_some_and(|t| now.duration_since(t) < gap)
+    }) {
         return false;
     }
     let ids = live(app);
@@ -14,17 +16,35 @@ pub(super) fn try_visit(app: &AppHandle, now: Instant) -> bool {
         .iter()
         .filter(|id| {
             let r = rep(app, id);
-            free_awake(app, id) && r.wanders() && r.idle_ms() >= 60_000.0 && !soc(app, |s| s.last_visit_of.get(*id).is_some_and(|t| now.duration_since(*t) <= VISIT_ROBOT_GAP))
+            free_awake(app, id)
+                && r.wanders()
+                && r.idle_ms() >= 60_000.0
+                && !soc(app, |s| {
+                    s.last_visit_of
+                        .get(*id)
+                        .is_some_and(|t| now.duration_since(*t) <= VISIT_ROBOT_GAP)
+                })
         })
         .collect();
     for a in visitors {
         if random() > 0.3 * kk(app) {
             continue;
         }
-        let hosts: Vec<&String> = ids.iter().filter(|b| *b != a && at_desk(app, b) && !rep(app, b).b("chat") && same_screen(app, a, b)).collect();
+        let hosts: Vec<&String> = ids
+            .iter()
+            .filter(|b| {
+                *b != a && at_desk(app, b) && !rep(app, b).b("chat") && same_screen(app, a, b)
+            })
+            .collect();
         let Some(b) = pick(&hosts) else { continue };
         let rb = rep(app, b);
-        let mode = if rb.b("busy") { "watch" } else if rb.b("awake") { "chat" } else { "tiptoe" };
+        let mode = if rb.b("busy") {
+            "watch"
+        } else if rb.b("awake") {
+            "chat"
+        } else {
+            "tiptoe"
+        };
         start(app, a, b, mode, vec![], None);
         return true;
     }
@@ -34,7 +54,14 @@ pub(super) fn try_visit(app: &AppHandle, now: Instant) -> bool {
 /// Send a over to b's desk (mode: chat | watch | tiptoe; "" from how b is), or an office
 /// scene: order (lunch), goout (lunch together), tea (b, then the stops, desk to desk).
 /// delivery: ms till the food / tea comes.
-pub fn start(app: &AppHandle, a: &str, b: &str, mode: &str, stops: Vec<String>, delivery: Option<u64>) -> bool {
+pub fn start(
+    app: &AppHandle,
+    a: &str,
+    b: &str,
+    mode: &str,
+    stops: Vec<String>,
+    delivery: Option<u64>,
+) -> bool {
     if visit(app).is_some() || a == b || !is_open(app, a) || !is_open(app, b) || !at_desk(app, b) {
         return false;
     }
@@ -42,13 +69,33 @@ pub fn start(app: &AppHandle, a: &str, b: &str, mode: &str, stops: Vec<String>, 
         mode.to_string()
     } else {
         let rb = rep(app, b);
-        (if rb.b("busy") { "watch" } else if rb.b("awake") { "chat" } else { "tiptoe" }).to_string()
+        (if rb.b("busy") {
+            "watch"
+        } else if rb.b("awake") {
+            "chat"
+        } else {
+            "tiptoe"
+        })
+        .to_string()
     };
     let side = side_of(app, b, a); // the side of b's desk it comes from, and stands on
     let now = Instant::now();
     let v = Visit {
-        a: a.into(), b: b.into(), mode: mode.clone(), side, face: face_for(side), face_b: None, phase: "out".into(), epoch: next_gen(),
-        delivery, stops, ordered: vec![a.into()], arrived_at: now, spot_b: None, out: None, there: HashSet::new(),
+        a: a.into(),
+        b: b.into(),
+        mode: mode.clone(),
+        side,
+        face: face_for(side),
+        face_b: None,
+        phase: "out".into(),
+        epoch: next_gen(),
+        delivery,
+        stops,
+        ordered: vec![a.into()],
+        arrived_at: now,
+        spot_b: None,
+        out: None,
+        there: HashSet::new(),
     };
     let started = soc(app, |s| {
         if s.visit.is_some() {
@@ -62,7 +109,11 @@ pub fn start(app: &AppHandle, a: &str, b: &str, mode: &str, stops: Vec<String>, 
     if !started {
         return false;
     }
-    tell(app, a, json!({ "phase": "visit", "host": name_of(app, b), "mode": mode }));
+    tell(
+        app,
+        a,
+        json!({ "phase": "visit", "host": name_of(app, b), "mode": mode }),
+    );
     tell(app, b, json!({ "phase": "hosting", "on": true })); // (it stays at its desk till the visitor's gone)
     // (it never set off: it's sitting tight)
     let who = a.to_string();
@@ -102,7 +153,9 @@ pub fn errand_for(app: &AppHandle, id: &str) -> Option<Value> {
     let to = spot(app)?;
     vset(app, |v| v.phase = "walking".into());
     let tiptoe = v.mode == "tiptoe";
-    Some(json!({ "to": { "x": to.0, "y": to.1 }, "gait": if tiptoe { "tiptoe" } else { "walk" }, "speedK": if tiptoe { 0.6 } else { 1.0 }, "face": v.face }))
+    Some(
+        json!({ "to": { "x": to.0, "y": to.1 }, "gait": if tiptoe { "tiptoe" } else { "walk" }, "speedK": if tiptoe { 0.6 } else { 1.0 }, "face": v.face }),
+    )
 }
 
 /// It got where errand_for sent it.
@@ -115,7 +168,11 @@ pub fn errand_arrived(app: &AppHandle, id: &str) {
 }
 
 pub(super) fn arrived_errand(face: &str) -> Errand {
-    Errand { face: Some(face.to_string()), on_arrive: Some(Box::new(|app: &AppHandle| arrived(app))), ..Errand::default() }
+    Errand {
+        face: Some(face.to_string()),
+        on_arrive: Some(Box::new(|app: &AppHandle| arrived(app))),
+        ..Errand::default()
+    }
 }
 
 pub(super) fn arrived(app: &AppHandle) {
@@ -144,7 +201,11 @@ pub(super) fn arrived(app: &AppHandle) {
     match mode.as_str() {
         "chat" => {
             tell(app, &b, json!({ "phase": "listen", "side": mine }));
-            let lines = [(a.clone(), line(app, &a, "hi", &b)), (b.clone(), line(app, &b, "reply", &a)), (a.clone(), line(app, &a, "bye", &b))];
+            let lines = [
+                (a.clone(), line(app, &a, "hi", &b)),
+                (b.clone(), line(app, &b, "reply", &a)),
+                (a.clone(), line(app, &a, "bye", &b)),
+            ];
             let n = lines.len() as u64;
             for (i, (who, text)) in lines.into_iter().enumerate() {
                 let (a, b, face) = (a.clone(), b.clone(), face.clone());
@@ -152,7 +213,9 @@ pub(super) fn arrived(app: &AppHandle) {
                     if who == a {
                         walkers::pose(app, &a, "talk", Some(&face));
                         walkers::say(app, &a, &text, LINE_GAP - 200);
-                        later(app, LINE_GAP - 300, move |app| walkers::pose(app, &a, "stand", Some(&face)));
+                        later(app, LINE_GAP - 300, move |app| {
+                            walkers::pose(app, &a, "stand", Some(&face))
+                        });
                     } else {
                         tell(app, &b, json!({ "phase": "say", "text": text }));
                     }
@@ -163,7 +226,9 @@ pub(super) fn arrived(app: &AppHandle) {
                 walkers::pose(app, &a2, "wave", Some(&face2));
                 tell(app, &b2, json!({ "phase": "listen-end", "wave": true }));
             });
-            later(app, 400 + n * LINE_GAP + 1300, |app| homeward(app, None, 1.0));
+            later(app, 400 + n * LINE_GAP + 1300, |app| {
+                homeward(app, None, 1.0)
+            });
         }
         "order" | "goout" if !free_awake(app, &b) => {
             // it got busy (or dozed off) while the visitor walked over: maybe next time
@@ -174,13 +239,22 @@ pub(super) fn arrived(app: &AppHandle) {
             // lunch: "order?" / "yes, …" / "ordered!", or "go out?" / "yes!" and off they go
             tell(app, &b, json!({ "phase": "listen", "side": mine }));
             let lines: Vec<(String, String)> = if mode == "order" {
-                vec![(a.clone(), line(app, &a, "lunchAsk", &b)), (b.clone(), line(app, &b, "lunchDish", &a)), (a.clone(), line(app, &a, "lunchOrdered", &b))]
+                vec![
+                    (a.clone(), line(app, &a, "lunchAsk", &b)),
+                    (b.clone(), line(app, &b, "lunchDish", &a)),
+                    (a.clone(), line(app, &a, "lunchOrdered", &b)),
+                ]
             } else {
-                vec![(a.clone(), line(app, &a, "goOut", &b)), (b.clone(), line(app, &b, "goOutYes", &a))]
+                vec![
+                    (a.clone(), line(app, &a, "goOut", &b)),
+                    (b.clone(), line(app, &b, "goOutYes", &a)),
+                ]
             };
             let after_lines = 400 + lines.len() as u64 * LINE_GAP;
             for (i, (who, text)) in lines.into_iter().enumerate() {
-                later(app, 400 + i as u64 * LINE_GAP, move |app| talk(app, &who, &text));
+                later(app, 400 + i as u64 * LINE_GAP, move |app| {
+                    talk(app, &who, &text)
+                });
             }
             if mode == "order" {
                 let (a2, b2) = (a.clone(), b.clone());
@@ -202,16 +276,30 @@ pub(super) fn arrived(app: &AppHandle) {
             if wants_tea {
                 tell(app, &b, json!({ "phase": "listen", "side": mine }));
                 let (a2, b2) = (a.clone(), b.clone());
-                later(app, 400, move |app| talk(app, &a2, &line(app, &a2, "teaAsk", &b2)));
+                later(app, 400, move |app| {
+                    talk(app, &a2, &line(app, &a2, "teaAsk", &b2))
+                });
                 let (a3, b3) = (a.clone(), b.clone());
-                later(app, 400 + LINE_GAP, move |app| talk(app, &b3, &line(app, &b3, "teaOrder", &a3)));
+                later(app, 400 + LINE_GAP, move |app| {
+                    talk(app, &b3, &line(app, &b3, "teaOrder", &a3))
+                });
                 vset(app, |v| v.ordered.push(b.clone()));
             } else if rb.b("busy") {
                 let (a2, b2) = (a.clone(), b.clone());
-                later(app, 400, move |app| talk(app, &a2, &line(app, &a2, "teaUsual", &b2)));
+                later(app, 400, move |app| {
+                    talk(app, &a2, &line(app, &a2, "teaUsual", &b2))
+                });
                 vset(app, |v| v.ordered.push(b.clone()));
             }
-            later(app, if wants_tea { 400 + 2 * LINE_GAP } else { 400 + LINE_GAP }, next_tea_stop);
+            later(
+                app,
+                if wants_tea {
+                    400 + 2 * LINE_GAP
+                } else {
+                    400 + LINE_GAP
+                },
+                next_tea_stop,
+            );
         }
         "watch" => {
             walkers::pose(app, &a, "stand", Some(&face));
@@ -222,7 +310,11 @@ pub(super) fn arrived(app: &AppHandle) {
             // tiptoe: a sticky on its monitor, and back without waking it
             walkers::pose(app, &a, "stand", Some(&face));
             walkers::say(app, &a, &line(app, &a, "tiptoe", &b), 2200);
-            tell(app, &b, json!({ "phase": "visit-note", "from": name_of(app, &a), "found": line(app, &b, "found", &a) }));
+            tell(
+                app,
+                &b,
+                json!({ "phase": "visit-note", "from": name_of(app, &a), "found": line(app, &b, "found", &a) }),
+            );
             later(app, 2600, |app| homeward(app, Some("tiptoe"), 0.6));
         }
     }
@@ -235,7 +327,9 @@ pub(super) fn cheer(app: &AppHandle, a: String, b: String, n: u32) {
         walkers::say(app, &a, &line(app, &a, "watch", &b), 2400);
         walkers::pose(app, &a, "clap", Some(&face));
         let a2 = a.clone();
-        later(app, 2200, move |app| walkers::pose(app, &a2, "stand", Some(&face)));
+        later(app, 2200, move |app| {
+            walkers::pose(app, &a2, "stand", Some(&face))
+        });
         if n < 5 {
             cheer(app, a, b, n + 1);
         }
@@ -250,14 +344,24 @@ pub(super) fn talk(app: &AppHandle, who: &str, text: &str) {
     }
     if walkers::has(app, who) {
         let sitting = v.phase == "sitting";
-        let face = if who == v.a { Some(v.face.clone()) } else { v.face_b.clone() };
-        walkers::pose(app, who, if sitting { "sit" } else { "talk" }, face.as_deref());
+        let face = if who == v.a {
+            Some(v.face.clone())
+        } else {
+            v.face_b.clone()
+        };
+        walkers::pose(
+            app,
+            who,
+            if sitting { "sit" } else { "talk" },
+            face.as_deref(),
+        );
         walkers::say(app, who, text, LINE_GAP - 200);
         if !sitting {
             let who = who.to_string();
             later(app, LINE_GAP - 300, move |app| {
                 if walkers::has(app, &who) {
-                    let face = visit(app).and_then(|v| if who == v.a { Some(v.face) } else { v.face_b });
+                    let face =
+                        visit(app).and_then(|v| if who == v.a { Some(v.face) } else { v.face_b });
                     walkers::pose(app, &who, "stand", face.as_deref());
                 }
             });
@@ -273,7 +377,9 @@ pub(super) fn go_out(app: &AppHandle) {
     let (a, b) = (v.a.clone(), v.b.clone());
     tell(app, &b, json!({ "phase": "listen-end" }));
     // (between their desks: the visitor's out walking already, its desk is where it came from)
-    let (Some(ra), Some(rb)) = (robots::desk_rect(app, &a), robots::desk_rect(app, &b)) else { return homeward(app, None, 1.0) };
+    let (Some(ra), Some(rb)) = (robots::desk_rect(app, &a), robots::desk_rect(app, &b)) else {
+        return homeward(app, None, 1.0);
+    };
     let m = window::monitor_near(ra.x, ra.y);
     let (wa, s) = (m.work, m.scale);
     let mid = (ra.x as f64 + ra.w as f64 / 2.0 + rb.x as f64 + rb.w as f64 / 2.0) / 2.0;
@@ -294,9 +400,17 @@ pub(super) fn go_out(app: &AppHandle) {
         v.there = HashSet::new();
     });
     let who = a.clone();
-    let errand = Errand { face: Some(face.into()), on_arrive: Some(Box::new(move |app: &AppHandle| sit_down(app, &who))), ..Errand::default() };
+    let errand = Errand {
+        face: Some(face.into()),
+        on_arrive: Some(Box::new(move |app: &AppHandle| sit_down(app, &who))),
+        ..Errand::default()
+    };
     walkers::walk_to(app, &a, spot_a, errand);
-    tell(app, &b, json!({ "phase": "go-out", "with": name_of(app, &a) })); // (it gets up: robot:wander asks errand_for for its walk)
+    tell(
+        app,
+        &b,
+        json!({ "phase": "go-out", "with": name_of(app, &a) }),
+    ); // (it gets up: robot:wander asks errand_for for its walk)
     later(app, 12000, move |app| {
         if visit(app).is_some_and(|v| v.phase == "outing") && !walkers::is_out(app, &b) {
             homeward(app, None, 1.0); // (it never came)
@@ -315,7 +429,11 @@ pub(super) fn sit_down(app: &AppHandle, id: &str) {
             x.phase = "sitting".into();
         }
     });
-    let face = if id == v.a { Some(v.face.clone()) } else { v.face_b.clone() };
+    let face = if id == v.a {
+        Some(v.face.clone())
+    } else {
+        v.face_b.clone()
+    };
     walkers::pose(app, id, "sit", face.as_deref());
     if !both {
         return;
@@ -328,9 +446,13 @@ pub(super) fn sit_down(app: &AppHandle, id: &str) {
     let n = said.len() as u64;
     for (i, text) in said.into_iter().enumerate() {
         let who = if i % 2 == 1 { b.clone() } else { a.clone() };
-        later(app, 1500 + i as u64 * (LINE_GAP + 600), move |app| talk(app, &who, &text));
+        later(app, 1500 + i as u64 * (LINE_GAP + 600), move |app| {
+            talk(app, &who, &text)
+        });
     }
-    later(app, 1500 + n * (LINE_GAP + 600) + 800, |app| homeward(app, None, 1.0));
+    later(app, 1500 + n * (LINE_GAP + 600) + 800, |app| {
+        homeward(app, None, 1.0)
+    });
 }
 
 /// The milk-tea round: the next desk, or home with everyone's order in.
@@ -338,7 +460,11 @@ pub(super) fn next_tea_stop(app: &AppHandle) {
     let Some(v) = visit(app) else { return };
     tell(app, &v.b, json!({ "phase": "listen-end" }));
     tell(app, &v.b, json!({ "phase": "hosting", "on": false }));
-    let next = v.stops.iter().find(|x| is_open(app, x) && at_desk(app, x) && !rep(app, x).b("chat")).cloned();
+    let next = v
+        .stops
+        .iter()
+        .find(|x| is_open(app, x) && at_desk(app, x) && !rep(app, x).b("chat"))
+        .cloned();
     let n2 = next.clone();
     vset(app, move |v| v.stops.retain(|x| Some(x) != n2.as_ref()));
     let Some(next) = next else {
@@ -367,13 +493,32 @@ pub(super) fn next_tea_stop(app: &AppHandle) {
 
 /// The food / the milk tea comes, a few minutes later, to every robot in on it.
 pub(super) fn deliver(app: &AppHandle, ids: Vec<String>, kind: &'static str) {
-    let ms = visit(app).and_then(|v| v.delivery).unwrap_or(if kind == "food" { DELIVERY_FOOD } else { DELIVERY_TEA });
+    let ms = visit(app)
+        .and_then(|v| v.delivery)
+        .unwrap_or(if kind == "food" {
+            DELIVERY_FOOD
+        } else {
+            DELIVERY_TEA
+        });
     after(app, ms, move |app| {
         let mut seen = HashSet::new();
         for id in ids.into_iter().filter(|id| seen.insert(id.clone())) {
             if is_open(app, &id) {
-                let text = line(app, &id, if kind == "food" { "lunchArrived" } else { "teaArrived" }, "");
-                tell(app, &id, json!({ "phase": "treat", "kind": kind, "text": text }));
+                let text = line(
+                    app,
+                    &id,
+                    if kind == "food" {
+                        "lunchArrived"
+                    } else {
+                        "teaArrived"
+                    },
+                    "",
+                );
+                tell(
+                    app,
+                    &id,
+                    json!({ "phase": "treat", "kind": kind, "text": text }),
+                );
             }
         }
     });
@@ -397,7 +542,9 @@ pub(super) fn homeward(app: &AppHandle, gait: Option<&str>, speed_k: f64) {
 
 /// The visit's over (home and docked, picked up, called back, or it never left).
 pub(super) fn end_visit(app: &AppHandle, why: &str) {
-    let Some(v) = soc(app, |s| s.visit.take()) else { return };
+    let Some(v) = soc(app, |s| s.visit.take()) else {
+        return;
+    };
     if v.mode == "chat" {
         tell(app, &v.b, json!({ "phase": "listen-end" }));
     }
@@ -410,15 +557,23 @@ pub(super) fn end_visit(app: &AppHandle, why: &str) {
 
 /// A visit that should end early: you're using the host or the visitor, or the host got busy.
 pub(super) fn check(app: &AppHandle) {
-    let Some(v) = visit(app).filter(|v| v.phase == "there") else { return };
+    let Some(v) = visit(app).filter(|v| v.phase == "there") else {
+        return;
+    };
     if !at_desk(app, &v.b) {
         return homeward(app, None, 1.0); // (the host's gone off: nobody to visit)
     }
     let rb = rep(app, &v.b);
     if rb.b("chat") || (v.mode == "chat" && rb.b("busy")) {
-        walkers::say(app, &v.a, &line(app, &v.a, if rb.b("chat") { "gotta" } else { "busy" }, &v.b), 1800);
+        walkers::say(
+            app,
+            &v.a,
+            &line(app, &v.a, if rb.b("chat") { "gotta" } else { "busy" }, &v.b),
+            1800,
+        );
         later(app, 1200, |app| homeward(app, None, 1.4));
-    } else if v.mode == "watch" && !rb.b("busy") && v.arrived_at.elapsed() > Duration::from_secs(3) {
+    } else if v.mode == "watch" && !rb.b("busy") && v.arrived_at.elapsed() > Duration::from_secs(3)
+    {
         // its task ended without a "done" (stopped, an error): back home
         later(app, 800, |app| homeward(app, None, 1.0));
     }
@@ -428,14 +583,23 @@ pub(super) fn check(app: &AppHandle) {
 
 pub(super) fn try_plane(app: &AppHandle, now: Instant) -> bool {
     let gap = plane_gap(&level(app));
-    if soc(app, |s| s.in_flight || s.last_plane.is_some_and(|t| now.duration_since(t) < gap)) {
+    if soc(app, |s| {
+        s.in_flight || s.last_plane.is_some_and(|t| now.duration_since(t) < gap)
+    }) {
         return false;
     }
     let ids = live(app);
     let throwers: Vec<&String> = ids
         .iter()
         .filter(|id| {
-            free_awake(app, id) && rep(app, id).idle_ms() >= 45_000.0 && !in_visit(app, id) && !soc(app, |s| s.last_plane_of.get(*id).is_some_and(|t| now.duration_since(*t) <= PLANE_ROBOT_GAP))
+            free_awake(app, id)
+                && rep(app, id).idle_ms() >= 45_000.0
+                && !in_visit(app, id)
+                && !soc(app, |s| {
+                    s.last_plane_of
+                        .get(*id)
+                        .is_some_and(|t| now.duration_since(*t) <= PLANE_ROBOT_GAP)
+                })
         })
         .collect();
     for a in throwers {
@@ -444,7 +608,14 @@ pub(super) fn try_plane(app: &AppHandle, now: Instant) -> bool {
         }
         let targets: Vec<&String> = ids
             .iter()
-            .filter(|x| *x != a && at_desk(app, x) && !rep(app, x).b("chat") && !in_visit(app, x) && !soc(app, |s| s.desk_planes.contains_key(*x)) && same_screen(app, a, x))
+            .filter(|x| {
+                *x != a
+                    && at_desk(app, x)
+                    && !rep(app, x).b("chat")
+                    && !in_visit(app, x)
+                    && !soc(app, |s| s.desk_planes.contains_key(*x))
+                    && same_screen(app, a, x)
+            })
             .collect();
         let Some(b) = pick(&targets) else { continue };
         return throw_plane(app, a, b, random() < 0.1);
@@ -456,7 +627,10 @@ pub(super) fn try_plane(app: &AppHandle, now: Instant) -> bool {
 pub(super) fn hand_point(app: &AppHandle, id: &str, side: &str, up: bool) -> Option<(f64, f64)> {
     let r = hub::robot_rect(app, id)?;
     let fx = if side == "L" { 0.36 } else { 0.64 };
-    Some((r.x as f64 + r.w as f64 * fx, r.y as f64 + r.h as f64 * if up { 0.3 } else { 0.42 }))
+    Some((
+        r.x as f64 + r.w as f64 * fx,
+        r.y as f64 + r.h as f64 * if up { 0.3 } else { 0.42 },
+    ))
 }
 
 /// a throws a paper plane at b (miss: it overshoots and lands on your desktop).
@@ -490,11 +664,19 @@ pub fn throw_plane(app: &AppHandle, a: &str, b: &str, miss: bool) -> bool {
             }
             // caught and read out if it's free; otherwise it lands on its desk, for later
             if free_awake(app, &b) && !rep(app, &b).b("busy") {
-                tell(app, &b, json!({ "phase": "catch", "side": side_of(app, &b, &a), "from": name_of(app, &a), "text": text }));
+                tell(
+                    app,
+                    &b,
+                    json!({ "phase": "catch", "side": side_of(app, &b, &a), "from": name_of(app, &a), "text": text }),
+                );
                 after(app, 3000, move |app| wave_over(app, &b, &a));
             } else {
                 soc(app, |s| s.desk_planes.insert(b.clone(), a.clone()));
-                tell(app, &b, json!({ "phase": "plane-land", "from": name_of(app, &a), "text": text }));
+                tell(
+                    app,
+                    &b,
+                    json!({ "phase": "plane-land", "from": name_of(app, &a), "text": text }),
+                );
             }
         };
         planes::fly_with(app, from, to, miss, Some(Box::new(on_land)));
@@ -507,11 +689,19 @@ pub(super) fn wave_over(app: &AppHandle, b: &str, a: &str) {
     if !free_awake(app, b) {
         return;
     }
-    tell(app, b, json!({ "phase": "wave", "side": side_of(app, b, a) }));
+    tell(
+        app,
+        b,
+        json!({ "phase": "wave", "side": side_of(app, b, a) }),
+    );
     let (a, b) = (a.to_string(), b.to_string());
     after(app, 900, move |app| {
         if free_awake(app, &a) {
-            tell(app, &a, json!({ "phase": "wave-back", "side": side_of(app, &a, &b) }));
+            tell(
+                app,
+                &a,
+                json!({ "phase": "wave-back", "side": side_of(app, &a, &b) }),
+            );
         }
     });
 }

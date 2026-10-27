@@ -42,7 +42,15 @@ fn write_safely(file: &Path, text: &str) -> std::io::Result<()> {
 impl Saved {
     /// <dir>/<name>.json, whose data has an array called `list`.
     pub fn new(dir: &Path, name: &'static str, list: &'static str, local_days: bool) -> Saved {
-        Saved { file: dir.join(format!("{name}.json")), backup_dir: dir.join("backups"), name, list, local_days, due: None, backup_day: None }
+        Saved {
+            file: dir.join(format!("{name}.json")),
+            backup_dir: dir.join("backups"),
+            name,
+            list,
+            local_days,
+            due: None,
+            backup_day: None,
+        }
     }
 
     /// On this app's first run (nothing here yet), a copy of the Electron app's file, which
@@ -51,7 +59,12 @@ impl Saved {
         if self.file.exists() || tmp_of(&self.file).exists() {
             return;
         }
-        let Some(src) = electron_dir.map(|d| d.join(format!("{}.json", self.name))).filter(|p| p.is_file()) else { return };
+        let Some(src) = electron_dir
+            .map(|d| d.join(format!("{}.json", self.name)))
+            .filter(|p| p.is_file())
+        else {
+            return;
+        };
         if let Some(dir) = self.file.parent() {
             let _ = fs::create_dir_all(dir);
         }
@@ -64,13 +77,16 @@ impl Saved {
     fn read(&self, file: &Path) -> Option<Value> {
         let text = fs::read_to_string(file).ok()?;
         let data: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
-        data.get(self.list).is_some_and(Value::is_array).then_some(data)
+        data.get(self.list)
+            .is_some_and(Value::is_array)
+            .then_some(data)
     }
 
     /// What's saved: the file, or the temp file a save cut short left behind. None if neither
     /// reads (a fresh start, as the Electron app made).
     pub fn load(&self) -> Option<Value> {
-        self.read(&self.file).or_else(|| self.read(&tmp_of(&self.file)))
+        self.read(&self.file)
+            .or_else(|| self.read(&tmp_of(&self.file)))
     }
 
     /// Save soon.
@@ -95,7 +111,11 @@ impl Saved {
     pub fn flush(&mut self, data: &Value) {
         self.due = None;
         let text = serde_json::to_string_pretty(data).unwrap_or_default();
-        let result = self.file.parent().map_or(Ok(()), fs::create_dir_all).and_then(|_| write_safely(&self.file, &text));
+        let result = self
+            .file
+            .parent()
+            .map_or(Ok(()), fs::create_dir_all)
+            .and_then(|_| write_safely(&self.file, &text));
         match result {
             Ok(()) => self.backup(data, &text),
             Err(err) => eprintln!("[{}] save failed: {err}", self.name),
@@ -104,7 +124,12 @@ impl Saved {
 
     // one copy a day, the last two weeks kept (next to the robots')
     fn backup(&mut self, data: &Value, text: &str) {
-        let day = if self.local_days { chrono::Local::now().format("%Y-%m-%d") } else { chrono::Utc::now().format("%Y-%m-%d") }.to_string();
+        let day = if self.local_days {
+            chrono::Local::now().format("%Y-%m-%d")
+        } else {
+            chrono::Utc::now().format("%Y-%m-%d")
+        }
+        .to_string();
         let empty = data[self.list].as_array().is_none_or(Vec::is_empty);
         if self.backup_day.as_deref() == Some(day.as_str()) || empty {
             return;
@@ -119,7 +144,11 @@ impl Saved {
             let prefix = format!("{}-", self.name);
             let mut names: Vec<String> = fs::read_dir(&self.backup_dir)?
                 .filter_map(|e| e.ok()?.file_name().into_string().ok())
-                .filter(|n| n.len() == prefix.len() + "2026-01-01.json".len() && n.starts_with(&prefix) && n.ends_with(".json"))
+                .filter(|n| {
+                    n.len() == prefix.len() + "2026-01-01.json".len()
+                        && n.starts_with(&prefix)
+                        && n.ends_with(".json")
+                })
                 .collect();
             names.sort();
             names.reverse();
@@ -140,7 +169,8 @@ mod tests {
     use serde_json::json;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("cbot-saved-test-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("cbot-saved-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -191,8 +221,14 @@ mod tests {
         fs::write(b.join("c-bot-2020-01-01.json"), "{}").unwrap(); // (the robots' own: not ours to prune)
         let mut s = Saved::new(&dir, "vocab", "words", false);
         s.flush(&json!({ "words": [{ "id": "x" }] }));
-        let names: Vec<String> = fs::read_dir(&b).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
-        assert_eq!(names.iter().filter(|n| n.starts_with("vocab-")).count(), BACKUPS_KEPT);
+        let names: Vec<String> = fs::read_dir(&b)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(
+            names.iter().filter(|n| n.starts_with("vocab-")).count(),
+            BACKUPS_KEPT
+        );
         assert!(names.iter().any(|n| n == "c-bot-2020-01-01.json"));
         assert!(!names.iter().any(|n| n == "vocab-2020-01-01.json"));
         let _ = fs::remove_dir_all(&dir);

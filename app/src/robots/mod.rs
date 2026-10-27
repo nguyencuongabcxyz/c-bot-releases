@@ -23,7 +23,7 @@ pub mod walkers;
 use std::thread;
 use std::time::Duration;
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::features::chat;
@@ -56,7 +56,9 @@ pub fn id_of(label: &str) -> Option<&str> {
 
 /// The robot whose window sent a command (an error for any other window).
 pub fn sender(window: &tauri::WebviewWindow) -> Result<String, String> {
-    id_of(window.label()).map(str::to_string).ok_or_else(|| format!("{} isn't a robot's window", window.label()))
+    id_of(window.label())
+        .map(str::to_string)
+        .ok_or_else(|| format!("{} isn't a robot's window", window.label()))
 }
 
 fn dims_of(size: &str) -> (f64, f64) {
@@ -76,14 +78,14 @@ struct Drag {
 
 pub struct Robot {
     hwnd: isize,
-    anchor: (i32, i32),  // the robot's box, top left (physical px)
-    dims: (f64, f64),    // its size (CSS px)
-    pub expanded: bool,  // the chat is open
-    pub tucked: bool,    // awake with the chat put away
-    pub peek: bool,      // sent away to the island (island.rs): its window veiled, its page still at work
-    veiled: bool,        // (its window is, now)
-    chat_w: f64,         // how wide you made the chat (CSS px)
-    side_w: f64,         // and the side panel beside it, while it's open (side questions; CSS px)
+    anchor: (i32, i32), // the robot's box, top left (physical px)
+    dims: (f64, f64),   // its size (CSS px)
+    pub expanded: bool, // the chat is open
+    pub tucked: bool,   // awake with the chat put away
+    pub peek: bool, // sent away to the island (island.rs): its window veiled, its page still at work
+    veiled: bool,   // (its window is, now)
+    chat_w: f64,    // how wide you made the chat (CSS px)
+    side_w: f64,    // and the side panel beside it, while it's open (side questions; CSS px)
     drag: Option<Drag>,
     resize_from: Option<f64>,
     layout: Option<Layout>,
@@ -117,7 +119,11 @@ fn place(anchor: (i32, i32), dims: (f64, f64)) -> (window::Monitor, i32, i32) {
     let first = window::monitor_near(anchor.0, anchor.1);
     let (w, h) = ((dims.0 * first.scale) as i32, (dims.1 * first.scale) as i32);
     let m = window::monitor_near(anchor.0 + w / 2, anchor.1 + h / 2);
-    (m, (dims.0 * m.scale).round() as i32, (dims.1 * m.scale).round() as i32)
+    (
+        m,
+        (dims.0 * m.scale).round() as i32,
+        (dims.1 * m.scale).round() as i32,
+    )
 }
 
 fn default_anchor(index: usize) -> (i32, i32) {
@@ -131,13 +137,19 @@ fn default_anchor(index: usize) -> (i32, i32) {
 fn clamp_anchor(anchor: (i32, i32), dims: (f64, f64)) -> (i32, i32) {
     let (m, w, h) = place(anchor, dims);
     let wa = m.work;
-    (anchor.0.max(wa.x).min(wa.right() - w), anchor.1.max(wa.y).min(wa.bottom() - h))
+    (
+        anchor.0.max(wa.x).min(wa.right() - w),
+        anchor.1.max(wa.y).min(wa.bottom() - h),
+    )
 }
 
 /// A stored position (the Electron app's DIPs) in physical px, and back.
 fn from_dip(p: &Value) -> Option<(i32, i32)> {
     let s = window::primary_monitor().scale;
-    Some(((p.get("x")?.as_f64()? * s).round() as i32, (p.get("y")?.as_f64()? * s).round() as i32))
+    Some((
+        (p.get("x")?.as_f64()? * s).round() as i32,
+        (p.get("y")?.as_f64()? * s).round() as i32,
+    ))
 }
 
 fn to_dip(p: (i32, i32)) -> Value {
@@ -147,16 +159,35 @@ fn to_dip(p: (i32, i32)) -> Value {
 
 /// The chat goes on whichever side of the robot has room for it (left first: robots
 /// start in the bottom-right corner), from the top of the screen to the bottom.
-fn layout_for(anchor: (i32, i32), expanded: bool, tucked: bool, peek: bool, chat_w: f64, dims: (f64, f64)) -> Layout {
+fn layout_for(
+    anchor: (i32, i32),
+    expanded: bool,
+    tucked: bool,
+    peek: bool,
+    chat_w: f64,
+    dims: (f64, f64),
+) -> Layout {
     let (m, dw, dh) = place(anchor, dims);
     let s = m.scale;
     let css = |v: i32| (v as f64 / s).round();
-    let bounds_msg = |b: Rect| json!({ "x": css(b.x), "y": css(b.y), "width": css(b.w), "height": css(b.h) });
+    let bounds_msg =
+        |b: Rect| json!({ "x": css(b.x), "y": css(b.y), "width": css(b.w), "height": css(b.h) });
     if peek && !expanded && !tucked {
         // Sent away to the island: asleep-sized at its desk, its window veiled (apply_layout)
-        let bounds = Rect { x: anchor.0, y: anchor.1, w: dw, h: dh };
+        let bounds = Rect {
+            x: anchor.0,
+            y: anchor.1,
+            w: dw,
+            h: dh,
+        };
         let msg = json!({ "bounds": bounds_msg(bounds), "robotX": 0, "robotY": 0, "placement": "hidden" });
-        return Layout { bounds, placement: "hidden", panel_w: 0.0, max_chat_w: CHAT_W, msg: msg.as_object().unwrap().clone() };
+        return Layout {
+            bounds,
+            placement: "hidden",
+            panel_w: 0.0,
+            max_chat_w: CHAT_W,
+            msg: msg.as_object().unwrap().clone(),
+        };
     }
     if !expanded && tucked {
         // The chat put away keeps the window the size and place it has with the chat open
@@ -165,25 +196,61 @@ fn layout_for(anchor: (i32, i32), expanded: bool, tucked: bool, peek: bool, chat
         let mut open = layout_for(anchor, true, false, false, chat_w, dims);
         let robot_y = open.msg["robotY"].as_f64().unwrap_or(0.0);
         open.msg.insert("side".into(), json!(open.placement));
-        open.placement = if robot_y >= TUCK_STRIP { "tuck-above" } else { "tuck-below" };
+        open.placement = if robot_y >= TUCK_STRIP {
+            "tuck-above"
+        } else {
+            "tuck-below"
+        };
         open.msg.insert("placement".into(), json!(open.placement));
         return open;
     }
     if !expanded {
-        let bounds = Rect { x: anchor.0, y: anchor.1, w: dw, h: dh };
-        let msg = json!({ "bounds": bounds_msg(bounds), "robotX": 0, "robotY": 0, "placement": "none" });
-        return Layout { bounds, placement: "none", panel_w: 0.0, max_chat_w: CHAT_W, msg: msg.as_object().unwrap().clone() };
+        let bounds = Rect {
+            x: anchor.0,
+            y: anchor.1,
+            w: dw,
+            h: dh,
+        };
+        let msg =
+            json!({ "bounds": bounds_msg(bounds), "robotX": 0, "robotY": 0, "placement": "none" });
+        return Layout {
+            bounds,
+            placement: "none",
+            panel_w: 0.0,
+            max_chat_w: CHAT_W,
+            msg: msg.as_object().unwrap().clone(),
+        };
     }
     let wa = m.work;
     let room_left = (anchor.0 - wa.x) as f64;
     let room_right = (wa.right() - (anchor.0 + dw)) as f64;
     let want = CHAT_MIN.max(chat_w) * s;
-    let placement = if room_left >= want || room_left >= room_right { "left" } else { "right" };
-    let room = if placement == "left" { room_left } else { room_right };
-    let panel_w = want.min(room).max((CHAT_MIN * s).min((wa.w - dw) as f64)).round() as i32;
-    let x = if placement == "left" { anchor.0 - panel_w } else { anchor.0 };
+    let placement = if room_left >= want || room_left >= room_right {
+        "left"
+    } else {
+        "right"
+    };
+    let room = if placement == "left" {
+        room_left
+    } else {
+        room_right
+    };
+    let panel_w = want
+        .min(room)
+        .max((CHAT_MIN * s).min((wa.w - dw) as f64))
+        .round() as i32;
+    let x = if placement == "left" {
+        anchor.0 - panel_w
+    } else {
+        anchor.0
+    };
     let x = x.max(wa.x).min(wa.right() - panel_w - dw);
-    let bounds = Rect { x, y: wa.y, w: panel_w + dw, h: wa.h };
+    let bounds = Rect {
+        x,
+        y: wa.y,
+        w: panel_w + dw,
+        h: wa.h,
+    };
     let (robot_x, robot_y) = (css(anchor.0 - x), css(anchor.1 - wa.y));
     let (width, rw) = (css(bounds.w), dims.0);
     // where the panel goes inside the window (its shadow and tail need a few px)
@@ -194,7 +261,13 @@ fn layout_for(anchor: (i32, i32), expanded: bool, tucked: bool, peek: bool, chat
     };
     let max_chat_w = CHAT_MIN.max((room / s).round());
     let msg = json!({ "bounds": bounds_msg(bounds), "robotX": robot_x, "robotY": robot_y, "placement": placement, "panel": panel, "maxChatW": max_chat_w });
-    Layout { bounds, placement, panel_w: panel["w"].as_f64().unwrap(), max_chat_w, msg: msg.as_object().unwrap().clone() }
+    Layout {
+        bounds,
+        placement,
+        panel_w: panel["w"].as_f64().unwrap(),
+        max_chat_w,
+        msg: msg.as_object().unwrap().clone(),
+    }
 }
 
 /// On the stage: the window is its tile, the chat fills it (stage::INSET in from its edges),
@@ -211,7 +284,13 @@ fn stage_layout(t: &StageTile) -> Layout {
         "panel": { "x": inset, "w": panel_w }, "maxChatW": w,
         "stage": t.info, "inset": inset,
     });
-    Layout { bounds: b, placement: "stage", panel_w, max_chat_w: w, msg: msg.as_object().unwrap().clone() }
+    Layout {
+        bounds: b,
+        placement: "stage",
+        panel_w,
+        max_chat_w: w,
+        msg: msg.as_object().unwrap().clone(),
+    }
 }
 
 /// Lay the window out for how the robot is now (asleep, awake, chat open, sent away, on the
@@ -221,14 +300,24 @@ pub fn apply_layout(app: &AppHandle, id: &str) {
         let r = st.robots.get_mut(id)?;
         let layout = match &r.stage {
             Some(t) => stage_layout(t),
-            None => layout_for(r.anchor, r.expanded, r.tucked, r.peek, r.chat_w + r.side_w, r.dims), // (the panel makes room for both)
+            None => layout_for(
+                r.anchor,
+                r.expanded,
+                r.tucked,
+                r.peek,
+                r.chat_w + r.side_w,
+                r.dims,
+            ), // (the panel makes room for both)
         };
         r.seq += 1;
         let mut msg = layout.msg.clone();
         msg.insert("expanded".into(), json!(r.expanded));
         msg.insert("seq".into(), json!(r.seq));
         msg.insert("masked".into(), json!(false));
-        msg.insert("sideW".into(), json!(if r.stage.is_some() { 0.0 } else { r.side_w }));
+        msg.insert(
+            "sideW".into(),
+            json!(if r.stage.is_some() { 0.0 } else { r.side_w }),
+        );
         let bounds = layout.bounds;
         let hide = layout.placement == "hidden";
         let veil = (hide != r.veiled).then_some(hide);
@@ -236,7 +325,9 @@ pub fn apply_layout(app: &AppHandle, id: &str) {
         r.layout = Some(layout);
         Some((r.hwnd, msg, bounds, veil, hide))
     });
-    let Some((hwnd, msg, bounds, veil, hide)) = job else { return };
+    let Some((hwnd, msg, bounds, veil, hide)) = job else {
+        return;
+    };
     let _ = app.emit_to(label_of(id), "robot:layout", msg);
     // (sent away, it's veiled where it is: moved back to its desk first, it would show there
     // for a moment; it goes back there as it comes out)
@@ -257,19 +348,27 @@ pub fn view(st: &State, c: &Value) -> Value {
     let mut any_busy = false;
     let tabs: Vec<Value> = c["tabs"]
         .as_array()
-        .map(|t| t.iter().map(|t| {
-            let mut t = t.clone();
-            let busy = chat::is_busy(st, id, t["id"].as_str().unwrap_or(""));
-            any_busy |= busy;
-            t["custom"] = json!(!t["title"].as_str().unwrap_or("").is_empty());
-            t["title"] = json!(title_for(&t));
-            t["busy"] = json!(busy);
-            t
-        }).collect())
+        .map(|t| {
+            t.iter()
+                .map(|t| {
+                    let mut t = t.clone();
+                    let busy = chat::is_busy(st, id, t["id"].as_str().unwrap_or(""));
+                    any_busy |= busy;
+                    t["custom"] = json!(!t["title"].as_str().unwrap_or("").is_empty());
+                    t["title"] = json!(title_for(&t));
+                    t["busy"] = json!(busy);
+                    t
+                })
+                .collect()
+        })
         .unwrap_or_default();
     let closed: Vec<Value> = c["closedTabs"]
         .as_array()
-        .map(|t| t.iter().map(|t| json!({ "id": t["id"], "title": title_for(t), "closedAt": t["closedAt"] })).collect())
+        .map(|t| {
+            t.iter()
+                .map(|t| json!({ "id": t["id"], "title": title_for(t), "closedAt": t["closedAt"] }))
+                .collect()
+        })
         .unwrap_or_default();
     v["tabs"] = json!(tabs);
     v["closedTabs"] = json!(closed);
@@ -292,9 +391,14 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
     if app.get_webview_window(&label).is_some() {
         return Ok(());
     }
-    let Some(c) = with(app, |st| st.store.get(id).cloned()) else { return Ok(()) };
+    let Some(c) = with(app, |st| st.store.get(id).cloned()) else {
+        return Ok(());
+    };
     let dims = dims_of(c["size"].as_str().unwrap_or("normal"));
-    let anchor = clamp_anchor(from_dip(&c["position"]).unwrap_or_else(|| default_anchor(index)), dims);
+    let anchor = clamp_anchor(
+        from_dip(&c["position"]).unwrap_or_else(|| default_anchor(index)),
+        dims,
+    );
     let win = views::builder(app, &label, "robot", &[("id", id)])
         .title(c["name"].as_str().unwrap_or("Robo"))
         .transparent(true)
@@ -310,21 +414,52 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
         .build()?;
     let hwnd = win.hwnd()?.0 as isize;
     let (_, w, h) = place(anchor, dims);
-    window::set_bounds(hwnd, Rect { x: anchor.0, y: anchor.1, w, h });
+    window::set_bounds(
+        hwnd,
+        Rect {
+            x: anchor.0,
+            y: anchor.1,
+            w,
+            h,
+        },
+    );
     let chat_w = c["chatWidth"].as_f64().unwrap_or(CHAT_W);
     // (away on the island: veiled from the start; with the island turned off, out on its desk)
     let peek = c["peek"].as_bool().unwrap_or(false) && island::on(app);
     if !peek && c["peek"].as_bool() == Some(true) {
-        with(app, |st| st.store.update(id, crate::runtime::util::patch(vec![("peek", json!(false))])));
+        with(app, |st| {
+            st.store.update(
+                id,
+                crate::runtime::util::patch(vec![("peek", json!(false))]),
+            )
+        });
     }
     if peek {
         walkers::veil(app, hwnd, true);
     }
     with(app, |st| {
-        st.robots.insert(id.to_string(), Robot {
-            hwnd, anchor, dims, expanded: false, tucked: false, peek, veiled: peek, chat_w, side_w: 0.0, drag: None, resize_from: None, layout: None, seq: 0,
-            through: false, forwarded: None, eyes: None, stage: None,
-        })
+        st.robots.insert(
+            id.to_string(),
+            Robot {
+                hwnd,
+                anchor,
+                dims,
+                expanded: false,
+                tucked: false,
+                peek,
+                veiled: peek,
+                chat_w,
+                side_w: 0.0,
+                drag: None,
+                resize_from: None,
+                layout: None,
+                seq: 0,
+                through: false,
+                forwarded: None,
+                eyes: None,
+                stage: None,
+            },
+        )
     });
     revive::watch(app, &win, id);
     let (app2, id2) = (app.clone(), id.to_string());
@@ -368,7 +503,10 @@ pub fn expand(app: &AppHandle, id: &str, expanded: bool, opts: &Value) {
         return stage::leave(app, id); // (gone to sleep on the stage: off it, back to its desk)
     }
     apply_layout(app, id);
-    if expanded && focus && let Some(w) = app.get_webview_window(&label_of(id)) {
+    if expanded
+        && focus
+        && let Some(w) = app.get_webview_window(&label_of(id))
+    {
         let _ = w.set_focus();
     }
 }
@@ -379,7 +517,8 @@ pub fn set_peek(app: &AppHandle, id: &str, peek: bool) {
     let found = with(app, |st| {
         let r = st.robots.get_mut(id)?;
         r.peek = peek;
-        st.store.update(id, crate::runtime::util::patch(vec![("peek", json!(peek))]))
+        st.store
+            .update(id, crate::runtime::util::patch(vec![("peek", json!(peek))]))
     });
     if found.is_some() {
         if peek {
@@ -399,7 +538,10 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
             with(app, |st| {
                 if let Some(r) = st.robots.get_mut(id).filter(|r| r.stage.is_none()) {
                     let at = window::window_rect(r.hwnd);
-                    r.drag = Some(Drag { anchor: r.anchor, at: (at.x, at.y) });
+                    r.drag = Some(Drag {
+                        anchor: r.anchor,
+                        at: (at.x, at.y),
+                    });
                 }
             });
             island::robot_drag(app, "start");
@@ -425,7 +567,8 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
                 let d = r.drag.take()?;
                 r.anchor = d.anchor;
                 r.peek = true;
-                st.store.update(id, crate::runtime::util::patch(vec![("peek", json!(true))]))
+                st.store
+                    .update(id, crate::runtime::util::patch(vec![("peek", json!(true))]))
             });
             if done.is_some() {
                 apply_layout(app, id);
@@ -460,14 +603,25 @@ pub fn resize(app: &AppHandle, id: &str, p: &Value) {
         }
         match p["phase"].as_str()? {
             "start" => {
-                r.resize_from = Some(r.layout.as_ref().map_or(r.chat_w, |l| l.panel_w + 14.0 - r.side_w));
+                r.resize_from = Some(
+                    r.layout
+                        .as_ref()
+                        .map_or(r.chat_w, |l| l.panel_w + 14.0 - r.side_w),
+                );
                 None
             }
             "move" => {
                 let from = r.resize_from?;
                 let l = r.layout.as_ref();
-                let grow = if l.map(|l| l.placement) == Some("right") { dx } else { -dx };
-                r.chat_w = (from + grow).max(CHAT_MIN).min(l.map_or(CHAT_W, |l| l.max_chat_w - r.side_w)).round();
+                let grow = if l.map(|l| l.placement) == Some("right") {
+                    dx
+                } else {
+                    -dx
+                };
+                r.chat_w = (from + grow)
+                    .max(CHAT_MIN)
+                    .min(l.map_or(CHAT_W, |l| l.max_chat_w - r.side_w))
+                    .round();
                 Some(())
             }
             "end" => {
@@ -517,7 +671,9 @@ pub fn click_through(app: &AppHandle, id: &str, through: bool) {
         r.forwarded = None;
         Some(())
     });
-    if changed.is_some() && let Some(w) = app.get_webview_window(&label_of(id)) {
+    if changed.is_some()
+        && let Some(w) = app.get_webview_window(&label_of(id))
+    {
         let _ = w.set_ignore_cursor_events(through);
     }
 }
@@ -575,7 +731,12 @@ pub fn desk_rect(app: &AppHandle, id: &str) -> Option<Rect> {
     with(app, |st| {
         let r = st.robots.get(id)?;
         let s = window::scale_of(r.hwnd);
-        Some(Rect { x: r.anchor.0, y: r.anchor.1, w: (r.dims.0 * s).round() as i32, h: (r.dims.1 * s).round() as i32 })
+        Some(Rect {
+            x: r.anchor.0,
+            y: r.anchor.1,
+            w: (r.dims.0 * s).round() as i32,
+            h: (r.dims.1 * s).round() as i32,
+        })
     })
 }
 
@@ -592,7 +753,8 @@ pub fn open_ids(app: &AppHandle) -> Vec<String> {
 /// Out on the desktop at its desk: its window showing, not sent away to the island
 /// (so visitors, the housemaid and word quizzes leave it be).
 pub fn is_showing(app: &AppHandle, id: &str) -> bool {
-    with(app, |st| st.robots.get(id).map(|r| (r.hwnd, r.peek))).is_some_and(|(hwnd, peek)| !peek && window::is_visible(hwnd))
+    with(app, |st| st.robots.get(id).map(|r| (r.hwnd, r.peek)))
+        .is_some_and(|(hwnd, peek)| !peek && window::is_visible(hwnd))
 }
 
 /// Sent away to the island (its window veiled)?
@@ -602,7 +764,9 @@ pub fn is_away(app: &AppHandle, id: &str) -> bool {
 
 /// Is the chat open (or awake with it tucked away)?
 pub fn is_awake(app: &AppHandle, id: &str) -> bool {
-    with(app, |st| st.robots.get(id).is_some_and(|r| r.expanded || r.tucked))
+    with(app, |st| {
+        st.robots.get(id).is_some_and(|r| r.expanded || r.tucked)
+    })
 }
 
 pub fn set_title(app: &AppHandle, id: &str, name: &str) {
@@ -619,7 +783,10 @@ pub fn resize_robot(app: &AppHandle, id: &str, size: &str) {
         let new = dims_of(size);
         let s = window::scale_of(r.hwnd);
         let (ow, oh) = r.dims;
-        let shifted = (r.anchor.0 + ((ow - new.0) * s / 2.0).round() as i32, r.anchor.1 + ((oh - new.1) * s).round() as i32);
+        let shifted = (
+            r.anchor.0 + ((ow - new.0) * s / 2.0).round() as i32,
+            r.anchor.1 + ((oh - new.1) * s).round() as i32,
+        );
         r.anchor = clamp_anchor(shifted, new);
         r.dims = new;
         let mut patch = Map::new();

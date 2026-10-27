@@ -7,10 +7,10 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
+pub use super::types::Key;
 pub use crate::platform::os::input::is_down;
 pub use crate::platform::os::input::main_button_down;
 pub use crate::platform::os::input::press;
-pub use super::types::Key;
 
 /// Wait (a second at most) for Shift, Ctrl, Alt, Meta (and `extra`) to come up, so a key
 /// pressed now isn't mixed up with a hotkey still held: our Ctrl+C isn't Ctrl+Alt+C.

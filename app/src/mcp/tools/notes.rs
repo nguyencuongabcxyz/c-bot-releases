@@ -1,12 +1,12 @@
 //! The user's notebook (features/notes/): listing the notes (list_notes) and adding one
 //! (add_note), pinned on the robots' corkboards.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 
+use super::err;
 use crate::features::notes;
 use crate::runtime::util::text;
-use super::err;
 
 /// Its tools, as tools/list gives them.
 pub fn list() -> Value {
@@ -45,7 +45,12 @@ pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
     if tool == "list_notes" {
         return json!({ "text": notes::list_for_chat(app, args["include_done"].as_bool() == Some(true)) });
     }
-    match notes::add_for_chat(app, from, &text(&args["text"]), args["important"].as_bool() == Some(true)) {
+    match notes::add_for_chat(
+        app,
+        from,
+        &text(&args["text"]),
+        args["important"].as_bool() == Some(true),
+    ) {
         Ok(said) => json!({ "text": said }),
         Err(e) => err(e),
     }

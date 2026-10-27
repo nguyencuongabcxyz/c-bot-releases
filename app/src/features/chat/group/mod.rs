@@ -37,25 +37,25 @@ pub use commands::*;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
 use regex::Regex;
-use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use serde_json::{Value, json};
 use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, Emitter, Manager};
 
+use crate::agents::claude::{Session, locate};
 use crate::agents::{claude, personalities};
-use crate::agents::claude::{locate, Session};
 use crate::features::notes;
-use crate::platform::{clipboard, window};
 use crate::platform::window::Rect;
+use crate::platform::{clipboard, window};
 use crate::robots;
 use crate::robots::{planes, social, walkers};
-use crate::runtime::{hub, with};
 use crate::runtime::util::{only, patch, text};
+use crate::runtime::{hub, with};
 use crate::store::now_ms;
 use crate::ui::views;
 
@@ -125,12 +125,17 @@ fn rules(name: &str, others: &[String], mode: &str) -> String {
 
 /// Who a message @-mentions, among (id, name): by name, or the start of one ("@cap" for Captain).
 fn mentions_in(text: &str, members: &[(String, String)]) -> Vec<String> {
-    let words: Vec<String> = mention_re().captures_iter(text).map(|m| m[1].to_lowercase()).collect();
+    let words: Vec<String> = mention_re()
+        .captures_iter(text)
+        .map(|m| m[1].to_lowercase())
+        .collect();
     members
         .iter()
         .filter(|(_, name)| {
             let n: String = name.to_lowercase().split_whitespace().collect();
-            words.iter().any(|w| *w == n || (w.chars().count() >= 2 && n.starts_with(w.as_str())))
+            words
+                .iter()
+                .any(|w| *w == n || (w.chars().count() >= 2 && n.starts_with(w.as_str())))
         })
         .map(|(id, _)| id.clone())
         .collect()
@@ -140,16 +145,25 @@ fn mentions_in(text: &str, members: &[(String, String)]) -> Vec<String> {
 fn bubble_line(text: &str) -> String {
     let line: String = text.chars().filter(|c| !"#*_`>".contains(*c)).collect();
     let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
-    if line.chars().count() > 90 { format!("{}…", line.chars().take(88).collect::<String>()) } else { line }
+    if line.chars().count() > 90 {
+        format!("{}…", line.chars().take(88).collect::<String>())
+    } else {
+        line
+    }
 }
 
 /// A message as the others read it, cut to QUOTE_MAX.
 fn quote(text: &str) -> String {
-    if text.chars().count() > QUOTE_MAX { format!("{}…", text.chars().take(QUOTE_MAX).collect::<String>()) } else { text.to_string() }
+    if text.chars().count() > QUOTE_MAX {
+        format!("{}…", text.chars().take(QUOTE_MAX).collect::<String>())
+    } else {
+        text.to_string()
+    }
 }
 
 fn number(v: &Value) -> Option<f64> {
-    v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
 }
 
 // ---------------------------------------------------------------- effects
@@ -178,20 +192,27 @@ struct Env<'a> {
 
 impl Env<'_> {
     fn tell(&mut self, id: &str, payload: Value) {
-        self.fx.push(Fx::Robot(id.to_string(), "robot:social", payload));
+        self.fx
+            .push(Fx::Robot(id.to_string(), "robot:social", payload));
     }
 
     fn action(&mut self, id: &str, action: &str) {
-        self.fx.push(Fx::Robot(id.to_string(), "robot:action", json!(action)));
+        self.fx
+            .push(Fx::Robot(id.to_string(), "robot:action", json!(action)));
     }
 
     /// Do this to the chat in `ms` (if there's still one).
     fn later(&mut self, ms: u64, f: impl FnOnce(&mut Chat, &mut Env) + Send + 'static) {
-        self.fx.push(Fx::After(ms, Box::new(move |app: &AppHandle| act(app, |g, env| {
-            if let Some(c) = g.chat.as_mut() {
-                f(c, env);
-            }
-        }))));
+        self.fx.push(Fx::After(
+            ms,
+            Box::new(move |app: &AppHandle| {
+                act(app, |g, env| {
+                    if let Some(c) = g.chat.as_mut() {
+                        f(c, env);
+                    }
+                })
+            }),
+        ));
     }
 }
 
@@ -298,8 +319,21 @@ struct Group {
 
 /// Do something with the group chat, under its lock; then what it changed outside.
 fn act<R>(app: &AppHandle, f: impl FnOnce(&mut Group, &mut Env) -> R) -> R {
-    let Some(state) = app.try_state::<Mutex<Group>>() else { return f(&mut Group::default(), &mut Env { app, fx: vec![], changed: false }) };
-    let mut env = Env { app, fx: vec![], changed: false };
+    let Some(state) = app.try_state::<Mutex<Group>>() else {
+        return f(
+            &mut Group::default(),
+            &mut Env {
+                app,
+                fx: vec![],
+                changed: false,
+            },
+        );
+    };
+    let mut env = Env {
+        app,
+        fx: vec![],
+        changed: false,
+    };
     let r = {
         let mut g = state.lock().unwrap_or_else(|e| e.into_inner());
         let r = f(&mut g, &mut env);
@@ -321,7 +355,12 @@ fn act<R>(app: &AppHandle, f: impl FnOnce(&mut Group, &mut Env) -> R) -> R {
 }
 
 fn name(app: &AppHandle, id: &str) -> String {
-    with(app, |st| st.store.get(id).and_then(|c| c["name"].as_str().map(str::to_string))).unwrap_or_else(|| "A robot".into())
+    with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["name"].as_str().map(str::to_string))
+    })
+    .unwrap_or_else(|| "A robot".into())
 }
 
 fn visible(app: &AppHandle, id: &str) -> bool {
@@ -334,14 +373,21 @@ fn is_asleep(app: &AppHandle, id: &str) -> bool {
 
 fn personality_of(c: &Value) -> Value {
     let all = personalities::all();
-    all.get(c["personality"].as_str().unwrap_or("")).or_else(|| all.values().next()).cloned().unwrap_or(json!({}))
+    all.get(c["personality"].as_str().unwrap_or(""))
+        .or_else(|| all.values().next())
+        .cloned()
+        .unwrap_or(json!({}))
 }
 
 fn robot_info(app: &AppHandle, id: &str) -> Option<Value> {
     let c = with(app, |st| st.store.get(id).cloned())?;
     let p = personality_of(&c);
     let folder = c["folder"].as_str().unwrap_or("");
-    let base = Path::new(folder).file_name().map(|b| b.to_string_lossy().into_owned()).filter(|b| !b.is_empty()).unwrap_or_else(|| folder.to_string());
+    let base = Path::new(folder)
+        .file_name()
+        .map(|b| b.to_string_lossy().into_owned())
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| folder.to_string());
     Some(json!({
         "id": id, "name": c["name"], "color": c["color"].as_str().unwrap_or(""), "emoji": p["emoji"].as_str().unwrap_or("🤖"),
         "personality": p["label"].as_str().unwrap_or(""), "folder": base, "onDesk": visible(app, id), "asleep": is_asleep(app, id),
@@ -350,7 +396,13 @@ fn robot_info(app: &AppHandle, id: &str) -> Option<Value> {
 
 fn view(app: &AppHandle, g: &Group) -> Value {
     let Some(c) = &g.chat else {
-        let ids: Vec<String> = with(app, |st| st.store.list().iter().filter_map(|c| c["id"].as_str().map(str::to_string)).collect());
+        let ids: Vec<String> = with(app, |st| {
+            st.store
+                .list()
+                .iter()
+                .filter_map(|c| c["id"].as_str().map(str::to_string))
+                .collect()
+        });
         let robots: Vec<Value> = ids.iter().filter_map(|id| robot_info(app, id)).collect();
         return json!({ "phase": "setup", "hostId": g.host, "robots": robots, "rounds": ROUNDS, "messages": MESSAGES, "caps": CAPS });
     };
@@ -369,7 +421,12 @@ fn view(app: &AppHandle, g: &Group) -> Value {
         c.typing(app)
             .into_iter()
             .filter_map(|id| {
-                let t = c.people.get(&id)?.turn.as_ref().filter(|t| t.msg.is_none())?;
+                let t = c
+                    .people
+                    .get(&id)?
+                    .turn
+                    .as_ref()
+                    .filter(|t| t.msg.is_none())?;
                 Some(json!({ "id": id, "looked": t.looked.last().cloned().unwrap_or_default() }))
             })
             .collect()
@@ -399,14 +456,19 @@ fn side_of(app: &AppHandle, from: &str, to: &str) -> &'static str {
 
 fn hand(app: &AppHandle, id: &str, side: &str, up: bool) -> Option<(f64, f64)> {
     let r = hub::robot_rect(app, id)?;
-    Some((r.x as f64 + r.w as f64 * if side == "L" { 0.36 } else { 0.64 }, r.y as f64 + r.h as f64 * if up { 0.3 } else { 0.42 }))
+    Some((
+        r.x as f64 + r.w as f64 * if side == "L" { 0.36 } else { 0.64 },
+        r.y as f64 + r.h as f64 * if up { 0.3 } else { 0.42 },
+    ))
 }
 
 /// The session's events, for the robot whose chat process it is (an old one's are ignored).
 fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: &str, data: Value) {
     act(app, |g, env| {
         let Some(c) = g.chat.as_mut() else { return };
-        let Some(me) = c.people.get_mut(id) else { return };
+        let Some(me) = c.people.get_mut(id) else {
+            return;
+        };
         if !me.session.as_ref().is_some_and(|s| Arc::ptr_eq(s, session)) {
             return;
         }
@@ -418,12 +480,21 @@ fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: &str, da
                 let Some(msg_id) = t.msg else { return };
                 if let Some(m) = c.msg(msg_id) {
                     m["text"] = json!(format!("{}{delta}", m["text"].as_str().unwrap_or("")));
-                    env.fx.push(Fx::Emit(LABEL, "groupchat:delta", json!({ "id": msg_id, "delta": delta })));
+                    env.fx.push(Fx::Emit(
+                        LABEL,
+                        "groupchat:delta",
+                        json!({ "id": msg_id, "delta": delta }),
+                    ));
                 }
             }
             "tool" => {
                 let Some(t) = me.turn.as_mut() else { return };
-                let detail = data["detail"].as_str().filter(|d| !d.is_empty()).or(data["name"].as_str()).unwrap_or("").to_string();
+                let detail = data["detail"]
+                    .as_str()
+                    .filter(|d| !d.is_empty())
+                    .or(data["name"].as_str())
+                    .unwrap_or("")
+                    .to_string();
                 t.looked.push(detail);
                 let (looked, msg) = (t.looked.clone(), t.msg);
                 if let Some(m) = msg.and_then(|m| c.msg(m)) {
@@ -437,7 +508,11 @@ fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: &str, da
                 }
             }
             "done" | "fail" => {
-                if me.turn.as_ref().is_none_or(|t| data["turnId"] != t.turn_id.as_str()) {
+                if me
+                    .turn
+                    .as_ref()
+                    .is_none_or(|t| data["turnId"] != t.turn_id.as_str())
+                {
                     return;
                 }
                 let r = if event == "done" {
@@ -480,7 +555,12 @@ pub fn open(app: &AppHandle, host_id: Option<String>) {
 
 /// This robot is in the chat going on (for its menu).
 pub fn in_chat(app: &AppHandle, id: &str) -> bool {
-    act(app, |g, _| g.chat.as_ref().is_some_and(|c| c.members.iter().any(|m| m == id) && (c.status == "running" || c.status == "summarising")))
+    act(app, |g, _| {
+        g.chat.as_ref().is_some_and(|c| {
+            c.members.iter().any(|m| m == id)
+                && (c.status == "running" || c.status == "summarising")
+        })
+    })
 }
 
 /// The group chat window is open.
@@ -505,14 +585,28 @@ fn start(g: &mut Group, env: &mut Env, p: &Value) -> Value {
         return json!({ "error": "Pick at least two robots (on the desk)." });
     }
     end(g, env);
-    let host_id = g.host.clone().filter(|h| members.contains(h)).unwrap_or_else(|| members[0].clone());
+    let host_id = g
+        .host
+        .clone()
+        .filter(|h| members.contains(h))
+        .unwrap_or_else(|| members[0].clone());
     members.retain(|m| *m != host_id);
     members.insert(0, host_id.clone());
-    let pick = |v: &Value, list: &[u64], def: u64| number(v).filter(|n| list.iter().any(|x| *x as f64 == *n)).map_or(def, |n| n as u64);
+    let pick = |v: &Value, list: &[u64], def: u64| {
+        number(v)
+            .filter(|n| list.iter().any(|x| *x as f64 == *n))
+            .map_or(def, |n| n as u64)
+    };
     let max_messages = pick(&p["messages"], &MESSAGES, 20);
-    let cap = number(&p["cap"]).filter(|n| CAPS.contains(n)).unwrap_or(1.0);
+    let cap = number(&p["cap"])
+        .filter(|n| CAPS.contains(n))
+        .unwrap_or(1.0);
     let mut c = Chat {
-        mode: if p["style"] == "turns" { "turns" } else { "free" },
+        mode: if p["style"] == "turns" {
+            "turns"
+        } else {
+            "free"
+        },
         topic,
         host_id,
         members: members.clone(),
@@ -542,9 +636,19 @@ fn start(g: &mut Group, env: &mut Env, p: &Value) -> Value {
     };
     let names: Vec<String> = members.iter().map(|id| name(app, id)).collect();
     let hello = if c.free() {
-        format!("{} are in the chat: up to {} messages, ${:.2} at most.", names.join(", "), max_messages, c.cap)
+        format!(
+            "{} are in the chat: up to {} messages, ${:.2} at most.",
+            names.join(", "),
+            max_messages,
+            c.cap
+        )
     } else {
-        format!("{} take turns: up to {} rounds, ${:.2} at most.", names.join(", "), c.max_rounds, c.cap)
+        format!(
+            "{} take turns: up to {} rounds, ${:.2} at most.",
+            names.join(", "),
+            c.max_rounds,
+            c.cap
+        )
     };
     c.say(hello, None);
     // to their desks, awake
@@ -575,12 +679,19 @@ mod tests {
     use super::*;
 
     fn crew() -> Vec<(String, String)> {
-        vec![("a".into(), "Captain".into()), ("b".into(), "Robo Bob".into()), ("c".into(), "Bolt".into())]
+        vec![
+            ("a".into(), "Captain".into()),
+            ("b".into(), "Robo Bob".into()),
+            ("c".into(), "Bolt".into()),
+        ]
     }
 
     #[test]
     fn mentions_match_a_name_or_its_start() {
-        assert_eq!(mentions_in("@cap what do you think? and @robobob", &crew()), ["a", "b"]);
+        assert_eq!(
+            mentions_in("@cap what do you think? and @robobob", &crew()),
+            ["a", "b"]
+        );
         assert_eq!(mentions_in("@Bolt!", &crew()), ["c"]);
         assert!(mentions_in("@b is too short, email me@x", &crew()).is_empty());
         assert!(mentions_in("no one", &crew()).is_empty());
@@ -588,7 +699,11 @@ mod tests {
 
     #[test]
     fn the_rules_differ_by_style() {
-        let free = rules("Bolt", &["Captain (Cheerful, looks after C:\\a)".into()], "free");
+        let free = rules(
+            "Bolt",
+            &["Captain (Cheerful, looks after C:\\a)".into()],
+            "free",
+        );
         assert!(free.starts_with("\nYou are taking part in a group chat"));
         assert!(free.contains("The others: Captain (Cheerful, looks after C:\\a); and the user."));
         assert!(free.contains("- Speak only for yourself, Bolt, in your own personality."));
@@ -599,7 +714,10 @@ mod tests {
 
     #[test]
     fn bubbles_get_a_short_plain_line() {
-        assert_eq!(bubble_line("**Yes!**  The `config`\n> lives in _src_"), "Yes! The config lives in src");
+        assert_eq!(
+            bubble_line("**Yes!**  The `config`\n> lives in _src_"),
+            "Yes! The config lives in src"
+        );
         let long = "word ".repeat(40);
         let b = bubble_line(&long);
         assert_eq!(b.chars().count(), 89);
@@ -613,7 +731,10 @@ mod tests {
         assert_eq!(agree_re().replace_all(raw, "").trim(), "Sounds right.");
         assert!(agree_re().is_match("<AGREE>") && agree_re().is_match("</agree>"));
         assert!(pass_re().is_match("<pass />"));
-        assert_eq!(pass_re().replacen("<pass/> <pass/>", 1, "").trim(), "<pass/>"); // (as JS: only the first)
+        assert_eq!(
+            pass_re().replacen("<pass/> <pass/>", 1, "").trim(),
+            "<pass/>"
+        ); // (as JS: only the first)
     }
 
     #[test]
@@ -624,18 +745,96 @@ mod tests {
 
     #[test]
     fn the_room_goes_left_then_right_then_above() {
-        let wa = Rect { x: 0, y: 0, w: 1920, h: 1040 };
+        let wa = Rect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1040,
+        };
         // room on the left: beside it, bottoms lined up
-        let r = room_bounds(Rect { x: 730, y: 200, w: 460, h: 640 }, 3, wa, 1.0);
-        assert_eq!(r, Rect { x: 180, y: 500, w: 540, h: 340 });
+        let r = room_bounds(
+            Rect {
+                x: 730,
+                y: 200,
+                w: 460,
+                h: 640,
+            },
+            3,
+            wa,
+            1.0,
+        );
+        assert_eq!(
+            r,
+            Rect {
+                x: 180,
+                y: 500,
+                w: 540,
+                h: 340
+            }
+        );
         // none on the left: the right
-        let r = room_bounds(Rect { x: 100, y: 200, w: 460, h: 640 }, 5, wa, 1.0);
-        assert_eq!(r, Rect { x: 570, y: 460, w: 640, h: 380 });
+        let r = room_bounds(
+            Rect {
+                x: 100,
+                y: 200,
+                w: 460,
+                h: 640,
+            },
+            5,
+            wa,
+            1.0,
+        );
+        assert_eq!(
+            r,
+            Rect {
+                x: 570,
+                y: 460,
+                w: 640,
+                h: 380
+            }
+        );
         // nor there: above it (kept on the screen)
-        let narrow = Rect { x: 0, y: 0, w: 1000, h: 1040 };
-        let r = room_bounds(Rect { x: 300, y: 400, w: 460, h: 600 }, 3, narrow, 1.0);
-        assert_eq!(r, Rect { x: 260, y: 50, w: 540, h: 340 });
+        let narrow = Rect {
+            x: 0,
+            y: 0,
+            w: 1000,
+            h: 1040,
+        };
+        let r = room_bounds(
+            Rect {
+                x: 300,
+                y: 400,
+                w: 460,
+                h: 600,
+            },
+            3,
+            narrow,
+            1.0,
+        );
+        assert_eq!(
+            r,
+            Rect {
+                x: 260,
+                y: 50,
+                w: 540,
+                h: 340
+            }
+        );
         // on a 150% screen it's bigger in physical px
-        assert_eq!(room_bounds(Rect { x: 1500, y: 300, w: 690, h: 960 }, 3, wa, 1.5).w, 810);
+        assert_eq!(
+            room_bounds(
+                Rect {
+                    x: 1500,
+                    y: 300,
+                    w: 690,
+                    h: 960
+                },
+                3,
+                wa,
+                1.5
+            )
+            .w,
+            810
+        );
     }
 }

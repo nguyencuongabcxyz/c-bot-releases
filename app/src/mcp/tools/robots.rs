@@ -2,7 +2,7 @@
 //! and handing one a piece of work (hand_off_task). The asking itself, with its guards and
 //! the answer waited for, is link.rs's (ask).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 
 use crate::mcp::link;
@@ -70,6 +70,9 @@ pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value, conn: u64) ->
     if list.is_empty() {
         return json!({ "text": "There are no other robots on the desktop right now." });
     }
-    let lines: Vec<String> = list.iter().map(|(id, n, f)| format!("- {n}: looks after {f} ({})", link::status_of(app, id))).collect();
+    let lines: Vec<String> = list
+        .iter()
+        .map(|(id, n, f)| format!("- {n}: looks after {f} ({})", link::status_of(app, id)))
+        .collect();
     json!({ "text": lines.join("\n") })
 }

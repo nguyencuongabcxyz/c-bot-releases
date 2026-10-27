@@ -17,7 +17,10 @@ pub fn is_out(app: &AppHandle, id: &str) -> bool {
 
 /// Sleepwalking (it went out asleep)?
 pub fn is_sleepwalking(app: &AppHandle, id: &str) -> bool {
-    ws(app, |m| m.get(id).is_some_and(|w| w.shown && w.asleep && w.held.is_none() && w.docking.is_none()))
+    ws(app, |m| {
+        m.get(id)
+            .is_some_and(|w| w.shown && w.asleep && w.held.is_none() && w.docking.is_none())
+    })
 }
 
 /// Where it is now (physical px).
@@ -44,7 +47,11 @@ pub fn dock(app: &AppHandle, id: &str) {
         w.docking = Some(Instant::now() + DOCK_WAIT);
         // where its feet are, in desk-window px, so it stands there at the desk as the walker goes
         let (fx, fy) = w.feet();
-        Some(Some(format!("dock:{},{}", ((fx - d.rect.x as f64) / d.s).round(), ((fy - d.rect.y as f64) / d.s).round())))
+        Some(Some(format!(
+            "dock:{},{}",
+            ((fx - d.rect.x as f64) / d.s).round(),
+            ((fy - d.rect.y as f64) / d.s).round()
+        )))
     });
     match action {
         Some(Some(a)) => {
@@ -57,7 +64,9 @@ pub fn dock(app: &AppHandle, id: &str) {
 
 /// Its walker window goes (the desk has its character back).
 pub fn close(app: &AppHandle, id: &str) {
-    let Some(w) = ws(app, |m| m.remove(id)) else { return };
+    let Some(w) = ws(app, |m| m.remove(id)) else {
+        return;
+    };
     if let Some(window) = app.get_webview_window(&w.label) {
         let _ = window.close();
     }
@@ -95,7 +104,11 @@ pub fn go_home(app: &AppHandle, id: &str, gait: Option<&str>, speed_k: f64) -> b
         }
         home = w.home_feet(desk.as_ref());
         if let Some(feet) = home {
-            let e = Errand { gait: gait.map(str::to_string), speed_k, ..dock_errand(id) };
+            let e = Errand {
+                gait: gait.map(str::to_string),
+                speed_k,
+                ..dock_errand(id)
+            };
             w.errand_to(feet, e);
         }
         Some(true)
@@ -145,7 +158,13 @@ pub fn set_asleep(app: &AppHandle, id: &str, asleep: bool) {
         }
         w.asleep = asleep;
         w.gait.clear(); // (re-sent with the new mood)
-        let gait = if w.pause != Pause::No { "stand" } else if asleep { "sleepwalk" } else { "walk" };
+        let gait = if w.pause != Pause::No {
+            "stand"
+        } else if asleep {
+            "sleepwalk"
+        } else {
+            "walk"
+        };
         w.set_gait(gait, None, fx);
     });
 }
@@ -186,7 +205,11 @@ pub fn cursor(app: &AppHandle, at: (i32, i32)) {
             let p = (at.0 as f64, at.1 as f64);
             if eyes_now && w.eyes != Some(at) {
                 w.eyes = Some(at);
-                w.send(&mut fx, "walker:cursor", json!({ "x": (p.0 - w.x) / w.s, "y": (p.1 - w.y) / w.s }));
+                w.send(
+                    &mut fx,
+                    "walker:cursor",
+                    json!({ "x": (p.0 - w.x) / w.s, "y": (p.1 - w.y) / w.s }),
+                );
             }
             if w.shown && w.held.is_none() && w.docking.is_none() {
                 let over = over_character(w.x, w.y, w.bw as f64, w.bh as f64, w.k * w.s, p);
@@ -206,7 +229,10 @@ pub fn cursor(app: &AppHandle, at: (i32, i32)) {
 /// and the mouse worked out afresh.
 pub fn recover(app: &AppHandle) {
     let ids: Vec<String> = ws(app, |m| m.keys().cloned().collect());
-    let desks: HashMap<String, Option<Desk>> = ids.iter().map(|id| (id.clone(), desk_of(app, id))).collect();
+    let desks: HashMap<String, Option<Desk>> = ids
+        .iter()
+        .map(|id| (id.clone(), desk_of(app, id)))
+        .collect();
     let now = Instant::now();
     let mut fx = vec![];
     ws(app, |m| {

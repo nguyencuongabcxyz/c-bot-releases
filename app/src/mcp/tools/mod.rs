@@ -11,7 +11,7 @@ pub mod robots;
 pub mod terminal;
 pub mod words;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 
 /// As MCP names them: what Claude Code calls a tool of this server.
@@ -32,17 +32,32 @@ fn in_turn() -> Value {
 
 /// Every tool, as tools/list gives them.
 pub fn list() -> Value {
-    let all: Vec<Value> = [robots::list(), words::list(), notes::list(), terminal::list()]
-        .into_iter()
-        .flat_map(|v| v.as_array().cloned().unwrap_or_default())
-        .collect();
+    let all: Vec<Value> = [
+        robots::list(),
+        words::list(),
+        notes::list(),
+        terminal::list(),
+    ]
+    .into_iter()
+    .flat_map(|v| v.as_array().cloned().unwrap_or_default())
+    .collect();
     Value::Array(all)
 }
 
 /// The tools usable without asking (--allowedTools), as Claude Code names them: all but
 /// terminal_run (running something is up to the robot's permission mode, as its own Bash is).
 pub fn allowed() -> Vec<String> {
-    let names = ["ask_robot", "list_robots", "hand_off_task", "list_words", "save_words", "list_notes", "add_note", "terminal_read", "terminal_type"];
+    let names = [
+        "ask_robot",
+        "list_robots",
+        "hand_off_task",
+        "list_words",
+        "save_words",
+        "list_notes",
+        "add_note",
+        "terminal_read",
+        "terminal_type",
+    ];
     names.iter().map(|n| format!("{PREFIX}{n}")).collect()
 }
 
@@ -58,7 +73,9 @@ pub fn call(app: &AppHandle, from: &str, tab: &str, tool: &str, args: &Value, co
         "list_robots" | "ask_robot" | "hand_off_task" => robots::call(app, from, tool, args, conn),
         "list_words" | "save_words" => words::call(app, from, tool, args),
         "list_notes" | "add_note" => notes::call(app, from, tool, args),
-        "terminal_read" | "terminal_type" | "terminal_run" => terminal::call(app, from, tab, tool, args),
+        "terminal_read" | "terminal_type" | "terminal_run" => {
+            terminal::call(app, from, tab, tool, args)
+        }
         _ => err(format!("No tool {tool}.")),
     }
 }

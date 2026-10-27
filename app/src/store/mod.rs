@@ -14,7 +14,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 const HISTORY_LIMIT: usize = 60;
 pub const MAX_TABS: usize = 8;
@@ -65,13 +65,30 @@ pub fn title_for(tab: &Value) -> String {
 /// Robots used to have a single conversation; it becomes their first tab.
 fn migrate(c: &mut Value) {
     let o = c.as_object_mut().unwrap();
-    if !o.get("tabs").and_then(Value::as_array).is_some_and(|t| !t.is_empty()) {
+    if !o
+        .get("tabs")
+        .and_then(Value::as_array)
+        .is_some_and(|t| !t.is_empty())
+    {
         let mut fields = Map::new();
-        fields.insert("sessionId".into(), o.get("sessionId").cloned().unwrap_or(Value::Null));
-        fields.insert("history".into(), o.get("history").cloned().filter(Value::is_array).unwrap_or(json!([])));
+        fields.insert(
+            "sessionId".into(),
+            o.get("sessionId").cloned().unwrap_or(Value::Null),
+        );
+        fields.insert(
+            "history".into(),
+            o.get("history")
+                .cloned()
+                .filter(Value::is_array)
+                .unwrap_or(json!([])),
+        );
         o.insert("tabs".into(), json!([new_tab(fields)]));
     }
-    let active = o.get("activeTab").and_then(Value::as_str).unwrap_or("").to_string();
+    let active = o
+        .get("activeTab")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let tabs = o["tabs"].as_array().unwrap();
     if !tabs.iter().any(|t| str_of(t, "id") == active) {
         let first = tabs[0]["id"].clone();
@@ -126,7 +143,9 @@ fn bring_over(from: &Path, dir: &Path) {
             let _ = fs::copy(&src, dir.join(name));
         }
     }
-    let Ok(old) = fs::read_dir(from.join("backups")) else { return };
+    let Ok(old) = fs::read_dir(from.join("backups")) else {
+        return;
+    };
     for e in old.flatten() {
         let to = backups.join(e.file_name());
         if e.path().extension().is_some_and(|x| x == "json") && e.path().is_file() && !to.exists() {
@@ -155,7 +174,8 @@ impl Store {
     /// in `import` (the Electron app's data folder, which is left as it is).
     pub fn open(dir: &Path, import: Option<PathBuf>) -> Store {
         let file = dir.join("c-bot.json");
-        if !file.exists() && !tmp_of(&file).exists()
+        if !file.exists()
+            && !tmp_of(&file).exists()
             && let Some(from) = import.filter(|d| d.is_dir())
         {
             bring_over(&from, dir);
@@ -183,9 +203,18 @@ impl Store {
         }
         // robot sounds: 'essential' | 'all' | 'off' (it was a mute checkbox: muted is off, else essential)
         let settings = store.data["settings"].as_object_mut().unwrap();
-        if !matches!(settings.get("sounds").and_then(Value::as_str), Some("essential" | "all" | "off")) {
-            let muted = settings.get("muted").and_then(Value::as_bool).unwrap_or(false);
-            settings.insert("sounds".into(), json!(if muted { "off" } else { "essential" }));
+        if !matches!(
+            settings.get("sounds").and_then(Value::as_str),
+            Some("essential" | "all" | "off")
+        ) {
+            let muted = settings
+                .get("muted")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            settings.insert(
+                "sounds".into(),
+                json!(if muted { "off" } else { "essential" }),
+            );
         }
         if raw.is_some() {
             store.backup();
@@ -202,14 +231,23 @@ impl Store {
             Ok(data) => return Some(data),
             Err(err) => err,
         };
-        let broken = self.file.with_file_name(format!("c-bot.broken-{}.json", now_ms()));
+        let broken = self
+            .file
+            .with_file_name(format!("c-bot.broken-{}.json", now_ms()));
         let _ = fs::rename(&self.file, &broken);
         let mut candidates = vec![tmp_of(&self.file)];
         candidates.extend(self.backups());
         for candidate in candidates {
             if let Ok(data) = read_json(&candidate) {
-                eprintln!("[store] {} was unreadable ({err}); recovered from {}", self.file.display(), candidate.display());
-                self.recovered = Some(Recovered { from: Some(candidate), broken });
+                eprintln!(
+                    "[store] {} was unreadable ({err}); recovered from {}",
+                    self.file.display(),
+                    candidate.display()
+                );
+                self.recovered = Some(Recovered {
+                    from: Some(candidate),
+                    broken,
+                });
                 return Some(data);
             }
         }
@@ -219,10 +257,16 @@ impl Store {
 
     /// newest first
     fn backups(&self) -> Vec<PathBuf> {
-        let Ok(dir) = fs::read_dir(&self.backup_dir) else { return vec![] };
+        let Ok(dir) = fs::read_dir(&self.backup_dir) else {
+            return vec![];
+        };
         let mut names: Vec<String> = dir
             .filter_map(|e| e.ok()?.file_name().into_string().ok())
-            .filter(|n| n.len() == "c-bot-2026-01-01.json".len() && n.starts_with("c-bot-") && n.ends_with(".json"))
+            .filter(|n| {
+                n.len() == "c-bot-2026-01-01.json".len()
+                    && n.starts_with("c-bot-")
+                    && n.ends_with(".json")
+            })
             .collect();
         names.sort();
         names.reverse();
@@ -270,7 +314,8 @@ impl Store {
 
     pub fn flush(&mut self) {
         self.due = None;
-        let result = fs::create_dir_all(self.file.parent().unwrap()).and_then(|_| write_safely(&self.file, &self.text()));
+        let result = fs::create_dir_all(self.file.parent().unwrap())
+            .and_then(|_| write_safely(&self.file, &self.text()));
         if let Err(err) = result {
             eprintln!("[store] save failed: {err}");
         }
@@ -304,7 +349,10 @@ impl Store {
     }
 
     fn get_mut(&mut self, id: &str) -> Option<&mut Map<String, Value>> {
-        self.characters_mut().iter_mut().find(|c| str_of(c, "id") == id).and_then(Value::as_object_mut)
+        self.characters_mut()
+            .iter_mut()
+            .find(|c| str_of(c, "id") == id)
+            .and_then(Value::as_object_mut)
     }
 
     pub fn update(&mut self, id: &str, patch: Map<String, Value>) -> Option<Value> {
@@ -347,7 +395,11 @@ impl Store {
     // ---------------------------------------------------------------- tabs
 
     pub fn tab(&self, id: &str, tab_id: &str) -> Option<&Value> {
-        self.get(id)?.get("tabs")?.as_array()?.iter().find(|t| str_of(t, "id") == tab_id)
+        self.get(id)?
+            .get("tabs")?
+            .as_array()?
+            .iter()
+            .find(|t| str_of(t, "id") == tab_id)
     }
 
     fn tabs_mut(&mut self, id: &str) -> Option<&mut Vec<Value>> {
@@ -369,22 +421,36 @@ impl Store {
     pub fn remove_tab(&mut self, id: &str, tab_id: &str) {
         let Some(c) = self.get_mut(id) else { return };
         let tabs = c.get_mut("tabs").and_then(Value::as_array_mut).unwrap();
-        let Some(i) = tabs.iter().position(|t| str_of(t, "id") == tab_id) else { return };
+        let Some(i) = tabs.iter().position(|t| str_of(t, "id") == tab_id) else {
+            return;
+        };
         let closed = tabs.remove(i);
         if tabs.is_empty() {
             tabs.push(new_tab(Map::new()));
         }
         let next = tabs[i.min(tabs.len() - 1)]["id"].clone();
         // a tab with a conversation in it can be reopened (Ctrl+Shift+T); a temporary one is gone for good
-        let has_talk = (closed.get("history").and_then(Value::as_array).is_some_and(|h| !h.is_empty()) || !closed["sessionId"].is_null()) && closed["temporary"] != true;
+        let has_talk = (closed
+            .get("history")
+            .and_then(Value::as_array)
+            .is_some_and(|h| !h.is_empty())
+            || !closed["sessionId"].is_null())
+            && closed["temporary"] != true;
         if has_talk {
-            let mut kept: Vec<Value> = c.get("closedTabs").and_then(Value::as_array).cloned().unwrap_or_default();
+            let mut kept: Vec<Value> = c
+                .get("closedTabs")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
             kept.retain(|t| str_of(t, "id") != tab_id);
             let mut closed = closed;
             closed["closedAt"] = json!(now_ms());
             kept.push(closed);
             let skip = kept.len().saturating_sub(CLOSED_TABS_KEPT);
-            c.insert("closedTabs".into(), Value::Array(kept.into_iter().skip(skip).collect()));
+            c.insert(
+                "closedTabs".into(),
+                Value::Array(kept.into_iter().skip(skip).collect()),
+            );
         }
         if c.get("activeTab").and_then(Value::as_str) == Some(tab_id) {
             c.insert("activeTab".into(), next);
@@ -395,7 +461,11 @@ impl Store {
     /// Bring back the most recently closed tab (or the one with this id).
     pub fn reopen_tab(&mut self, id: &str, tab_id: Option<&str>) -> Option<Value> {
         let c = self.get_mut(id)?;
-        let mut closed: Vec<Value> = c.get("closedTabs").and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut closed: Vec<Value> = c
+            .get("closedTabs")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         let i = match tab_id {
             Some(t) => closed.iter().position(|x| str_of(x, "id") == t)?,
             None => closed.len().checked_sub(1)?,
@@ -403,7 +473,11 @@ impl Store {
         let tabs = c.get_mut("tabs").and_then(Value::as_array_mut)?;
         // an empty "New chat" tab makes room for it
         let blank = tabs.iter().position(|t| {
-            t.get("history").and_then(Value::as_array).is_none_or(Vec::is_empty) && t["sessionId"].is_null() && str_of(t, "title").is_empty()
+            t.get("history")
+                .and_then(Value::as_array)
+                .is_none_or(Vec::is_empty)
+                && t["sessionId"].is_null()
+                && str_of(t, "title").is_empty()
         });
         if tabs.len() >= MAX_TABS && blank.is_none() {
             return None;
@@ -423,8 +497,16 @@ impl Store {
         Some(tab)
     }
 
-    pub fn update_tab(&mut self, id: &str, tab_id: &str, patch: Map<String, Value>) -> Option<Value> {
-        let tab = self.tabs_mut(id)?.iter_mut().find(|t| str_of(t, "id") == tab_id)?;
+    pub fn update_tab(
+        &mut self,
+        id: &str,
+        tab_id: &str,
+        patch: Map<String, Value>,
+    ) -> Option<Value> {
+        let tab = self
+            .tabs_mut(id)?
+            .iter_mut()
+            .find(|t| str_of(t, "id") == tab_id)?;
         tab.as_object_mut()?.extend(patch);
         let out = tab.clone();
         self.save();
@@ -437,18 +519,32 @@ impl Store {
         if session_id.is_empty() {
             return;
         }
-        let mut ids: Vec<Value> = c.get("sessionIds").and_then(Value::as_array).cloned().unwrap_or_default();
+        let mut ids: Vec<Value> = c
+            .get("sessionIds")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         if !ids.iter().any(|x| x == session_id) {
             ids.push(json!(session_id));
             let skip = ids.len().saturating_sub(200);
-            c.insert("sessionIds".into(), Value::Array(ids.into_iter().skip(skip).collect()));
+            c.insert(
+                "sessionIds".into(),
+                Value::Array(ids.into_iter().skip(skip).collect()),
+            );
         }
         self.save();
     }
 
     pub fn push_history(&mut self, id: &str, tab_id: &str, entry: Value) {
-        let Some(tab) = self.tabs_mut(id).and_then(|t| t.iter_mut().find(|t| str_of(t, "id") == tab_id)) else { return };
-        let Some(history) = tab.get_mut("history").and_then(Value::as_array_mut) else { return };
+        let Some(tab) = self
+            .tabs_mut(id)
+            .and_then(|t| t.iter_mut().find(|t| str_of(t, "id") == tab_id))
+        else {
+            return;
+        };
+        let Some(history) = tab.get_mut("history").and_then(Value::as_array_mut) else {
+            return;
+        };
         let mut entry = entry;
         entry["at"] = json!(now_ms());
         history.push(entry);
@@ -465,19 +561,30 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("cbot-store-{name}-{}-{}", std::process::id(), now_ms()));
+        let d = std::env::temp_dir().join(format!(
+            "cbot-store-{name}-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
     }
 
     fn robots(names: &[&str]) -> String {
-        let list: Vec<Value> = names.iter().map(|n| json!({ "id": n, "name": n })).collect();
+        let list: Vec<Value> = names
+            .iter()
+            .map(|n| json!({ "id": n, "name": n }))
+            .collect();
         json!({ "characters": list, "settings": {} }).to_string()
     }
 
     fn names(store: &Store) -> Vec<String> {
-        store.list().iter().map(|c| str_of(c, "name").to_string()).collect()
+        store
+            .list()
+            .iter()
+            .map(|c| str_of(c, "name").to_string())
+            .collect()
     }
 
     #[test]
@@ -489,7 +596,10 @@ mod tests {
         assert!(store.recovered.is_none());
         // the next start keeps its own, never the old app's again
         fs::write(old.join("c-bot.json"), robots(&["Other"])).unwrap();
-        assert_eq!(names(&Store::open(&new, Some(old.clone()))), ["Bo", "Sunny"]);
+        assert_eq!(
+            names(&Store::open(&new, Some(old.clone()))),
+            ["Bo", "Sunny"]
+        );
         let _ = (fs::remove_dir_all(old), fs::remove_dir_all(new));
     }
 
@@ -498,15 +608,37 @@ mod tests {
         let (old, new) = (scratch("old-broken"), scratch("new-broken"));
         fs::write(old.join("c-bot.json"), "{ \"characters\": [ { \"id\": ").unwrap();
         fs::create_dir_all(old.join("backups")).unwrap();
-        fs::write(old.join("backups").join("c-bot-2026-10-20.json"), robots(&["Older"])).unwrap();
-        fs::write(old.join("backups").join("c-bot-2026-10-25.json"), robots(&["Bo", "Sunny"])).unwrap();
-        fs::write(old.join("backups").join("vocab-2026-10-25.json"), "{\"words\":[]}").unwrap();
+        fs::write(
+            old.join("backups").join("c-bot-2026-10-20.json"),
+            robots(&["Older"]),
+        )
+        .unwrap();
+        fs::write(
+            old.join("backups").join("c-bot-2026-10-25.json"),
+            robots(&["Bo", "Sunny"]),
+        )
+        .unwrap();
+        fs::write(
+            old.join("backups").join("vocab-2026-10-25.json"),
+            "{\"words\":[]}",
+        )
+        .unwrap();
         let store = Store::open(&new, Some(old.clone()));
         assert_eq!(names(&store), ["Bo", "Sunny"], "the newest backup");
         let r = store.recovered.as_ref().expect("said it was recovered");
-        assert!(r.from.as_ref().is_some_and(|f| f.ends_with("c-bot-2026-10-25.json")));
-        assert!(new.join("backups").join("vocab-2026-10-25.json").exists(), "the other backups came too");
-        assert!(old.join("c-bot.json").exists(), "the old app's files are left as they were");
+        assert!(
+            r.from
+                .as_ref()
+                .is_some_and(|f| f.ends_with("c-bot-2026-10-25.json"))
+        );
+        assert!(
+            new.join("backups").join("vocab-2026-10-25.json").exists(),
+            "the other backups came too"
+        );
+        assert!(
+            old.join("c-bot.json").exists(),
+            "the old app's files are left as they were"
+        );
         let _ = (fs::remove_dir_all(old), fs::remove_dir_all(new));
     }
 }

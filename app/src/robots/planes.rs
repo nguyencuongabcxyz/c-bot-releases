@@ -13,8 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
-use tauri::{AppHandle, Emitter};
 use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, Emitter};
 
 use crate::platform::window;
 use crate::platform::window::Rect;
@@ -38,18 +38,32 @@ struct Path {
 
 impl Path {
     fn new(from: (f64, f64), to: (f64, f64), miss: bool, s: f64) -> Path {
-        let end = if miss { (to.0 + (to.0 - from.0) * 0.35, to.1 + 110.0 * s) } else { to };
+        let end = if miss {
+            (to.0 + (to.0 - from.0) * 0.35, to.1 + 110.0 * s)
+        } else {
+            to
+        };
         let dist = (end.0 - from.0).hypot(end.1 - from.1) / s;
         let ms = (dist / 420.0 * 1000.0).clamp(1100.0, 3200.0);
         let lift = (60.0 + dist * 0.22).min(200.0) * s;
-        Path { from, end, ms, lift, s }
+        Path {
+            from,
+            end,
+            ms,
+            lift,
+            s,
+        }
     }
 
     /// Where it is, u of the way along.
     fn at(&self, u: f64) -> (f64, f64) {
         let (f, e) = (self.from, self.end);
         // (and a little wobble)
-        (f.0 + (e.0 - f.0) * u, f.1 + (e.1 - f.1) * u - 4.0 * self.lift * u * (1.0 - u) + (u * PI * 3.0).sin() * 6.0 * self.s)
+        (
+            f.0 + (e.0 - f.0) * u,
+            f.1 + (e.1 - f.1) * u - 4.0 * self.lift * u * (1.0 - u)
+                + (u * PI * 3.0).sin() * 6.0 * self.s,
+        )
     }
 
     /// Which way it's heading there (radians, screen y down).
@@ -70,18 +84,35 @@ pub fn fly(app: &AppHandle, from: (f64, f64), to: (f64, f64), on_land: Option<Do
 
 /// The same, and maybe a miss: it overshoots and lands on your desktop (on_land then runs
 /// as it lies there).
-pub fn fly_with(app: &AppHandle, from: (f64, f64), to: (f64, f64), miss: bool, on_land: Option<Done>) {
+pub fn fly_with(
+    app: &AppHandle,
+    from: (f64, f64),
+    to: (f64, f64),
+    miss: bool,
+    on_land: Option<Done>,
+) {
     let app = app.clone();
     // (its own thread: making the window waits on the main thread, and the flight's a loop)
     thread::spawn(move || flight(&app, from, to, miss, on_land));
 }
 
-fn flight(app: &AppHandle, from: (f64, f64), to: (f64, f64), miss: bool, mut on_land: Option<Done>) {
+fn flight(
+    app: &AppHandle,
+    from: (f64, f64),
+    to: (f64, f64),
+    miss: bool,
+    mut on_land: Option<Done>,
+) {
     static COUNT: AtomicU64 = AtomicU64::new(0);
     let label = format!("plane-{}", COUNT.fetch_add(1, Ordering::Relaxed) + 1);
     let s = window::monitor_near(from.0 as i32, from.1 as i32).scale;
     let (bw, bh) = ((BOX.0 * s).round() as i32, (BOX.1 * s).round() as i32);
-    let rect_at = |p: (f64, f64)| Rect { x: (p.0 - bw as f64 / 2.0).round() as i32, y: (p.1 - bh as f64 / 2.0).round() as i32, w: bw, h: bh };
+    let rect_at = |p: (f64, f64)| Rect {
+        x: (p.0 - bw as f64 / 2.0).round() as i32,
+        y: (p.1 - bh as f64 / 2.0).round() as i32,
+        w: bw,
+        h: bh,
+    };
     let (loaded, wait) = mpsc::channel();
     let built = views::builder(app, &label, "plane", &[])
         .title("Paper plane")

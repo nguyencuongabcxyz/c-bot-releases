@@ -16,22 +16,26 @@ const EVERY: Duration = Duration::from_secs(2);
 /// The windows that float over everything: the robots, the ones out walking, the word
 /// card, the notebook, Quick actions and the robot island.
 fn floats(label: &str) -> bool {
-    label.starts_with("robot-") || label.starts_with("walker-") || matches!(label, "card" | "notebook" | "quick" | "island")
+    label.starts_with("robot-")
+        || label.starts_with("walker-")
+        || matches!(label, "card" | "notebook" | "quick" | "island")
 }
 
 pub fn setup(app: &AppHandle) {
     let app = app.clone();
-    thread::spawn(move || loop {
-        thread::sleep(EVERY);
-        let handles: Vec<isize> = app
-            .webview_windows()
-            .into_iter()
-            .filter(|(label, _)| floats(label))
-            .filter_map(|(_, w)| w.hwnd().ok().map(|h| h.0 as isize))
-            .collect();
-        // (a window closing meanwhile: setting it on top just fails; next time it's gone)
-        for hwnd in handles {
-            window::restore_topmost(hwnd);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(EVERY);
+            let handles: Vec<isize> = app
+                .webview_windows()
+                .into_iter()
+                .filter(|(label, _)| floats(label))
+                .filter_map(|(_, w)| w.hwnd().ok().map(|h| h.0 as isize))
+                .collect();
+            // (a window closing meanwhile: setting it on top just fails; next time it's gone)
+            for hwnd in handles {
+                window::restore_topmost(hwnd);
+            }
         }
     });
 }

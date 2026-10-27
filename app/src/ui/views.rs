@@ -2,7 +2,7 @@
 //! loads index.html?view=<view>, with the theme it opens in (?theme=, read by gui/ipc/host.ts
 //! before the page draws).
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, WebviewUrl, WebviewWindowBuilder, Wry};
 
 use crate::runtime::util::encode;
@@ -17,7 +17,12 @@ pub fn theme_of(settings: &Value) -> Value {
 
 /// A window on `view`, with `query` passed along (?view=robot&id=…); set its look and
 /// size on the builder, then build() it.
-pub fn builder<'a>(app: &'a AppHandle, label: &str, view: &str, query: &[(&str, &str)]) -> WebviewWindowBuilder<'a, Wry, AppHandle> {
+pub fn builder<'a>(
+    app: &'a AppHandle,
+    label: &str,
+    view: &str,
+    query: &[(&str, &str)],
+) -> WebviewWindowBuilder<'a, Wry, AppHandle> {
     let theme = with(app, |st| theme_of(st.store.settings())).to_string();
     let mut url = format!("index.html?view={}&theme={}", encode(view), encode(&theme));
     for (k, v) in query {
