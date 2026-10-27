@@ -9,6 +9,7 @@
   background: var(--accent); color: #fff; border: 2px solid #fff; font: 700 12px/1 var(--font-ui);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); animation: pop-in 0.2s ease-out; pointer-events: none;
 }
+#stage-pick[hidden] { display: none; } /* (not picked: the display above would show it anyway) */
 body.stage-picked #bot-host { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 75%, transparent)); }
 
 /* ------------------------------------------------------------- a tile */
