@@ -1076,7 +1076,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       head = document.createElement('button');
       head.type = 'button';
       head.className = 'steps-head';
-      head.innerHTML = '<span class="sh-caret" aria-hidden="true">›</span><span class="sh-text"></span><span class="sh-n"></span>';
+      head.innerHTML = '<span class="sh-caret" aria-hidden="true">›</span><span class="sh-text"></span><span class="sh-now"></span><span class="sh-n"></span>';
       head.addEventListener('click', () => {
         const fold = !row.classList.contains('folded');
         row.classList.toggle('folded', fold);
@@ -1091,6 +1091,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
         row.dataset.unfoldTimer = String(setTimeout(() => row.classList.remove('unfolding'), 700));
       });
       row.prepend(head);
+      folded ??= true; // (folded to start with, even while it works: open it to see them all)
     }
     row.classList.add('foldable');
     if (folded !== undefined) row.classList.toggle('folded', folded);
@@ -1098,6 +1099,9 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     const failed = steps.filter((s) => s.classList.contains('failed')).length;
     const running = steps.some((s) => s.classList.contains('running'));
     head.querySelector('.sh-text')!.textContent = stepsSummary(steps);
+    // (while it works: what it's on now, so a folded run still shows it going)
+    const now = row.classList.contains('live') ? (steps.findLast((s) => s.classList.contains('running')) ?? steps[steps.length - 1]) : null;
+    head.querySelector('.sh-now')!.textContent = now?.querySelector('.step-text, .think-label')?.textContent ?? '';
     head.querySelector('.sh-n')!.textContent = [`${steps.length} steps`, failed ? `${failed} failed` : '', running ? 'working…' : ''].filter(Boolean).join(' · ');
     head.title = row.classList.contains('folded') ? 'Show the steps' : 'Fold the steps away';
     row.classList.toggle('has-failed', failed > 0);
@@ -1642,10 +1646,10 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     settleThinking(tab);
     // (a step still showing as running when the answer ended: it was cut short)
     for (const row of tab.log.querySelectorAll<HTMLElement>('.step.running')) row.classList.remove('running');
-    // (and its runs of steps fold away under what they did)
+    // (and its runs of steps are done: as they were, folded unless you opened one)
     for (const run of tab.log.querySelectorAll<HTMLElement>('.tools.live')) {
       run.classList.remove('live');
-      foldSteps(run, true);
+      foldSteps(run);
     }
     if (cur) for (const p of cur.parts) p.el.classList.remove('cursor');
     setBusy(tab, false);

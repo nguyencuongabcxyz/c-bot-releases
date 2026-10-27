@@ -718,7 +718,10 @@ body.history-open #logs, body.history-open #status, body.history-open #composer,
 .steps-head:hover, .steps-head:focus-visible { background: var(--bg-2); color: var(--fg); outline: none; }
 .sh-caret { flex-shrink: 0; width: 12px; text-align: center; color: var(--muted); font: 14px/1 var(--font-ui); transform: rotate(90deg); transition: transform 0.2s var(--ease-out); }
 .tools.folded .sh-caret { transform: none; }
-.sh-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-now { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.sh-now:empty { display: none; }
+.sh-now::before { content: "· "; }
 .sh-n { flex-shrink: 0; margin-left: auto; color: var(--muted); font-size: 11px; }
 .tools.has-failed .sh-n { color: color-mix(in srgb, var(--danger) 80%, var(--muted)); }
 .tools.live .sh-n { color: var(--accent-ink, var(--accent)); }
@@ -965,7 +968,8 @@ body.resizing-d.side-right.chat-from-top, body.resizing-d.side-right.chat-from-t
    Short, one-off moves only (a see-through window that animates forever never rests). */
 
 :root { --ease-out: cubic-bezier(0.22, 0.8, 0.24, 1); --ease-spring: cubic-bezier(0.3, 1.32, 0.5, 1); }
-body.expanded #panel { animation: panel-in 0.3s var(--ease-spring) both; }
+/* (not while it's going: panel-out's shrink must win, or it just vanishes) */
+body.expanded:not(.panel-out) #panel { animation: panel-in 0.3s var(--ease-spring) both; }
 @keyframes panel-in { from { opacity: 0; transform: scale(0.94) translateY(6px); } }
 .msg.user.enter { animation: msg-up 0.3s var(--ease-spring) both; }
 .msg.bot.enter { animation: msg-up 0.26s var(--ease-out) both; }
@@ -981,9 +985,10 @@ body.expanded #panel { animation: panel-in 0.3s var(--ease-spring) both; }
   block-size: 0; overflow: clip; transition: block-size 0.22s var(--ease-out), content-visibility 0.22s allow-discrete;
 }
 .diff[open]::details-content, .step.think[open]::details-content, #hv-body details[open]::details-content { block-size: auto; }
-/* a press you can feel */
-#panel button:not(:disabled):active { transform: scale(0.95); }
-#panel .fv-entry:active, #panel .steps-head:active, #panel .step-head:active { transform: none; background: var(--bg-3); }
+/* a press you can feel: only small buttons shrink a little (a wide row shrinking toward its
+   middle would slide its ends from under the mouse, and the click would miss); rows darken */
+#panel :is(header .actions button, .composer-btn, #send, .msg-actions button, .h-top button, .code-copy, .tv-copy, .fv-act, .fv-mode, .fv-z, .sd-full, .fv-card-open):not(:disabled):active { transform: scale(0.94); }
+#panel :is(.steps-head, .step-head, .fv-entry):active { background: var(--bg-3); }
 /* thin scrollbars that keep out of the way */
 #panel ::-webkit-scrollbar { width: 8px; height: 8px; }
 #panel ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 18%, transparent); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
