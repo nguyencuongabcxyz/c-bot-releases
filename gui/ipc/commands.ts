@@ -30,6 +30,10 @@ export const robotSetBrain = (tabId: string, patch: { model?: string; effort?: s
 // Claude's plan: go ahead in a permission mode, or (mode null) keep planning with your notes
 export const robotPlan = (tabId: string, requestId: string, plan: string, mode: PermissionMode | null, feedback: string) =>
   invoke<{ ok: boolean; error?: string }>('robot_plan', { tabId, requestId, plan, mode, feedback });
+// (side questions: in a thread asked before, or a new one under the answer at `at`)
+export const robotSideAsk = (tabId: string, threadId: string | null, at: number | null, quote: string, text: string) => invoke<OkOr<{ threadId: string; turnId: string }>>('robot_side_ask', { tabId, threadId, at, quote, text });
+export const robotSideCancel = (tabId: string, threadId: string) => invoke<boolean>('robot_side_cancel', { tabId, threadId });
+export const robotSideRemove = (tabId: string, threadId: string) => invoke<boolean>('robot_side_remove', { tabId, threadId });
 export const robotExpand = (expanded: boolean, opts?: { focus?: boolean; tucked?: boolean }) => invoke<void>('robot_expand', { expanded, opts });
 export const robotPeek = (peek: boolean) => invoke<void>('robot_peek', { peek });
 export const robotPoke = () => invoke<number>('robot_poke');
@@ -152,6 +156,7 @@ export const stagePickFiles = () => invoke<FileInfo[]>('stage_pick_files');
 
 // ---- told, not asked: nothing comes back
 export const robotDrag = (step: { phase: 'start' | 'move' | 'end'; dx?: number; dy?: number }) => tell('robot_drag', { step });
+export const robotSideWidth = (width: number) => tell('robot_side_width', { width });
 export const robotResize = (step: { phase: 'start' | 'move' | 'end' | 'reset'; dx?: number }) => tell('robot_resize', { step });
 export const robotClickThrough = (through: boolean) => tell('robot_click_through', { through });
 export const robotAlive = (hidden: boolean) => tell('robot_alive', { hidden });

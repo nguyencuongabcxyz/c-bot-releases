@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::claude::{self, Session};
 use crate::robots::label_of;
-use crate::{files, find_claude, mcp_apps, personalities, robotlink, transcripts, with};
+use crate::{files, find_claude, mcp_apps, personalities, robotlink, sidechat, transcripts, with};
 
 const IDLE_CLOSE: Duration = Duration::from_secs(15 * 60); // an idle conversation's process is closed; it resumes on the next question
 
@@ -59,6 +59,13 @@ struct Book {
 pub struct Chat {
     pub session: Arc<Session>,
     book: Arc<Mutex<Book>>,
+}
+
+impl Chat {
+    /// A conversation kept with the others, whose answers go elsewhere (a side question, sidechat.rs).
+    pub fn bare(session: Arc<Session>) -> Arc<Chat> {
+        Arc::new(Chat { session, book: Arc::default() })
+    }
 }
 
 pub fn key_of(id: &str, tab_id: &str) -> String {
@@ -213,7 +220,7 @@ fn patch(pairs: Vec<(&str, Value)>) -> Map<String, Value> {
 // ---------------------------------------------------------------- one tab's conversation
 
 /// Its personality, and the other robots it can ask (robotlink.rs).
-fn prompt_for(app: &AppHandle, c: &Value) -> String {
+pub fn prompt_for(app: &AppHandle, c: &Value) -> String {
     let id = c["id"].as_str().unwrap_or("");
     let mut prompt = personalities::system_prompt_for(c);
     if let Some(note) = robotlink::note(app, id) {
@@ -252,6 +259,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         mcp_config: mcp_config.unwrap_or_default(),
         extra_args: vec![],
         resume_at,
+        fork: false,
         remote: (tab["remote"] == true).then(|| remote_name(&c)),
         remote_session: tab["remoteSession"].as_str().map(str::to_string),
     };
@@ -589,7 +597,7 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 let kind = b.turns.remove(&turn_id).map(|t| t.kind).unwrap_or_default();
                 (kind, b.last_compact.clone(), b.take())
             };
-            let gone = with(app, |st| {
+            let kept = with(app, |st| {
                 let c = st.store.get(id)?.clone();
                 if kind == "compact" {
                     let text = match (last_compact["pre"].as_f64(), last_compact["post"].as_f64()) {
@@ -611,13 +619,13 @@ fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, se
                 let cost = stats.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0) + data["costUsd"].as_f64().unwrap_or(0.0);
                 stats.insert("costUsd".into(), json!(cost));
                 st.store.update(id, patch(vec![("stats", Value::Object(stats))]));
-                Some(())
+                // (when the answer went in: what its side questions hang from, sidechat.rs)
+                Some(st.store.tab(id, tab_id).and_then(|t| t["history"].as_array()?.last()?.get("at").cloned()).unwrap_or(Value::Null))
             });
-            if gone.is_none() {
-                return;
-            }
+            let Some(at) = kept else { return };
             let mut p = data;
             p["type"] = json!("done");
+            p["at"] = at;
             p["kind"] = if kind.is_empty() { Value::Null } else { json!(kind) };
             tell(app, id, tab_id, p);
             refresh_context(app, id, tab_id);
@@ -680,6 +688,7 @@ pub fn close(app: &AppHandle, id: &str, tab_id: &str) {
     if let Some(chat) = with(app, |st| st.chats.remove(&key_of(id, tab_id))) {
         chat.session.close();
     }
+    sidechat::close_tab(app, id, tab_id); // (its side questions' too: they pick up again when asked)
 }
 
 pub fn close_robot(app: &AppHandle, id: &str) {
@@ -703,7 +712,8 @@ pub fn set_permission_mode(app: &AppHandle, id: &str, mode: &str) {
         tell(app, id, &tab_id, json!({ "type": "mode", "mode": mode }));
     }
     let prefix = format!("{id}|");
-    let live: Vec<Arc<Chat>> = with(app, |st| st.chats.iter().filter(|(k, _)| k.starts_with(&prefix)).map(|(_, c)| c.clone()).collect());
+    // (side questions stay read-only)
+    let live: Vec<Arc<Chat>> = with(app, |st| st.chats.iter().filter(|(k, _)| k.starts_with(&prefix) && !sidechat::is_side(k)).map(|(_, c)| c.clone()).collect());
     for chat in live {
         chat.session.set_permission_mode(mode);
     }
@@ -734,17 +744,22 @@ pub fn rewind(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         return json!({ "ok": false, "error": "That one's too old to edit (it was asked before I could go back in a conversation)." });
     }
     close(app, id, tab_id);
-    with(app, |st| {
+    let dropped = with(app, |st| {
         let tab = st.store.tab(id, tab_id).cloned()?;
         let kept: Vec<Value> = tab["history"].as_array()?.iter().take(last).cloned().collect();
-        let mut fields = vec![("history", Value::Array(kept))];
+        // (side questions about the answers taken out go with them)
+        let (sides, dropped) = sidechat::kept_for(&tab, &kept);
+        let mut fields = vec![("history", Value::Array(kept)), ("sides", sides)];
         if let Some(at) = &at {
             fields.push(("resumeAt", json!(at)));
         } else {
             fields.extend([("sessionId", Value::Null), ("resumeAt", Value::Null)]); // (it was the first question: start afresh)
         }
-        st.store.update_tab(id, tab_id, patch(fields))
-    });
+        st.store.update_tab(id, tab_id, patch(fields))?;
+        Some(dropped)
+    })
+    .unwrap_or_default();
+    sidechat::forget(app, id, dropped);
     crate::robots::send_character(app, id);
     json!({ "ok": true, "text": question["text"], "files": question["files"] })
 }
@@ -1011,7 +1026,9 @@ pub fn sessions(app: &AppHandle, id: &str) -> Value {
     // sessions open in a tab are always the robot's, even if they predate session tracking
     let tabs = c["tabs"].as_array().cloned().unwrap_or_default();
     // (a temporary chat's aren't listed: they go when it closes)
-    let temporary: Vec<String> = tabs.iter().filter(|t| t["temporary"] == true).flat_map(sessions_of).collect();
+    let mut temporary: Vec<String> = tabs.iter().filter(|t| t["temporary"] == true).flat_map(sessions_of).collect();
+    // (nor are side questions: each is a branch of the conversation it's beside)
+    temporary.extend(tabs.iter().chain(c["closedTabs"].as_array().into_iter().flatten()).flat_map(sidechat::sessions_of));
     let tabs: Vec<Value> = tabs.into_iter().filter(|t| t["temporary"] != true).collect();
     let open: HashMap<String, Value> = tabs.iter().filter_map(|t| Some((t["sessionId"].as_str()?.to_string(), t["id"].clone()))).collect();
     let mut mine: Vec<String> = c["sessionIds"].as_array().into_iter().flatten().filter_map(|s| s.as_str().map(str::to_string)).collect();
@@ -1040,7 +1057,8 @@ fn sessions_of(tab: &Value) -> Vec<String> {
 /// A temporary chat closed: Claude Code's transcripts of it go too (once its process, closed
 /// with the tab, has let go of them).
 pub fn erase_temporary(app: &AppHandle, id: &str, tab: &Value) {
-    let sessions = sessions_of(tab);
+    let mut sessions = sessions_of(tab);
+    sessions.extend(sidechat::sessions_of(tab));
     let folder = with(app, |st| st.store.get(id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default();
     if sessions.is_empty() || folder.is_empty() {
         return;

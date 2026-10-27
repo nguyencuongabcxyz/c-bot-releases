@@ -1101,3 +1101,116 @@ body.plan-mode #composer:focus-within { border-color: var(--ok); box-shadow: 0 0
 .plan-summary > summary { cursor: pointer; color: var(--muted); font-weight: 600; }
 .plan-summary > summary .ic { margin-right: 4px; vertical-align: -2px; }
 .plan-summary[open] > .plan-body { margin-top: 8px; background: var(--panel-bg); }
+
+/* ------------------------------------------------------------- side questions (sides.ts) */
+
+/* under an answer: how many it has (click: unfold them), and the thread box while it's open there */
+.sq { align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: -4px; }
+.sq-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); background: var(--accent-soft); color: var(--accent-ink);
+  font: 600 11.5px var(--font-ui);
+}
+.sq-badge[hidden] { display: none; }
+.sq-badge:hover, .sq-badge.on { background: color-mix(in srgb, var(--accent) 22%, var(--panel-bg)); border-color: var(--accent); }
+.sq-caret, .sq-where { font-weight: 400; opacity: 0.8; }
+.sq-where::before { content: "· "; }
+
+.sq-box {
+  align-self: stretch; display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); border-left: 3px solid var(--accent); border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--panel-bg)); animation: pop-in 0.18s ease-out;
+}
+.sq .sq-body { max-height: 340px; }
+.sq-head { display: flex; align-items: flex-start; gap: 6px; padding: 7px 8px 6px 10px; border-bottom: 1px solid var(--line); }
+.sq-chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.sq-chip {
+  display: inline-flex; align-items: center; max-width: 100%; border: 1px solid var(--line-2); border-radius: 999px;
+  background: var(--panel-bg); color: var(--fg-2); font: 11px var(--font-mono);
+}
+.sq-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.sq-chip-label {
+  border: 0; background: none; font: inherit; color: inherit; padding: 3px 9px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+}
+.sq-chip-del {
+  display: inline-flex; align-items: center; gap: 3px; border: 0; background: none; color: inherit; cursor: pointer;
+  padding: 2px 7px 2px 0; opacity: 0.55; font: 600 11px var(--font-ui); line-height: 1;
+}
+.sq-chip-del:hover { opacity: 1; }
+.sq-chip-del.sure { color: var(--danger); opacity: 1; }
+button.sq-new { padding: 3px 6px; cursor: pointer; line-height: 0; color: var(--muted); }
+button.sq-new:hover { color: var(--fg); }
+.sq-tools { display: flex; gap: 4px; flex-shrink: 0; }
+.sq-tools button, #sp-inline {
+  display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line-2); border-radius: 999px; cursor: pointer;
+  background: var(--panel-bg); color: var(--fg-2); padding: 3px 9px; font: 11.5px var(--font-ui); white-space: nowrap;
+}
+.sq-tools button:hover, #sp-inline:hover { color: var(--fg); background: var(--bg-2); }
+.sq-tools .sq-fold { padding: 3px 5px; }
+.sq-fold .ic { transform: rotate(180deg); }
+.sq-tools .sq-move, #sp-inline { border-color: color-mix(in srgb, var(--accent) 60%, transparent); color: var(--accent-ink); }
+
+.sq-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.5; }
+.sq-quote {
+  flex-shrink: 0; max-height: 96px; overflow: auto; padding: 5px 9px; white-space: pre-wrap;
+  border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--panel-bg);
+  font: 12px/1.45 var(--font-mono); color: var(--fg-2);
+}
+.sq-quote-label { display: block; margin-bottom: 2px; font: 600 10px var(--font-ui); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.sq-msg { max-width: 92%; overflow-wrap: anywhere; }
+.sq-msg.user { align-self: flex-end; padding: 5px 10px; white-space: pre-wrap; background: var(--user-bg); border: 1px solid var(--user-line); border-radius: 12px 12px 4px 12px; }
+.sq-msg.bot { align-self: stretch; max-width: 100%; }
+.sq-msg.bot.error { color: var(--danger); }
+.sq-msg.bot > :first-child { margin-top: 0; }
+.sq-msg.bot p { margin: 0 0 6px; }
+.sq-msg.bot ul, .sq-msg.bot ol { margin: 2px 0 6px; padding-left: 18px; }
+.sq-msg.bot code { font: 12px var(--font-mono); background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.sq-msg.bot pre { overflow-x: auto; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 12px; }
+.sq-msg.bot pre code { background: none; border: 0; padding: 0; }
+.sq-msg.bot a { color: var(--accent-ink); }
+.sq-msg.bot .dots { display: inline-flex; vertical-align: middle; }
+.sq-msg .sq-stopped { color: var(--muted); font-style: italic; }
+.sq-use {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 2px 9px; cursor: pointer;
+  border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel-bg); color: var(--fg-2); font: 11px var(--font-ui);
+}
+.sq-use:hover { color: var(--fg); background: var(--bg-2); }
+.sq-hint { color: var(--muted); font-size: 12px; text-align: center; padding: 4px 0; }
+.sq-composer { display: flex; align-items: flex-end; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
+.sq-composer textarea {
+  flex: 1; min-width: 0; max-height: 120px; resize: none; outline: none; padding: 6px 10px; overflow-y: hidden;
+  border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel-bg); color: var(--fg); font: 13px/1.4 var(--font-ui);
+}
+.sq-composer textarea:focus { border-color: var(--accent); }
+.sq-send { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--btn); color: var(--on-btn); cursor: pointer; }
+.sq-send.stop { background: var(--danger); color: #fff; }
+.sq-send:active { transform: scale(0.93); }
+
+/* the side panel: one thread moved out beside the chat, on its far side from the robot */
+#side-panel {
+  position: absolute; top: var(--panel-top, 8px); bottom: var(--panel-bottom, 14px); left: var(--side-x, 8px); width: var(--side-w, 360px);
+  display: none; flex-direction: column; overflow: hidden; user-select: text;
+  background: var(--panel-bg); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow-pop);
+}
+body.expanded.side-open.side-ready:not(.panel-out):not(.staged) #side-panel { display: flex; animation: pop-in 0.22s ease-out; }
+#side-panel > header { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line); }
+#side-panel .spacer { flex: 1; }
+.sp-title { font-family: var(--font-display); font-weight: 650; font-size: 13.5px; }
+.sp-sub { color: var(--muted); font-size: 11.5px; }
+#sp-close { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 6px; line-height: 0; }
+#sp-close:hover { background: var(--bg-2); color: var(--fg); }
+#sp-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#sp-body .sq-box { flex: 1; min-height: 0; border: 0; border-radius: 0; background: none; animation: none; }
+#side-panel ::-webkit-scrollbar { width: 8px; }
+#side-panel ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 18%, transparent); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+
+/* text picked out of an answer: ask about it */
+#sq-pick {
+  position: fixed; z-index: 50; display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; cursor: pointer;
+  border: 0; border-radius: 999px; background: var(--fg); color: var(--bg); font: 600 12px var(--font-ui);
+  box-shadow: var(--shadow-pop); animation: pop-in 0.14s ease-out;
+}
+#sq-pick[hidden] { display: none; }
+/* the part of an answer an open side question is about */
+::highlight(side-quote) { background-color: color-mix(in srgb, var(--accent) 28%, transparent); }
