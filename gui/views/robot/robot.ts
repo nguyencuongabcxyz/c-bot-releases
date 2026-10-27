@@ -8,6 +8,7 @@ import { HistoryView } from './chat/history';
 import { ShellDrawer } from './chat/shell';
 import { dressCode } from './chat/code';
 import { fileIcon as viewIcon, renderFileView } from './chat/fileview';
+import { collectOutputs, renderOutputsPanel, renderOutputsStrip } from './chat/outputs';
 import { tooltips } from './chat/tips';
 import { stepSummary, tokens as fmtTokens } from './chat/steps';
 import { codeBlock, link, prefixLines, transform, TRANSFORMS, wrap } from './chat/format';
@@ -1148,6 +1149,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     const card = document.createElement('details');
     card.className = 'diff';
     card.open = d.hunks.reduce((n, h) => n + h.lines.length, 0) <= 40;
+    // (what the outputs card lists: chat/outputs.ts)
+    Object.assign(card.dataset, { file: d.file, created: d.created ? '1' : '', added: String(d.added || 0), removed: String(d.removed || 0) });
     const folder = (state.character?.folder || '').replace(/[\\/]+$/, '');
     const inside = folder && /^[\\/]$/.test(d.file[folder.length] || '') && d.file.toLowerCase().startsWith(folder.toLowerCase());
     const rel = inside ? d.file.slice(folder.length + 1) : d.file;
@@ -3294,6 +3297,55 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     }
     t.justBack = null;
   }
+  // The outputs (chat/outputs.ts): what the conversation in front made or changed, an "Outputs"
+  // button over the chat box that shows them all in the helper panel. Read off its log
+  // whenever the logs change (an answer, a rewind, a tab switch), a frame later.
+  const outputsEl = $('#outputs');
+  let outputsQueued = false;
+  let outputsDrawn = '';
+  function renderOutputsSoon() {
+    if (outputsQueued) return;
+    outputsQueued = true;
+    requestAnimationFrame(() => {
+      outputsQueued = false;
+      const t = active();
+      if (!t) return void (outputsEl.hidden = true);
+      const outputs = collectOutputs(t.log);
+      // (redrawn only when it changes: not under the mouse every frame the words stream in)
+      const drawn = JSON.stringify([t.id, outputs]);
+      if (drawn === outputsDrawn) return;
+      outputsDrawn = drawn;
+      renderOutputsStrip(outputsEl, outputs, { openPanel: () => openOutputsView() });
+      if (helperView.file === OUTPUTS_VIEW) showOutputsPanel(outputs);
+    });
+  }
+  new MutationObserver(renderOutputsSoon).observe($('#logs'), { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+
+  // all of them, in the helper panel (a file opened from there comes Back to it)
+  const OUTPUTS_VIEW = 'outputs:';
+  function openOutputsView({ back = false } = {}) {
+    if (history.isOpen()) history.close();
+    clearInterval(helperView.timer);
+    if (!back) helperView.trail = [];
+    Object.assign(helperView, { id: null, call: null, tab: active() ?? null, file: OUTPUTS_VIEW });
+    document.body.classList.add('helper-open');
+    $('#helper-view').hidden = false;
+    const title = $('#hv-title');
+    title.innerHTML = Icon('box', 'sm lead');
+    title.append('Outputs');
+    title.title = 'What this conversation made and changed';
+    showOutputsPanel(active() ? collectOutputs(active()!.log) : []);
+    $('#hv-body').scrollTop = 0;
+  }
+  function showOutputsPanel(outputs: ReturnType<typeof collectOutputs>) {
+    renderOutputsPanel($('#hv-body'), outputs, {
+      folder: state.character?.folder || '',
+      thumb: imageUrl,
+      openInApp,
+      reveal: (p) => ipc.robotOpenFile(p, { reveal: true }),
+    });
+  }
+
   // running helpers' clocks keep ticking on the card
   setInterval(() => {
     const t = active();
@@ -3445,7 +3497,8 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   // Back: to the file or folder opened before this one, or out to the chat
   function backFromView() {
     const prev = helperView.file && helperView.trail.pop();
-    if (prev) openFileView(prev, { back: true });
+    if (prev === OUTPUTS_VIEW) openOutputsView({ back: true });
+    else if (prev) openFileView(prev, { back: true });
     else closeHelper();
   }
   $('#hv-back').addEventListener('click', backFromView);
