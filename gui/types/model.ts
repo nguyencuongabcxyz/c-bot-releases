@@ -133,6 +133,7 @@ export type HistoryEntry =
       apps?: AppCall[];
       images?: ToolImage[];
       tools?: (StepCall | string)[]; // (just its name, "Skill(…)" for a skill: older answers and resumed conversations)
+      uuid?: string; // its last message in Claude Code's transcript (an edited question after it goes back to here)
       at: number;
     }
   | { role: 'note'; text: string; at: number }
@@ -152,6 +153,7 @@ export type Tab = {
   effort?: string;
   tasks?: Task[];
   context?: ContextUse | null;
+  temporary?: boolean; // a chat that keeps nothing: gone, transcripts and all, when it's closed
 };
 
 export type ClaudeCommand = { name: string; description: string };
@@ -180,6 +182,7 @@ export type Character = {
   clickOpens?: 'chat' | 'terminal';
   wanders?: boolean;
   chatWidth?: number;
+  chatHeight?: number | null; // (none: the height of the screen)
   claudeCommands?: ClaudeCommand[];
   sessionIds?: string[];
   closedTabs?: (Tab & { closedAt: number })[];
@@ -412,6 +415,9 @@ export type ChatEvent =
   | { type: 'thinking' }
   | { type: 'status'; text: string }
   | { type: 'question'; requestId: string; questions: Question[] }
+  | { type: 'request-cancelled'; requestId: string }
+  | { type: 'thinking-text'; id: string; delta: string }
+  | { type: 'usage'; outputTokens: number }
   | { type: 'tool'; id: string; name: string; detail: string; args: unknown }
   | { type: 'tool-output'; id: string; text: string; media: StepMedia[]; isError: boolean }
   | { type: 'tool-images'; id: string; images: ToolImage[] }
@@ -431,6 +437,9 @@ export type ChatEvent =
       denials: string[];
       sessionId: string | null;
       kind?: string;
+      uuid?: string | null;
+      outputTokens?: number;
+      ms?: number;
     }
   | { type: 'fail'; turnId: string; message: string; cancelled?: boolean; sessionMissing?: boolean }
   | { type: 'dropped'; turnIds: string[] }

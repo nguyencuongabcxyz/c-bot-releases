@@ -373,8 +373,8 @@ impl Store {
             tabs.push(new_tab(Map::new()));
         }
         let next = tabs[i.min(tabs.len() - 1)]["id"].clone();
-        // a tab with a conversation in it can be reopened (Ctrl+Shift+T)
-        let has_talk = closed.get("history").and_then(Value::as_array).is_some_and(|h| !h.is_empty()) || !closed["sessionId"].is_null();
+        // a tab with a conversation in it can be reopened (Ctrl+Shift+T); a temporary one is gone for good
+        let has_talk = (closed.get("history").and_then(Value::as_array).is_some_and(|h| !h.is_empty()) || !closed["sessionId"].is_null()) && closed["temporary"] != true;
         if has_talk {
             let mut kept: Vec<Value> = c.get("closedTabs").and_then(Value::as_array).cloned().unwrap_or_default();
             kept.retain(|t| str_of(t, "id") != tab_id);

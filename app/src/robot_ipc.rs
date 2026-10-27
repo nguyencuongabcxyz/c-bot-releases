@@ -5,6 +5,7 @@
 use serde_json::{json, Map, Value};
 use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, WebviewWindow};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::robots::sender;
@@ -99,10 +100,13 @@ pub fn robot_open_link(app: AppHandle, url: Option<String>) {
 
 // ---------------------------------------------------------------- its tabs
 
+/// A new tab; a temporary one keeps nothing (it and its transcripts go when it closes, and it's
+/// never among the past conversations).
 #[tauri::command(async)]
-pub fn robot_tab_new(app: AppHandle, window: WebviewWindow) -> Answer {
+pub fn robot_tab_new(app: AppHandle, window: WebviewWindow, temporary: Option<bool>) -> Answer {
     let id = sender(&window)?;
-    let tab = with(&app, |st| st.store.add_tab(&id, Map::new()));
+    let fields = if temporary == Some(true) { patch(vec![("temporary", json!(true))]) } else { Map::new() };
+    let tab = with(&app, |st| st.store.add_tab(&id, fields));
     Ok(match tab {
         Some(tab) => {
             robots::send_character(&app, &id);
@@ -118,7 +122,11 @@ pub fn robot_tab_close(app: AppHandle, window: WebviewWindow, tab_id: String) ->
     if with(&app, |st| st.terminals.get(&id) == Some(&tab_id)) {
         return Ok(json!({ "ok": false, "error": "That conversation is open in the terminal. Close the terminal first." }));
     }
+    let closing = with(&app, |st| st.store.tab(&id, &tab_id).cloned());
     chat::close(&app, &id, &tab_id);
+    if let Some(tab) = closing.filter(|t| t["temporary"] == true) {
+        chat::erase_temporary(&app, &id, &tab);
+    }
     let active = with(&app, |st| {
         st.store.remove_tab(&id, &tab_id);
         st.store.get(&id).map(|c| c["activeTab"].clone())
@@ -222,6 +230,12 @@ pub fn robot_answer(app: AppHandle, window: WebviewWindow, tab_id: String, reque
     Ok(chat::answer(&app, &sender(&window)?, &tab_id, &request_id, &answers, &items))
 }
 
+/// Edit the last question: back to before it (its words come back, to edit and send again).
+#[tauri::command(async)]
+pub fn robot_rewind(app: AppHandle, window: WebviewWindow, tab_id: String) -> Answer {
+    Ok(chat::rewind(&app, &sender(&window)?, &tab_id))
+}
+
 /// Past conversations in its folder.
 #[tauri::command(async)]
 pub fn robot_sessions(app: AppHandle, window: WebviewWindow) -> Answer {
@@ -265,6 +279,31 @@ pub fn robot_save_paste(app: AppHandle, request: Request<'_>) -> Answer {
     let ext = request.headers().get("ext").and_then(|v| v.to_str().ok()).unwrap_or("");
     let dir = with(&app, |st| st.data_dir.join("attachments"));
     Ok(files::save_paste(&dir, bytes, ext).map(crate::clipboard::with_thumb).unwrap_or(Value::Null))
+}
+
+/// The composer's ＋: files (or pictures) picked in the open dialog, as chips to send.
+#[tauri::command(async)]
+pub fn robot_pick_files(app: AppHandle, window: WebviewWindow, pictures: Option<bool>) -> Result<Vec<Value>, String> {
+    let id = sender(&window)?;
+    let folder = folder_of(&app, &id);
+    let mut dialog = app.dialog().file().set_parent(&window).set_title(if pictures == Some(true) { "Pictures to show me" } else { "Files to show me" });
+    if !folder.is_empty() {
+        dialog = dialog.set_directory(&folder);
+    }
+    if pictures == Some(true) {
+        dialog = dialog.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+    }
+    let picked = dialog.blocking_pick_files().unwrap_or_default();
+    Ok(picked.into_iter().filter_map(|f| f.into_path().ok()).take(20).filter_map(|p| crate::clipboard::inspect(&p.to_string_lossy())).collect())
+}
+
+/// How tall you made the chat (CSS px; none: the height of the screen).
+#[tauri::command(async)]
+pub fn robot_chat_height(app: AppHandle, window: WebviewWindow, height: Option<f64>) -> Result<(), String> {
+    let id = sender(&window)?;
+    let h = height.filter(|h| h.is_finite() && *h >= 200.0).map(|h| json!(h.round())).unwrap_or(Value::Null);
+    with(&app, |st| st.store.update(&id, patch(vec![("chatHeight", h)])));
+    Ok(())
 }
 
 #[tauri::command(async)]

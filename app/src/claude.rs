@@ -456,6 +456,7 @@ pub struct Opts {
     pub mcp_config: String,         // an --mcp-config file to add (the other robots' tools, robotlink.rs)
     pub allowed_tools: Vec<String>, // tools it may use without asking
     pub extra_args: Vec<String>,    // more command-line flags (the group chat's --strict-mcp-config)
+    pub resume_at: Option<String>,  // the next start picks the conversation up after this message, as a new branch (an edited question)
 }
 
 pub type Handler = Arc<dyn Fn(&Arc<Session>, &str, Value) + Send + Sync>;
@@ -495,6 +496,9 @@ struct Inner {
     streamed: HashSet<String>,
     mcp_tool_ids: HashSet<String>,
     auto_turns: u64,
+    last_uuid: Option<String>, // the turn's last message in the transcript (an edited question goes back to here)
+    tokens_done: u64,          // output tokens of the turn's finished messages
+    tokens_msg: u64,           // and of the one being written
     events: Sender<(String, Value)>,
 }
 
@@ -555,6 +559,8 @@ impl Inner {
         self.asides = AsideFilter::default();
         self.streamed.clear();
         self.last_used = Instant::now();
+        self.last_uuid = None;
+        (self.tokens_done, self.tokens_msg) = (0, 0);
         self.emit("turn-start", json!(id));
     }
 
@@ -702,7 +708,7 @@ impl Session {
                 task_inputs: HashMap::new(), agent_tools: HashSet::new(), agent_tasks: HashMap::new(), agent_running: HashSet::new(),
                 cost_so_far: 0.0, last_used: Instant::now(), proc: None, generation: 0, restart_before_next: false, closing: false,
                 text: String::new(), asides: AsideFilter::default(), streamed: HashSet::new(), mcp_tool_ids: HashSet::new(), auto_turns: 0,
-                events: tx,
+                last_uuid: None, tokens_done: 0, tokens_msg: 0, events: tx,
             }),
         });
         // events are handed to the handler one after another, on this thread
@@ -767,6 +773,9 @@ impl Session {
         flag("--permission-mode", &o.permission_mode);
         flag("--append-system-prompt", &o.system_prompt);
         flag("--resume", i.session_id.as_deref().unwrap_or(""));
+        // an edited question: the conversation carries on from before it, as a branch of its own
+        let resume_at = i.opts.resume_at.take().filter(|_| i.session_id.is_some());
+        flag("--resume-session-at", resume_at.as_deref().unwrap_or(""));
         flag("--model", &o.model);
         flag("--effort", &o.effort);
         // the default tools plus the task tools (for the to-do card), once we know the defaults
@@ -787,6 +796,9 @@ impl Session {
         flag("--mcp-config", &o.mcp_config);
         flag("--allowedTools", &o.allowed_tools.join(","));
         args.extend(o.extra_args.iter().cloned());
+        if resume_at.is_some() {
+            args.push("--fork-session".into());
+        }
 
         i.cost_so_far = 0.0;
         i.restart_before_next = false;
@@ -1093,9 +1105,35 @@ impl Session {
         }
         match ty {
             "control_request" => i.control_request(&msg),
+            // a question it asked is no longer wanted (the answer was stopped)
+            "control_cancel_request" => {
+                let id = s(&msg, "request_id").to_string();
+                if i.pending_questions.remove(&id).is_some() {
+                    i.emit("request-cancelled", json!({ "requestId": id }));
+                }
+            }
             "stream_event" => {
                 let ev = &msg["event"];
                 match s(ev, "type") {
+                    // how much it has written: the output tokens of each message as it goes
+                    "message_start" => i.tokens_msg = 0,
+                    "message_delta" => {
+                        if let Some(n) = ev["usage"]["output_tokens"].as_u64() {
+                            i.tokens_msg = n;
+                            let total = i.tokens_done + n;
+                            i.emit("usage", json!({ "outputTokens": total }));
+                        }
+                    }
+                    "message_stop" => {
+                        i.tokens_done += i.tokens_msg;
+                        i.tokens_msg = 0;
+                    }
+                    "content_block_delta" if s(&ev["delta"], "type") == "thinking_delta" => {
+                        let t = s(&ev["delta"], "thinking");
+                        if !t.is_empty() {
+                            i.emit("thinking-text", json!(t));
+                        }
+                    }
                     "content_block_start" => {
                         let block = &ev["content_block"];
                         if s(block, "type") == "text" {
@@ -1117,6 +1155,9 @@ impl Session {
                 }
             }
             "assistant" => {
+                if let Some(uuid) = msg["uuid"].as_str() {
+                    i.last_uuid = Some(uuid.to_string());
+                }
                 let m = &msg["message"];
                 for block in m["content"].as_array().cloned().unwrap_or_default() {
                     match s(&block, "type") {
@@ -1227,7 +1268,8 @@ impl Session {
                 let session_id = if sid.is_empty() { json!(i.session_id) } else { json!(sid) };
                 i.emit("done", json!({
                     "turnId": turn.id, "text": text, "asides": i.asides.asides, "isError": msg["is_error"].as_bool().unwrap_or(false) && !interrupted,
-                    "interrupted": interrupted, "costUsd": cost, "denials": denials, "sessionId": session_id,
+                    "interrupted": interrupted, "costUsd": cost, "denials": denials, "sessionId": session_id, "uuid": i.last_uuid,
+                    "outputTokens": msg["usage"]["output_tokens"], "ms": msg["duration_ms"],
                 }));
                 self.next(&mut i);
             }

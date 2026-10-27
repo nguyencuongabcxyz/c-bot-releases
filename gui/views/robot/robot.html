@@ -26,7 +26,7 @@
     </div>
     <div id="hv-body"></div>
   </div>
-  <div id="status" hidden><span class="dots"><i></i><i></i><i></i></span><span id="status-text"></span></div>
+  <div id="status" hidden><span class="dots"><i></i><i></i><i></i></span><span id="status-text"></span><span id="status-meta"></span></div>
   <div id="history" hidden>
     <div class="h-top">
       <button id="h-back" type="button" title="All conversations" data-icon="back" hidden></button>
@@ -51,15 +51,35 @@
     </button>
   </div>
   <div id="menu" role="menu" hidden></div>
+  <div id="edit-banner" hidden><span></span><button type="button" id="edit-cancel" title="Keep the conversation as it is (Esc)">Cancel</button></div>
+  <!-- formatting for what you type (Aa): markdown round the selection, and changes to the text -->
+  <div id="fmt-bar" role="toolbar" aria-label="Formatting" hidden>
+    <button type="button" data-fmt="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+    <button type="button" data-fmt="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+    <button type="button" data-fmt="strike" title="Strikethrough"><s>S</s></button>
+    <button type="button" data-fmt="code" title="Code (Ctrl+E)"><code>&lt;/&gt;</code></button>
+    <button type="button" data-fmt="block" title="Code block (Ctrl+Shift+E)"><code>{ }</code></button>
+    <span class="fmt-sep"></span>
+    <button type="button" data-fmt="bullet" title="Bulleted list">•≡</button>
+    <button type="button" data-fmt="number" title="Numbered list">1.≡</button>
+    <button type="button" data-fmt="quote" title="Quote">❝</button>
+    <button type="button" data-fmt="link" title="Link (Ctrl+K)">🔗</button>
+    <span class="fmt-sep"></span>
+    <button type="button" data-fmt="transform" class="fmt-wide" title="Change the text: case, lines, JSON…">Aa ▾</button>
+  </div>
   <form id="composer">
     <div id="palette" role="listbox" hidden></div>
-    <button id="btn-screen" type="button" title="Ask about part of the screen: drag a box round it" data-icon="scan"></button>
+    <button id="btn-attach" class="composer-btn" type="button" title="Add files or pictures" data-icon="plus"></button>
+    <button id="btn-screen" class="composer-btn" type="button" title="Ask about part of the screen: drag a box round it" data-icon="scan"></button>
     <textarea id="input" rows="1" placeholder="Ask me something… (/ for commands, @ for files)" spellcheck="true"></textarea>
+    <button id="btn-format" class="composer-btn" type="button" title="Formatting (bold, lists, code…)" data-icon="text-box"></button>
     <button id="send" type="submit" title="Send (Enter)" data-icon="send"></button>
   </form>
   <div id="drop-hint" aria-hidden="true">Drop files to attach</div>
   <div class="tail" aria-hidden="true"></div>
   <div class="resize-grip" title="Drag to resize the chat (double-click: back to normal)" aria-hidden="true"></div>
+  <!-- and its height: the edge away from the robot's end of the screen (double-click: full height) -->
+  <div class="resize-grip-v" title="Drag to make the chat shorter or taller (double-click: full height)" aria-hidden="true"></div>
 </section>
 
 <!-- While it works with the chat tucked away: what it's doing, and a way back in -->

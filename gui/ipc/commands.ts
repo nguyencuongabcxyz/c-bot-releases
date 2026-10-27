@@ -2,7 +2,7 @@
 // its Rust function (robotAsk is robot_ask); the arguments go over by name (tabId arrives as
 // tab_id). The ones under "told" don't wait for an answer.
 import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
-import type { AppPage, AppView, AppViewCall, Box, Character, ClaudeCommand, ContextUse, FileInfo, LinkTask, ModelChoice, Note, NotesReminder, OkOr, Point, QAItem, SessionRow, Settings, Transcript } from '@/types/model';
+import type { AppPage, AppView, AppViewCall, Box, Character, ClaudeCommand, ContextUse, FileChip, FileInfo, LinkTask, ModelChoice, Note, NotesReminder, OkOr, Point, QAItem, SessionRow, Settings, Transcript } from '@/types/model';
 import type * as P from '@/types/pages';
 import type { RobotInit, AskResult, PaletteView, SocialReport } from '@/types/ipc';
 
@@ -19,6 +19,8 @@ export const robotCancel = (tabId: string) => invoke<string[]>('robot_cancel', {
 export const robotUnqueue = (tabId: string, turnId: string) => invoke<boolean>('robot_unqueue', { tabId, turnId });
 export const robotSendNow = (tabId: string, turnId: string) => invoke<boolean>('robot_send_now', { tabId, turnId });
 export const robotAnswer = (tabId: string, requestId: string, answers: Record<string, string>, items: QAItem[]) => invoke<boolean>('robot_answer', { tabId, requestId, answers, items });
+// (edit the last question: back to before it; its words come back to edit)
+export const robotRewind = (tabId: string) => invoke<OkOr<{ text: string; files?: FileChip[] }>>('robot_rewind', { tabId });
 export const robotBrain = (tabId: string) => invoke<{ models: ModelChoice[]; model: string; effort: string; context: ContextUse | null } | null>('robot_brain', { tabId });
 export const robotSetBrain = (tabId: string, patch: { model?: string; effort?: string }) => invoke<{ ok: boolean; error?: string }>('robot_set_brain', { tabId, patch });
 export const robotExpand = (expanded: boolean, opts?: { focus?: boolean; tucked?: boolean }) => invoke<void>('robot_expand', { expanded, opts });
@@ -27,7 +29,8 @@ export const robotPoke = () => invoke<number>('robot_poke');
 export const robotReset = (tabId?: string) => invoke<void>('robot_reset', { tabId });
 export const robotMenu = (state: { awake: boolean; away?: boolean }) => invoke<void>('robot_menu', { state });
 export const robotTerminal = (tabId: string) => invoke<OkOr<{ already?: boolean }>>('robot_terminal', { tabId });
-export const robotTabNew = () => invoke<OkOr<{ tabId: string }>>('robot_tab_new');
+// (temporary: a chat that keeps nothing, gone when it's closed)
+export const robotTabNew = (temporary?: boolean) => invoke<OkOr<{ tabId: string }>>('robot_tab_new', { temporary });
 export const robotTabClose = (tabId: string) => invoke<OkOr<{ activeTab?: string }>>('robot_tab_close', { tabId });
 export const robotTabReopen = (tabId?: string) => invoke<OkOr<{ tabId: string; title: string }>>('robot_tab_reopen', { tabId });
 export const robotTabRename = (tabId: string, title: string) => invoke<void>('robot_tab_rename', { tabId, title });
@@ -43,6 +46,10 @@ export const robotInspectPaths = (paths: string[]) => invoke<FileInfo[]>('robot_
 export const robotSavePaste = (bytes: ArrayBuffer | Uint8Array, ext: string) => invoke<FileInfo | null>('robot_save_paste', bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), { headers: { ext } });
 export const robotPasteClipboard = () => invoke<FileInfo[]>('robot_paste_clipboard');
 export const robotOpenFile = (file: string, opts?: { reveal?: boolean }) => invoke<OkOr<{ revealed?: boolean }>>('robot_open_file', { file, opts });
+// (the composer's ＋: files, or only pictures, picked in the open dialog)
+export const robotPickFiles = (pictures?: boolean) => invoke<FileInfo[]>('robot_pick_files', { pictures });
+// (how tall you made the chat; null: the height of the screen)
+export const robotChatHeight = (height: number | null) => invoke<void>('robot_chat_height', { height });
 // (what an MCP tool's view asked to open: main opens it only if it's a web link)
 export const robotOpenLink = (url: string | undefined) => invoke<void>('robot_open_link', { url });
 export const robotOpenFolder = () => invoke<void>('robot_open_folder');
