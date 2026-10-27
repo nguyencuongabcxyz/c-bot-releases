@@ -437,6 +437,39 @@ mod live_tests {
         assert!(usage["totalTokens"].as_f64().unwrap_or(0.0) > 0.0, "{usage}");
         session.close();
     }
+
+    #[test]
+    #[ignore]
+    fn remote_control_comes_on_and_survives_a_restart() {
+        let claude = crate::find_claude::find("").expect("Claude Code installed");
+        let dir = std::env::temp_dir().join("cbot-session-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = mpsc::channel::<(String, Value)>();
+        let tx = Mutex::new(tx);
+        let handler: Handler = Arc::new(move |_, event, data| {
+            let _ = tx.lock().unwrap().send((event.to_string(), data));
+        });
+        let remote = |rx: &mpsc::Receiver<(String, Value)>| loop {
+            let (event, data) = rx.recv_timeout(Duration::from_secs(60)).expect("Remote Control in time");
+            if event == "remote" {
+                break data;
+            }
+        };
+        let opts = Opts { claude_path: claude, cwd: dir.to_string_lossy().into(), model: "haiku".into(), ..Default::default() };
+        let session = Session::new(opts, None, handler);
+        session.set_remote(Some("C-Bot test".into()));
+        let first = remote(&rx);
+        assert_eq!(first["on"], true, "{first}");
+        assert!(first["url"].as_str().unwrap_or("").starts_with("https://claude.ai/code/"), "{first}");
+        // a new process (new system prompt) is the same remote session
+        session.set_system_prompt("You are terse.");
+        assert!(!session.ask("Reply with exactly the word: pong".into(), "t1".into()));
+        let again = remote(&rx);
+        assert_eq!(again["url"], first["url"], "{again}");
+        session.set_remote(None);
+        assert_eq!(remote(&rx)["on"], false);
+        session.close();
+    }
 }
 
 // Claude Code's task tools, which print mode leaves out unless asked for.
@@ -458,6 +491,8 @@ pub struct Opts {
     pub allowed_tools: Vec<String>, // tools it may use without asking
     pub extra_args: Vec<String>,    // more command-line flags (the group chat's --strict-mcp-config)
     pub resume_at: Option<String>,  // the next start picks the conversation up after this message, as a new branch (an edited question)
+    pub remote: Option<String>,     // Remote Control: on while set, under this name on claude.ai/code and in the Claude app
+    pub remote_session: Option<String>, // and the remote session a new process picks up again (so it stays the same one there)
 }
 
 pub type Handler = Arc<dyn Fn(&Arc<Session>, &str, Value) + Send + Sync>;
@@ -466,6 +501,8 @@ type Reply = Box<dyn FnOnce(Result<Value, String>) + Send>;
 struct Turn {
     id: String,
     interrupted: bool,
+    uuid: String,  // (the message we sent for it; none for a turn nobody here asked for)
+    started: bool, // (Claude Code is on it: not still waiting behind a message from Remote Control)
 }
 
 struct Proc {
@@ -480,6 +517,8 @@ struct Inner {
     session_id: Option<String>,
     queue: VecDeque<(String, String)>, // turns waiting: (id, prompt)
     turn: Option<Turn>,
+    displaced: Option<Turn>,    // ours, already sent, waiting behind a message from Remote Control
+    own_uuids: HashSet<String>, // the messages we sent (any other one came in through Remote Control)
     pending_questions: HashMap<String, Value>, // request id -> the AskUserQuestion input
     controls: HashMap<String, Reply>,
     task_inputs: HashMap<String, Value>, // tool_use id -> TaskCreate input, to learn its number
@@ -554,8 +593,9 @@ impl Inner {
         }
     }
 
-    fn begin_turn(&mut self, id: String) {
-        self.turn = Some(Turn { id: id.clone(), interrupted: false });
+    fn begin_turn(&mut self, id: String, uuid: Option<String>) {
+        let started = uuid.is_none();
+        self.turn = Some(Turn { id: id.clone(), interrupted: false, uuid: uuid.unwrap_or_default(), started });
         self.text.clear();
         self.asides = AsideFilter::default();
         self.streamed.clear();
@@ -565,8 +605,15 @@ impl Inner {
         self.emit("turn-start", json!(id));
     }
 
+    // Claude Code carries on by itself (a background helper finished, a message came in through Remote Control)
+    fn begin_auto_turn(&mut self) {
+        self.auto_turns += 1;
+        let id = format!("auto-{}-{}", crate::store::now_ms(), self.auto_turns);
+        self.begin_turn(id, None);
+    }
+
     fn fail_all(&mut self, message: &str, cancelled: bool, session_missing: bool) {
-        let mut ids: Vec<String> = self.turn.take().map(|t| t.id).into_iter().collect();
+        let mut ids: Vec<String> = self.turn.take().into_iter().chain(self.displaced.take()).map(|t| t.id).collect();
         ids.extend(self.queue.drain(..).map(|(id, _)| id));
         for id in ids {
             self.emit("fail", json!({ "turnId": id, "message": message, "cancelled": cancelled, "sessionMissing": session_missing }));
@@ -705,7 +752,7 @@ impl Session {
         let session = Arc::new_cyclic(|me| Session {
             me: me.clone(),
             inner: Mutex::new(Inner {
-                opts, session_id, queue: VecDeque::new(), turn: None, pending_questions: HashMap::new(), controls: HashMap::new(),
+                opts, session_id, queue: VecDeque::new(), turn: None, displaced: None, own_uuids: HashSet::new(), pending_questions: HashMap::new(), controls: HashMap::new(),
                 task_inputs: HashMap::new(), agent_tools: HashSet::new(), agent_tasks: HashMap::new(), agent_running: HashSet::new(),
                 cost_so_far: 0.0, last_used: Instant::now(), proc: None, generation: 0, restart_before_next: false, closing: false,
                 text: String::new(), asides: AsideFilter::default(), streamed: HashSet::new(), mcp_tool_ids: HashSet::new(), auto_turns: 0,
@@ -856,6 +903,71 @@ impl Session {
                 let _ = events.send(("initialized".into(), info));
             }
         }));
+        self.enable_remote(i);
+    }
+
+    // Remote Control on, for this process: the same remote session as before, if there was one.
+    // The session outlives the process (a restart picks it up again); turning it off ends it.
+    fn enable_remote(&self, i: &mut Inner) {
+        let Some(name) = i.opts.remote.clone() else { return };
+        if i.proc.is_none() {
+            return;
+        }
+        let mut req = json!({ "subtype": "remote_control", "enabled": true, "name": name, "keep_session_on_exit": true });
+        if let Some(s) = &i.opts.remote_session {
+            req["reattach_session_id"] = json!(s);
+        }
+        let me = self.me.clone();
+        i.control(req, Box::new(move |r| {
+            let Some(session) = me.upgrade() else { return };
+            let mut i = session.lock();
+            if i.opts.remote.is_none() || i.proc.is_none() {
+                return; // (turned off meanwhile, or the process is gone: the next one tries again)
+            }
+            match r {
+                Ok(v) => {
+                    i.opts.remote_session = v["bridge_session_id"].as_str().map(str::to_string);
+                    i.emit("remote", json!({ "on": true, "url": v["session_url"], "remoteSession": v["bridge_session_id"] }));
+                }
+                // the old remote session is gone (they expire after a while): start a new one
+                Err(_) if i.opts.remote_session.is_some() => {
+                    i.opts.remote_session = None;
+                    session.enable_remote(&mut i);
+                }
+                Err(e) => {
+                    i.opts.remote = None;
+                    i.emit("remote", json!({ "on": false, "error": e }));
+                }
+            }
+        }));
+    }
+
+    /// Remote Control (claude.ai/code and the Claude app): on, under this name, or off.
+    pub fn set_remote(&self, name: Option<String>) {
+        let mut i = self.lock();
+        let on = name.is_some();
+        i.opts.remote = name;
+        if !on {
+            i.opts.remote_session = None;
+            if i.proc.is_some() {
+                i.control(json!({ "subtype": "remote_control", "enabled": false }), Box::new(|_| {}));
+            }
+            i.emit("remote", json!({ "on": false }));
+        } else if i.proc.is_some() {
+            self.enable_remote(&mut i);
+        } else {
+            if !i.closing {
+                self.start(&mut i); // (it turns Remote Control on as it starts)
+            }
+            if i.proc.is_none() {
+                i.opts.remote = None;
+                i.emit("remote", json!({ "on": false, "error": "Couldn't start Claude Code." }));
+            }
+        }
+    }
+
+    pub fn remote(&self) -> bool {
+        self.lock().opts.remote.is_some()
     }
 
     fn closed(&self, generation: u64, code: Option<i32>) {
@@ -915,8 +1027,10 @@ impl Session {
             return;
         }
         let (id, prompt) = i.queue.pop_front().unwrap();
-        i.begin_turn(id);
-        i.send(&json!({ "type": "user", "message": { "role": "user", "content": prompt }, "parent_tool_use_id": null, "session_id": "" }));
+        let uuid = uuid::Uuid::new_v4().to_string();
+        i.own_uuids.insert(uuid.clone());
+        i.begin_turn(id, Some(uuid.clone()));
+        i.send(&json!({ "type": "user", "uuid": uuid, "message": { "role": "user", "content": prompt }, "parent_tool_use_id": null, "session_id": "" }));
     }
 
     // Swap the process for a fresh one on the same conversation (new folders, new system prompt).
@@ -1089,22 +1203,40 @@ impl Session {
         if !s(&msg, "parent_tool_use_id").is_empty() {
             return i.agent_chatter(&msg);
         }
-        let sid = s(&msg, "session_id");
-        if !sid.is_empty() && i.session_id.as_deref() != Some(sid) {
-            i.session_id = Some(sid.to_string());
-            i.emit("session", json!(sid));
-        }
         let ty = match s(&msg, "type") {
             "" if msg.get("total_cost_usd").is_some() => "result",
             t => t,
         };
         // Claude Code carries on by itself when a background helper finishes: a turn nobody asked for
         if i.turn.is_none() && (ty == "assistant" || ty == "stream_event") {
-            i.auto_turns += 1;
-            let id = format!("auto-{}-{}", crate::store::now_ms(), i.auto_turns);
-            i.begin_turn(id);
+            i.begin_auto_turn();
+        }
+        // (only once there's a conversation to go back to: Remote Control says its session id
+        // before any message, and resuming that would find nothing)
+        let sid = s(&msg, "session_id");
+        if !sid.is_empty() && i.session_id.as_deref() != Some(sid) && i.turn.is_some() {
+            i.session_id = Some(sid.to_string());
+            i.emit("session", json!(sid));
         }
         match ty {
+            // a message starts being answered: ours, or one typed on claude.ai/code or in the Claude app
+            "command_lifecycle" if s(&msg, "state") == "started" => {
+                let uuid = s(&msg, "command_uuid").to_string();
+                if i.own_uuids.remove(&uuid) {
+                    if let Some(t) = i.turn.as_mut().filter(|t| t.uuid == uuid) {
+                        t.started = true;
+                    }
+                } else if i.opts.remote.is_some() && !uuid.is_empty() {
+                    // ours was sent but waits behind it: it comes back when this one is done
+                    if i.turn.as_ref().is_some_and(|t| !t.started) {
+                        i.displaced = i.turn.take();
+                    }
+                    i.emit("remote-prompt", json!({ "uuid": uuid, "sessionId": sid }));
+                    if i.turn.is_none() {
+                        i.begin_auto_turn();
+                    }
+                }
+            }
             "control_request" => i.control_request(&msg),
             // a question it asked is no longer wanted (the answer was stopped)
             "control_cancel_request" => {
@@ -1227,6 +1359,9 @@ impl Session {
                 if sub.starts_with("task_") {
                     i.agent_task(&msg);
                 }
+                if sub == "bridge_state" && i.opts.remote.is_some() {
+                    i.emit("remote-state", msg["state"].clone());
+                }
                 if sub == "task_summary" && !s(&msg, "detail").is_empty() {
                     i.emit("status", msg["detail"].clone());
                 } else if sub == "init" {
@@ -1253,9 +1388,9 @@ impl Session {
                 let Some(turn) = i.turn.take() else { return };
                 let rest = i.asides.flush();
                 // (put the turn back for a moment: the last of its text still counts)
-                i.turn = Some(Turn { id: turn.id.clone(), interrupted: turn.interrupted });
+                i.turn = Some(turn);
                 i.emit_text(&rest);
-                i.turn = None;
+                let turn = i.turn.take().unwrap();
                 let total = msg["total_cost_usd"].as_f64().unwrap_or(0.0);
                 let cost = (total - i.cost_so_far).max(0.0);
                 i.cost_so_far = total;
@@ -1272,7 +1407,15 @@ impl Session {
                     "interrupted": interrupted, "costUsd": cost, "denials": denials, "sessionId": session_id, "uuid": i.last_uuid,
                     "outputTokens": msg["usage"]["output_tokens"], "ms": msg["duration_ms"],
                 }));
-                self.next(&mut i);
+                // ours, waiting behind a message from Remote Control, is next
+                if let Some(t) = i.displaced.take() {
+                    i.begin_turn(t.id, Some(t.uuid));
+                    if let Some(cur) = i.turn.as_mut() {
+                        cur.started = t.started;
+                    }
+                } else {
+                    self.next(&mut i);
+                }
             }
             _ => {}
         }

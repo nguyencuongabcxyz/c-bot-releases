@@ -252,6 +252,8 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         mcp_config: mcp_config.unwrap_or_default(),
         extra_args: vec![],
         resume_at,
+        remote: (tab["remote"] == true).then(|| remote_name(&c)),
+        remote_session: tab["remoteSession"].as_str().map(str::to_string),
     };
     let book = Arc::new(Mutex::new(Book::default()));
     let (app2, id2, tab2, book2) = (app.clone(), id.to_string(), tab_id.to_string(), book.clone());
@@ -262,9 +264,42 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     Some(chat)
 }
 
+// What it's called on claude.ai/code and in the Claude app.
+fn remote_name(c: &Value) -> String {
+    format!("{} · C-Bot", c["name"].as_str().unwrap_or("Robot"))
+}
+
 fn on_event(app: &AppHandle, id: &str, tab_id: &str, book: &Arc<Mutex<Book>>, session: &Arc<Session>, event: &str, data: Value) {
     let book_of = || book.lock().unwrap_or_else(|e| e.into_inner());
     match event {
+        // Remote Control came on (its page on claude.ai), went off, or couldn't
+        "remote" => {
+            let on = data["on"] == true;
+            with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("remote", json!(on)), ("remoteSession", data["remoteSession"].clone()), ("remoteUrl", data["url"].clone())])));
+            tell(app, id, tab_id, json!({ "type": "remote", "on": on, "url": data["url"], "error": data["error"] }));
+        }
+        "remote-state" => tell(app, id, tab_id, json!({ "type": "remote-state", "state": data })),
+        // a message typed on claude.ai/code or in the Claude app: into the chat as yours
+        "remote-prompt" => {
+            let folder = with(app, |st| st.store.get(id).and_then(|c| c["folder"].as_str().map(str::to_string))).unwrap_or_default();
+            let (sid, uuid) = (data["sessionId"].as_str().unwrap_or(""), data["uuid"].as_str().unwrap_or(""));
+            // (it's written to the transcript about when it starts: give it a moment)
+            let mut text = None;
+            for _ in 0..30 {
+                text = transcripts::user_message(&folder, sid, uuid);
+                if text.is_some() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            let text = text.unwrap_or_else(|| "(a message from the Claude app)".into());
+            if text.is_empty() {
+                return; // (not the user's words: Claude Code's own)
+            }
+            let tag = "📱 From the Claude app";
+            with(app, |st| st.store.push_history(id, tab_id, json!({ "role": "user", "text": text, "tag": tag })));
+            tell(app, id, tab_id, json!({ "type": "remote-prompt", "text": text, "tag": tag }));
+        }
         "turn-start" => {
             let turn_id = data.as_str().unwrap_or("").to_string();
             let kind = {
@@ -701,7 +736,7 @@ pub fn close_idle(app: AppHandle) {
         let idle: Vec<Arc<Chat>> = with(&app, |st| {
             let keys: Vec<String> = st.chats.iter().filter(|(_, c)| {
                 let s = &c.session;
-                !s.busy() && s.helpers_running() == 0 && s.alive() && s.idle_for() > IDLE_CLOSE
+                !s.busy() && s.helpers_running() == 0 && s.alive() && !s.remote() && s.idle_for() > IDLE_CLOSE
             }).map(|(k, _)| k.clone()).collect();
             keys.iter().filter_map(|k| st.chats.remove(k)).collect()
         });
@@ -786,6 +821,54 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, prompt: &str, attachments: &
 
 fn chat_of(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     with(app, |st| st.chats.get(&key_of(id, tab_id)).cloned())
+}
+
+/// Remote Control on or off: the conversation carries on from claude.ai/code or the Claude app
+/// too (like Claude Code's /remote-control). Its process stays open while it's on, and it's back
+/// on when C-Bot starts again. How it went comes as a "remote" event.
+pub fn remote(app: &AppHandle, id: &str, tab_id: &str, on: bool) -> Value {
+    let Some(c) = with(app, |st| {
+        st.store.tab(id, tab_id)?;
+        st.store.get(id).cloned()
+    }) else {
+        return json!({ "ok": false, "error": "That conversation is gone." });
+    };
+    if !on {
+        with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("remote", json!(false)), ("remoteSession", Value::Null), ("remoteUrl", Value::Null)])));
+        match chat_of(app, id, tab_id) {
+            Some(chat) => chat.session.set_remote(None),
+            None => tell(app, id, tab_id, json!({ "type": "remote", "on": false })),
+        }
+        return json!({ "ok": true });
+    }
+    if with(app, |st| st.terminals.get(id).is_some_and(|t| t == tab_id)) {
+        return json!({ "ok": false, "error": "This conversation is open in the terminal. Close it first (or type /remote-control there)." });
+    }
+    let folder = c["folder"].as_str().unwrap_or("");
+    if folder.is_empty() || !Path::new(folder).exists() {
+        return json!({ "ok": false, "error": "My folder is missing. Point me at a new one in the Robot Workshop." });
+    }
+    let Some(chat) = chat_for(app, id, tab_id) else {
+        return json!({ "ok": false, "error": "I can't find Claude Code anywhere on this computer." });
+    };
+    with(app, |st| st.store.update_tab(id, tab_id, patch(vec![("remote", json!(true))])));
+    chat.session.set_remote(Some(remote_name(&c)));
+    json!({ "ok": true })
+}
+
+/// When C-Bot starts: conversations left with Remote Control on are reachable again.
+pub fn revive_remote(app: &AppHandle) {
+    let tabs: Vec<(String, String)> = with(app, |st| {
+        st.store.list().iter().flat_map(|c| {
+            let id = c["id"].as_str().unwrap_or("").to_string();
+            c["tabs"].as_array().into_iter().flatten().filter(|t| t["remote"] == true).map(move |t| (id.clone(), t["id"].as_str().unwrap_or("").to_string()))
+        }).collect()
+    });
+    for (id, tab_id) in tabs {
+        if let Some(chat) = chat_for(app, &id, &tab_id) {
+            chat.session.warm();
+        }
+    }
 }
 
 /// Stop: interrupt the current answer; questions typed ahead come back unsent.

@@ -69,6 +69,13 @@ body.busy .who::before { background: var(--accent); box-shadow: 0 0 0 3px var(--
 }
 .actions button:hover, .icon-btn:hover { background: var(--bg-2); color: var(--fg); }
 #btn-bonk:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+/* Remote Control on: lit, with a green dot once claude.ai or the app is connected */
+#btn-remote { position: relative; }
+#btn-remote.on { color: var(--accent-ink); background: var(--accent-soft); }
+#btn-remote.on[data-state="connected"]::after {
+  content: ""; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
+}
+.tab.remote .tab-title::before { content: "📱 "; font-size: 10px; }
 
 #logs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .log {

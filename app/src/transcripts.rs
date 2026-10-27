@@ -102,6 +102,38 @@ fn clean_user_text(text: &str) -> String {
     re(&PASTED, r"(?s)<pasted_content[^>]*>.*?</pasted_content[^>]*>").replace_all(&text, "[pasted text]").trim().to_string()
 }
 
+/// What the user typed in this message of the conversation (one sent through Remote Control,
+/// from claude.ai/code or the Claude app): Some(text) once it's in the transcript, Some("") when
+/// it isn't the user's own words, None when it isn't there (yet).
+pub fn user_message(folder: &str, session_id: &str, uuid: &str) -> Option<String> {
+    if session_id.len() != 36 || !session_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return None;
+    }
+    let file = project_dir(folder).join(format!("{session_id}.jsonl"));
+    let size = fs::metadata(&file).ok()?.len();
+    let text = read_slice(&file, size); // (a new message is near the end)
+    let needle = format!("\"uuid\":\"{uuid}\"");
+    let o: Value = text.lines().rev().filter(|l| l.contains(&needle)).find_map(|l| serde_json::from_str::<Value>(l).ok().filter(|o| o["uuid"] == uuid))?;
+    if o["type"] != "user" {
+        return Some(String::new());
+    }
+    let pictures = o["message"]["content"].as_array().map_or(0, |a| a.iter().filter(|b| b["type"] == "image").count());
+    let raw = match &o["message"]["content"] {
+        Value::String(t) => t.clone(),
+        Value::Array(a) => a.iter().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("\n"),
+        _ => String::new(),
+    };
+    if automatic_note(&o, &raw).is_some() {
+        return Some(String::new());
+    }
+    let mut clean = clean_user_text(&raw);
+    if pictures > 0 {
+        let p = if pictures == 1 { "🖼️ (a picture)".to_string() } else { format!("🖼️ ({pictures} pictures)") };
+        clean = if clean.is_empty() { p } else { format!("{clean}\n\n{p}") };
+    }
+    Some(clean)
+}
+
 struct Parsed {
     title: Option<String>,
     messages: Vec<Value>,

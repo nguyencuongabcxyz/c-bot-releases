@@ -16,6 +16,7 @@ export const robotInit = () => invoke<RobotInit>('robot_init');
 // (tag: a line kept above the message: sent to everyone on the stage)
 export const robotAsk = (tabId: string, prompt: string, attachments: string[], turnId?: string, kind?: 'chat' | 'bonk', tag?: string) => invoke<AskResult>('robot_ask', { tabId, prompt, attachments, turnId, kind, tag });
 export const robotCompact = (tabId: string, turnId: string) => invoke<AskResult>('robot_compact', { tabId, turnId });
+export const robotRemote = (tabId: string, on: boolean) => invoke<OkOr<{}>>('robot_remote', { tabId, on });
 export const robotCancel = (tabId: string) => invoke<string[]>('robot_cancel', { tabId });
 export const robotUnqueue = (tabId: string, turnId: string) => invoke<boolean>('robot_unqueue', { tabId, turnId });
 export const robotSendNow = (tabId: string, turnId: string) => invoke<boolean>('robot_send_now', { tabId, turnId });

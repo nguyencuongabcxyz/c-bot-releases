@@ -159,6 +159,8 @@ type ChatTab = {
   compactResult?: Extract<ChatEvent, { type: 'compact' }> | null;
   warnedFull?: boolean;
   terminal?: boolean;
+  remoteState?: string; // Remote Control's link to claude.ai: connecting, ready, connected…
+  remoteAsked?: boolean; // (turned on from here: say how to reach it once it's on)
   bonk?: { turnId: string; ask: Ask } | null;
   hurried?: boolean;
   vocabWord?: string;
@@ -442,7 +444,15 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   document.addEventListener('click', (e) => {
     // (a click lands on an element; the link's href is read only when it has no data-open)
     const link = (e.target as Element).closest<HTMLAnchorElement>(`a[href^="${FILE_URL}open/"], [data-open]`);
-    if (!link) return;
+    if (!link) {
+      // a web link opens in the browser (the webview won't open a new window for target=_blank)
+      const web = (e.target as Element).closest<HTMLAnchorElement>('a[href^="http://"], a[href^="https://"]');
+      if (web && !web.href.startsWith(FILE_URL)) {
+        e.preventDefault();
+        ipc.robotOpenLink(web.href);
+      }
+      return;
+    }
     e.preventDefault();
     const p = link.dataset.open || new URL(link.href).searchParams.get('path')!; // (our file links carry their path)
     ipc.robotOpenFile(p).then((res) => res && !res.ok && showPop(res.error, 2400));
@@ -1726,6 +1736,24 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
         mirror(ev);
         break;
 
+      case 'remote':
+        onRemote(ev, tab);
+        break;
+
+      case 'remote-state':
+        tab.remoteState = ev.state;
+        renderRemote();
+        break;
+
+      // a message typed on claude.ai/code or in the Claude app: yours, from afar
+      case 'remote-prompt':
+        addUser(ev.text, [], tab, ev.tag);
+        if (show) {
+          flash('hop', 600);
+          express('happy', 'o', 1200);
+        }
+        break;
+
       case 'question':
         askUser(ev, tab);
         break;
@@ -2246,6 +2274,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
   });
   $('#btn-history').addEventListener('click', () => (history.isOpen() ? history.close() : openHistory()));
   $('#btn-terminal').addEventListener('click', () => openTerminal());
+  $('#btn-remote').addEventListener('click', () => toggleRemote());
   $('#btn-shell').addEventListener('click', () => toggleShell());
   // the ■ button always means stop, even with a draft in the box
   $('#send').addEventListener('click', (e) => {
@@ -2275,6 +2304,69 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       express('happy', 'o', 1200);
       if (state.awake) showPop('Already open! Check your taskbar.', 2200);
     }
+  }
+
+  // ------------------------------------------------------------ remote control
+
+  // Like Claude Code's /remote-control: the tab's conversation carries on from claude.ai/code
+  // or the Claude app too. What's typed there shows up here, and the robot acts out the answer.
+  async function toggleRemote(tab = active()!, on = !tab.data?.remote) {
+    tab.remoteAsked = on;
+    const res = await ipc.robotRemote(tab.id, on);
+    if (!res.ok) {
+      tab.remoteAsked = false;
+      addNote(`📱 ${res.error}`, '', tab);
+      express('flat', 'flat', 1500);
+      return;
+    }
+    if (on) {
+      tab.remoteState = 'connecting';
+      renderRemote();
+      flash('hop', 600);
+    }
+  }
+
+  function renderRemote() {
+    const tab = active();
+    const btn = $('#btn-remote');
+    const on = !!tab?.data?.remote;
+    btn.classList.toggle('on', on);
+    btn.dataset.state = on ? tab!.remoteState || '' : '';
+  }
+
+  // (its page on claude.ai, and where to find it in the app)
+  function remoteNote(tab: ChatTab, url?: string | null) {
+    const el = document.createElement('div');
+    el.className = 'msg note';
+    Icon.text(el, `📱 Remote Control is on! Carry on from the Claude app (Code → “${state.character?.name || 'me'} · C-Bot”)${url ? ' or at ' : '.'}`);
+    if (url) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.textContent = 'claude.ai/code';
+      el.append(a, '.');
+    }
+    tab.log.appendChild(el);
+    scrollDown(tab);
+  }
+
+  function onRemote(ev: Extract<ChatEvent, { type: 'remote' }>, tab: ChatTab) {
+    const asked = tab.remoteAsked; // (true: turned on from here, false: off from here, unset: by itself)
+    tab.remoteAsked = undefined;
+    tab.data.remote = ev.on;
+    tab.data.remoteUrl = ev.url ?? null;
+    if (!ev.on) tab.remoteState = '';
+    else if (!tab.remoteState) tab.remoteState = 'ready';
+    if (ev.error) {
+      addNote(`📱 Remote Control couldn't come on: ${ev.error}`, '', tab);
+      express('flat', 'flat', 1500);
+    } else if (ev.on && asked) {
+      remoteNote(tab, ev.url);
+      express('happy', 'smile', 1500);
+      Sfx.send();
+    } else if (!ev.on && asked === false && tab.id === activeId) {
+      addNote('📱 Remote Control is off.', '', tab);
+    }
+    renderTabs();
   }
 
   function terminalState(s: 'opened' | 'closed', tab: ChatTab, { quiet = false } = {}) {
@@ -3592,7 +3684,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       const s = statusOf(t);
       const el = document.createElement('div');
       const temp = !!t.data?.temporary;
-      el.className = `tab s-${s}${t.id === activeId ? ' on' : ''}${temp ? ' temporary' : ''}`;
+      el.className = `tab s-${s}${t.id === activeId ? ' on' : ''}${temp ? ' temporary' : ''}${t.data?.remote ? ' remote' : ''}`;
       el.setAttribute('role', 'tab');
       el.setAttribute('aria-selected', String(t.id === activeId));
       el.title = `${temp ? 'Temporary chat (nothing is kept): ' : ''}${t.title}${STATUS_LABEL[s] ? ` (${STATUS_LABEL[s]})` : ''}\nDouble-click to rename`;
@@ -3635,6 +3727,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       tabStrip.appendChild(back);
     }
     tabStrip.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    renderRemote();
   }
 
   async function newTab({ temporary = false } = {}) {
@@ -3744,6 +3837,7 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
     { name: 'compact', description: 'Squish my memory to free up room' },
     { name: 'context', description: 'How full my memory is' },
     { name: 'terminal', description: 'Continue in full Claude Code, in a terminal' },
+    { name: 'remote-control', args: '[on|off]', description: 'Carry on from claude.ai or the Claude app (Remote Control)' },
     { name: 'folder', description: 'Open my folder' },
     { name: 'shell', description: 'A shell in my folder, right here (Ctrl+`; another: Ctrl+Shift+`)' },
     { name: 'refine', args: '[text]', description: 'Refine, translate or explain some text (Quick actions)' },
@@ -3798,6 +3892,17 @@ tooltips(document.querySelector<HTMLElement>('#panel')!); // (the chat's buttons
       case 'cli':
         openTerminal();
         return true;
+      case 'remote-control':
+      case 'remote':
+      case 'rc': {
+        const tab = active()!;
+        const on = /^(on|start|yes)$/i.test(arg) ? true : /^(off|stop|no)$/i.test(arg) ? false : !tab.data?.remote;
+        if (on === !!tab.data?.remote) {
+          if (on) remoteNote(tab, tab.data.remoteUrl);
+          else addNote('📱 Remote Control is already off.', '', tab);
+        } else toggleRemote(tab, on);
+        return true;
+      }
       case 'model':
         if (arg) pickModel(arg);
         else openModelMenu();

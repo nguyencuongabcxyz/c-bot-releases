@@ -4,6 +4,7 @@
 // share the State below (with()) and each other (hub.rs).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod awake;
 mod capture;
 mod chat;
 mod claude;
@@ -198,6 +199,7 @@ fn main() {
             robot_ipc::robot_ask,
             robot_ipc::robot_compact,
             robot_ipc::robot_cancel,
+            robot_ipc::robot_remote,
             robot_ipc::robot_unqueue,
             robot_ipc::robot_send_now,
             robot_ipc::robot_brain,
@@ -397,6 +399,8 @@ fn main() {
             island::setup(&handle); // (once the robots are out: their faces, at the screen's edge)
             robots::watch_cursor(handle.clone());
             chat::close_idle(handle.clone());
+            awake::setup(&handle); // (the PC stays awake while Remote Control is on)
+            { let h = handle.clone(); thread::spawn(move || chat::revive_remote(&h)); } // (Remote Control left on: reachable again)
             topmost::setup(&handle); // (robots that lost "always on top" get it back)
             screens::setup(&handle); // (screens changing, a sleep, an unlock)
             // changes are saved a moment after they happen (store.rs save)

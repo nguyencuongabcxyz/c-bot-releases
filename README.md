@@ -30,7 +30,7 @@ Open the **Robot Workshop** from the tray. Pick a name, a project folder and a p
 
 ### Chat with it
 
-Click a robot to wake it and open its chat. It works in its folder like Claude Code does: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Press **⌨️** to continue the conversation in a real Claude Code terminal.
+Click a robot to wake it and open its chat. It works in its folder like Claude Code does: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Press **⌨️** to continue the conversation in a real Claude Code terminal, or **📱** (`/remote-control`) to carry it on from [claude.ai/code](https://claude.ai/code) or the Claude phone app while the robot keeps working on your PC (it acts out what you send from there).
 
 <img src="docs/screenshots/chat.png" alt="Chatting with a robot" width="440">
 

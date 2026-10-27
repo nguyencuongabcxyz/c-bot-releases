@@ -155,6 +155,8 @@ export type Tab = {
   tasks?: Task[];
   context?: ContextUse | null;
   temporary?: boolean; // a chat that keeps nothing: gone, transcripts and all, when it's closed
+  remote?: boolean; // Remote Control: carried on from claude.ai/code or the Claude app too
+  remoteUrl?: string | null; // (its page on claude.ai)
 };
 
 export type ClaudeCommand = { name: string; description: string };
@@ -455,6 +457,9 @@ export type ChatEvent =
   | { type: 'fail'; turnId: string; message: string; cancelled?: boolean; sessionMissing?: boolean }
   | { type: 'dropped'; turnIds: string[] }
   | { type: 'terminal'; state: 'opened' | 'closed' }
+  | { type: 'remote'; on: boolean; url?: string | null; error?: string }
+  | { type: 'remote-state'; state: string }
+  | { type: 'remote-prompt'; text: string; tag: string }
   | { type: 'mirror'; kind: 'prompt' | 'question' | 'text' | 'idle' }
   | { type: 'mirror'; kind: 'tool'; name: string; detail: string }
   | ({ type: 'app' } & AppViewCall)

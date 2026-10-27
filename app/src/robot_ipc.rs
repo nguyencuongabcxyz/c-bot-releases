@@ -124,6 +124,9 @@ pub fn robot_tab_close(app: AppHandle, window: WebviewWindow, tab_id: String) ->
         return Ok(json!({ "ok": false, "error": "That conversation is open in the terminal. Close the terminal first." }));
     }
     let closing = with(&app, |st| st.store.tab(&id, &tab_id).cloned());
+    if closing.as_ref().is_some_and(|t| t["remote"] == true) {
+        chat::remote(&app, &id, &tab_id, false); // (its remote session ends with it)
+    }
     chat::close(&app, &id, &tab_id);
     shell::close_tab(&app, &id, &tab_id); // (its shells go with it)
     robotlink::forget_tab(&app, &id, &tab_id);
@@ -205,6 +208,12 @@ pub fn robot_compact(app: AppHandle, window: WebviewWindow, tab_id: String, turn
 #[tauri::command(async)]
 pub fn robot_cancel(app: AppHandle, window: WebviewWindow, tab_id: String) -> Answer {
     Ok(chat::cancel(&app, &sender(&window)?, &tab_id))
+}
+
+/// Remote Control on or off for the tab (claude.ai/code and the Claude app).
+#[tauri::command(async)]
+pub fn robot_remote(app: AppHandle, window: WebviewWindow, tab_id: String, on: bool) -> Answer {
+    Ok(chat::remote(&app, &sender(&window)?, &tab_id, on))
 }
 
 #[tauri::command(async)]
@@ -340,6 +349,9 @@ pub fn reset(app: &AppHandle, id: &str, tab_id: Option<&str>) {
         None => tabs.clone(),
     };
     for t in &chosen {
+        if with(app, |st| st.store.tab(id, t).is_some_and(|x| x["remote"] == true)) {
+            chat::remote(app, id, t, false); // (a fresh start: not on claude.ai any more)
+        }
         chat::close(app, id, t);
         let fresh = patch(vec![("sessionId", Value::Null), ("history", json!([])), ("title", json!("")), ("tasks", json!([])), ("context", Value::Null)]);
         with(app, |st| st.store.update_tab(id, t, fresh));
