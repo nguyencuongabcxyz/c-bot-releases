@@ -8,6 +8,7 @@
 //! compact · commands · tools · done · fail · exit. They're handed over on a thread of their own,
 //! so a handler may wait on the session (context_usage) without holding up its output.
 
+mod lines;
 pub mod locate;
 mod session;
 mod steps;
