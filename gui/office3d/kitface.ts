@@ -9,7 +9,13 @@ import type { DrawFace, FaceState } from './face';
 // Styles: dots (the classic), cute (big shiny eyes), visor (a glowing band), cyclops (one big
 // eye), pixel (chunky pixels, like an old handheld).
 
-const EYES: Record<string, string> = { default: '#7ff3ff', opus: '#c4a8ff', fable: '#ffd34d', sonnet: '#7ff3ff', haiku: '#7bed9f' };
+const EYES: Record<string, string> = {
+  default: '#7ff3ff',
+  opus: '#c4a8ff',
+  fable: '#ffd34d',
+  sonnet: '#7ff3ff',
+  haiku: '#7bed9f',
+};
 
 function screen(ctx: CanvasRenderingContext2D, f: FaceState, r = 44) {
   ctx.clearRect(0, 0, FACE_W, FACE_H);
@@ -61,7 +67,15 @@ function mouth(ctx: CanvasRenderingContext2D, f: FaceState, eye: string, mx: num
 }
 
 // an eye at (x, y) about r big, in one of the expressions (round eyes)
-function roundEye(ctx: CanvasRenderingContext2D, f: FaceState, x: number, y: number, rx: number, ry: number, glints: [number, number, number][]) {
+function roundEye(
+  ctx: CanvasRenderingContext2D,
+  f: FaceState,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  glints: [number, number, number][],
+) {
   switch (f.eyes) {
     case 'closed':
       ctx.beginPath();
@@ -136,7 +150,11 @@ const STYLES: Record<string, (ctx: CanvasRenderingContext2D, f: FaceState, eye: 
     const ly = f.lookY * 3;
     ctx.save();
     glowPen(ctx, f, eye, 10);
-    for (const x of [84, 172]) roundEye(ctx, f, x + lx, 76 + ly, 27, 33, [[0.32, -0.36, 9], [-0.3, 0.34, 4.5]]);
+    for (const x of [84, 172])
+      roundEye(ctx, f, x + lx, 76 + ly, 27, 33, [
+        [0.32, -0.36, 9],
+        [-0.3, 0.34, 4.5],
+      ]);
     mouth(ctx, f, eye, 128 + lx * 0.6, 132 + ly * 0.6, 0.7);
     ctx.restore();
     blush(ctx, f, true);
@@ -172,7 +190,10 @@ const STYLES: Record<string, (ctx: CanvasRenderingContext2D, f: FaceState, eye: 
     const ly = f.lookY * 4;
     ctx.save();
     glowPen(ctx, f, eye, 12);
-    roundEye(ctx, f, 128 + lx, 72 + ly, 40, 40, [[0.34, -0.36, 11], [-0.32, 0.3, 5]]);
+    roundEye(ctx, f, 128 + lx, 72 + ly, 40, 40, [
+      [0.34, -0.36, 11],
+      [-0.32, 0.3, 5],
+    ]);
     // a pupil, looking where it looks
     if ((f.eyes === 'open' || !['closed', 'happy', 'dizzy', 'flat'].includes(f.eyes)) && f.blink < 0.5) {
       ctx.shadowBlur = 0;
@@ -203,11 +224,42 @@ const STYLES: Record<string, (ctx: CanvasRenderingContext2D, f: FaceState, eye: 
     };
     const shut = f.blink > 0.5;
     const EYE_CELLS: Record<string, number[][]> = {
-      open: shut ? [[0, 2], [1, 2], [2, 2]] : [[0, 0], [1, 0], [0, 1], [1, 1], [0, 2], [1, 2]],
-      closed: [[0, 2], [1, 2], [2, 2]],
-      happy: [[0, 2], [1, 1], [2, 2]],
-      dizzy: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]],
-      flat: [[0, 1], [1, 1], [2, 1]],
+      open: shut
+        ? [
+            [0, 2],
+            [1, 2],
+            [2, 2],
+          ]
+        : [
+            [0, 0],
+            [1, 0],
+            [0, 1],
+            [1, 1],
+            [0, 2],
+            [1, 2],
+          ],
+      closed: [
+        [0, 2],
+        [1, 2],
+        [2, 2],
+      ],
+      happy: [
+        [0, 2],
+        [1, 1],
+        [2, 2],
+      ],
+      dizzy: [
+        [0, 0],
+        [2, 0],
+        [1, 1],
+        [0, 2],
+        [2, 2],
+      ],
+      flat: [
+        [0, 1],
+        [1, 1],
+        [2, 1],
+      ],
     };
     const cells = EYE_CELLS[f.eyes] || EYE_CELLS.open;
     const w = f.eyes === 'open' && !shut ? 2 : 3;
@@ -215,12 +267,69 @@ const STYLES: Record<string, (ctx: CanvasRenderingContext2D, f: FaceState, eye: 
     px(cells, 184 - (w * C) / 2, 36);
     const talking = f.mouth === 'talk' || f.mouth === 'chomp' ? Math.sin(f.t * 16) > 0 : false;
     const MOUTH_CELLS: Record<string, number[][]> = {
-      smile: [[0, 0], [1, 1], [2, 1], [3, 1], [4, 0]],
-      o: [[1, 0], [2, 0], [1, 1], [2, 1]],
-      flat: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]],
-      wide: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1], [4, 1], [1, 2], [2, 2], [3, 2]],
-      talk: talking ? [[1, 0], [2, 0], [3, 0], [1, 1], [2, 1], [3, 1]] : [[1, 0], [2, 0], [3, 0]],
-      chomp: talking ? [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 1], [4, 1]] : [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]],
+      smile: [
+        [0, 0],
+        [1, 1],
+        [2, 1],
+        [3, 1],
+        [4, 0],
+      ],
+      o: [
+        [1, 0],
+        [2, 0],
+        [1, 1],
+        [2, 1],
+      ],
+      flat: [
+        [0, 0],
+        [1, 0],
+        [2, 0],
+        [3, 0],
+        [4, 0],
+      ],
+      wide: [
+        [0, 0],
+        [1, 0],
+        [2, 0],
+        [3, 0],
+        [4, 0],
+        [0, 1],
+        [4, 1],
+        [1, 2],
+        [2, 2],
+        [3, 2],
+      ],
+      talk: talking
+        ? [
+            [1, 0],
+            [2, 0],
+            [3, 0],
+            [1, 1],
+            [2, 1],
+            [3, 1],
+          ]
+        : [
+            [1, 0],
+            [2, 0],
+            [3, 0],
+          ],
+      chomp: talking
+        ? [
+            [0, 0],
+            [1, 0],
+            [2, 0],
+            [3, 0],
+            [4, 0],
+            [0, 1],
+            [4, 1],
+          ]
+        : [
+            [0, 0],
+            [1, 0],
+            [2, 0],
+            [3, 0],
+            [4, 0],
+          ],
     };
     const m = MOUTH_CELLS[f.mouth] || MOUTH_CELLS.smile;
     const mw = Math.max(...m.map(([x]) => x)) + 1;

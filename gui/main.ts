@@ -2,15 +2,15 @@
 // process opens it so). That view's module brings its own markup, styles and code, and only
 // it is loaded: the notebook never fetches the 3D office.
 import './ipc/host'; // (the mouse and dropped files, for every window)
-import './ui/theme';
+import './theme/theme';
 
 const VIEWS: Record<string, () => Promise<unknown>> = {
-  appview: () => import('./views/appview/appview'),
+  appview: () => import('./views/big-window/big-window'),
   card: () => import('./views/card/card'),
   drone: () => import('./views/drone/drone'),
   groupchat: () => import('./views/groupchat/groupchat'),
   island: () => import('./views/island/island'),
-  manager: () => import('./views/manager/manager'),
+  manager: () => import('./views/workshop/workshop'),
   meeting: () => import('./views/meeting/meeting'),
   notebook: () => import('./views/notebook/notebook'),
   palette: () => import('./views/palette/palette'),

@@ -1,14 +1,9 @@
+import { mesh } from '@/office3d/core/mesh';
 import * as THREE from 'three';
 import { toon, glow } from './materials';
 
 // A chunky cartoon battery that floats over the robot's head while it charges:
 // its level fills from red to green. buildBattery() -> { battery, setLevel(0..1) }.
-
-const mesh = <G extends THREE.BufferGeometry, M extends THREE.Material | THREE.Material[]>(geo: G, mat: M, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  return m;
-};
 
 export function buildBattery() {
   const battery = new THREE.Group();

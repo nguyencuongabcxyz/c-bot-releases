@@ -42,10 +42,15 @@ export const pathForFile = (file: File): string => dropped.get(keyOf(file)) ?? '
 // A window that lets clicks through gets no mouse moves of its own, so the page can't tell
 // the mouse is back over something solid. Main watches the cursor and sends them: replay
 // each on what's under it, as the page would have had it.
-void getCurrentWebviewWindow().listen<{ x: number; y: number; sx: number; sy: number }>('cbot:forward', ({ payload: p }) => {
-  const el = document.elementFromPoint(p.x, p.y) || document.documentElement;
-  el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: p.x, clientY: p.y, screenX: p.sx, screenY: p.sy }));
-});
+void getCurrentWebviewWindow().listen<{ x: number; y: number; sx: number; sy: number }>(
+  'cbot:forward',
+  ({ payload: p }) => {
+    const el = document.elementFromPoint(p.x, p.y) || document.documentElement;
+    el.dispatchEvent(
+      new MouseEvent('mousemove', { bubbles: true, clientX: p.x, clientY: p.y, screenX: p.sx, screenY: p.sy }),
+    );
+  },
+);
 
 // Tauri's drag-drop (positions in physical px within the window) as the page's dragenter /
 // dragover / drop / dragleave, carrying the stand-in Files.
@@ -58,7 +63,16 @@ function fire(type: string, position?: { x: number; y: number }) {
   const dataTransfer = new DataTransfer();
   for (const f of drag.files) dataTransfer.items.add(f);
   const el = document.elementFromPoint(at.x, at.y) || document.documentElement;
-  el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: at.x, clientY: at.y, dataTransfer }));
+  el.dispatchEvent(
+    new DragEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: at.x,
+      clientY: at.y,
+      dataTransfer,
+    }),
+  );
 }
 void getCurrentWebview().onDragDropEvent(({ payload: p }) => {
   switch (p.type) {
@@ -72,7 +86,7 @@ void getCurrentWebview().onDragDropEvent(({ payload: p }) => {
       break;
     case 'drop':
       if (p.paths.length) {
-        drag = { files: standIns(p.paths), at: drag && drag.at };
+        drag = { files: standIns(p.paths), at: drag?.at ?? null };
         fire('drop', p.position);
       }
       drag = null;

@@ -1,26 +1,37 @@
 // The drone (main drone.js): launch flies it in an arc from the robot's desk to the mouse,
 // tilting into the turn; hover settles it above the menu with the beam on, bobbing a little;
 // recall flies it home and it's gone. Positions are the lens (the bottom middle of the drone).
+import { $ } from '@/lib/dom';
 import type { DroneCmd } from '@/types/ipc';
 import type { Point } from '@/types/model';
-import { showView } from '@/ui/view';
+import { showView } from '@/lib/page';
 import markup from './drone.html?raw';
-import '@/ui/theme.css';
-import './drone.css';
+import '@/theme/theme.css';
+import './drone.css';
+
 import * as ipc from '@/ipc';
 
 showView(markup, { title: 'C-Bot drone' });
 
 (() => {
-  const drone = document.getElementById('drone')!;
-  const beam = document.getElementById('beam')!;
+  const drone = $('#drone');
+  const beam = $('#beam');
   const W = 96;
   const LENS_Y = 50; // the lens, from the drone's top
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const pos = { x: -200, y: -200, tilt: 0, scale: 1, alpha: 0 };
   type Range = [number, number];
-  type Move = { from: Point; to: Point; lift: number; t0: number; ms: number; then?: () => void; scale: Range; alpha: Range };
-  let move: Move | null = null; // { from, to, lift, t0, ms, then, scale: [a, b], alpha: [a, b] }
+  type Move = {
+    from: Point;
+    to: Point;
+    lift: number;
+    t0: number;
+    ms: number;
+    done?: () => void;
+    scale: Range;
+    alpha: Range;
+  };
+  let move: Move | null = null; // { from, to, lift, t0, ms, done, scale: [a, b], alpha: [a, b] }
   let bob = false;
   let beamTo: { y: number; width: number } | null = null; // { y, width }: the menu's top edge, while projecting
   let frame = 0;
@@ -33,7 +44,12 @@ showView(markup, { title: 'C-Bot drone' });
     drone.style.opacity = String(pos.alpha);
     if (beamTo) {
       const top = y - 2;
-      Object.assign(beam.style, { left: `${pos.x - beamTo.width / 2}px`, top: `${top}px`, width: `${beamTo.width}px`, height: `${Math.max(0, beamTo.y - top)}px` });
+      Object.assign(beam.style, {
+        left: `${pos.x - beamTo.width / 2}px`,
+        top: `${top}px`,
+        width: `${beamTo.width}px`,
+        height: `${Math.max(0, beamTo.y - top)}px`,
+      });
     }
   }
   function tick(now: number) {
@@ -55,25 +71,45 @@ showView(markup, { title: 'C-Bot drone' });
       const fade = move.alpha[1] > move.alpha[0] ? Math.min(1, t * 2.5) : t ** 3;
       pos.alpha = move.alpha[0] + (move.alpha[1] - move.alpha[0]) * fade;
       if (t >= 1) {
-        const then = move.then;
+        const done = move.done;
         move = null;
         pos.tilt = 0;
-        then?.();
+        done?.();
       }
     } else pos.tilt *= 0.8;
     draw(now);
     frame = move || bob || beamTo ? requestAnimationFrame(tick) : 0;
   }
-  const run = () => frame || (frame = requestAnimationFrame(tick));
+  const run = () => {
+    if (!frame) frame = requestAnimationFrame(tick);
+  };
 
-  function fly(to: Point, { ms, lift = 60, scale = [pos.scale, 1], alpha = [pos.alpha, 1], then }: { ms?: number; lift?: number; scale?: Range; alpha?: Range; then?: () => void } = {}) {
+  function fly(
+    to: Point,
+    {
+      ms,
+      lift = 60,
+      scale = [pos.scale, 1],
+      alpha = [pos.alpha, 1],
+      done,
+    }: { ms?: number; lift?: number; scale?: Range; alpha?: Range; done?: () => void } = {},
+  ) {
     if (still) {
       Object.assign(pos, { x: to.x, y: to.y, tilt: 0, scale: scale[1], alpha: alpha[1] });
       draw(performance.now());
-      return then?.();
+      return done?.();
     }
     const d = Math.hypot(to.x - pos.x, to.y - pos.y);
-    move = { from: { x: pos.x, y: pos.y }, to, lift: Math.min(lift, d * 0.3), t0: performance.now(), ms: ms ?? Math.max(240, Math.min(360, d / 3)), then, scale, alpha };
+    move = {
+      from: { x: pos.x, y: pos.y },
+      to,
+      lift: Math.min(lift, d * 0.3),
+      t0: performance.now(),
+      ms: ms ?? Math.max(240, Math.min(360, d / 3)),
+      done,
+      scale,
+      alpha,
+    };
     run();
   }
 
@@ -86,15 +122,20 @@ showView(markup, { title: 'C-Bot drone' });
       bob = false;
       Object.assign(pos, { x: c.from.x, y: c.from.y, tilt: 0, scale: 0.55, alpha: 0 });
       draw(performance.now());
-      fly(c.to, { scale: [0.55, 1], alpha: [0, 1], then: () => ipc.droneArrived() });
+      fly(c.to, { scale: [0.55, 1], alpha: [0, 1], done: () => ipc.droneArrived() });
     } else if (c.kind === 'retarget') {
       // the menu's real spot: mid-flight it carries on there in the time that's left
       if (move) {
-        const { then, scale, alpha } = move;
+        const { done, scale, alpha } = move;
         const left = Math.max(120, move.ms - (performance.now() - move.t0));
         move = null;
-        fly(c.to, { ms: left, lift: 20, scale: [pos.scale, scale[1]], alpha: [pos.alpha, alpha[1]], then });
-      } else fly(c.to, { ms: Math.max(120, Math.min(260, Math.hypot(c.to.x - pos.x, c.to.y - pos.y) / 2)), lift: 0, then: () => ipc.droneArrived() });
+        fly(c.to, { ms: left, lift: 20, scale: [pos.scale, scale[1]], alpha: [pos.alpha, alpha[1]], done });
+      } else
+        fly(c.to, {
+          ms: Math.max(120, Math.min(260, Math.hypot(c.to.x - pos.x, c.to.y - pos.y) / 2)),
+          lift: 0,
+          done: () => ipc.droneArrived(),
+        });
     } else if (c.kind === 'hover') {
       // over the menu: a short glide to just above its top edge, then the beam
       const gap = 30;
@@ -102,7 +143,7 @@ showView(markup, { title: 'C-Bot drone' });
       fly(to, {
         ms: Math.max(60, Math.min(260, Math.hypot(to.x - pos.x, to.y - pos.y) / 2)), // (usually it's there already)
         lift: 0,
-        then: () => {
+        done: () => {
           bob = true;
           beamTo = { y: c.at.y + 1, width: Math.max(60, c.width - 24) };
           drone.classList.add('projecting');
@@ -116,7 +157,7 @@ showView(markup, { title: 'C-Bot drone' });
       beam.classList.remove('on');
       drone.classList.remove('projecting');
       const home = c.to || { x: pos.x, y: pos.y - 120 };
-      fly(home, { ms: 320, scale: [pos.scale, 0.55], alpha: [pos.alpha, 0], then: () => ipc.droneGone() });
+      fly(home, { ms: 320, scale: [pos.scale, 0.55], alpha: [pos.alpha, 0], done: () => ipc.droneGone() });
     }
   });
 })();

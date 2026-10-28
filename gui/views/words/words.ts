@@ -1,9 +1,14 @@
+import { $ } from '@/lib/dom';
+import { sayInEnglish as say } from '@/lib/speech';
+import { esc } from '@/lib/text';
 import type { WordRow, WordsList, WordsStats } from '@/types/pages';
-import { Icon } from '@/ui/icons';
-import { showView } from '@/ui/view';
+import { Icon } from '@/icons/icons';
+import { showView } from '@/lib/page';
 import markup from './words.html?raw';
-import '@/ui/theme.css';
-import './words.css';
+import '@/theme/theme.css';
+import '@/theme/base.css';
+import './words.css';
+
 import * as ipc from '@/ipc';
 
 showView(markup, { title: 'My words — C-Bot' });
@@ -12,14 +17,22 @@ showView(markup, { title: 'My words — C-Bot' });
   // My words (main.js openWords): every English word you've caught, how many times
   // you've seen it and when it comes back in a dream; sorted and grouped your way
   // (newest, A–Z, next dream, progress). Click one to see its card again.
-  const $ = <E extends HTMLElement = HTMLElement>(s: string) => document.querySelector<E>(s)!;
   const LEARNT = 6; // vocab.js LEARNT_STEP: seen this many times, learnt
   const STEPS = 9; // vocab.js GAP: the dots show how far along its schedule a word is
-  let data: Omit<WordsList, 'stats' | 'hotkey'> & { stats: Partial<WordsStats>; hotkey?: string } = { words: [], stats: {}, hours: [9, 18], reminders: true };
+  let data: Omit<WordsList, 'stats' | 'hotkey'> & { stats: Partial<WordsStats>; hotkey?: string } = {
+    words: [],
+    stats: {},
+    hours: [9, 18],
+    reminders: true,
+  };
   let filter = 'all';
 
-  const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);
-  const norm = (s: unknown) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
+  const norm = (s: unknown) =>
+    String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/đ/g, 'd');
 
   // "in 3 days", "now"
   function when(due: number) {
@@ -33,17 +46,6 @@ showView(markup, { title: 'My words — C-Bot' });
     return `in ${d} day${d === 1 ? '' : 's'}`;
   }
 
-  function say(text: string | undefined) {
-    if (!text || !window.speechSynthesis) return;
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const voices = speechSynthesis.getVoices();
-    u.voice = voices.find((v) => v.lang === 'en-US' && /natural|aria|jenny|guy/i.test(v.name)) || voices.find((v) => v.lang === 'en-US') || null;
-    u.lang = 'en-US';
-    u.rate = 0.9;
-    speechSynthesis.speak(u);
-  }
-
   function renderStats() {
     const s = data.stats || {};
     const tiles = [
@@ -51,9 +53,11 @@ showView(markup, { title: 'My words — C-Bot' });
       [s.learnt || 0, 'learnt'],
       [s.learning || 0, 'learning'],
       [s.due || 0, 'due now'],
-      [`${s.streak || 0}`, s.streak === 1 ? 'day streak' : 'days streak', s.streak! > 0], // (drawn once loaded: every stat is there)
+      [`${s.streak || 0}`, s.streak === 1 ? 'day streak' : 'days streak', (s.streak ?? 0) > 0],
     ];
-    $('#stats').innerHTML = tiles.map(([n, l, hot]) => `<div class="stat${hot ? ' hot' : ''}"><b>${esc(n)}</b><span>${esc(l)}</span></div>`).join('');
+    $('#stats').innerHTML = tiles
+      .map(([n, l, hot]) => `<div class="stat${hot ? ' hot' : ''}"><b>${esc(n)}</b><span>${esc(l)}</span></div>`)
+      .join('');
   }
 
   // ---- how the list is organised: sorted, and grouped under headings that fit the sort
@@ -65,7 +69,8 @@ showView(markup, { title: 'My words — C-Bot' });
     for (const g of JSON.parse(localStorage.getItem('words.folded') || '[]')) folded.add(g);
   } catch {}
   const DAY = 86_400_000;
-  const stage = (w: WordRow) => (w.status !== 'ready' ? 'new' : w.box >= LEARNT ? 'learnt' : w.box >= 2 ? 'learning' : 'new');
+  const stage = (w: WordRow) =>
+    w.status !== 'ready' ? 'new' : w.box >= LEARNT ? 'learnt' : w.box >= 2 ? 'learning' : 'new';
   const startOfDay = (t = Date.now()) => new Date(new Date(t).toDateString()).getTime();
   // [heading, its order] for a word, in the current sort
   function groupOf(w: WordRow, now: number): [string, string | number] {
@@ -82,7 +87,11 @@ showView(markup, { title: 'My words — C-Bot' });
     }
     if (sort === 'progress') {
       const s = stage(w);
-      return s === 'new' ? ['New: seen 0–1 times', 0] : s === 'learning' ? ['Learning: seen 2–5 times', 1] : ['Learnt: seen 6 times or more', 2];
+      return s === 'new'
+        ? ['New: seen 0–1 times', 0]
+        : s === 'learning'
+          ? ['Learning: seen 2–5 times', 1]
+          : ['Learnt: seen 6 times or more', 2];
     }
     const today = startOfDay(now);
     if (w.addedAt >= today) return ['Today', 0];
@@ -103,7 +112,7 @@ showView(markup, { title: 'My words — C-Bot' });
     const due = w.status === 'ready' ? when(w.due) : '';
     let vi = '';
     if (w.status === 'looking') vi = '<span class="more">Looking it up…</span>';
-    else if (w.status === 'failed') vi = "<span class=\"more\">Couldn't look it up: open it to try again</span>";
+    else if (w.status === 'failed') vi = '<span class="more">Couldn\'t look it up: open it to try again</span>';
     else {
       const [main, ...more] = String(w.vi || '').split('; ');
       vi = `<span class="main">${esc(main)}</span>${more.length ? `<span class="more"> · ${esc(more.join(' · '))}</span>` : ''}`;
@@ -129,13 +138,18 @@ showView(markup, { title: 'My words — C-Bot' });
       learnt: (w) => w.box >= LEARNT,
     };
     // each filter says how many it would show
-    for (const b of document.querySelectorAll<HTMLElement>('#filters button')) b.querySelector('.n')!.textContent = String(matches.filter(pass[b.dataset.filter!]).length);
+    for (const b of document.querySelectorAll<HTMLElement>('#filters button'))
+      $('.n', b).textContent = String(matches.filter(pass[b.dataset.filter ?? 'all']).length); // (each has its data-filter)
     const words = matches.filter(pass[filter]).sort(ORDER[sort] || ORDER.newest);
     const groups = new Map<string, { order: string | number; words: WordRow[] }>();
     for (const w of words) {
       const [title, order] = groupOf(w, now);
-      if (!groups.has(title)) groups.set(title, { order, words: [] });
-      groups.get(title)!.words.push(w);
+      let group = groups.get(title);
+      if (!group) {
+        group = { order, words: [] };
+        groups.set(title, group);
+      }
+      group.words.push(w);
     }
     $('#list').innerHTML = [...groups.entries()]
       .sort((a, b) => (a[1].order < b[1].order ? -1 : a[1].order > b[1].order ? 1 : 0))
@@ -159,7 +173,11 @@ showView(markup, { title: 'My words — C-Bot' });
   function renderSettings() {
     $<HTMLInputElement>('#reminders').checked = data.reminders;
     const [from, to] = data.hours || [9, 18];
-    const opts = (sel: number) => Array.from({ length: 25 }, (_, h) => `<option value="${h}"${h === sel ? ' selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('');
+    const opts = (sel: number) =>
+      Array.from(
+        { length: 25 },
+        (_, h) => `<option value="${h}"${h === sel ? ' selected' : ''}>${String(h).padStart(2, '0')}:00</option>`,
+      ).join('');
     $('#from').innerHTML = opts(from);
     $('#to').innerHTML = opts(to);
     $<HTMLSelectElement>('#from').disabled = $<HTMLSelectElement>('#to').disabled = !data.reminders;
@@ -184,7 +202,7 @@ showView(markup, { title: 'My words — C-Bot' });
   $('#filters').addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-filter]');
     if (!b) return;
-    filter = b.dataset.filter!;
+    filter = b.dataset.filter ?? filter; // (it has one: [data-filter] matched)
     for (const x of document.querySelectorAll('#filters button')) x.classList.toggle('on', x === b);
     renderList();
   });
@@ -192,8 +210,9 @@ showView(markup, { title: 'My words — C-Bot' });
     // a heading folds or unfolds its group (remembered)
     const head = (e.target as Element).closest<HTMLElement>('.group-head');
     if (head) {
-      const g = head.parentElement!;
-      const key = g.dataset.group!;
+      const g = head.closest<HTMLElement>('[data-group]'); // (its group, the li round it)
+      const key = g?.dataset.group;
+      if (!g || key === undefined) return;
       g.classList.toggle('folded');
       if (g.classList.contains('folded')) folded.add(key);
       else folded.delete(key);
@@ -210,8 +229,8 @@ showView(markup, { title: 'My words — C-Bot' });
       if (w && confirm(`Delete “${w.word}” from your words?`)) await ipc.wordsDelete(w.id);
       return;
     }
-    const row = (e.target as Element).closest<HTMLElement>('[data-id]');
-    if (row) ipc.wordsOpen(row.dataset.id!);
+    const id = (e.target as Element).closest<HTMLElement>('[data-id]')?.dataset.id;
+    if (id !== undefined) ipc.wordsOpen(id);
   });
   $('#quiz').addEventListener('click', async () => {
     const ok = await ipc.wordsQuiz();

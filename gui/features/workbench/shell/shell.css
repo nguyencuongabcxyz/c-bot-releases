@@ -1,0 +1,80 @@
+/* The shell drawer (shells.ts), a tab per shell: between the chat and the box you type in,
+   dark like a code block whatever the theme; its height set by dragging its top edge. */
+
+#shell {
+  position: relative; flex: none; display: flex; flex-direction: column;
+  margin: 4px 10px 6px; border-radius: 10px; overflow: hidden;
+  background: var(--code-bg); border: 1px solid color-mix(in srgb, var(--code-fg) 14%, transparent);
+  box-shadow: 0 4px 14px rgba(11, 20, 38, 0.18);
+  animation: sh-in 0.16s ease-out;
+}
+@keyframes sh-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* the top edge: drag it */
+#sh-grip { position: absolute; top: 0; left: 0; right: 0; height: 7px; cursor: ns-resize; z-index: 2; }
+#sh-grip::after {
+  content: ""; position: absolute; top: 3px; left: 50%; width: 32px; height: 3px; margin-left: -16px;
+  border-radius: 2px; background: var(--code-fg); opacity: 0.25; transition: opacity 0.15s;
+}
+#sh-grip:hover::after, body.sh-resizing #sh-grip::after { opacity: 0.6; }
+body.sh-resizing, body.sh-resizing * { cursor: ns-resize !important; user-select: none !important; }
+
+.sh-bar {
+  display: flex; align-items: center; gap: 2px; padding: 6px 6px 4px 10px; flex: none;
+  background: color-mix(in srgb, var(--code-fg) 7%, var(--code-bg));
+  color: color-mix(in srgb, var(--code-fg) 70%, transparent); font: 11.5px var(--font-mono);
+}
+.sh-bar .spacer { flex: 1; }
+
+/* the tabs: a shell each */
+#sh-tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.sh-tab {
+  display: inline-flex; align-items: center; gap: 4px; flex: none; max-width: 140px;
+  padding: 2px 3px 2px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.sh-tab::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none;
+  background: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 25%, transparent);
+}
+.sh-tab.ended::before { background: color-mix(in srgb, var(--code-fg) 35%, transparent); box-shadow: none; }
+.sh-label { overflow: hidden; text-overflow: ellipsis; }
+.sh-tab:hover { background: color-mix(in srgb, var(--code-fg) 10%, transparent); color: var(--code-fg); }
+.sh-tab.on { background: var(--code-bg); color: var(--code-fg); box-shadow: inset 0 -2px 0 var(--accent); }
+.sh-x {
+  width: 16px; height: 16px; border: 0; border-radius: 4px; padding: 0; display: grid; place-items: center;
+  background: transparent; color: inherit; font: 13px/1 var(--font-ui); cursor: pointer; opacity: 0;
+}
+.sh-tab:hover .sh-x, .sh-tab.on .sh-x { opacity: 0.7; }
+.sh-x:hover { opacity: 1 !important; background: color-mix(in srgb, var(--danger) 30%, transparent); }
+.sh-bar > button {
+  flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; padding: 0; display: grid; place-items: center;
+  background: transparent; color: inherit; cursor: pointer;
+}
+.sh-bar > button .ic { width: 13px; height: 13px; }
+.sh-bar > button:hover { background: color-mix(in srgb, var(--code-fg) 14%, transparent); color: var(--code-fg); }
+
+#sh-term { position: relative; flex: 1; min-height: 0; }
+.sh-pane { position: absolute; inset: 4px 0 2px 8px; }
+.sh-pane .xterm { height: 100%; }
+#sh-term .xterm-viewport { background: transparent !important; }
+
+/* + makes your usual kind; ▾ picks the kind (PowerShell, Git Bash) */
+#sh-kind { width: 14px !important; margin-left: -2px; }
+#sh-menu {
+  position: absolute; top: 30px; left: 8px; z-index: 4; min-width: 170px; padding: 4px;
+  background: var(--panel-bg); color: var(--fg); border: 1px solid var(--line-2); border-radius: 9px;
+  box-shadow: var(--shadow-pop); font: 12.5px var(--font-ui);
+}
+#sh-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 9px; border: 0; border-radius: 6px;
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+#sh-menu button:hover { background: var(--bg-2); }
+#sh-menu .sh-usual { margin-left: auto; color: var(--muted); font-size: 11px; }
+
+/* its Claude just typed in this one */
+.sh-tab.bot { animation: sh-bot 1.2s ease-out; }
+@keyframes sh-bot { 0%, 40% { background: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--code-fg); } }
+
+/* the header button lights up while the drawer's out */
+body.shell-open #btn-shell { color: var(--accent-ink); background: var(--accent-soft); }

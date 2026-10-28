@@ -1,11 +1,74 @@
-/* The word card. Colours, fonts and icons: ../ui/theme.css and ../ui/icons.js; the accent
+/* The word card. Colours, fonts and icons: @/theme/theme.css and @/icons/icons.ts; the accent
    is the robot's paint (set by card.js). */
+
+/* ------------------------------------------------------------- the themes' touches here
+   (on top of @/theme/vintage.css and future.css; first in this file, as they were in the cascade) */
+[data-theme="future"] #card { border-color: color-mix(in srgb, var(--accent) 22%, var(--line-2)); }
+[data-theme="future"] #card::before {
+  height: 1px; border-radius: 0;
+  background: linear-gradient(90deg, transparent, var(--accent) 25%, var(--accent) 75%, transparent); box-shadow: 0 0 10px var(--glow);
+}
+/* labels and readouts in the HUD face */
+[data-theme="future"] #card h1 { font-weight: 600; letter-spacing: 0.005em; }
+[data-theme="future"] :is(#phrases li, #examples li)::marker { color: var(--accent); }
+[data-theme="future"] .ph-ex { border-left: 2px solid var(--violet); padding-left: 8px; }
+/* a dream: a violet scan line, and a shimmer that sweeps across once as it appears */
+[data-theme="future"] #card.dream { border-color: color-mix(in srgb, var(--violet) 35%, var(--line-2)); }
+[data-theme="future"] #card.dream::before { background: linear-gradient(90deg, transparent, var(--violet) 25%, var(--violet) 75%, transparent); box-shadow: 0 0 12px color-mix(in srgb, var(--violet) 50%, transparent); }
+[data-theme="future"] #card.dream::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--violet) 14%, transparent) 50%, transparent 65%) no-repeat;
+  background-size: 250% 100%; animation: future-shimmer 1.6s ease-out 0.2s both;
+}
+@keyframes future-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+[data-theme="future"] #dream-ex { border-left: 2px solid var(--violet); }
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="future"] #card.dream::after { animation: none; display: none; }
+}
+[data-theme="vintage"] #card { background: var(--bg); }
+/* a strip of washi tape holding it on (instead of the paint strip) */
+[data-theme="vintage"] #card::before { height: 0; background: none; }
+[data-theme="vintage"] #card::after {
+  content: ""; position: absolute; top: -1px; left: 50%; width: 84px; height: 16px; transform: translateX(-50%) rotate(-2.5deg);
+  background: var(--tape); border-left: 1px dashed rgba(255, 255, 255, 0.35); border-right: 1px dashed rgba(255, 255, 255, 0.35);
+  pointer-events: none; z-index: 3;
+}
+[data-theme="vintage"] #card h1 { font-weight: 400; letter-spacing: 0; font-size: 28px; }
+[data-theme="vintage"] #card h2 { color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 3px; }
+/* typewriter tabs: index tabs, the one you're on inked in */
+[data-theme="vintage"] #card #tabs { background: transparent; border: 0; padding: 0; gap: 6px; }
+[data-theme="vintage"] #card #tabs button { font: 11px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line-2); border-radius: var(--r) !important; padding: 3px 9px; }
+[data-theme="vintage"] #card #tabs button.on { background: var(--btn); color: var(--on-btn); box-shadow: none; border-color: transparent; }
+/* examples written on ruled lines, in an italic serif */
+[data-theme="vintage"] :is(.ph-ex, #examples li, .words .ex, #dream-ex) { font-family: var(--font-display); font-style: italic; }
+[data-theme="vintage"] :is(#phrases, #examples) {
+  background: repeating-linear-gradient(transparent 0 25px, var(--rule) 25px 26px); line-height: 26px;
+}
+[data-theme="vintage"] :is(#phrases, #examples) li { margin: 0; }
+[data-theme="vintage"] :is(.ph-vi, .ex-vi, .en) { line-height: 26px; }
+[data-theme="vintage"] #phrases li::marker { color: var(--stamp); }
+[data-theme="vintage"] #tip { background: transparent; border: 1px dashed var(--line-2); border-left: 1px dashed var(--line-2); }
+/* the verb forms: a conjugation table */
+[data-theme="vintage"] #forms { gap: 0; border: 1px solid var(--line-2); border-radius: var(--r) !important; overflow: hidden; }
+[data-theme="vintage"] .form { border: 0; border-right: 1px solid var(--line); border-radius: 0 !important; background: transparent; }
+[data-theme="vintage"] .form:last-child { border-right: 0; }
+[data-theme="vintage"] .form-w { font-family: var(--font-display); font-weight: 400; font-size: 14.5px; }
+[data-theme="vintage"] .badge { color: var(--stamp); border-color: color-mix(in srgb, var(--stamp) 55%, transparent); transform: rotate(-3deg); display: inline-block; }
+/* ✓ I know this one: a tilted rubber stamp */
+[data-theme="vintage"] #knowit { color: var(--stamp) !important; border: 1.5px dashed color-mix(in srgb, var(--stamp) 75%, transparent) !important; background: transparent !important; transform: rotate(-2deg); }
+[data-theme="vintage"] #knowit .ic { color: inherit !important; }
+/* a dream: a memo slip torn from the pad, a perforated top and a "DREAM" header */
+[data-theme="vintage"] #card.dream { border-top: 2px dashed var(--line-2); }
+[data-theme="vintage"] #card.dream::after { display: none; }
+[data-theme="vintage"] #card.dream #dream-top::before { border-radius: 0; width: 6px; height: 6px; transform: rotate(45deg); box-shadow: none; }
+[data-theme="vintage"] #dream-vi { font-family: var(--font-display); font-weight: 400; font-size: 17px; }
+[data-theme="vintage"] #dream-ex { background: repeating-linear-gradient(transparent 0 25px, var(--rule) 25px 26px); line-height: 26px; border: 0; border-left: 3px solid var(--ok); padding: 0 10px; }
+[data-theme="vintage"] #dream-ex .ex-vi { font-family: var(--font-ui); font-style: normal; }
+
 :root {
-  --paint: #5ac8fa; /* (the accent is this, as the theme tones it: ../ui/theme.css) */
+  --paint: #5ac8fa; /* (the accent is this, as the theme tones it: @/theme/theme.css) */
   --surface-2: var(--bg-2);
 }
-[hidden] { display: none !important; } /* (over the footer buttons' display: inline-flex) */
-* { box-sizing: border-box; }
 html, body { margin: 0; background: transparent; overflow: hidden; }
 body { font: 14px/1.5 var(--font-ui); color: var(--fg); padding: 8px 8px 14px; } /* as the chat panel sits in its window */
 
@@ -19,7 +82,6 @@ body { font: 14px/1.5 var(--font-ui); color: var(--fg); padding: 8px 8px 14px; }
 }
 /* a thin strip of the robot's paint along the top */
 #card::before { content: ""; position: sticky; top: -16px; display: block; height: 3px; margin: -16px -20px 13px; background: var(--accent); border-radius: 14px 14px 0 0; flex: none; z-index: 2; }
-@keyframes pop-in { from { transform: scale(0.97) translateY(6px); opacity: 0; } }
 header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 h1 { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; overflow-wrap: anywhere; }

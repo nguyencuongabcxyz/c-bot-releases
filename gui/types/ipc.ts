@@ -120,9 +120,15 @@ export interface Events {
   // (its shell, workbench/shell.rs: what it printed, or that it ended)
   'robot:shell': { sid: number; kind: 'data'; data: string } | { sid: number; kind: 'exit'; code: number };
   // (its Claude, in the shells of its conversation tab: a terminal_* tool call; wait: seconds, for terminal_run)
-  'robot:shell-ask': { req: number; tool: string; tab: string; args: { command?: string; shell?: number; shell_type?: string; new_shell?: boolean; lines?: number }; wait: number };
+  'robot:shell-ask': {
+    req: number;
+    tool: string;
+    tab: string;
+    args: { command?: string; shell?: number; shell_type?: string; new_shell?: boolean; lines?: number };
+    wait: number;
+  };
   // ---- the other windows
-  'mgr:changed': void;
+  'mgr:changed': undefined;
   'mgr:focus': string;
   'walker:state': P.WalkerState;
   'walker:character': P.WalkerLook;
@@ -130,7 +136,7 @@ export interface Events {
   'walker:dream': P.WalkerDream;
   'walker:say': P.WalkerSay;
   'card:word': P.CardWord;
-  'words:changed': void;
+  'words:changed': undefined;
   'notebook:notes': P.NotebookNotes;
   'notebook:open': P.NotebookOpen;
   'palette:open': PaletteView;
@@ -149,4 +155,3 @@ export interface Events {
   'island:edge': { edge: IslandEdge; dragging: boolean };
   'island:news': IslandNews & { id: string };
 }
-

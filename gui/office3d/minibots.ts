@@ -1,3 +1,5 @@
+import { easeOutCubic } from '@/office3d/core/math';
+import { shadowMesh } from '@/office3d/core/mesh';
 import * as THREE from 'three';
 import { toon, glow } from './materials';
 import type { Emit } from './antics/types';
@@ -10,47 +12,52 @@ const COLORS = ['#8e7cff', '#ffd34d', '#7bed9f', '#ff9f43', '#5ac8fa', '#ff6b81'
 const FLY_OUT = 0.7; // seconds
 const FLY_HOME = 0.55;
 
-const mesh = <G extends THREE.BufferGeometry, M extends THREE.Material | THREE.Material[]>(geo: G, mat: M, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  return m;
-};
-
 function buildMini(color: string) {
   const bot = new THREE.Group();
   const body = toon(color);
   const ink = toon('#1d2235');
-  const head = mesh(new THREE.SphereGeometry(0.1, 18, 14), body);
+  const head = shadowMesh(new THREE.SphereGeometry(0.1, 18, 14), body);
   head.scale.set(1.15, 0.95, 1);
   bot.add(head);
   // a dark visor with two glowing eyes, facing +z
-  const visor = mesh(new THREE.SphereGeometry(0.075, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), ink, 0, 0, 0.045);
+  const visor = shadowMesh(new THREE.SphereGeometry(0.075, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), ink, 0, 0, 0.045);
   visor.rotation.x = Math.PI / 2;
   visor.scale.set(1.2, 0.55, 0.8);
   bot.add(visor);
   const eye = glow('#7ff3ff');
-  for (const side of [-1, 1]) bot.add(mesh(new THREE.SphereGeometry(0.016, 8, 6), eye, side * 0.035, 0.005, 0.1));
+  for (const side of [-1, 1]) bot.add(shadowMesh(new THREE.SphereGeometry(0.016, 8, 6), eye, side * 0.035, 0.005, 0.1));
   // antenna and a little propeller
-  bot.add(mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.07, 6), ink, 0, 0.12, 0));
+  bot.add(shadowMesh(new THREE.CylinderGeometry(0.006, 0.006, 0.07, 6), ink, 0, 0.12, 0));
   const prop = new THREE.Group();
   prop.position.y = 0.16;
-  prop.add(mesh(new THREE.BoxGeometry(0.16, 0.008, 0.025), ink));
-  prop.add(mesh(new THREE.SphereGeometry(0.014, 8, 6), glow('#ff5e62')));
+  prop.add(shadowMesh(new THREE.BoxGeometry(0.16, 0.008, 0.025), ink));
+  prop.add(shadowMesh(new THREE.SphereGeometry(0.014, 8, 6), glow('#ff5e62')));
   bot.add(prop);
   // stubby arms
   for (const side of [-1, 1]) {
-    const arm = mesh(new THREE.CapsuleGeometry(0.018, 0.04, 3, 6), body, side * 0.11, -0.03, 0);
+    const arm = shadowMesh(new THREE.CapsuleGeometry(0.018, 0.04, 3, 6), body, side * 0.11, -0.03, 0);
     arm.rotation.z = side * 0.6;
     bot.add(arm);
   }
   return { bot, prop };
 }
 
-const easeOut = (p: number) => 1 - (1 - p) ** 3;
-
-type Mini = { bot: THREE.Group; prop: THREE.Group; state: 'out' | 'orbit' | 'home'; t0: number; hopAt: number; from: THREE.Vector3 };
-export type MinisFrame = { want: number; head: THREE.Vector3; center: THREE.Vector3; faceYaw: number; hop: boolean; emit: Emit };
+type Mini = {
+  bot: THREE.Group;
+  prop: THREE.Group;
+  state: 'out' | 'orbit' | 'home';
+  t0: number;
+  hopAt: number;
+  from: THREE.Vector3;
+};
+export type MinisFrame = {
+  want: number;
+  head: THREE.Vector3;
+  center: THREE.Vector3;
+  faceYaw: number;
+  hop: boolean;
+  emit: Emit;
+};
 
 /**
  * minis.update(t, dt, { want, head, center, faceYaw, hop, emit }):
@@ -95,12 +102,16 @@ export function createMinis(parent: THREE.Object3D) {
         const k = circling.indexOf(m);
         const { a, r } = slot(Math.max(0, k), circling.length, t);
         // a ring around the robot's head, tilted so the front of it dips toward you
-        const target = new THREE.Vector3(center.x + Math.cos(a) * r, center.y + Math.sin(a) * 0.1 + Math.sin(t * 2.2 + i) * 0.04, center.z + Math.sin(a) * r * 0.7);
+        const target = new THREE.Vector3(
+          center.x + Math.cos(a) * r,
+          center.y + Math.sin(a) * 0.1 + Math.sin(t * 2.2 + i) * 0.04,
+          center.z + Math.sin(a) * r * 0.7,
+        );
         const sinceHop = t - m.hopAt;
         if (m.hopAt >= 0 && sinceHop < 0.45) target.y += Math.sin((sinceHop / 0.45) * Math.PI) * 0.12;
         if (m.state === 'out') {
           const p = Math.min(1, (t - m.t0) / FLY_OUT);
-          const e = easeOut(p);
+          const e = easeOutCubic(p);
           m.bot.position.lerpVectors(m.from, target, e);
           m.bot.position.y += Math.sin(p * Math.PI) * 0.25; // a little arc on the way out
           m.bot.scale.setScalar(Math.max(0.001, e));
@@ -117,14 +128,24 @@ export function createMinis(parent: THREE.Object3D) {
           if (p >= 1) {
             for (let s = 0; s < 5; s++) {
               const ang = (s / 5) * Math.PI * 2;
-              emit('star', head, { life: 0.8, vel: new THREE.Vector3(Math.cos(ang) * 0.5, 0.45 + Math.sin(ang) * 0.2, 0), size: 0.1, gravity: 0.8, spin: 4 });
+              emit('star', head, {
+                life: 0.8,
+                vel: new THREE.Vector3(Math.cos(ang) * 0.5, 0.45 + Math.sin(ang) * 0.2, 0),
+                size: 0.1,
+                gravity: 0.8,
+                spin: 4,
+              });
             }
             parent.remove(m.bot);
             minis.splice(i, 1);
             continue;
           }
         }
-        m.bot.rotation.set(Math.sin(t * 3 + i) * 0.12, faceYaw + Math.sin(t * 1.3 + i) * 0.3, Math.sin(t * 2.4 + i) * 0.1);
+        m.bot.rotation.set(
+          Math.sin(t * 3 + i) * 0.12,
+          faceYaw + Math.sin(t * 1.3 + i) * 0.3,
+          Math.sin(t * 2.4 + i) * 0.1,
+        );
         m.prop.rotation.y = t * 22;
       }
     },

@@ -1,7 +1,9 @@
+import { $ } from '@/lib/dom';
 import type { Box, Point } from '@/types/model';
-import { showView } from '@/ui/view';
+import { showView } from '@/lib/page';
 import markup from './snip.html?raw';
-import './snip.css';
+import './snip.css';
+
 import * as ipc from '@/ipc';
 
 showView(markup, { title: 'Drag a box round a word' });
@@ -10,15 +12,25 @@ showView(markup, { title: 'Drag a box round a word' });
   // The drag-a-box screen (main/snip.js): the capture of your screen, dimmed;
   // the box you drag shows through, and on letting go it's cut out and read.
   const shot = document.getElementById('shot') as HTMLImageElement;
-  const box = document.getElementById('box')!;
+  const box = $('#box');
   let from: Point | null = null;
   let rect: Box | null = null;
 
   const cancel = () => ipc.snipCancel();
   function draw(x: number, y: number) {
-    // (only while dragging: from is set)
-    rect = { x: Math.min(from!.x, x), y: Math.min(from!.y, y), width: Math.abs(x - from!.x), height: Math.abs(y - from!.y) };
-    Object.assign(box.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    if (!from) return; // (only while dragging: from is set)
+    rect = {
+      x: Math.min(from.x, x),
+      y: Math.min(from.y, y),
+      width: Math.abs(x - from.x),
+      height: Math.abs(y - from.y),
+    };
+    Object.assign(box.style, {
+      left: `${rect.x}px`,
+      top: `${rect.y}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+    });
   }
 
   document.addEventListener('pointerdown', (e) => {
@@ -45,6 +57,6 @@ showView(markup, { title: 'Drag a box round a word' });
   ipc.snipInit().then((s) => {
     if (!s?.image) return cancel();
     shot.src = s.image;
-    if (s.hint) document.getElementById('hint')!.textContent = document.title = s.hint;
+    if (s.hint) $('#hint').textContent = document.title = s.hint;
   });
 })();

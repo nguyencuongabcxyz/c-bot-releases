@@ -1,9 +1,13 @@
+import { $ } from '@/lib/dom';
+import { plural } from '@/lib/text';
 import type { FileInfo } from '@/types/model';
 import type { IslandRobot, StageState } from '@/types/ipc';
-import { showView } from '@/ui/view';
-import { headSvg } from '@/ui/head';
+import { showView } from '@/lib/page';
+import { headSvg } from '@/icons/head';
 import markup from './stage.html?raw';
-import '@/ui/theme.css';
+import '@/theme/theme.css';
+import '@/theme/base.css';
+import '@/theme/dark.css';
 import './stage.css';
 import * as ipc from '@/ipc';
 
@@ -14,14 +18,12 @@ showView(markup, { title: 'C-Bot stage' });
   // (Ctrl+click), a pill saying who, to take the stage; on stage, the bar along the bottom of
   // the screen: one message to every robot on it (each asks it in its own chat; click a
   // robot's chip to leave it out), and the stage's buttons. Main sizes and places the window.
-  const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector<T>(s)!;
   const body = document.body;
   const input = $<HTMLTextAreaElement>('#b-input');
   let now: StageState | null = null;
   let files: FileInfo[] = [];
 
   const byId = (id: string) => now?.robots.find((r) => r.id === id);
-  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
   function face(r: IslandRobot | undefined, n?: number) {
     const f = document.createElement('span');
@@ -46,7 +48,9 @@ showView(markup, { title: 'C-Bot stage' });
       text.append(` picked · Ctrl+click ${names.length > 1 ? 'more' : 'another'}`);
       text.title = names.join(', ');
       const over = s.picked.length > s.room;
-      ($('#p-go') as HTMLButtonElement).title = over ? `Only ${s.room} fit on this screen: the first ${s.room} go on` : 'Tile their chats over this screen';
+      ($('#p-go') as HTMLButtonElement).title = over
+        ? `Only ${s.room} fit on this screen: the first ${s.room} go on`
+        : 'Tile their chats over this screen';
       return;
     }
     $('#b-count').textContent = plural(s.cast.length, 'robot');
@@ -68,10 +72,13 @@ showView(markup, { title: 'C-Bot stage' });
   }
 
   function syncSend() {
-    const to = now ? now.cast.filter((id) => !now!.off.includes(id)).length : 0;
+    const shown = now;
+    const to = shown ? shown.cast.filter((id) => !shown.off.includes(id)).length : 0;
     const send = $<HTMLButtonElement>('#b-send');
     send.disabled = !to || (!input.value.trim() && !files.length);
-    input.placeholder = to ? `Ask ${to === now?.cast.length ? 'everyone on stage' : plural(to, 'robot')}… (Enter sends)` : 'Pick someone to send to: click a robot below';
+    input.placeholder = to
+      ? `Ask ${to === now?.cast.length ? 'everyone on stage' : plural(to, 'robot')}… (Enter sends)`
+      : 'Pick someone to send to: click a robot below';
   }
 
   function renderFiles() {
@@ -96,7 +103,10 @@ showView(markup, { title: 'C-Bot stage' });
   async function send() {
     const text = input.value.trim();
     if (!text && !files.length) return;
-    const res = await ipc.stageSend(text || (files.length === 1 ? 'Take a look at this.' : 'Take a look at these.'), files.map((f) => f.path));
+    const res = await ipc.stageSend(
+      text || (files.length === 1 ? 'Take a look at this.' : 'Take a look at these.'),
+      files.map((f) => f.path),
+    );
     if (!res.ok) {
       input.placeholder = res.error;
       return;

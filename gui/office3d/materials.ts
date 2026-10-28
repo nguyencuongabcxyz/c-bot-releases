@@ -17,11 +17,10 @@ export function toon(color: THREE.ColorRepresentation, extra: THREE.MeshToonMate
 
 // Unlit, glowing surfaces (screens, LEDs). These skip the ink outline.
 export function glow(color: THREE.ColorRepresentation, extra: THREE.MeshBasicMaterialParameters = {}) {
-  const m = new THREE.MeshBasicMaterial({ color, toneMapped: false, ...extra });
-  m.userData.outlineParameters = { visible: false };
-  return m;
+  return noOutline(new THREE.MeshBasicMaterial({ color, toneMapped: false, ...extra }));
 }
 
+/** The material drawn without the ink outline (OutlineEffect reads userData.outlineParameters). */
 export function noOutline<M extends THREE.Material>(material: M) {
   material.userData.outlineParameters = { visible: false };
   return material;
@@ -35,7 +34,8 @@ export function canvasTexture(width: number, height: number, draw?: CanvasDraw):
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext('2d')!; // (a new canvas always has one)
+  const ctx = canvas.getContext('2d'); // (a new canvas always has one)
+  if (!ctx) throw new Error('No 2D context for a new canvas');
   draw?.(ctx, width, height);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -137,7 +137,12 @@ export function spriteTexture(kind: string) {
       ctx.strokeStyle = '#1d2235';
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.moveTo(14, 6); ctx.lineTo(40, 6); ctx.lineTo(52, 18); ctx.lineTo(52, 58); ctx.lineTo(14, 58); ctx.closePath();
+      ctx.moveTo(14, 6);
+      ctx.lineTo(40, 6);
+      ctx.lineTo(52, 18);
+      ctx.lineTo(52, 58);
+      ctx.lineTo(14, 58);
+      ctx.closePath();
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = '#b9bfd3';
@@ -147,7 +152,11 @@ export function spriteTexture(kind: string) {
       ctx.strokeStyle = '#1d2235';
       ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.moveTo(14, 20); ctx.lineTo(46, 12); ctx.lineTo(52, 44); ctx.lineTo(20, 52); ctx.closePath();
+      ctx.moveTo(14, 20);
+      ctx.lineTo(46, 12);
+      ctx.lineTo(52, 44);
+      ctx.lineTo(20, 52);
+      ctx.closePath();
       ctx.fill();
       ctx.stroke();
     } else if (kind === 'question') {
@@ -183,8 +192,12 @@ export function spriteTexture(kind: string) {
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = '#9aa1b8';
       ctx.beginPath();
-      ctx.moveTo(18, 26); ctx.lineTo(30, 34); ctx.lineTo(44, 22);
-      ctx.moveTo(26, 46); ctx.lineTo(36, 38); ctx.lineTo(46, 44);
+      ctx.moveTo(18, 26);
+      ctx.lineTo(30, 34);
+      ctx.lineTo(44, 22);
+      ctx.moveTo(26, 46);
+      ctx.lineTo(36, 38);
+      ctx.lineTo(46, 44);
       ctx.stroke();
     } else if (kind === 'bolt') {
       // a lightning bolt, for charging up
@@ -193,8 +206,12 @@ export function spriteTexture(kind: string) {
       ctx.lineWidth = 4;
       ctx.lineJoin = 'round';
       ctx.beginPath();
-      ctx.moveTo(38, 4); ctx.lineTo(14, 36); ctx.lineTo(30, 36);
-      ctx.lineTo(24, 60); ctx.lineTo(50, 24); ctx.lineTo(34, 24);
+      ctx.moveTo(38, 4);
+      ctx.lineTo(14, 36);
+      ctx.lineTo(30, 36);
+      ctx.lineTo(24, 60);
+      ctx.lineTo(50, 24);
+      ctx.lineTo(34, 24);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();

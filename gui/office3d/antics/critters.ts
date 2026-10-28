@@ -1,12 +1,10 @@
+import { clamp, seg, smooth } from '@/office3d/core/math';
 import * as THREE from 'three';
 import type { Antic, AnticCtx, Vec3Tuple } from './types';
 
 // The robot's own idle fidgets: it flicks its antenna or defragments.
 // See ./index.js for the contract.
 
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const ramp = (s: number, a: number, b: number) => smooth((s - a) / (b - a)); // 0 before a, 1 after b
-const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 // a repeatable "random" number in [0, 1)
 const hash = (a: number, b: number) => {
   const x = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
@@ -66,14 +64,14 @@ export const CRITTERS: Record<string, Antic> = {
     fadeOut: 0.3,
     update(c, A) {
       const { s, w } = c;
-      const armW = smooth(s / 0.35) * (1 - ramp(s, 0.75, 1.25)) * w;
+      const armW = smooth(s / 0.35) * (1 - seg(s, 0.75, 1.25)) * w;
       // cocked beside the rod, then swept across it at 0.4-0.6
-      const reach = aim(c, 'R', onHead(c, c.mix(0.16, -0.06, ramp(s, 0.4, 0.6)), 0.72, 0.06), _arm);
+      const reach = aim(c, 'R', onHead(c, c.mix(0.16, -0.06, seg(s, 0.4, 0.6)), 0.72, 0.06), _arm);
       c.toward(A.armR, _arm, armW);
       A.reachR = c.mix(1, reach, armW);
       A.head[0] = c.mix(A.head[0], -0.15, armW);
       // bent by the hand, then let go: a damped spring (still from 0.3 rad, but flung)
-      if (s < 0.6) A.antenna += 0.3 * ramp(s, 0.45, 0.6);
+      if (s < 0.6) A.antenna += 0.3 * seg(s, 0.45, 0.6);
       else {
         const k = s - 0.6;
         A.antenna += Math.exp(-k * 2.2) * (0.3 * Math.cos(k * 20) + 0.6 * Math.sin(k * 20));

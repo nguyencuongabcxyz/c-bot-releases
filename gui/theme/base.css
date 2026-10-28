@@ -1,0 +1,9 @@
+/* What every window with a page of its own starts from (imported after theme.css, before the
+   view's own stylesheet). */
+* { box-sizing: border-box; }
+
+/* hidden means hidden, whatever display a rule gives the element */
+[hidden] { display: none !important; }
+
+/* a card or panel appearing */
+@keyframes pop-in { from { transform: scale(0.97) translateY(6px); opacity: 0; } }

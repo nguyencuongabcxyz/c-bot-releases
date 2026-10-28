@@ -58,10 +58,40 @@ export type Personality = {
 /** What it says during its antics (shared/personalities.json): a line, or a few in a row. */
 export type Quips = Partial<
   Record<
-    | 'allclear' | 'attention' | 'back' | 'bsod' | 'cable' | 'cookie' | 'corner' | 'duck' | 'empty' | 'eyebreak'
-    | 'flex' | 'friday' | 'jira' | 'jitter' | 'justdream' | 'merge' | 'miss' | 'monday' | 'noted' | 'notesClockout'
-    | 'notesEvening' | 'notesMorning' | 'notesNudge' | 'notesStress' | 'oh' | 'payday' | 'quickDone' | 'quickStart'
-    | 'reboot' | 'score' | 'sneeze' | 'so' | 'tip' | 'works',
+    | 'allclear'
+    | 'attention'
+    | 'back'
+    | 'bsod'
+    | 'cable'
+    | 'cookie'
+    | 'corner'
+    | 'duck'
+    | 'empty'
+    | 'eyebreak'
+    | 'flex'
+    | 'friday'
+    | 'jira'
+    | 'jitter'
+    | 'justdream'
+    | 'merge'
+    | 'miss'
+    | 'monday'
+    | 'noted'
+    | 'notesClockout'
+    | 'notesEvening'
+    | 'notesMorning'
+    | 'notesNudge'
+    | 'notesStress'
+    | 'oh'
+    | 'payday'
+    | 'quickDone'
+    | 'quickStart'
+    | 'reboot'
+    | 'score'
+    | 'sneeze'
+    | 'so'
+    | 'tip'
+    | 'works',
     string
   > &
     Record<'breathe' | 'busted' | 'standup', string[]>
@@ -71,7 +101,9 @@ export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | '
 export type RobotSize = 'small' | 'normal' | 'large' | 'huge';
 
 /** A robot built from parts (office3d/kit3d): a part name per slot and its colours. */
-export type Kit = Partial<Record<'head' | 'face' | 'top' | 'body' | 'arms' | 'base' | 'finish' | 'clothes' | 'neck' | 'extra' | 'specs', string>> &
+export type Kit = Partial<
+  Record<'head' | 'face' | 'top' | 'body' | 'arms' | 'base' | 'finish' | 'clothes' | 'neck' | 'extra' | 'specs', string>
+> &
   Partial<Record<'second' | 'accent' | 'eye' | 'cloth' | 'hair', string>>;
 
 export type FileChip = { name: string; isDir: boolean; isImage: boolean };
@@ -90,7 +122,9 @@ export type Diff = {
   truncated: boolean;
 };
 
-export type StepMedia = { kind: 'image'; mimeType: string; data?: string; notKept?: boolean } | { kind: 'document'; mimeType: string; size: number };
+export type StepMedia =
+  | { kind: 'image'; mimeType: string; data?: string; notKept?: boolean }
+  | { kind: 'document'; mimeType: string; size: number };
 
 /** One step Claude took, as kept with its answer. */
 export type StepCall = {
@@ -145,16 +179,47 @@ export type HistoryEntry =
   | PlanEntry;
 
 /** A plan Claude made in plan mode, and what you said to it: go ahead (in `mode`), or keep planning (`feedback`). */
-export type PlanEntry = { role: 'plan'; plan: string; approved: boolean; mode?: PermissionMode | null; feedback?: string; at?: number };
+export type PlanEntry = {
+  role: 'plan';
+  plan: string;
+  approved: boolean;
+  mode?: PermissionMode | null;
+  feedback?: string;
+  at?: number;
+};
 
 /** A side question's thread (app/src/sidechat.rs): asked beside the conversation, about one of
  *  its answers (the one whose history entry has this `at`). */
-export type SideMessage = { role: 'user' | 'assistant'; text: string; at: number; isError?: boolean; interrupted?: boolean };
-export type SideThread = { id: string; at: number; quote?: string; sessionId?: string | null; history: SideMessage[]; createdAt: number };
+export type SideMessage = {
+  role: 'user' | 'assistant';
+  text: string;
+  at: number;
+  isError?: boolean;
+  interrupted?: boolean;
+};
+export type SideThread = {
+  id: string;
+  at: number;
+  quote?: string;
+  sessionId?: string | null;
+  history: SideMessage[];
+  createdAt: number;
+};
 
-export type Task = { id: string; subject: string; activeForm?: string; status: 'pending' | 'in_progress' | 'completed' | string };
+export type Task = {
+  id: string;
+  subject: string;
+  activeForm?: string;
+  status: 'pending' | 'in_progress' | 'completed' | string;
+};
 
-export type ContextUse = { percentage: number; totalTokens: number; maxTokens: number; autoCompactAt?: number; autoCompact?: boolean };
+export type ContextUse = {
+  percentage: number;
+  totalTokens: number;
+  maxTokens: number;
+  autoCompactAt?: number;
+  autoCompact?: boolean;
+};
 
 export type Tab = {
   id: string;
@@ -305,13 +370,28 @@ export type VocabSense = { pos: string; vi: string; en: string };
 /** A phrase it's used in, with an example sentence and its translation. */
 export type VocabPhrase = { phrase: string; vi: string; example: string; exampleVi: string };
 /** A verb's five forms (null when it isn't a verb). */
-export type VerbForms = { base: string; third: string; past: string; participle: string; ing: string; irregular: boolean };
+export type VerbForms = {
+  base: string;
+  third: string;
+  past: string;
+  participle: string;
+  ing: string;
+  irregular: boolean;
+};
 /** A synonym or an antonym, and how it differs. */
 export type VocabLike = { word: string; vi: string; note: string };
 /** Another word built on the same stem. */
 export type VocabKin = { word: string; pos: string; vi: string; example: string };
 /** When you see it again (vocab.js): times seen (step), when it's next (due), quizzes seen and got right. */
-export type VocabReview = { step: number; due: number; seen: number; right: number; last?: number; dreamtAt?: number; box?: number };
+export type VocabReview = {
+  step: number;
+  due: number;
+  seen: number;
+  right: number;
+  last?: number;
+  dreamtAt?: number;
+  box?: number;
+};
 
 /** One of your English words, as vocab.json keeps it. The meaning comes in as Claude looks it
  *  up (status 'looking' until then); the extras (phrases, synonyms…) a little after. */
@@ -430,12 +510,29 @@ export type LinkEvent = {
 
 /** Helper agents (sub-agents) at work, as main claude.js reports them. */
 export type AgentEvent =
-  | { op: 'start'; id: string; parent?: string | null; description: string; kind: string; prompt: string; background: boolean }
+  | {
+      op: 'start';
+      id: string;
+      parent?: string | null;
+      description: string;
+      kind: string;
+      prompt: string;
+      background: boolean;
+    }
   | { op: 'progress'; id: string; activity: string; tokens?: number; tools?: number; ms?: number }
   | { op: 'step'; id: string; tool: string; detail: string }
   | { op: 'text'; id: string; text: string }
   | { op: 'status'; id: string; status: string }
-  | { op: 'done'; id: string; status: string; summary: string; report?: string; tokens?: number; tools?: number; ms?: number };
+  | {
+      op: 'done';
+      id: string;
+      status: string;
+      summary: string;
+      report?: string;
+      tokens?: number;
+      tools?: number;
+      ms?: number;
+    };
 
 /** How Claude Code's task list just changed (main claude.js 'task'). */
 export type TaskChange =
@@ -443,7 +540,12 @@ export type TaskChange =
   | { op: 'update'; id: string; status?: string; subject?: string; activeForm?: string }
   | { op: 'replace'; tasks: Task[]; id?: undefined; status?: undefined };
 
-export type Question = { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] };
+export type Question = {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: { label: string; description?: string }[];
+};
 
 /** What happens in a tab's conversation (robot:event; main.js sessionFor). */
 export type ChatEvent =
@@ -492,6 +594,19 @@ export type ChatEvent =
   | { type: 'mirror'; kind: 'tool'; name: string; detail: string }
   | ({ type: 'app' } & AppViewCall)
   | { type: 'app-result'; id: string; result: unknown }
-  | { type: 'side'; op: 'start' | 'text' | 'step' | 'done' | 'fail'; threadId: string; turnId?: string; delta?: string; name?: string; detail?: string; text?: string; isError?: boolean; interrupted?: boolean; message?: string; cancelled?: boolean };
+  | {
+      type: 'side';
+      op: 'start' | 'text' | 'step' | 'done' | 'fail';
+      threadId: string;
+      turnId?: string;
+      delta?: string;
+      name?: string;
+      detail?: string;
+      text?: string;
+      isError?: boolean;
+      interrupted?: boolean;
+      message?: string;
+      cancelled?: boolean;
+    };
 
 export type RobotEvent = ChatEvent & { tabId: string };

@@ -1,36 +1,49 @@
+import { mesh } from '@/office3d/core/mesh';
 import * as THREE from 'three';
 import { toon, canvasTexture } from './materials';
 
 // The robot's poses, and the hats every robot can wear (kit3d.js builds the robot itself).
 
-const mesh = <G extends THREE.BufferGeometry, M extends THREE.Material | THREE.Material[]>(geo: G, mat: M, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  return m;
-};
-
 // Target joint angles per pose. Arms are [shoulder pitch, shoulder out, elbow];
 // negative pitch swings the arm forward/up.
-export type Pose = { lean: number; head: [number, number, number]; armL: [number, number, number]; armR: [number, number, number] };
+export type Pose = {
+  lean: number;
+  head: [number, number, number];
+  armL: [number, number, number];
+  armR: [number, number, number];
+};
 export const POSES: Record<string, Pose> = {
-  idle:     { lean: 0.02, head: [0, 0, 0], armL: [-0.35, 0.18, -0.9], armR: [-0.35, 0.18, -0.9] },
-  talking:  { lean: 0.0, head: [0, 0, 0], armL: [-0.75, 0.2, -1.1], armR: [-0.75, 0.2, -1.1] },
-  typing:   { lean: 0.22, head: [0.1, 0, 0], armL: [-1.15, -0.05, -0.35], armR: [-1.15, -0.05, -0.35] },
-  reading:  { lean: 0.28, head: [0.02, 0, 0], armL: [-0.95, 0.05, -0.6], armR: [-0.95, 0.05, -0.6] },
+  idle: { lean: 0.02, head: [0, 0, 0], armL: [-0.35, 0.18, -0.9], armR: [-0.35, 0.18, -0.9] },
+  talking: { lean: 0.0, head: [0, 0, 0], armL: [-0.75, 0.2, -1.1], armR: [-0.75, 0.2, -1.1] },
+  typing: { lean: 0.22, head: [0.1, 0, 0], armL: [-1.15, -0.05, -0.35], armR: [-1.15, -0.05, -0.35] },
+  reading: { lean: 0.28, head: [0.02, 0, 0], armL: [-0.95, 0.05, -0.6], armR: [-0.95, 0.05, -0.6] },
   thinking: { lean: -0.06, head: [-0.3, 0.25, 0.12], armL: [-0.75, -0.25, -1.55], armR: [-1.95, -0.45, -1.75] },
-  cheer:    { lean: -0.05, head: [-0.15, 0, 0], armL: [-2.9, 0.45, -0.25], armR: [-2.9, 0.45, -0.25] },
-  wave:     { lean: 0, head: [0, 0, 0.08], armL: [-0.35, 0.18, -0.9], armR: [-2.7, 0.55, -0.5] },
-  sleep:    { lean: -0.32, head: [-0.3, 0, 0.32], armL: [0.12, 0.3, -0.05], armR: [0.12, 0.3, -0.05] },
+  cheer: { lean: -0.05, head: [-0.15, 0, 0], armL: [-2.9, 0.45, -0.25], armR: [-2.9, 0.45, -0.25] },
+  wave: { lean: 0, head: [0, 0, 0.08], armL: [-0.35, 0.18, -0.9], armR: [-2.7, 0.55, -0.5] },
+  sleep: { lean: -0.32, head: [-0.3, 0, 0.32], armL: [0.12, 0.3, -0.05], armR: [0.12, 0.3, -0.05] },
   // waiting for an answer: hand up like in class
-  raise:    { lean: 0.04, head: [-0.08, 0, -0.12], armL: [-0.35, 0.18, -0.9], armR: [-2.9, 0.3, -0.12] },
+  raise: { lean: 0.04, head: [-0.08, 0, -0.12], armL: [-0.35, 0.18, -0.9], armR: [-2.9, 0.3, -0.12] },
   // a file is being dragged over: lean out with grabby arms
-  eager:    { lean: 0.32, head: [-0.12, 0, 0], armL: [-1.45, 0.55, -0.35], armR: [-1.45, 0.55, -0.35] },
+  eager: { lean: 0.32, head: [-0.12, 0, 0], armL: [-1.45, 0.55, -0.35], armR: [-1.45, 0.55, -0.35] },
   // bored: leaning way back, hands behind the head
-  slack:    { lean: -0.38, head: [-0.2, 0, 0.05], armL: [-3.05, 0.3, -1.5], armR: [-3.05, 0.3, -1.5] },
+  slack: { lean: -0.38, head: [-0.2, 0, 0.05], armL: [-3.05, 0.3, -1.5], armR: [-3.05, 0.3, -1.5] },
 };
 
 // hats the antenna would poke through (it's hidden under them)
-export const BIG_HATS = ['tophat', 'crown', 'pirate', 'hardhat', 'gradcap', 'santa', 'elf', 'witch', 'beanie', 'strawhat', 'sunhat', 'partyhat'];
+export const BIG_HATS = [
+  'tophat',
+  'crown',
+  'pirate',
+  'hardhat',
+  'gradcap',
+  'santa',
+  'elf',
+  'witch',
+  'beanie',
+  'strawhat',
+  'sunhat',
+  'partyhat',
+];
 
 export function buildAccessory(group: THREE.Group, name: string) {
   group.clear();
@@ -43,7 +56,9 @@ export function buildAccessory(group: THREE.Group, name: string) {
   switch (name) {
     case 'hardhat': {
       const y = toon('#ffc21a');
-      const dome = add(mesh(new THREE.SphereGeometry(0.36, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), y, 0, top - 0.08, 0));
+      const dome = add(
+        mesh(new THREE.SphereGeometry(0.36, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), y, 0, top - 0.08, 0),
+      );
       dome.scale.set(1.05, 0.75, 0.95);
       add(mesh(new THREE.CylinderGeometry(0.41, 0.41, 0.022, 28), y, 0, top - 0.07, 0.03));
       add(mesh(new THREE.BoxGeometry(0.06, 0.05, 0.6), y, 0, top + 0.18, 0));
@@ -67,7 +82,9 @@ export function buildAccessory(group: THREE.Group, name: string) {
     case 'gradcap': {
       // a graduation cap (a vocabulary reward): the skull cap, the flat board on top, a gold tassel
       const navy = toon('#1f2a4d');
-      const cap = add(mesh(new THREE.SphereGeometry(0.27, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), navy, 0, top - 0.08, 0)); // (as low as the hard hat, whose fit it borrows)
+      const cap = add(
+        mesh(new THREE.SphereGeometry(0.27, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), navy, 0, top - 0.08, 0),
+      ); // (as low as the hard hat, whose fit it borrows)
       cap.scale.set(1, 0.55, 1);
       const board = add(mesh(new THREE.BoxGeometry(0.62, 0.035, 0.62), navy, 0, top + 0.08, 0));
       board.rotation.y = Math.PI / 4;
@@ -76,7 +93,9 @@ export function buildAccessory(group: THREE.Group, name: string) {
       tassel.position.set(0.28, top + 0.1, 0.12);
       tassel.add(mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.16, 6), toon('#ffd34d'), 0, -0.08, 0));
       tassel.add(mesh(new THREE.ConeGeometry(0.035, 0.07, 10), toon('#ffd34d'), 0, -0.18, 0));
-      tassel.traverse((m) => m instanceof THREE.Mesh && (m.castShadow = true));
+      tassel.traverse((m) => {
+        if (m instanceof THREE.Mesh) m.castShadow = true;
+      });
       group.add(tassel);
       break;
     }
@@ -103,13 +122,23 @@ export function buildAccessory(group: THREE.Group, name: string) {
       const center = new THREE.Vector3(0.28, top - 0.02, 0.12);
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
-        add(mesh(new THREE.SphereGeometry(0.06, 10, 8), petal, center.x + Math.sin(a) * 0.07, center.y + Math.cos(a) * 0.07, center.z));
+        add(
+          mesh(
+            new THREE.SphereGeometry(0.06, 10, 8),
+            petal,
+            center.x + Math.sin(a) * 0.07,
+            center.y + Math.cos(a) * 0.07,
+            center.z,
+          ),
+        );
       }
       add(mesh(new THREE.SphereGeometry(0.05, 10, 8), toon('#ffd34d'), center.x, center.y, center.z + 0.03));
       break;
     }
     case 'pirate': {
-      const hat = add(mesh(new THREE.SphereGeometry(0.4, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), toon('#222'), 0, top - 0.04, 0));
+      const hat = add(
+        mesh(new THREE.SphereGeometry(0.4, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), toon('#222'), 0, top - 0.04, 0),
+      );
       hat.scale.set(1.15, 0.6, 0.62);
       const brim = add(mesh(new THREE.TorusGeometry(0.4, 0.035, 8, 32), toon('#ffd34d'), 0, top - 0.04, 0));
       brim.rotation.x = Math.PI / 2;
@@ -129,7 +158,9 @@ export function buildAccessory(group: THREE.Group, name: string) {
       floppy.rotation.z = -0.35;
       floppy.add(mesh(new THREE.ConeGeometry(0.32, 0.46, 24), red, 0, 0.21, 0));
       floppy.add(mesh(new THREE.SphereGeometry(0.075, 14, 12), white, 0, 0.45, 0));
-      floppy.traverse((m) => m instanceof THREE.Mesh && (m.castShadow = true));
+      floppy.traverse((m) => {
+        if (m instanceof THREE.Mesh) m.castShadow = true;
+      });
       group.add(floppy);
       break;
     }
@@ -142,7 +173,9 @@ export function buildAccessory(group: THREE.Group, name: string) {
       tip.rotation.z = 0.3;
       tip.add(mesh(new THREE.ConeGeometry(0.3, 0.52, 24), green, 0, 0.26, 0));
       tip.add(mesh(new THREE.SphereGeometry(0.05, 12, 10), toon('#ffd34d'), 0, 0.53, 0));
-      tip.traverse((m) => m instanceof THREE.Mesh && (m.castShadow = true));
+      tip.traverse((m) => {
+        if (m instanceof THREE.Mesh) m.castShadow = true;
+      });
       group.add(tip);
       break;
     }
@@ -156,12 +189,17 @@ export function buildAccessory(group: THREE.Group, name: string) {
         a.position.set(side * 0.2, top - 0.01, 0);
         a.rotation.z = -side * 0.3;
         a.add(mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.3, 8), brown, 0, 0.15, 0));
-        for (const [y, len, tilt] of [[0.12, 0.13, 1.0], [0.22, 0.11, 0.9]]) {
+        for (const [y, len, tilt] of [
+          [0.12, 0.13, 1.0],
+          [0.22, 0.11, 0.9],
+        ]) {
           const tine = mesh(new THREE.CylinderGeometry(0.016, 0.022, len, 8), brown, side * 0.05, y + 0.04, 0);
           tine.rotation.z = -side * tilt;
           a.add(tine);
         }
-        a.traverse((m) => m instanceof THREE.Mesh && (m.castShadow = true));
+        a.traverse((m) => {
+          if (m instanceof THREE.Mesh) m.castShadow = true;
+        });
         group.add(a);
       }
       break;
@@ -177,7 +215,9 @@ export function buildAccessory(group: THREE.Group, name: string) {
       bend.rotation.z = -0.8;
       tip.add(bend);
       tip.add(mesh(new THREE.BoxGeometry(0.08, 0.07, 0.02), toon('#ffd34d'), 0, 0.05, 0.25));
-      tip.traverse((m) => m instanceof THREE.Mesh && (m.castShadow = true));
+      tip.traverse((m) => {
+        if (m instanceof THREE.Mesh) m.castShadow = true;
+      });
       group.add(tip);
       break;
     }
@@ -193,12 +233,22 @@ export function buildAccessory(group: THREE.Group, name: string) {
       // a wide straw sun hat with a ribbon and a flower
       const straw = toon('#f2d38b');
       add(mesh(new THREE.CylinderGeometry(0.58, 0.6, 0.025, 36), straw, 0, top - 0.01, 0));
-      const crown = add(mesh(new THREE.SphereGeometry(0.3, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2), straw, 0, top - 0.02, 0));
+      const crown = add(
+        mesh(new THREE.SphereGeometry(0.3, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2), straw, 0, top - 0.02, 0),
+      );
       crown.scale.set(1, 0.7, 1);
       add(mesh(new THREE.CylinderGeometry(0.302, 0.302, 0.06, 28, 1, true), toon('#ff8fb1'), 0, top + 0.03, 0));
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
-        add(mesh(new THREE.SphereGeometry(0.035, 10, 8), toon('#ffffff'), 0.25 + Math.sin(a) * 0.04, top + 0.06 + Math.cos(a) * 0.04, 0.16));
+        add(
+          mesh(
+            new THREE.SphereGeometry(0.035, 10, 8),
+            toon('#ffffff'),
+            0.25 + Math.sin(a) * 0.04,
+            top + 0.06 + Math.cos(a) * 0.04,
+            0.16,
+          ),
+        );
       }
       add(mesh(new THREE.SphereGeometry(0.028, 10, 8), toon('#ffd34d'), 0.25, top + 0.06, 0.18));
       break;
@@ -214,7 +264,12 @@ export function buildAccessory(group: THREE.Group, name: string) {
       const silver = toon('#dfe6f0');
       const ring = add(mesh(new THREE.TorusGeometry(0.26, 0.02, 8, 32, Math.PI), silver, 0, top - 0.02, 0.04));
       ring.rotation.x = -Math.PI / 2 + 0.2;
-      for (const [x, h] of [[-0.14, 0.08], [0, 0.13], [0.14, 0.08]]) add(mesh(new THREE.ConeGeometry(0.035, h, 6), silver, x, top + h / 2, 0.2 - Math.abs(x) * 0.4));
+      for (const [x, h] of [
+        [-0.14, 0.08],
+        [0, 0.13],
+        [0.14, 0.08],
+      ])
+        add(mesh(new THREE.ConeGeometry(0.035, h, 6), silver, x, top + h / 2, 0.2 - Math.abs(x) * 0.4));
       add(mesh(new THREE.OctahedronGeometry(0.035), toon('#ff8fb1'), 0, top + 0.05, 0.23));
       break;
     }
@@ -226,7 +281,15 @@ export function buildAccessory(group: THREE.Group, name: string) {
           ctx.fillRect(0, i * 8, 64, 8);
         }
       });
-      const cone = add(mesh(new THREE.ConeGeometry(0.17, 0.36, 24), new THREE.MeshToonMaterial({ map: stripes.tex }), 0.12, top + 0.16, 0));
+      const cone = add(
+        mesh(
+          new THREE.ConeGeometry(0.17, 0.36, 24),
+          new THREE.MeshToonMaterial({ map: stripes.tex }),
+          0.12,
+          top + 0.16,
+          0,
+        ),
+      );
       cone.rotation.z = -0.25;
       add(mesh(new THREE.SphereGeometry(0.05, 12, 10), toon('#ff5e62'), 0.17, top + 0.34, 0));
       break;
@@ -252,12 +315,17 @@ export function buildAccessory(group: THREE.Group, name: string) {
       band.rotation.x = -0.25;
       // (a neat little trim, two rows of small puffs, not a whole wig of them)
       const lace = toon('#ffffff');
-      for (const [row, z, size] of [[0, 0.15, 0.045], [1, 0.09, 0.04]]) {
+      for (const [row, z, size] of [
+        [0, 0.15, 0.045],
+        [1, 0.09, 0.04],
+      ]) {
         const n = 11;
         for (let i = 0; i < n; i++) {
           const a = 0.62 + ((i + row * 0.5) / (n - 0.5)) * (Math.PI - 1.24);
           const rr = r + 0.035;
-          const puff = add(mesh(new THREE.SphereGeometry(size, 12, 10), lace, Math.cos(a) * rr, cy + Math.sin(a) * rr, z));
+          const puff = add(
+            mesh(new THREE.SphereGeometry(size, 12, 10), lace, Math.cos(a) * rr, cy + Math.sin(a) * rr, z),
+          );
           puff.scale.set(1, 1.4, 0.7);
           puff.rotation.z = a - Math.PI / 2;
         }
@@ -266,7 +334,9 @@ export function buildAccessory(group: THREE.Group, name: string) {
     }
     case 'beanie': {
       const knit = toon('#3a7bd5');
-      const dome = add(mesh(new THREE.SphereGeometry(0.37, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), knit, 0, top - 0.06, 0));
+      const dome = add(
+        mesh(new THREE.SphereGeometry(0.37, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), knit, 0, top - 0.06, 0),
+      );
       dome.scale.set(1.02, 0.8, 0.98);
       add(mesh(new THREE.CylinderGeometry(0.385, 0.385, 0.09, 28), toon('#2b5fa8'), 0, top - 0.03, 0));
       add(mesh(new THREE.SphereGeometry(0.08, 14, 12), toon('#ffffff'), 0, top + 0.25, 0));
@@ -276,7 +346,7 @@ export function buildAccessory(group: THREE.Group, name: string) {
       const red = toon('#e5484d');
       for (const side of [-1, 1]) {
         const wing = add(mesh(new THREE.ConeGeometry(0.06, 0.12, 4), red, side * 0.06, -0.02, 0.2));
-        wing.rotation.z = side * Math.PI / 2;
+        wing.rotation.z = (side * Math.PI) / 2;
       }
       add(mesh(new THREE.SphereGeometry(0.03, 8, 8), toon('#b3262b'), 0, -0.02, 0.21));
       break;

@@ -1,5 +1,7 @@
+import { mix, smooth } from '@/office3d/core/math';
+import type { OfficeData } from '@/office3d/protocol';
 import * as THREE from 'three';
-import { canvasTexture, roundRect } from '@/office3d/materials';
+import { canvasTexture, roundRect, noOutline } from '@/office3d/materials';
 import { AWAKE, tick as awakeTick } from './awake';
 import { ASLEEP, tick as asleepTick } from './asleep';
 import { CRITTERS, tick as critterTick } from './critters';
@@ -7,7 +9,8 @@ import { PHONE } from './phone';
 import { PUSHUP } from './pushup';
 import { DESK } from './desk';
 import { TEAM } from './team';
-import { CALENDAR, tick as calendarTick } from './calendar';
+import { CALENDAR } from './calendar';
+import { tick as hoodTick } from './hood';
 import { PRANKS } from './pranks';
 import { SLEEPY } from './sleepy';
 import { NIGHT } from './night';
@@ -52,11 +55,26 @@ import type { Bed, OfficeSet, Rig } from '@/office3d/types';
 // The standing desk's height lives outside antics (awake.js liftTick): an antic
 // sets c.set.office.userData.lift.deskTo / seatTo and the desk motors there.
 // Modules may also export tick(c) for things that live outside one antic (the nightcap).
-const HANDLERS: Partial<Record<string, Antic>> = { ...AWAKE, ...ASLEEP, ...CRITTERS, ...PHONE, ...PUSHUP, ...DESK, ...TEAM, ...CALENDAR, ...PRANKS, ...SLEEPY, ...NIGHT, ...WALK, ...VOCAB, ...NOTES, ...SOCIAL, ...MAID };
-const TICKS: AnticTick[] = [awakeTick, asleepTick, critterTick, calendarTick].filter(Boolean);
+const HANDLERS: Partial<Record<string, Antic>> = {
+  ...AWAKE,
+  ...ASLEEP,
+  ...CRITTERS,
+  ...PHONE,
+  ...PUSHUP,
+  ...DESK,
+  ...TEAM,
+  ...CALENDAR,
+  ...PRANKS,
+  ...SLEEPY,
+  ...NIGHT,
+  ...WALK,
+  ...VOCAB,
+  ...NOTES,
+  ...SOCIAL,
+  ...MAID,
+};
+const TICKS: AnticTick[] = [awakeTick, asleepTick, critterTick, hoodTick].filter(Boolean);
 
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
 function toward<T extends number[]>(arr: T, target: readonly number[], k: number): T {
   for (let i = 0; i < arr.length; i++) arr[i] = mix(arr[i], target[i], k);
   return arr;
@@ -83,7 +101,7 @@ export type AnticsOptions = {
 export type AnticsFrame = {
   t: number;
   dt: number;
-  d: DOMStringMap; // stateEl.dataset: antic, anticSeq, anticText, nightcap, lateNight, sleepStyle
+  d: OfficeData; // stateEl.dataset: antic, anticSeq, anticText, nightcap, lateNight, sleepStyle
   pose: string;
   robot: Rig;
   set: OfficeSet;
@@ -100,8 +118,7 @@ function makeBubble(world: THREE.Object3D): Bubble {
   const W = 320;
   const H = 150;
   const { ctx, tex } = canvasTexture(W, H);
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
-  mat.userData.outlineParameters = { visible: false };
+  const mat = noOutline(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false }));
   const sprite = new THREE.Sprite(mat);
   sprite.renderOrder = 10;
   sprite.visible = false;
@@ -132,7 +149,10 @@ function makeBubble(world: THREE.Object3D): Bubble {
       roundRect(ctx, x, y, tw, th, th / 2);
       ctx.fill();
       ctx.stroke();
-      for (const [cx, cy, r] of [[x + 26, y + th + 14, 10], [x + 10, y + th + 32, 6]]) {
+      for (const [cx, cy, r] of [
+        [x + 26, y + th + 14, 10],
+        [x + 10, y + th + 32, 6],
+      ]) {
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.fill();
@@ -154,7 +174,9 @@ function makeBubble(world: THREE.Object3D): Bubble {
     ctx.fillStyle = '#1d2235';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    lines.forEach((l, i) => ctx.fillText(l, W / 2, y + th / 2 + (i - (lines.length - 1) / 2) * 34));
+    lines.forEach((l, i) => {
+      ctx.fillText(l, W / 2, y + th / 2 + (i - (lines.length - 1) / 2) * 34);
+    });
     tex.needsUpdate = true;
   }
   return {
@@ -182,7 +204,7 @@ function makeBubble(world: THREE.Object3D): Bubble {
  *  late-night hood. c = { robot, t, dt, nightcap, lateNight, asleep } */
 export function wearTick(c: WearCtx) {
   asleepTick(c);
-  calendarTick(c);
+  hoodTick(c);
 }
 
 export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }: AnticsOptions) {
@@ -231,15 +253,31 @@ export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }: An
         lastSeq = seq;
         finish();
         const h = HANDLERS[d.antic ?? ''];
-        if (h && seq && !away) run = { name: d.antic ?? '', h, start: t, text: d.anticText || '', asleep, robot, scratch: {} };
+        if (h && seq && !away)
+          run = { name: d.antic ?? '', h, start: t, text: d.anticText || '', asleep, robot, scratch: {} };
       }
       if (run && (away || run.asleep !== asleep || run.robot !== robot)) finish();
 
       const c: FrameCtx = {
-        t, dt, body: 'kit', robot, set, emit, worldPoint, mix, toward, THREE,
+        t,
+        dt,
+        body: 'kit',
+        robot,
+        set,
+        emit,
+        worldPoint,
+        mix,
+        toward,
+        THREE,
         antic: run?.name || '', // what's playing (ticks use it, e.g. the standing desk comes down otherwise)
-        camYaw, monitorYaw, curYaw, mugHome, lampHome, asleep, nightcap: d.nightcap === '1',
-        lateNight: d.lateNight === '1', // awake past 10 pm: hood up (calendar.js)
+        camYaw,
+        monitorYaw,
+        curYaw,
+        mugHome,
+        lampHome,
+        asleep,
+        nightcap: d.nightcap === '1',
+        lateNight: d.lateNight === '1', // awake past 10 pm: hood up (hood.ts)
         sleepStyle: d.sleepStyle || 'chair', // asleep in the chair (eye mask) or on the floor (blanket)
         bed, // the floor bed (bed.js): pillow, blanket, where it lies
         hand: (side = 'R') => worldPoint(robot.arms[side === 'L' ? 'armL' : 'armR'].elbow, 0, -0.24, 0),
@@ -257,7 +295,11 @@ export function createAntics({ world, emit, worldPoint, camYaw, monitorYaw }: An
           const fadeIn = h.fadeIn ?? 0.3;
           const fadeOut = h.fadeOut ?? 0.35;
           Object.assign(c, {
-            s, p: s / h.dur, dur: h.dur, text: run.text, run: run.scratch,
+            s,
+            p: s / h.dur,
+            dur: h.dur,
+            text: run.text,
+            run: run.scratch,
             w: smooth(fadeIn ? s / fadeIn : 1) * smooth(fadeOut ? (h.dur - s) / fadeOut : 1),
           });
           try {

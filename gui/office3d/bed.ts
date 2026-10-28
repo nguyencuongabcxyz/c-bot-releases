@@ -1,3 +1,4 @@
+import { smooth } from '@/office3d/core/math';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { toon, canvasTexture, roundRect } from './materials';
@@ -33,8 +34,6 @@ const MASKS: Record<string, Mask> = {
   girl: { y: 0.33, z: 0.39, w: 0.46, h: 0.13, round: true },
 };
 
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-
 function maskTexture() {
   return canvasTexture(256, 72, (ctx, w, h) => {
     ctx.fillStyle = '#7d6bd6';
@@ -63,10 +62,12 @@ function maskTexture() {
 }
 
 function buildMask(robot: Rig, body: string) {
-  const m = MASKS[body] || ((): Mask => {
-    const h = robot.headTop ?? 0.6;
-    return { y: h * 0.5, z: h * 0.5, w: h * 0.7, h: h * 0.2, round: true };
-  })();
+  const m =
+    MASKS[body] ||
+    ((): Mask => {
+      const h = robot.headTop ?? 0.6;
+      return { y: h * 0.5, z: h * 0.5, w: h * 0.7, h: h * 0.2, round: true };
+    })();
   const tex = maskTexture();
   const group = new THREE.Group(); // its own group: the nightcap hides the accessories, not this
   group.name = 'sleep-mask';
@@ -152,10 +153,17 @@ export function createBed({ emit }: BedOpts): Bed {
   const P = new THREE.Vector3();
 
   function poof(set: OfficeSet, at: THREE.Vector3) {
+    const world = set.office.parent; // (the office sits in the scene's world group)
+    if (!world) return;
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2;
       P.copy(at).add(new THREE.Vector3(Math.cos(a) * 0.12, 0.05 + Math.random() * 0.15, Math.sin(a) * 0.12));
-      emit('steam', set.office.parent!.worldToLocal(set.office.localToWorld(P.clone())), { life: 0.7, vel: new THREE.Vector3(Math.cos(a) * 0.35, 0.25, Math.sin(a) * 0.35), size: 0.16, grow: 2.2 });
+      emit('steam', world.worldToLocal(set.office.localToWorld(P.clone())), {
+        life: 0.7,
+        vel: new THREE.Vector3(Math.cos(a) * 0.35, 0.25, Math.sin(a) * 0.35),
+        size: 0.16,
+        grow: 2.2,
+      });
     }
   }
 
@@ -179,9 +187,12 @@ export function createBed({ emit }: BedOpts): Bed {
     },
 
     /** Where its 3D speech bubble should float when it's lying down (office space), or null. */
-    bubbleAt(set, out) {
+    bubbleAt(_set, out) {
       if (!onFloor) return null;
-      return out.copy(FLOOR.hips).addScaledVector(U, 0.62).add(P.set(0.28, 0.55, 0));
+      return out
+        .copy(FLOOR.hips)
+        .addScaledVector(U, 0.62)
+        .add(P.set(0.28, 0.55, 0));
     },
 
     update({ t, dt, pose, d, robot, body, set, away = false }) {
@@ -198,7 +209,7 @@ export function createBed({ emit }: BedOpts): Bed {
       const asleep = pose === 'sleep';
       const style = d.sleepStyle === 'floor' ? 'floor' : 'chair';
       const wantFloor = asleep && style === 'floor' && !away;
-      mask!.visible = asleep && style === 'chair' && !away; // (mask!: made above for this robot)
+      if (mask) mask.visible = asleep && style === 'chair' && !away; // (made above for this robot)
 
       // the body lies on its side along the desk, facing the camera a little
       const yaw = FLOOR.yaw;
@@ -221,8 +232,8 @@ export function createBed({ emit }: BedOpts): Bed {
 
       wasAway = away;
       aside += ((onFloor ? 1 : 0) - aside) * Math.min(1, dt * 3);
-      const chair = set.swivel.parent!; // (the swivel is the chair's: scene.ts)
-      chair.position.x = LAYOUT.chair.x + FLOOR.chairAside * smooth(aside);
+      const chair = set.swivel.parent; // (the swivel is the chair's: scene.ts)
+      if (chair) chair.position.x = LAYOUT.chair.x + FLOOR.chairAside * smooth(aside);
 
       bed.group.visible = onFloor;
       if (!onFloor) return;

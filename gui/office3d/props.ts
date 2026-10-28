@@ -1,3 +1,5 @@
+import { ease } from '@/office3d/core/math';
+import { shadowMesh } from '@/office3d/core/mesh';
 import * as THREE from 'three';
 import { toon, glow, noOutline, canvasTexture } from './materials';
 import { buildHammer, HAMMER } from './hammer';
@@ -24,13 +26,6 @@ export const PROPS = {
 };
 const GLOW = new THREE.Color('#ffc93c');
 
-const mesh = <G extends THREE.BufferGeometry, M extends THREE.Material | THREE.Material[]>(geo: G, mat: M, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  return m;
-};
-const ease = (dt: number, k: number) => 1 - Math.exp(-k * dt);
 // (a material that may light up: toon ones have an emissive colour, glow() ones don't)
 type Lit = THREE.Material & { emissive?: THREE.Color };
 type Owned = { dispose(): void };
@@ -77,17 +72,18 @@ export function buildProps(theme: Theme) {
   const grey = toon('#c3c8d4');
   const dark = toon('#2b3150');
   owned.push(white, grey, dark);
-  strip.add(mesh(new THREE.BoxGeometry(0.32, 0.045, 0.1), white, 0, 0.0225, 0));
+  strip.add(shadowMesh(new THREE.BoxGeometry(0.32, 0.045, 0.1), white, 0, 0.0225, 0));
   for (const x of [-0.09, 0, 0.09]) {
-    const socket = mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.004, 18), grey, x, 0.046, 0);
+    const socket = shadowMesh(new THREE.CylinderGeometry(0.026, 0.026, 0.004, 18), grey, x, 0.046, 0);
     strip.add(socket);
-    for (const dx of [-0.008, 0.008]) strip.add(mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.005, 8), dark, x + dx, 0.048, 0));
+    for (const dx of [-0.008, 0.008])
+      strip.add(shadowMesh(new THREE.CylinderGeometry(0.004, 0.004, 0.005, 8), dark, x + dx, 0.048, 0));
   }
   // the switch, with its light
   const lightMat = glow('#ff5a4f');
   owned.push(lightMat);
-  strip.add(mesh(new THREE.BoxGeometry(0.035, 0.016, 0.05), toon('#ff5a4f'), 0.14, 0.052, 0));
-  const light = mesh(new THREE.SphereGeometry(0.01, 10, 8), lightMat, 0.14, 0.064, 0.0);
+  strip.add(shadowMesh(new THREE.BoxGeometry(0.035, 0.016, 0.05), toon('#ff5a4f'), 0.14, 0.052, 0));
+  const light = shadowMesh(new THREE.SphereGeometry(0.01, 10, 8), lightMat, 0.14, 0.064, 0.0);
   strip.add(light);
   // the plug: a chunky block with a lightning sticker, in the left socket
   const plug = new THREE.Group();
@@ -97,16 +93,33 @@ export function buildProps(theme: Theme) {
   plug.add(plugBody);
   const plugMat = toon('#ffd23f');
   owned.push(plugMat);
-  plugBody.add(mesh(new THREE.BoxGeometry(0.07, 0.06, 0.07), plugMat, 0, 0.03, 0));
-  plugBody.add(mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.03, 12), dark, 0, 0.075, 0)); // where the cable goes in
+  plugBody.add(shadowMesh(new THREE.BoxGeometry(0.07, 0.06, 0.07), plugMat, 0, 0.03, 0));
+  plugBody.add(shadowMesh(new THREE.CylinderGeometry(0.018, 0.022, 0.03, 12), dark, 0, 0.075, 0)); // where the cable goes in
   const bolt = canvasTexture(64, 64, (ctx) => {
     ctx.fillStyle = '#1d2235';
     ctx.beginPath();
-    [[36, 4], [14, 36], [30, 36], [24, 60], [50, 26], [34, 26], [42, 4]].forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    [
+      [36, 4],
+      [14, 36],
+      [30, 36],
+      [24, 60],
+      [50, 26],
+      [34, 26],
+      [42, 4],
+    ].forEach(([x, y], i) => {
+      if (i) ctx.lineTo(x, y);
+      else ctx.moveTo(x, y);
+    });
     ctx.fill();
   });
   owned.push(bolt.tex);
-  const sticker = mesh(new THREE.PlaneGeometry(0.05, 0.05), noOutline(new THREE.MeshBasicMaterial({ map: bolt.tex, transparent: true })), 0, 0.03, 0.0355);
+  const sticker = shadowMesh(
+    new THREE.PlaneGeometry(0.05, 0.05),
+    noOutline(new THREE.MeshBasicMaterial({ map: bolt.tex, transparent: true })),
+    0,
+    0.03,
+    0.0355,
+  );
   sticker.castShadow = false;
   plugBody.add(sticker);
   // the cable: out of the plug's top, along the floor, up the desk's back leg
@@ -117,7 +130,7 @@ export function buildProps(theme: Theme) {
     [-0.2, 0.01, -0.3],
     [-0.26, 0.01, -0.42],
   ].map(([x, y, z]) => new THREE.Vector3(x, y, z));
-  const cable = mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(cablePts), 24, 0.008, 6), dark);
+  const cable = shadowMesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(cablePts), 24, 0.008, 6), dark);
   cable.castShadow = false;
   strip.add(cable);
   const plugMats = ownMaterials(strip, owned).filter((m) => m.mat !== lightMat);
@@ -127,7 +140,7 @@ export function buildProps(theme: Theme) {
   const hover = { hammer: 0, plug: 0 };
   let hoverKind = '';
   const glowAll = (mats: { mat: Lit; base: THREE.Color }[], k: number) => {
-    for (const { mat, base } of mats) mat.emissive!.copy(base).lerp(GLOW, 0.35 * k); // (ownMaterials keeps only those with one)
+    for (const { mat, base } of mats) mat.emissive?.copy(base).lerp(GLOW, 0.35 * k); // (ownMaterials keeps only those with one)
   };
   const red = new THREE.Color('#ff5a4f');
   const green = new THREE.Color('#18d26e');
@@ -137,7 +150,10 @@ export function buildProps(theme: Theme) {
     floor,
     hit(raycaster: THREE.Raycaster) {
       let best: { kind: 'hammer' | 'plug'; distance: number } | null = null;
-      for (const [kind, group] of [['hammer', hammerSpot], ['plug', floor]] as const) {
+      for (const [kind, group] of [
+        ['hammer', hammerSpot],
+        ['plug', floor],
+      ] as const) {
         if (!group.visible || (kind === 'hammer' && !hammer.visible)) continue;
         group.updateWorldMatrix(true, true);
         const h = raycaster.intersectObject(group, true).find((x) => x.object.visible);
@@ -148,7 +164,11 @@ export function buildProps(theme: Theme) {
     setHover(kind?: string) {
       hoverKind = kind || '';
     },
-    update(t: number, dt: number, { bonking = false, charging = 0 }: { bonking?: boolean; charging?: boolean | number } = {}) {
+    update(
+      t: number,
+      dt: number,
+      { bonking = false, charging = 0 }: { bonking?: boolean; charging?: boolean | number } = {},
+    ) {
       for (const k of ['hammer', 'plug'] as const) {
         hover[k] += ((hoverKind === k ? 1 : 0) - hover[k]) * ease(dt, 12);
       }

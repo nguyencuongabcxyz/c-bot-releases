@@ -1,19 +1,22 @@
 // The notebook (main notebook.js / notes.js): your notes, to add, tick off, edit and
 // delete, and the daily reminder's banner. Every change comes back as notebook:notes,
 // so the list is always what's saved.
+import { $ } from '@/lib/dom';
+import { clock as time } from '@/lib/time';
 import type { Note } from '@/types/model';
 import type { NotebookOpen, NotebookReminder } from '@/types/pages';
-import { Icon } from '@/ui/icons';
-import { showView } from '@/ui/view';
+import { Icon } from '@/icons/icons';
+import { showView } from '@/lib/page';
 import markup from './notebook.html?raw';
-import '@/ui/theme.css';
-import './notebook.css';
+import '@/theme/theme.css';
+import '@/theme/base.css';
+import './notebook.css';
+
 import * as ipc from '@/ipc';
 
 showView(markup, { title: 'Notes' });
 
 (() => {
-  const $ = <E extends HTMLElement = HTMLElement>(s: string) => document.querySelector<E>(s)!;
   const list = $('#list');
   const addText = $<HTMLTextAreaElement>('#add-text');
   const filter = $<HTMLInputElement>('#filter');
@@ -25,10 +28,10 @@ showView(markup, { title: 'Notes' });
   let menuFor: string | null = null; // the id whose ⋯ menu is open
   let toastTimer = 0;
 
-  const act = (action: string, payload?: unknown) => ipc.notebookAct(action, payload);
-  const startOfDay = (t: number) => new Date(new Date(t).getFullYear(), new Date(t).getMonth(), new Date(t).getDate()).getTime();
+  const act = ipc.notebookAct;
+  const startOfDay = (t: number) =>
+    new Date(new Date(t).getFullYear(), new Date(t).getMonth(), new Date(t).getDate()).getTime();
   const ageOf = (n: Note) => Math.max(0, Math.round((startOfDay(Date.now()) - startOfDay(n.createdAt)) / DAY));
-  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const date = (t: number) => new Date(t).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
 
   // ---------------------------------------------------------------- the list
@@ -44,7 +47,7 @@ showView(markup, { title: 'Notes' });
       ['Yesterday', open.filter((n) => !n.important && n.createdAt < today && n.createdAt >= today - DAY)],
       ['Earlier', open.filter((n) => !n.important && n.createdAt < today - DAY)],
     ];
-    const done = shown.filter((n) => n.doneAt).sort((a, b) => b.doneAt! - a.doneAt!); // (done ones: doneAt is set)
+    const done = shown.filter((n) => n.doneAt).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0)); // (done ones: doneAt is set)
     return { out, done };
   }
 
@@ -77,7 +80,7 @@ showView(markup, { title: 'Notes' });
       if (showDone) for (const n of done) list.append(row(n));
     }
     $('#empty').hidden = !!open || !!filter.value;
-    document.querySelector('[data-act="toggle-done"] span')!.textContent = showDone ? 'Hide done notes' : 'Show done notes';
+    $('[data-act="toggle-done"] span').textContent = showDone ? 'Hide done notes' : 'Show done notes';
   }
 
   function row(n: Note) {
@@ -131,7 +134,10 @@ showView(markup, { title: 'Notes' });
     }
     const meta = document.createElement('div');
     meta.className = 'meta';
-    const when = startOfDay(n.createdAt) === startOfDay(Date.now()) ? time(n.createdAt) : `${date(n.createdAt)}, ${time(n.createdAt)}`;
+    const when =
+      startOfDay(n.createdAt) === startOfDay(Date.now())
+        ? time(n.createdAt)
+        : `${date(n.createdAt)}, ${time(n.createdAt)}`;
     meta.append(span(n.doneAt ? `✓ ${date(n.doneAt)}` : when));
     if (n.source) meta.append(span(`from ${n.source}`));
     const age = ageOf(n);
@@ -165,8 +171,8 @@ showView(markup, { title: 'Notes' });
     m.onclick = (e) => e.stopPropagation();
     const item = (icon: string, label: string, fn: () => void, cls = '') => {
       const b = document.createElement('button');
-      b.innerHTML = `${Icon(icon)}<span></span>`;
-      b.lastChild!.textContent = label;
+      b.innerHTML = Icon(icon);
+      b.append(span(label));
       if (cls) b.className = cls;
       b.onclick = () => {
         menuFor = null;
@@ -234,7 +240,7 @@ showView(markup, { title: 'Notes' });
     autosize();
     clearTimeout(typingIdle);
     typing = false; // (the robot goes from writing it to pinning it up)
-    const note = (await act('add', { text, source: pendingSource })) as Note | null; // (main notebook.js)
+    const note = await act('add', { text, source: pendingSource });
     pendingSource = '';
     if (note) flash(note.id);
   }
@@ -276,7 +282,7 @@ showView(markup, { title: 'Notes' });
         toast.hidden = true;
         $('#toast-undo').hidden = false;
       }, 2500);
-    } else act(b.dataset.act!);
+    } else if (b.dataset.act === 'clear-done') act('clear-done');
   });
   document.addEventListener('click', () => {
     $('#more').hidden = true;
@@ -304,7 +310,7 @@ showView(markup, { title: 'Notes' });
     }
     const { kind, info = {} } = r;
     const open = info.open || 0;
-    let text;
+    let text: string;
     if (kind === 'morning') {
       const monday = new Date().getDay() === 1;
       text = `Good morning! ${info.taken ? `You noted ${info.taken} thing${info.taken === 1 ? '' : 's'} ${monday ? 'last week' : 'yesterday'}` : 'Here are your notes'}${open ? `, ${open} still to do.` : '.'}`;
@@ -331,10 +337,11 @@ showView(markup, { title: 'Notes' });
       pendingSource = source || '';
       autosize();
     }
-    if (focus === 'add') setTimeout(() => {
-      addText.focus();
-      addText.setSelectionRange(addText.value.length, addText.value.length);
-    }, 30);
+    if (focus === 'add')
+      setTimeout(() => {
+        addText.focus();
+        addText.setSelectionRange(addText.value.length, addText.value.length);
+      }, 30);
     else if (focus) flash(focus);
   }
 

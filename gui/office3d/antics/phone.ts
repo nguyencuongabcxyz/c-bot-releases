@@ -1,17 +1,10 @@
+import { HAND, at } from './common';
+import { clamp, mix, seg, smooth } from '@/office3d/core/math';
+import { isMesh } from '@/office3d/core/mesh';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { toon, canvasTexture, noOutline, roundRect } from '@/office3d/materials';
 import type { Antic, TickCtx, Vec3Tuple } from './types';
-
-// Doom scrolling. A phone pops into its hand and it flicks through a feed that
-// really scrolls, the screen lighting up its face.
-//   phone       awake and idle: looks down at the phone, scrolls, laughs at something
-//   sleepphone  asleep in the chair: slides its eye mask up, scrolls with the phone
-//               held over its face ("…just one more"), then mask down, back to sleep
-// Timings are a contract: robot.js plays sounds and faces at the marked moments
-// (phone: pop 0.4, flicks, 😂 at 3.4; sleepphone: eyes open 0.5, pop 0.6, eyes shut 7.3).
-
-const HAND = 0.24; // how far down the forearm the hand is
 const SIZE = 1.8; // bigger than life, so it reads in the small window
 const FEED_W = 64;
 const FEED_H = 128;
@@ -19,19 +12,12 @@ const FEED_H = 128;
 type Side = 'L' | 'R';
 type Span = [number, number];
 
-const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const seg = (s: number, a: number, b: number) => smooth((s - a) / (b - a));
-
 // scratch
 const V1 = new THREE.Vector3();
 const V2 = new THREE.Vector3();
 const AIM = new THREE.Vector3();
 const QR: Vec3Tuple = [0, 0, 0];
 const HEAD: Vec3Tuple = [0, 0, 0];
-
-const at = (c: TickCtx, obj: THREE.Object3D, x: number, y: number, z: number, out: THREE.Vector3) => c.set.office.worldToLocal(obj.localToWorld(out.set(x, y, z)));
 
 // Arm angles [pitch, out, elbow] that put the hand on a point (office space): the
 // same two-bone reach as awake.js; returns the stretch needed if it's too far.
@@ -102,12 +88,11 @@ type Phone = ReturnType<typeof buildPhone>;
 // (three's types only put isMesh on a Mesh) the phone's meshes have one material
 // each, toon or basic, so `map` may be there
 type PhoneMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshToonMaterial | THREE.MeshBasicMaterial>;
-const isMesh = (o: THREE.Object3D): o is PhoneMesh => 'isMesh' in o && !!o.isMesh;
 
 function dispose(obj: THREE.Object3D) {
   obj.removeFromParent();
   obj.traverse((o) => {
-    if (!isMesh(o)) return;
+    if (!isMesh<PhoneMesh>(o)) return;
     o.geometry.dispose();
     o.material.map?.dispose();
     o.material.dispose();
@@ -115,7 +100,17 @@ function dispose(obj: THREE.Object3D) {
 }
 
 // T: when things happen (seconds). asleep: held over its face, lying back in the chair.
-type Times = { up: Span; pop: number; scroll: Span; every: number; down: Span; away: number; mask?: Span; maskBack?: Span; say?: [number, number, string, 'speech' | 'thought'] };
+type Times = {
+  up: Span;
+  pop: number;
+  scroll: Span;
+  every: number;
+  down: Span;
+  away: number;
+  mask?: Span;
+  maskBack?: Span;
+  say?: [number, number, string, 'speech' | 'thought'];
+};
 // (from / to are set at the first flick, before they're read)
 type ScrollRun = { p?: Phone; mask?: THREE.Object3D | null; flick?: number; from: number; to: number };
 function scroller({ dur, T, asleep }: { dur: number; T: Times; asleep: boolean }): Antic<ScrollRun> {
@@ -142,7 +137,7 @@ function scroller({ dur, T, asleep }: { dur: number; T: Times; asleep: boolean }
       // a thumb flick now and then: the hand jerks up a touch and the feed jumps a post
       const scrolling = s > T.scroll[0] && s < T.scroll[1];
       const flickAt = Math.floor((s - T.scroll[0]) / T.every);
-      const since = (s - T.scroll[0]) - flickAt * T.every;
+      const since = s - T.scroll[0] - flickAt * T.every;
       if (scrolling && flickAt !== run.flick) {
         run.flick = flickAt;
         run.from = p.offset;
@@ -164,7 +159,16 @@ function scroller({ dur, T, asleep }: { dur: number; T: Times; asleep: boolean }
       V1.z += Math.cos(c.camYaw) * toYou;
       V1.y += 0.1;
       p.phone.lookAt(c.set.office.localToWorld(V1.clone()));
-      const size = s < T.pop ? 0 : s < T.pop + 0.2 ? smooth((s - T.pop) / 0.2) * 1.12 : s < T.pop + 0.35 ? 1.12 - 0.12 * smooth((s - T.pop - 0.2) / 0.15) : s < T.away ? 1 : Math.max(0, 1 - (s - T.away) / 0.25);
+      const size =
+        s < T.pop
+          ? 0
+          : s < T.pop + 0.2
+            ? smooth((s - T.pop) / 0.2) * 1.12
+            : s < T.pop + 0.35
+              ? 1.12 - 0.12 * smooth((s - T.pop - 0.2) / 0.15)
+              : s < T.away
+                ? 1
+                : Math.max(0, 1 - (s - T.away) / 0.25);
       p.phone.scale.setScalar(Math.max(0.001, size * SIZE * (c.robot.root.scale.x / 0.82)));
       p.phone.visible = size > 0.01;
       p.light.intensity = 0.4 * size;
@@ -183,7 +187,8 @@ function scroller({ dur, T, asleep }: { dur: number; T: Times; asleep: boolean }
 
       // asleep: the eye mask slides up onto its forehead, and back down at the end
       // (there's only a mask asleep, and the asleep timings have mask / maskBack)
-      if (run.mask) run.mask.position.y = 0.17 * top * seg(s, T.mask![0], T.mask![1]) * (1 - seg(s, T.maskBack![0], T.maskBack![1]));
+      if (run.mask && T.mask && T.maskBack)
+        run.mask.position.y = 0.17 * top * seg(s, T.mask[0], T.mask[1]) * (1 - seg(s, T.maskBack[0], T.maskBack[1]));
       if (T.say && s > T.say[0] && s < T.say[1]) c.say(T.say[2], T.say[3]);
     },
     end(c) {
@@ -198,11 +203,29 @@ export const PHONE: Record<string, Antic> = {
   phone: scroller({
     dur: 7,
     asleep: false,
-    T: { up: [0.1, 0.6], pop: 0.4, scroll: [0.9, 6.0], every: 0.8, down: [6.2, 6.8], away: 6.3, say: [3.4, 4.8, '😂', 'speech'] },
+    T: {
+      up: [0.1, 0.6],
+      pop: 0.4,
+      scroll: [0.9, 6.0],
+      every: 0.8,
+      down: [6.2, 6.8],
+      away: 6.3,
+      say: [3.4, 4.8, '😂', 'speech'],
+    },
   }),
   sleepphone: scroller({
     dur: 8,
     asleep: true,
-    T: { mask: [0.2, 0.7], up: [0.4, 1.0], pop: 0.6, scroll: [1.1, 6.6], every: 0.9, down: [6.7, 7.2], away: 6.8, maskBack: [7.1, 7.6], say: [3.6, 5.2, '…just one more', 'thought'] },
+    T: {
+      mask: [0.2, 0.7],
+      up: [0.4, 1.0],
+      pop: 0.6,
+      scroll: [1.1, 6.6],
+      every: 0.9,
+      down: [6.7, 7.2],
+      away: 6.8,
+      maskBack: [7.1, 7.6],
+      say: [3.6, 5.2, '…just one more', 'thought'],
+    },
   }),
 };

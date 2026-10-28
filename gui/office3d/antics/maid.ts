@@ -1,5 +1,8 @@
+import { mix, seg } from '@/office3d/core/math';
+import { isMesh } from '@/office3d/core/mesh';
+import { blend } from './common';
 import * as THREE from 'three';
-import type { Antic, AnticCtx, AnticPose, Vec3Tuple } from './types';
+import type { Antic, AnticCtx, Vec3Tuple } from './types';
 
 // The evening housemaid (main maid.js) comes by to tidy the desk:
 //   feet-up   4.6 s  c.text 'L' | 'R' (the side she's on): it turns a little her way, lifts its
@@ -7,15 +10,6 @@ import type { Antic, AnticCtx, AnticPose, Vec3Tuple } from './types';
 //                    a little kick at 2.2), holds on to the seat, and puts them down again
 // The shared rig (yaw, head, arms) and the sitting legs (team.js finds them; a body without
 // legs just turns and holds on).
-
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const seg = (s: number, a: number, b: number) => smooth((s - a) / (b - a));
-function blend(A: AnticPose, key: 'armL' | 'armR', target: Vec3Tuple, w: number) {
-  for (let i = 0; i < 3; i++) A[key][i] = mix(A[key][i], target[i], w);
-}
-// (three's types leave the isMesh flag off Object3D)
-const isMesh = (o: THREE.Object3D): o is THREE.Mesh => 'isMesh' in o;
 
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Q1 = new THREE.Quaternion();

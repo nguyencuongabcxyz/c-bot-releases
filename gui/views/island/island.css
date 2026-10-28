@@ -1,22 +1,14 @@
 /* The robot island: always dark, whatever the theme (it sits on the screen's edge like the
-   notch it's named after). Fonts from ../ui/theme.css. body.edge-* says which edge it's on:
-   it's flush against that one, with room on the other sides for its shadow. */
+   notch it's named after). Fonts from @/theme/theme.css. body.edge-* says which edge it's on:
+   it's flush against that one, with room on the other sides for its shadow. The colours it
+   shares with the stage's bar: @/theme/dark.css. */
 :root {
-  --ink: #0b0f1a;
   --card: #151c2c;
-  --slot: #1c2438;
-  --line: #273049;
-  --fg: #e6edf7;
-  --dim: #94a3b8;
-  --busy: #fbbf24;
   --done: #4ade80;
-  --ask: #fb7185;
   --err: #f87171;
   --link: #93c5fd;
   --ease: cubic-bezier(0.25, 1.08, 0.4, 1);
 }
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
 body { display: flex; font: 12px/1.35 var(--font-ui); color: var(--fg); user-select: none; -webkit-user-select: none; }
 body.edge-top { justify-content: center; align-items: flex-start; padding: 0 14px 14px; }

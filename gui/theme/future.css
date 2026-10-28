@@ -1,0 +1,37 @@
+/* Future tech: the touches on top of the tokens (theme.css). Rounded glass panels with a thin
+   glowing "scan line" along the top, pill buttons and tabs, a soft cyan glow on what you're
+   focused on, slim glowing progress bars, and quick, small motion (none if Windows has
+   animations turned off). Text stays plain and easy to read. Here: what reaches several
+   windows; a window's own touches are at the top of its stylesheet. */
+
+/* rounder: pill buttons and chips, softer panels (the pages set their own radii, hence !important) */
+[data-theme="future"] :is(button, .chip, .tool, .file-chip, .count, .q-header):not(.h-item, .q-opt, .group-head, .form, .kit-tile) { border-radius: var(--r-btn) !important; }
+[data-theme="future"] :is(input, select, textarea, .q-key, .form, .h-item, .q-opt, .kit-tile) { border-radius: var(--r-sm) !important; }
+[data-theme="future"] :is(#card, #panel, #book) { border-radius: var(--r-lg) !important; }
+[data-theme="future"] :is(.menu, #menu, #palette, .note-menu, .q-card, #todo, #helpers, .diff, .app-card, .row, .stat, #composer, #add, #tip, #older, #dream-ex, #quiz-hint, #quiz-result, .reminder, .qa-summary, .msg.user) { border-radius: var(--r) !important; }
+[data-theme="future"] .msg.user { border-bottom-right-radius: 4px !important; }
+
+/* glass panels with a scan line across the top */
+[data-theme="future"] :is(#panel, #book) { border-color: color-mix(in srgb, var(--accent) 22%, var(--line-2)); }
+[data-theme="future"] :is(#panel, #book)::before {
+  content: ""; position: absolute; top: 0; left: 18px; right: 18px; height: 1px; z-index: 6; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent) 30%, var(--accent) 70%, transparent);
+  box-shadow: 0 0 10px var(--glow);
+}
+[data-theme="future"] #book { position: relative; overflow: hidden; }
+
+/* the main actions glow a little; focus is a soft halo */
+[data-theme="future"] :is(#reveal, #details, .primary, button.primary, .q-send, .btn-accent, #h-resume, #send, #btn-add) { box-shadow: 0 0 0 1px color-mix(in srgb, var(--btn) 60%, transparent), 0 4px 16px var(--glow) !important; }
+[data-theme="future"] :is(#reveal, #details, .primary, button.primary, .q-send, #h-resume, #send, #btn-add):hover { filter: brightness(1.08) saturate(1.1); }
+[data-theme="future"] :is(#composer, #add):focus-within { box-shadow: 0 0 0 1px var(--accent), 0 0 18px var(--glow); }
+[data-theme="future"] :is(input, select, textarea):not(#input, #add-text):focus-visible { box-shadow: 0 0 0 1px var(--accent), 0 0 12px var(--glow); }
+
+/* pill tabs: a dark track, the one you're on lit up */
+[data-theme="future"] :is(#card #tabs, #filters) { border-radius: var(--r-btn) !important; background: var(--bg-2); }
+[data-theme="future"] :is(#card #tabs, #filters) button.on { background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+
+
+
+
+
+

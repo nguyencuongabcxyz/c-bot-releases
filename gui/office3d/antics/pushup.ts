@@ -1,3 +1,5 @@
+import { mix, smooth } from '@/office3d/core/math';
+import { isMesh } from '@/office3d/core/mesh';
 import * as THREE from 'three';
 import { LAYOUT } from '@/office3d/scene';
 import type { Antic, AnticCtx, AnticEndCtx } from './types';
@@ -27,8 +29,6 @@ const CHAIR_ASIDE = new THREE.Vector3(1.0, 0, -0.5); // the chair rolls out of t
 type Saved = { o: THREE.Object3D; p: THREE.Vector3; q: THREE.Quaternion };
 type PushRun = { legs?: Saved[] | null; onFloor?: boolean; lift?: number | null; nextSweat?: number };
 
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
 const TILT = new THREE.Quaternion();
 const BOX = new THREE.Box3();
 const M = new THREE.Matrix4();
@@ -50,11 +50,17 @@ function depth(s: number) {
 }
 
 function poof(c: AnticCtx, at: THREE.Vector3) {
+  const world = c.set.office.parent; // (the office sits in the scene's world group)
+  if (!world) return;
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
     V.copy(at).add(new THREE.Vector3(Math.cos(a) * 0.1, 0.05, Math.sin(a) * 0.1));
-    // (the office sits in the scene's world group)
-    c.emit('steam', c.set.office.parent!.worldToLocal(c.set.office.localToWorld(V.clone())), { life: 0.6, vel: new THREE.Vector3(Math.cos(a) * 0.3, 0.25, Math.sin(a) * 0.3), size: 0.15, grow: 2.2 });
+    c.emit('steam', world.worldToLocal(c.set.office.localToWorld(V.clone())), {
+      life: 0.6,
+      vel: new THREE.Vector3(Math.cos(a) * 0.3, 0.25, Math.sin(a) * 0.3),
+      size: 0.15,
+      grow: 2.2,
+    });
   }
 }
 
@@ -65,8 +71,6 @@ function poof(c: AnticCtx, at: THREE.Vector3) {
 // Bodies built differently (the cat) keep their knees bent: knee push-ups.
 const UNFOLD = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
 const SWING = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-// (three's types leave the isMesh flag off Object3D)
-const isMesh = (o: THREE.Object3D): o is THREE.Mesh => 'isMesh' in o;
 function straightenLegs(c: AnticCtx) {
   const saved: Saved[] = [];
   for (const hip of c.robot.root.children) {
@@ -140,20 +144,26 @@ const pushup: Antic<PushRun> = {
     const every = rep < 1 ? 0 : 0.9 - rep * 0.12;
     if (every > 0 && s >= (c.run.nextSweat || 0)) {
       c.run.nextSweat = s + every;
-      c.emit('sweat', c.worldPoint(c.robot.head, 0.3, (c.robot.headTop ?? 0.6) * 0.7, 0.1), { life: 0.8, vel: new THREE.Vector3(0.05, -0.4, 0), size: 0.07, gravity: 0.6 });
+      c.emit('sweat', c.worldPoint(c.robot.head, 0.3, (c.robot.headTop ?? 0.6) * 0.7, 0.1), {
+        life: 0.8,
+        vel: new THREE.Vector3(0.05, -0.4, 0),
+        size: 0.07,
+        gravity: 0.6,
+      });
     }
     // count them out as it comes back up; a "phew" on the floor after the last one
     const top = rep >= 0 && depth(s).d < 0.5 && s > REPS[rep] + (rep === REPS.length - 1 ? LAST : REP) * 0.6;
-    if (rep >= 0 && top && s < REPS[rep] + (rep === REPS.length - 1 ? LAST : REP) + 0.35) c.say(rep === REPS.length - 1 ? `${rep + 1}!!` : String(rep + 1));
+    if (rep >= 0 && top && s < REPS[rep] + (rep === REPS.length - 1 ? LAST : REP) + 0.35)
+      c.say(rep === REPS.length - 1 ? `${rep + 1}!!` : String(rep + 1));
     if (s > 7.7 && s < 8.7) c.say('phew…');
   },
 
   place(c) {
     const { s, robot, set } = c;
     const down = s >= DOWN_AT && s < UP_AT;
-    const chair = set.swivel.parent!; // (the chair's base)
+    const chair = set.swivel.parent; // (the chair's base)
     const aside = smooth((s - DOWN_AT + 0.15) / 0.35) * (1 - smooth((s - UP_AT + 0.25) / 0.3));
-    chair.position.copy(LAYOUT.chair).addScaledVector(CHAIR_ASIDE, aside);
+    chair?.position.copy(LAYOUT.chair).addScaledVector(CHAIR_ASIDE, aside);
     if (!down) {
       if (c.run.onFloor) {
         c.run.onFloor = false;

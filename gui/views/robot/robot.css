@@ -1,6 +1,16 @@
 /* The robot's window and the robot in it. The colours, fonts and icons come from
-   @/ui/theme.css (and @/ui/icons.ts); the accent here is the robot's own paint. The chat
+   @/theme/theme.css (and @/icons/icons.ts); the accent here is the robot's own paint. The chat
    panel beside it: chat/chat.css (loaded after this, with these colours and keyframes). */
+
+/* ------------------------------------------------------------- the themes' touches here
+   (on top of @/theme/vintage.css and future.css; first in this file, as they were in the cascade) */
+[data-theme="future"] .tab.on::after { box-shadow: 0 0 8px var(--glow); }
+[data-theme="vintage"] #name { font-weight: 400; font-size: 15.5px; }
+[data-theme="vintage"] .tab.on::after { height: 2px; border-radius: 0; background: var(--fg); }
+[data-theme="vintage"] .msg.bot h1, [data-theme="vintage"] .msg.bot h2, [data-theme="vintage"] .msg.bot h3 { font-family: var(--font-display); font-weight: 400; font-size: 15.5px; }
+[data-theme="vintage"] .msg.bot blockquote { font-family: var(--font-display); font-style: italic; }
+[data-theme="vintage"] .q-card { border-left-width: 1px; border-left-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); border-top: 3px solid var(--accent); }
+
 :root {
   --paint: #5ac8fa;
   --ink: #1d2235;
@@ -11,7 +21,7 @@
   --panel-muted: var(--muted);
   --panel-line: var(--line-2);
   --surface-2: var(--bg-2);
-  /* (the accent is the robot's paint, as the theme tones it: ../ui/theme.css) */
+  /* (the accent is the robot's paint, as the theme tones it: @/theme/theme.css) */
   --user-bg: color-mix(in srgb, var(--accent) 16%, var(--bg));
   --user-line: color-mix(in srgb, var(--accent) 38%, transparent);
   --robot-x: 0px;
@@ -23,7 +33,6 @@
   --swing: 0deg;
 }
 
-* { box-sizing: border-box; }
 html, body {
   margin: 0;
   width: 100%;
@@ -100,7 +109,6 @@ body.dragging #nametag { opacity: 0; }
 
 /* work handed between robots: small tags at the top of the robot box (they show asleep too) */
 #tasks { position: absolute; left: 6px; right: 6px; top: 4px; z-index: 6; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; pointer-events: none; }
-#tasks[hidden] { display: none; }
 .task-chip {
   pointer-events: auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
   font: 600 11px/1.3 var(--font-mono, monospace); color: var(--fg); background: var(--bg); padding: 3px 9px;
@@ -123,7 +131,6 @@ body.dragging #tasks { opacity: 0; }
 }
 #aside.right { transform-origin: left bottom; }
 #aside.show { opacity: 1; transform: scale(1); }
-#aside[hidden] { display: none; }
 #aside::before, #aside::after {
   content: ""; position: absolute; background: #fff; border: 2.5px solid var(--ink); border-radius: 50%;
 }
@@ -140,7 +147,7 @@ body.dragging #tasks { opacity: 0; }
   position: absolute; left: 8px; right: 8px; top: 6px; z-index: 7; display: none; align-items: center; gap: 8px;
   background: var(--bg); color: var(--fg); border: 1px solid var(--line-2); border-radius: 10px;
   padding: 5px 5px 5px 10px; font: 500 12px/1.3 var(--font-mono); cursor: pointer;
-  box-shadow: var(--shadow); animation: pop-in 0.22s ease-out;
+  box-shadow: var(--shadow); animation: chat-pop 0.22s ease-out;
 }
 body.collapsed #working:not([hidden]) { display: flex; }
 /* news while tucked away (done, or a question for you): no "working" dots, a nudge instead */
@@ -149,7 +156,7 @@ body.collapsed #working:not([hidden]) { display: flex; }
 /* (no endless animations here: one keeps Windows redrawing the whole see-through window, the
    height of the screen, 60 times a second; idle, the dots keep still and the news nudges 3 times) */
 #working.idle .dots i { animation: none; opacity: 0.45; }
-#working.news { border-color: color-mix(in srgb, var(--accent) 70%, transparent); animation: pop-in 0.22s ease-out, nudge 1.6s ease-in-out 0.3s 3; }
+#working.news { border-color: color-mix(in srgb, var(--accent) 70%, transparent); animation: chat-pop 0.22s ease-out, nudge 1.6s ease-in-out 0.3s 3; }
 @keyframes nudge { 0%, 70%, 100% { transform: translateY(0); } 80% { transform: translateY(-3px); } 90% { transform: translateY(1px); } }
 #working-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #working button {
@@ -192,7 +199,7 @@ body.collapsed.tuck-below #pop, body.collapsed.tuck-below #pop.right { top: calc
 @keyframes zzz { 0% { opacity: 0; transform: translate(0, 6px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(8px, -14px); } }
 @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-@keyframes pop-in { from { opacity: 0; transform: scale(0.96) translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes chat-pop { from { opacity: 0; transform: scale(0.96) translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes dot { 0%, 100% { transform: translateY(0); opacity: 0.45; } 50% { transform: translateY(-3px); opacity: 1; } }
 @keyframes caret { 50% { opacity: 0; } }
 

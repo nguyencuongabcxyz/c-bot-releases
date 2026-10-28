@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, WebviewUrl, WebviewWindowBuilder, Wry};
 use crate::runtime::util::encode;
 use crate::runtime::with;
 
-/// The look picked in Settings > Theme, as gui/ui/theme.ts reads it.
+/// The look picked in Settings > Theme, as gui/theme/theme.ts reads it.
 pub fn theme_of(settings: &Value) -> Value {
     let theme = settings["theme"].as_str().unwrap_or("future");
     let mode = settings["themeMode"].as_str().unwrap_or("auto");
@@ -31,7 +31,7 @@ pub fn builder<'a>(
     WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
 }
 
-/// The theme changed: every open window follows (gui/ui/theme.ts listens).
+/// The theme changed: every open window follows (gui/theme/theme.ts listens).
 pub fn theme_changed(app: &AppHandle) {
     let pick = with(app, |st| theme_of(st.store.settings()));
     let _ = app.emit("theme:changed", pick);

@@ -1,14 +1,16 @@
 // The flying paper plane (main plane.js moves the window along its arc and says which way
 // it's heading): tilt it along its path, mirrored when it flies right to left.
-import { showView } from '@/ui/view';
+import { showView } from '@/lib/page';
 import markup from './plane.html?raw';
-import './plane.css';
+import './plane.css';
+
 import * as ipc from '@/ipc';
 
 showView(markup, { title: 'Paper plane' });
 
 (() => {
-  const plane = document.querySelector<SVGSVGElement>('#plane')!;
+  const plane = document.querySelector<SVGSVGElement>('#plane');
+  if (!plane) throw new Error('Nothing matches #plane');
   ipc.on('plane:pose', ({ angle = 0, flip = false, landed = false, fade = false }) => {
     if (fade) return plane.classList.add('fade');
     plane.classList.toggle('landed', landed);

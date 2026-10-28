@@ -1,8 +1,9 @@
+import { mesh } from '@/office3d/core/mesh';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { toon, glow, canvasTexture } from './materials';
-import type { CanvasDraw } from './materials';
+import { toon, glow } from './materials';
 import type { BodyFit, HeadFit, KitParts, RigArms } from './types';
+import { put, flowers, dots, stripes } from './cloth';
 
 // What a robot you built (kit3d.js) wears: clothes, something round its neck, something it
 // holds or has on its back, and glasses. Everything is cut to its body and head, and rides
@@ -15,88 +16,42 @@ export type WearParts = { torso: THREE.Group; head: THREE.Group; arms: RigArms; 
 type WearCtx = WearParts & { cloth: string };
 
 export const WEAR = {
-  clothes: ['none', 'tshirt', 'hawaiian', 'santa', 'elf', 'suit', 'vampire', 'witch', 'dress', 'swimsuit', 'tutu', 'maid'],
+  clothes: [
+    'none',
+    'tshirt',
+    'hawaiian',
+    'santa',
+    'elf',
+    'suit',
+    'vampire',
+    'witch',
+    'dress',
+    'swimsuit',
+    'tutu',
+    'maid',
+  ],
   neck: ['none', 'scarf', 'lei', 'tie', 'bow', 'pearls'],
-  extra: ['none', 'candycane', 'gift', 'pumpkin', 'icecream', 'balloon', 'cape', 'wings', 'batwings', 'surfboard', 'backpack', 'duster'],
+  extra: [
+    'none',
+    'candycane',
+    'gift',
+    'pumpkin',
+    'icecream',
+    'balloon',
+    'cape',
+    'wings',
+    'batwings',
+    'surfboard',
+    'backpack',
+    'duster',
+  ],
   specs: ['none', 'sunglasses', 'heart', 'round', 'star', 'eyepatch'],
 };
-
-const mesh = <G extends THREE.BufferGeometry, M extends THREE.Material | THREE.Material[]>(geo: G, mat: M, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  return m;
-};
-const put = <T extends THREE.Object3D>(parent: THREE.Object3D, m: T) => {
-  m.traverse((o) => o instanceof THREE.Mesh && (o.castShadow = true));
-  parent.add(m);
-  return m;
-};
-
-// ---------------------------------------------------------------- patterns
-
-const pattern = (() => {
-  const cache = new Map<string, THREE.CanvasTexture>();
-  return (key: string, draw: CanvasDraw) => {
-    if (!cache.has(key)) {
-      const t = canvasTexture(128, 128, draw).tex;
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      cache.set(key, t);
-    }
-    return cache.get(key)!; // (made just above if it wasn't there)
-  };
-})();
-const flowers = (bg: string) =>
-  pattern(`flowers${bg}`, (ctx) => {
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, 128, 128);
-    const petal = (x: number, y: number, c: string) => {
-      ctx.fillStyle = c;
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.ellipse(x + Math.cos(a) * 7, y + Math.sin(a) * 7, 6, 4, a, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = '#ffd34d';
-      ctx.beginPath();
-      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-      ctx.fill();
-    };
-    petal(28, 30, '#ffffff');
-    petal(90, 22, '#ff8fb1');
-    petal(64, 76, '#ffffff');
-    petal(18, 104, '#ff8fb1');
-    petal(108, 100, '#ffffff');
-    ctx.fillStyle = 'rgba(40, 140, 80, 0.8)';
-    for (const [x, y] of [[48, 50], [110, 60], [40, 82], [86, 118]]) {
-      ctx.beginPath();
-      ctx.ellipse(x, y, 10, 4, 0.6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  });
-const dots = (bg: string, dot: string) =>
-  pattern(`dots${bg}${dot}`, (ctx) => {
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, 128, 128);
-    ctx.fillStyle = dot;
-    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
-      ctx.beginPath();
-      ctx.arc(16 + x * 32 + (y % 2) * 16, 16 + y * 32, 6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  });
-const stripes = (a: string, b: string, n = 8) =>
-  pattern(`stripes${a}${b}${n}`, (ctx) => {
-    for (let i = 0; i < n; i++) {
-      ctx.fillStyle = i % 2 ? b : a;
-      ctx.fillRect(0, (i * 128) / n, 128, 128 / n);
-    }
-  });
 
 // ---------------------------------------------------------------- cut to the body
 
 // a shell over the body between heights y0 and y1 (torso space), g bigger than the body
-function shell(body: string, b: BodyFit, y0: number, y1: number, g: number, mat: THREE.Material) {
+function shell(body: string, y0: number, y1: number, g: number, mat: THREE.Material) {
   const h = y1 - y0;
   const y = (y0 + y1) / 2;
   switch (body) {
@@ -123,13 +78,30 @@ function shell(body: string, b: BodyFit, y0: number, y1: number, g: number, mat:
 // a sleeve on each upper arm (it moves with the arm)
 function sleeves(arms: RigArms, mat: THREE.Material, long = false) {
   for (const a of Object.values(arms)) {
-    put(a.shoulder, mesh(new THREE.CylinderGeometry(0.075, 0.07, long ? 0.2 : 0.11, 14), mat, 0, long ? -0.11 : -0.06, 0));
+    put(
+      a.shoulder,
+      mesh(new THREE.CylinderGeometry(0.075, 0.07, long ? 0.2 : 0.11, 14), mat, 0, long ? -0.11 : -0.06, 0),
+    );
     if (long) put(a.elbow, mesh(new THREE.CylinderGeometry(0.066, 0.07, 0.12, 14), mat, 0, -0.08, 0));
   }
 }
 // a skirt from the waist, flaring over the lap
-function skirt(torso: THREE.Object3D, b: BodyFit, mat: THREE.MeshToonMaterial, { drop = 0.17, flare = 0.13, hem = null }: { drop?: number; flare?: number; hem?: THREE.Material | null } = {}) {
-  const sk = put(torso, mesh(new THREE.CylinderGeometry(b.half + 0.03, b.half + flare, drop, 28, 1, true), mat, 0, 0.04 - drop / 2 + 0.06, 0));
+function skirt(
+  torso: THREE.Object3D,
+  b: BodyFit,
+  mat: THREE.MeshToonMaterial,
+  { drop = 0.17, flare = 0.13, hem = null }: { drop?: number; flare?: number; hem?: THREE.Material | null } = {},
+) {
+  const sk = put(
+    torso,
+    mesh(
+      new THREE.CylinderGeometry(b.half + 0.03, b.half + flare, drop, 28, 1, true),
+      mat,
+      0,
+      0.04 - drop / 2 + 0.06,
+      0,
+    ),
+  );
   sk.material = mat.clone();
   sk.material.side = THREE.DoubleSide;
   sk.scale.z = 0.9;
@@ -139,7 +111,13 @@ function skirt(torso: THREE.Object3D, b: BodyFit, mat: THREE.MeshToonMaterial, {
     const r = b.half + flare;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
-      const tip = mesh(new THREE.ConeGeometry(0.035, 0.07, 4), i % 2 ? hem : mat, Math.sin(a) * r, 0.1 - drop - 0.02, Math.cos(a) * r * 0.9);
+      const tip = mesh(
+        new THREE.ConeGeometry(0.035, 0.07, 4),
+        i % 2 ? hem : mat,
+        Math.sin(a) * r,
+        0.1 - drop - 0.02,
+        Math.cos(a) * r * 0.9,
+      );
       tip.rotation.x = Math.PI;
       put(torso, tip);
     }
@@ -155,17 +133,20 @@ function clothes(kind: string, { torso, arms, body, b, cloth }: WearCtx) {
   switch (kind) {
     case 'tshirt': {
       const m = toon(cloth);
-      put(torso, shell(body, b, b.mid - 0.08, top, g, m));
+      put(torso, shell(body, b.mid - 0.08, top, g, m));
       sleeves(arms, m);
       break;
     }
     case 'hawaiian': {
       const m = toon('#ffffff', { map: flowers(cloth) });
-      put(torso, shell(body, b, b.mid - 0.1, top, g, m));
+      put(torso, shell(body, b.mid - 0.1, top, g, m));
       sleeves(arms, m);
       // an open collar
       for (const s of [-1, 1]) {
-        const flap = put(torso, mesh(new THREE.BoxGeometry(0.08, 0.1, 0.012), m, s * 0.05, top - 0.04, b.front + g + 0.01));
+        const flap = put(
+          torso,
+          mesh(new THREE.BoxGeometry(0.08, 0.1, 0.012), m, s * 0.05, top - 0.04, b.front + g + 0.01),
+        );
         flap.rotation.z = s * 0.5;
       }
       break;
@@ -173,51 +154,66 @@ function clothes(kind: string, { torso, arms, body, b, cloth }: WearCtx) {
     case 'santa': {
       const red = toon('#d62f3a');
       const white = toon('#ffffff');
-      put(torso, shell(body, b, 0.02, top, g, red));
+      put(torso, shell(body, 0.02, top, g, red));
       sleeves(arms, red, true);
       const trim = put(torso, mesh(new THREE.TorusGeometry(b.half + 0.02, 0.035, 10, 32), white, 0, 0.04, 0));
       trim.rotation.x = Math.PI / 2;
       trim.scale.y = 0.85;
-      put(torso, shell(body, b, b.mid - 0.12, b.mid - 0.07, g + 0.006, toon('#1d2235')));
+      put(torso, shell(body, b.mid - 0.12, b.mid - 0.07, g + 0.006, toon('#1d2235')));
       put(torso, mesh(new THREE.BoxGeometry(0.1, 0.07, 0.02), toon('#ffd34d'), 0, b.mid - 0.095, b.front + g + 0.012));
-      for (const a of Object.values(arms)) put(a.elbow, mesh(new THREE.TorusGeometry(0.068, 0.025, 8, 18), white, 0, -0.15, 0).rotateX(Math.PI / 2));
-      for (const y of [b.mid + 0.08, b.mid]) put(torso, mesh(new THREE.SphereGeometry(0.018, 8, 6), white, 0, y, b.front + g + 0.006));
+      for (const a of Object.values(arms))
+        put(a.elbow, mesh(new THREE.TorusGeometry(0.068, 0.025, 8, 18), white, 0, -0.15, 0).rotateX(Math.PI / 2));
+      for (const y of [b.mid + 0.08, b.mid])
+        put(torso, mesh(new THREE.SphereGeometry(0.018, 8, 6), white, 0, y, b.front + g + 0.006));
       break;
     }
     case 'elf': {
       const green = toon('#2f9e5b');
-      put(torso, shell(body, b, 0.06, top, g, green));
+      put(torso, shell(body, 0.06, top, g, green));
       sleeves(arms, green, true);
       skirt(torso, b, green, { drop: 0.12, flare: 0.08, hem: toon('#d62f3a') });
-      put(torso, shell(body, b, b.mid - 0.1, b.mid - 0.05, g + 0.006, toon('#5a3a22')));
+      put(torso, shell(body, b.mid - 0.1, b.mid - 0.05, g + 0.006, toon('#5a3a22')));
       put(torso, mesh(new THREE.BoxGeometry(0.08, 0.06, 0.02), toon('#ffd34d'), 0, b.mid - 0.075, b.front + g + 0.012));
       break;
     }
     case 'suit': {
       const black = toon('#23262f');
-      put(torso, shell(body, b, 0.02, top, g, black));
+      put(torso, shell(body, 0.02, top, g, black));
       sleeves(arms, black, true);
       // the white shirt in the V of the jacket, and a red bow tie
-      const shirt = put(torso, mesh(new THREE.CircleGeometry(0.12, 3), toon('#ffffff'), 0, top - 0.1, b.front + g + 0.004));
+      const shirt = put(
+        torso,
+        mesh(new THREE.CircleGeometry(0.12, 3), toon('#ffffff'), 0, top - 0.1, b.front + g + 0.004),
+      );
       shirt.rotation.z = -Math.PI / 2;
       shirt.scale.set(1.2, 0.7, 1);
       for (const s of [-1, 1]) {
-        const wing = put(torso, mesh(new THREE.ConeGeometry(0.035, 0.07, 4), toon('#d62f3a'), s * 0.035, top - 0.03, b.front + g + 0.02));
-        wing.rotation.z = s * Math.PI / 2;
+        const wing = put(
+          torso,
+          mesh(new THREE.ConeGeometry(0.035, 0.07, 4), toon('#d62f3a'), s * 0.035, top - 0.03, b.front + g + 0.02),
+        );
+        wing.rotation.z = (s * Math.PI) / 2;
       }
-      for (const y of [b.mid - 0.02, b.mid - 0.09]) put(torso, mesh(new THREE.SphereGeometry(0.015, 8, 6), toon('#c9a46a'), 0, y, b.front + g + 0.006));
+      for (const y of [b.mid - 0.02, b.mid - 0.09])
+        put(torso, mesh(new THREE.SphereGeometry(0.015, 8, 6), toon('#c9a46a'), 0, y, b.front + g + 0.006));
       break;
     }
     case 'vampire': {
       const black = toon('#1a1420');
-      put(torso, shell(body, b, 0.02, top, g, black));
+      put(torso, shell(body, 0.02, top, g, black));
       sleeves(arms, black, true);
-      const vest = put(torso, mesh(new THREE.CircleGeometry(0.12, 3), toon('#9b1b30'), 0, top - 0.1, b.front + g + 0.004));
+      const vest = put(
+        torso,
+        mesh(new THREE.CircleGeometry(0.12, 3), toon('#9b1b30'), 0, top - 0.1, b.front + g + 0.004),
+      );
       vest.rotation.z = -Math.PI / 2;
       vest.scale.set(1.2, 0.7, 1);
       // a tall stiff collar standing up behind the neck
       for (const s of [-1, 1]) {
-        const c = put(torso, mesh(new THREE.BoxGeometry(0.16, 0.2, 0.015), toon('#9b1b30'), s * 0.11, top + 0.07, -0.05));
+        const c = put(
+          torso,
+          mesh(new THREE.BoxGeometry(0.16, 0.2, 0.015), toon('#9b1b30'), s * 0.11, top + 0.07, -0.05),
+        );
         c.rotation.y = s * 0.6;
         c.rotation.x = -0.2;
       }
@@ -225,19 +221,22 @@ function clothes(kind: string, { torso, arms, body, b, cloth }: WearCtx) {
     }
     case 'witch': {
       const purple = toon('#4b2d6e');
-      put(torso, shell(body, b, 0.04, top, g, purple));
+      put(torso, shell(body, 0.04, top, g, purple));
       sleeves(arms, purple, true);
       skirt(torso, b, purple, { drop: 0.2, flare: 0.15, hem: toon('#1a1420') });
-      put(torso, shell(body, b, b.mid - 0.11, b.mid - 0.07, g + 0.006, toon('#ff8a1f')));
+      put(torso, shell(body, b.mid - 0.11, b.mid - 0.07, g + 0.006, toon('#ff8a1f')));
       break;
     }
     case 'dress': {
       const m = toon(cloth);
-      put(torso, shell(body, b, 0.04, top, g, m));
+      put(torso, shell(body, 0.04, top, g, m));
       sleeves(arms, m);
       skirt(torso, b, toon('#ffffff', { map: dots(cloth, '#ffffff') }));
       // a white collar
-      const collar = put(torso, mesh(new THREE.TorusGeometry(0.1, 0.025, 8, 20, Math.PI), toon('#ffffff'), 0, top - 0.01, b.front * 0.4));
+      const collar = put(
+        torso,
+        mesh(new THREE.TorusGeometry(0.1, 0.025, 8, 20, Math.PI), toon('#ffffff'), 0, top - 0.01, b.front * 0.4),
+      );
       collar.rotation.x = Math.PI / 2;
       collar.rotation.z = Math.PI;
       break;
@@ -246,41 +245,79 @@ function clothes(kind: string, { torso, arms, body, b, cloth }: WearCtx) {
       // a dark dress with a frilly white apron and collar (the evening housemaid wears it)
       const dark = toon(cloth);
       const white = toon('#ffffff');
-      put(torso, shell(body, b, 0.04, top, g, dark));
+      put(torso, shell(body, 0.04, top, g, dark));
       sleeves(arms, dark);
-      for (const a of Object.values(arms)) put(a.shoulder, mesh(new THREE.TorusGeometry(0.075, 0.016, 6, 16), white, 0, -0.115, 0).rotateX(Math.PI / 2));
+      for (const a of Object.values(arms))
+        put(a.shoulder, mesh(new THREE.TorusGeometry(0.075, 0.016, 6, 16), white, 0, -0.115, 0).rotateX(Math.PI / 2));
       skirt(torso, b, dark, { drop: 0.19, flare: 0.14, hem: white });
       // the apron: a bib up the chest and a skirt panel down the front, edged with frills
-      const bib = put(torso, mesh(new RoundedBoxGeometry(0.22, 0.2, 0.012, 2, 0.02), white, 0, b.mid + 0.02, b.front + g + 0.006));
+      const bib = put(
+        torso,
+        mesh(new RoundedBoxGeometry(0.22, 0.2, 0.012, 2, 0.02), white, 0, b.mid + 0.02, b.front + g + 0.006),
+      );
       bib.rotation.x = -0.06;
       const panel = put(torso, mesh(new THREE.BoxGeometry(0.3, 0.2, 0.012), white, 0, 0.0, b.half + 0.08));
       panel.rotation.x = -0.55;
-      for (let i = 0; i < 7; i++) put(torso, mesh(new THREE.SphereGeometry(0.022, 8, 6), white, -0.15 + i * 0.05, -0.07, b.half + 0.13));
+      for (let i = 0; i < 7; i++)
+        put(torso, mesh(new THREE.SphereGeometry(0.022, 8, 6), white, -0.15 + i * 0.05, -0.07, b.half + 0.13));
       // the waist ribbon, tied in a bow at the back
-      put(torso, shell(body, b, b.mid - 0.11, b.mid - 0.08, g + 0.008, white));
+      put(torso, shell(body, b.mid - 0.11, b.mid - 0.08, g + 0.008, white));
       for (const s of [-1, 1]) {
-        const loop = put(torso, mesh(new THREE.SphereGeometry(0.05, 10, 8), white, s * 0.05, b.mid - 0.09, -b.front - 0.04));
+        const loop = put(
+          torso,
+          mesh(new THREE.SphereGeometry(0.05, 10, 8), white, s * 0.05, b.mid - 0.09, -b.front - 0.04),
+        );
         loop.scale.set(1.2, 0.7, 0.4);
       }
-      const collar = put(torso, mesh(new THREE.TorusGeometry(0.1, 0.025, 8, 20, Math.PI), white, 0, top - 0.01, b.front * 0.4));
+      const collar = put(
+        torso,
+        mesh(new THREE.TorusGeometry(0.1, 0.025, 8, 20, Math.PI), white, 0, top - 0.01, b.front * 0.4),
+      );
       collar.rotation.x = Math.PI / 2;
       collar.rotation.z = Math.PI;
       break;
     }
     case 'swimsuit': {
-      put(torso, shell(body, b, 0.02, b.mid + 0.1, g, toon('#ffffff', { map: dots(cloth, '#ffffff') })));
+      put(torso, shell(body, 0.02, b.mid + 0.1, g, toon('#ffffff', { map: dots(cloth, '#ffffff') })));
       skirt(torso, b, toon(cloth), { drop: 0.08, flare: 0.05 });
       break;
     }
     case 'tutu': {
-      put(torso, shell(body, b, 0.06, top, g, toon('#ff8fb1')));
+      put(torso, shell(body, 0.06, top, g, toon('#ff8fb1')));
       // layers of tulle, see-through
-      for (const [i, drop] of [[0, 0.1], [1, 0.08]]) {
-        const tulle = new THREE.MeshToonMaterial({ color: i ? '#ffd1e6' : '#ffb6d5', transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-        const t = put(torso, mesh(new THREE.CylinderGeometry(b.half + 0.03, b.half + 0.18 - i * 0.04, drop, 28, 1, true), tulle, 0, 0.08 - i * 0.02, 0));
+      for (const [i, drop] of [
+        [0, 0.1],
+        [1, 0.08],
+      ]) {
+        const tulle = new THREE.MeshToonMaterial({
+          color: i ? '#ffd1e6' : '#ffb6d5',
+          transparent: true,
+          opacity: 0.85,
+          side: THREE.DoubleSide,
+        });
+        const t = put(
+          torso,
+          mesh(
+            new THREE.CylinderGeometry(b.half + 0.03, b.half + 0.18 - i * 0.04, drop, 28, 1, true),
+            tulle,
+            0,
+            0.08 - i * 0.02,
+            0,
+          ),
+        );
         t.scale.z = 0.9;
       }
-      for (let i = 0; i < 6; i++) put(torso, mesh(new THREE.OctahedronGeometry(0.012), glow('#ffffff'), Math.sin(i * 1.1) * 0.12, top - 0.05 - i * 0.04, b.front + g + 0.005));
+      for (let i = 0; i < 6; i++)
+        put(
+          torso,
+          mesh(
+            new THREE.OctahedronGeometry(0.012),
+            glow('#ffffff'),
+            Math.sin(i * 1.1) * 0.12,
+            top - 0.05 - i * 0.04,
+            b.front + g + 0.005,
+          ),
+        );
       break;
     }
   }
@@ -295,7 +332,10 @@ function neck(kind: string, { torso, b, cloth }: WearCtx) {
       const knit = toon('#ffffff', { map: stripes('#d62f3a', '#ffffff', 6) });
       const ring = put(torso, mesh(new THREE.TorusGeometry(0.13, 0.05, 12, 24), knit, 0, y, 0));
       ring.rotation.x = Math.PI / 2;
-      const tail = put(torso, mesh(new RoundedBoxGeometry(0.09, 0.24, 0.03, 2, 0.012), knit, 0.08, y - 0.12, b.front + 0.04));
+      const tail = put(
+        torso,
+        mesh(new RoundedBoxGeometry(0.09, 0.24, 0.03, 2, 0.012), knit, 0.08, y - 0.12, b.front + 0.04),
+      );
       tail.rotation.z = 0.12;
       break;
     }
@@ -306,7 +346,16 @@ function neck(kind: string, { torso, b, cloth }: WearCtx) {
         const a = (i / n) * Math.PI * 2;
         // a ring round the neck that dips down the front
         const dip = Math.max(0, Math.cos(a)) * 0.1;
-        put(torso, mesh(new THREE.SphereGeometry(0.035, 10, 8), toon(colours[i % colours.length]), Math.sin(a) * (b.half * 0.75), y - 0.02 - dip, Math.cos(a) * (b.front * 0.9 + 0.03)));
+        put(
+          torso,
+          mesh(
+            new THREE.SphereGeometry(0.035, 10, 8),
+            toon(colours[i % colours.length]),
+            Math.sin(a) * (b.half * 0.75),
+            y - 0.02 - dip,
+            Math.cos(a) * (b.front * 0.9 + 0.03),
+          ),
+        );
       }
       break;
     }
@@ -322,12 +371,18 @@ function neck(kind: string, { torso, b, cloth }: WearCtx) {
     case 'bow': {
       const pink = toon(cloth === '#ff8fb1' ? '#e0457f' : '#ff6fa5');
       for (const s of [-1, 1]) {
-        const wing = put(torso, mesh(new THREE.SphereGeometry(0.06, 12, 10), pink, s * 0.065, y - 0.05, b.front + 0.025));
+        const wing = put(
+          torso,
+          mesh(new THREE.SphereGeometry(0.06, 12, 10), pink, s * 0.065, y - 0.05, b.front + 0.025),
+        );
         wing.scale.set(1.2, 0.8, 0.45);
       }
       put(torso, mesh(new THREE.SphereGeometry(0.03, 10, 8), pink, 0, y - 0.05, b.front + 0.04));
       for (const s of [-1, 1]) {
-        const ribbon = put(torso, mesh(new THREE.BoxGeometry(0.03, 0.09, 0.01), pink, s * 0.025, y - 0.11, b.front + 0.03));
+        const ribbon = put(
+          torso,
+          mesh(new THREE.BoxGeometry(0.03, 0.09, 0.01), pink, s * 0.025, y - 0.11, b.front + 0.03),
+        );
         ribbon.rotation.z = s * 0.3;
       }
       break;
@@ -336,7 +391,16 @@ function neck(kind: string, { torso, b, cloth }: WearCtx) {
       const n = 13;
       for (let i = 0; i < n; i++) {
         const a = -1.2 + (i / (n - 1)) * 2.4;
-        put(torso, mesh(new THREE.SphereGeometry(0.022, 10, 8), toon('#f6f1e8'), Math.sin(a) * b.half * 0.6, y - 0.03 - Math.cos(a) * 0.06, b.front * 0.85 + 0.02));
+        put(
+          torso,
+          mesh(
+            new THREE.SphereGeometry(0.022, 10, 8),
+            toon('#f6f1e8'),
+            Math.sin(a) * b.half * 0.6,
+            y - 0.03 - Math.cos(a) * 0.06,
+            b.front * 0.85 + 0.02,
+          ),
+        );
       }
       break;
     }
@@ -397,7 +461,13 @@ function extra(kind: string, { torso, arms, b }: WearCtx) {
       for (let i = 0; i < 14; i++) {
         const a = (i / 14) * Math.PI * 2;
         const up = i % 2 ? 0.05 : 0.0;
-        const f = mesh(new THREE.ConeGeometry(0.03, 0.14, 6), toon(colours[i % colours.length]), Math.cos(a) * 0.04, 0.41 + up, 0.04 + Math.sin(a) * 0.04);
+        const f = mesh(
+          new THREE.ConeGeometry(0.03, 0.14, 6),
+          toon(colours[i % colours.length]),
+          Math.cos(a) * 0.04,
+          0.41 + up,
+          0.04 + Math.sin(a) * 0.04,
+        );
         f.rotation.set(Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7);
         held.add(f);
       }
@@ -430,9 +500,21 @@ function extra(kind: string, { torso, arms, b }: WearCtx) {
     }
     case 'cape': {
       const cape = new THREE.MeshToonMaterial({ color: '#1a1420', side: THREE.DoubleSide });
-      const c = mesh(new THREE.CylinderGeometry(b.half + 0.04, b.half + 0.16, 0.6, 20, 1, true, Math.PI * 0.6, Math.PI * 0.8), cape, 0, -0.08, b.front + 0.02);
+      const c = mesh(
+        new THREE.CylinderGeometry(b.half + 0.04, b.half + 0.16, 0.6, 20, 1, true, Math.PI * 0.6, Math.PI * 0.8),
+        cape,
+        0,
+        -0.08,
+        b.front + 0.02,
+      );
       back.add(c);
-      const lining = mesh(new THREE.CylinderGeometry(b.half + 0.035, b.half + 0.155, 0.6, 20, 1, true, Math.PI * 0.6, Math.PI * 0.8), new THREE.MeshToonMaterial({ color: '#9b1b30', side: THREE.BackSide }), 0, -0.08, b.front + 0.02);
+      const lining = mesh(
+        new THREE.CylinderGeometry(b.half + 0.035, b.half + 0.155, 0.6, 20, 1, true, Math.PI * 0.6, Math.PI * 0.8),
+        new THREE.MeshToonMaterial({ color: '#9b1b30', side: THREE.BackSide }),
+        0,
+        -0.08,
+        b.front + 0.02,
+      );
       back.add(lining);
       put(torso, back);
       break;
@@ -476,7 +558,13 @@ function extra(kind: string, { torso, arms, b }: WearCtx) {
       break;
     }
     case 'surfboard': {
-      const board = mesh(new THREE.CapsuleGeometry(0.09, 0.62, 6, 16), toon('#ffffff', { map: stripes('#36c2d9', '#ffffff', 6) }), 0, 0, 0);
+      const board = mesh(
+        new THREE.CapsuleGeometry(0.09, 0.62, 6, 16),
+        toon('#ffffff', { map: stripes('#36c2d9', '#ffffff', 6) }),
+        0,
+        0,
+        0,
+      );
       board.scale.z = 0.18;
       board.rotation.z = 0.5;
       back.add(board);
@@ -524,7 +612,8 @@ function specs(kind: string, { head, h }: WearCtx) {
       break;
     }
     case 'round':
-      for (const s of [-1, 1]) g.add(mesh(new THREE.TorusGeometry(0.075, 0.012, 8, 24), toon('#8a5a2b'), s * gap, 0, 0));
+      for (const s of [-1, 1])
+        g.add(mesh(new THREE.TorusGeometry(0.075, 0.012, 8, 24), toon('#8a5a2b'), s * gap, 0, 0));
       g.add(mesh(new THREE.BoxGeometry(0.07, 0.012, 0.012), toon('#8a5a2b'), 0, 0.02, 0));
       break;
     case 'star': {

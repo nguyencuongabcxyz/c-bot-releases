@@ -1,46 +1,15 @@
+import { bump, clamp, mix, seg, smooth, wrap } from '@/office3d/core/math';
+import { isMesh } from '@/office3d/core/mesh';
+import { HAND, armOf, at, blend, handAt, onceAt } from './common';
 import * as THREE from 'three';
 import { LAYOUT } from '@/office3d/scene';
-import { spriteTexture, toon, glow, canvasTexture } from '@/office3d/materials';
+import { spriteTexture, toon, glow, canvasTexture, noOutline } from '@/office3d/materials';
 import type { CanvasTex } from '@/office3d/materials';
 import type { Antic, AnticCtx, AnticPose } from './types';
-
-// Your notes and the robot (the corkboard on the desk's left end: board.js, set.board).
-// Timings are a contract: robot.js cues the sounds, the words and the board's own
-// changes (a sticky appearing or coming off) at the marked moments.
-//   notewrite   30 s   while you type a note: a sticky pad in one hand, a pen in the other,
-//                      writing (squiggly lines fill the paper), now and then a pause to think;
-//                      robot.js stops it when you stop typing, or plays notepin on Enter.
-//   notepin     2.4 s  finishes writing on the sticky 0–0.6, tears it off and turns and reaches
-//                      to the board 0.6–1.2, presses it on at 1.25 (robot.js adds it to the board
-//                      then), back by 2.4. Asleep: the same, eyes shut and slow, mumbling c.text.
-//   notetoss    2.8 s  c.text = the note's id: reaches to its sticky 0–0.6 and grabs it at 0.6
-//                      (robot.js takes it off the board then), crumples it 0.7–1.2, throws it
-//                      at 1.4, in the wastebasket at 2.1, a little cheer 2.1–2.6.
-//   boardlift   3.4 s  the reminder: reaches to the board and holds it up 0.5–2.7 (A.boardLift),
-//                      pointing at you with its other hand 0.9–2.6 (robot.js speaks at 0.9).
-//   boardglance 2.6 s  idle: looks over at the board, straightens a pin (a tap at 1.2), then
-//                      gives you a meaningful look 1.5–2.6.
-//   allclear    1.8 s  the last note's done: a happy spin and a hop, stars at 0.2.
-//   clockout    2.6 s  the end of the day: a big stretch 0–1.2 (robot.js yawns), then a
-//                      slump 1.4–2.6; robot.js puts it to sleep as it ends.
-// The shared rig only (root, torso, head, arms), so every body does them.
-
-const HAND = 0.24; // how far down the forearm the hand is (as c.hand() has it)
 const BIN = new THREE.Vector3(0.56, 0, -0.76); // the wastebasket (awake.js)
 const BIN_MOUTH = BIN.clone().setY(0.32);
 
 type Side = 'L' | 'R';
-
-const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const seg = (s: number, a: number, b: number) => smooth((s - a) / (b - a));
-const bump = (s: number, a: number, b: number) => (s > a && s < b ? Math.sin((Math.PI * (s - a)) / (b - a)) : 0);
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
-const once = (c: AnticCtx, key: string, at: number) => (c.s >= at && !c.run[key] ? (c.run[key] = true) : false);
-function blend(A: AnticPose, key: 'armL' | 'armR' | 'head', target: readonly number[], w: number) {
-  for (let i = 0; i < 3; i++) A[key][i] = mix(A[key][i], target[i], w);
-}
 
 // scratch
 const V1 = new THREE.Vector3();
@@ -50,11 +19,7 @@ const QL = [0, 0, 0];
 const QR = [0, 0, 0];
 const HEAD = [0, 0, 0];
 const POINT = [-1.6, 0.2, -0.3]; // an arm straight out at you
-const STRETCH = [-2.9, 0.45, -0.25]; // both arms up (as POSES.cheer)
-
-const at = (c: AnticCtx, obj: THREE.Object3D, x: number, y: number, z: number, out: THREE.Vector3) => c.set.office.worldToLocal(obj.localToWorld(out.set(x, y, z)));
-const armOf = (c: AnticCtx, side: Side) => c.robot.arms[side === 'L' ? 'armL' : 'armR'];
-const handAt = (c: AnticCtx, side: Side, out: THREE.Vector3) => at(c, armOf(c, side).elbow, 0, -HAND, 0, out);
+const STRETCH = [-2.9, 0.45, -0.25];
 
 // Arm angles that put a hand on a point (office space); returns the stretch it needs (as awake.js)
 function aim(c: AnticCtx, side: Side, p: THREE.Vector3, out: number[], most = 2.4) {
@@ -110,8 +75,7 @@ function reachTo(c: AnticCtx, A: AnticPose, p: THREE.Vector3, s: number, [a, b, 
 let ballTex: THREE.Texture | null = null;
 function makeBall(c: AnticCtx) {
   ballTex ||= spriteTexture('ball');
-  const mat = new THREE.SpriteMaterial({ map: ballTex, transparent: true, depthWrite: false });
-  mat.userData.outlineParameters = { visible: false };
+  const mat = noOutline(new THREE.SpriteMaterial({ map: ballTex, transparent: true, depthWrite: false }));
   const ball = new THREE.Sprite(mat);
   ball.scale.setScalar(0.001);
   c.set.office.add(ball);
@@ -132,8 +96,6 @@ const PEN_UP = new THREE.Vector3(0, 1, 0);
 const Q1 = new THREE.Quaternion();
 const Q2 = new THREE.Quaternion();
 const X_AXIS = new THREE.Vector3(1, 0, 0);
-// (three's types leave the isMesh flag off Object3D)
-const isMesh = (o: THREE.Object3D): o is THREE.Mesh => 'isMesh' in o;
 type Pad = { group: THREE.Group; block: THREE.Object3D; sheet: THREE.Object3D; tex: CanvasTex; lines: number };
 function makePad(c: AnticCtx, lines = 0) {
   const tex = canvasTexture(128, 128, (ctx) => {
@@ -146,11 +108,16 @@ function makePad(c: AnticCtx, lines = 0) {
   const block = new THREE.Mesh(new THREE.BoxGeometry(PAD, 0.022, PAD), toon('#f2cf3d'));
   block.position.y = -0.011;
   group.add(block);
-  const sheet = new THREE.Mesh(new THREE.PlaneGeometry(PAD, PAD), glow('#ffffff', { map: tex.tex, side: THREE.DoubleSide })); // lit, so the writing shows in its shade
+  const sheet = new THREE.Mesh(
+    new THREE.PlaneGeometry(PAD, PAD),
+    glow('#ffffff', { map: tex.tex, side: THREE.DoubleSide }),
+  ); // lit, so the writing shows in its shade
   sheet.rotation.x = -Math.PI / 2; // lying on top of the pad, its writing facing up
   sheet.position.y = 0.001;
   group.add(sheet);
-  group.traverse((o) => isMesh(o) && (o.castShadow = true));
+  group.traverse((o) => {
+    if (isMesh(o)) o.castShadow = true;
+  });
   c.set.office.add(group);
   const pad: Pad = { group, block, sheet, tex, lines: 0 };
   writeLines(pad, lines);
@@ -168,7 +135,8 @@ function writeLines(pad: Pad, n: number) {
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(14, y);
-    for (let x = 14; x <= end; x += 5) ctx.lineTo(x, y + Math.sin(x * 0.7 + pad.lines * 2) * 2.5 + (Math.random() - 0.5) * 1.5);
+    for (let x = 14; x <= end; x += 5)
+      ctx.lineTo(x, y + Math.sin(x * 0.7 + pad.lines * 2) * 2.5 + (Math.random() - 0.5) * 1.5);
     ctx.stroke();
     pad.lines++;
     drew = true;
@@ -187,7 +155,9 @@ function makePen(c: AnticCtx) {
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.02, 8), toon('#e5484d'));
   cap.position.y = 0.11;
   pen.add(cap);
-  pen.traverse((o) => isMesh(o) && (o.castShadow = true));
+  pen.traverse((o) => {
+    if (isMesh(o)) o.castShadow = true;
+  });
   c.set.office.add(pen);
   return pen;
 }
@@ -208,7 +178,16 @@ function disposeProp(obj: THREE.Object3D | null | undefined) {
 // Write on the pad: it's held in front of its chest (left hand), tipped up so you see
 // the page; the pen (right hand) scrawls along a line (across 0..1), or rests at the
 // pad's corner while it thinks (pause 0..1).
-function writePose(c: AnticCtx, A: AnticPose, pad: Pad, pen: THREE.Object3D, k: number, line: number, across: number, pause = 0) {
+function writePose(
+  c: AnticCtx,
+  A: AnticPose,
+  pad: Pad,
+  pen: THREE.Object3D,
+  k: number,
+  line: number,
+  across: number,
+  pause = 0,
+) {
   const size = c.robot.root.scale.x / 0.82;
   at(c, c.robot.torso, -0.02, 0.25, 0.37, pad.group.position);
   c.robot.torso.getWorldQuaternion(Q1);
@@ -319,7 +298,8 @@ const notetoss: Antic<TossRun> = {
   fadeOut: 0.3,
   update(c, A) {
     const { s, run } = c;
-    const ball = run.ball || (run.ball = makeBall(c));
+    run.ball ||= makeBall(c);
+    const ball = run.ball;
     const turn = turnToBoard(c);
     // grab its sticky: reach, then back in front of it to crumple
     A.yaw += turn * seg(s, 0, 0.45) * (1 - seg(s, 0.6, 1.0)) * c.w;
@@ -356,10 +336,15 @@ const notetoss: Antic<TossRun> = {
     ball.scale.setScalar(Math.max(0.001, size));
     ball.visible = size > 0;
     ball.material.rotation = s * 9;
-    if (once(c, 'swish', 2.1)) {
+    if (onceAt(c, 'swish', 2.1)) {
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI + 0.4;
-        c.emit('star', c.worldPoint(c.set.office, BIN_MOUTH.x, BIN_MOUTH.y, BIN_MOUTH.z), { life: 0.6, vel: new THREE.Vector3(Math.cos(a) * 0.3, 0.35, 0.1), size: 0.07, spin: 4 });
+        c.emit('star', c.worldPoint(c.set.office, BIN_MOUTH.x, BIN_MOUTH.y, BIN_MOUTH.z), {
+          life: 0.6,
+          vel: new THREE.Vector3(Math.cos(a) * 0.3, 0.35, 0.1),
+          size: 0.07,
+          spin: 4,
+        });
       }
     }
   },
@@ -427,11 +412,17 @@ const allclear: Antic = {
     const up = seg(s, 0.05, 0.3) * (1 - seg(s, 1.4, 1.75));
     blend(A, 'armL', STRETCH, up * c.w);
     blend(A, 'armR', STRETCH, up * c.w);
-    if (once(c, 'stars', 0.2)) {
+    if (onceAt(c, 'stars', 0.2)) {
       const top = c.worldPoint(c.robot.head, 0, (c.robot.headTop ?? 0.6) + 0.1, 0);
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
-        c.emit('star', top.clone(), { life: 0.9, vel: new THREE.Vector3(Math.cos(a) * 0.5, 0.45 + Math.random() * 0.2, Math.sin(a) * 0.5), size: 0.1, gravity: 0.8, spin: 5 });
+        c.emit('star', top.clone(), {
+          life: 0.9,
+          vel: new THREE.Vector3(Math.cos(a) * 0.5, 0.45 + Math.random() * 0.2, Math.sin(a) * 0.5),
+          size: 0.1,
+          gravity: 0.8,
+          spin: 5,
+        });
       }
     }
   },
@@ -456,4 +447,12 @@ const clockout: Antic = {
   },
 };
 
-export const NOTES: Record<string, Antic> = { notewrite, notepin, notetoss, boardlift, boardglance, allclear, clockout };
+export const NOTES: Record<string, Antic> = {
+  notewrite,
+  notepin,
+  notetoss,
+  boardlift,
+  boardglance,
+  allclear,
+  clockout,
+};

@@ -1,13 +1,12 @@
-/* The action palette. Colours, fonts and icons: ../ui/theme.css and ../ui/icons.js. */
-* { box-sizing: border-box; }
+/* The action palette. Colours, fonts and icons: @/theme/theme.css and @/icons/icons.ts. */
 html, body { margin: 0; background: transparent; overflow: hidden; }
 body { font: 13.5px/1.4 var(--font-ui); color: var(--fg); padding: 6px 6px 12px; user-select: none; }
 
 #pal {
   background: var(--bg); border: 1px solid var(--line-2); border-radius: var(--r-lg); box-shadow: var(--shadow-pop);
-  overflow: hidden; animation: pop-in 0.14s ease-out;
+  overflow: hidden; animation: pal-pop 0.14s ease-out;
 }
-@keyframes pop-in { from { transform: scale(0.97) translateY(-4px); opacity: 0; } }
+@keyframes pal-pop { from { transform: scale(0.97) translateY(-4px); opacity: 0; } }
 /* projected by the drone hovering over it: it unrolls down from the top edge in a flash of
    light, and a scan line runs down it once */
 #pal.projected { position: relative; animation: project 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }

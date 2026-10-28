@@ -1,3 +1,5 @@
+import { SCREEN_H as H, INK, SCREEN_W as W } from '@/office3d/core/constants';
+import { clamp, easeOutCubic } from '@/office3d/core/math';
 import { roundRect } from './materials';
 import type { ScreenScene } from './themes';
 
@@ -12,14 +14,10 @@ export const FLICKS = [1.0, 2.0, 3.0, 4.0, 7.0, 8.0];
 export const FUNNY = 4.8;
 export const LIKE = 6.2;
 
-const W = 320;
-const H = 200;
-const INK = '#1d2235';
 const EMOJI = '"Segoe UI Emoji", "Segoe UI Symbol", sans-serif';
 const SYMBOL = '"Segoe UI Symbol", "Segoe UI", sans-serif';
 
-const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
-const easeOut = (x: number) => 1 - (1 - clamp(x, 0, 1)) ** 3;
+const easeOut = (x: number) => easeOutCubic(clamp(x, 0, 1));
 // how far it has scrolled: each flick glides one `step` (eased, like a wheel spin)
 function scrolled(t: number, step: number, flicks = FLICKS) {
   let y = 0;
@@ -41,9 +39,19 @@ function emoji(ctx: CanvasRenderingContext2D, ch: string, x: number, y: number, 
   ctx.fillText(ch, x, y);
   ctx.textBaseline = 'alphabetic';
 }
-function bars(ctx: CanvasRenderingContext2D, x: number, y: number, widths: number[], h: number, gap: number, color: string) {
+function bars(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  widths: number[],
+  h: number,
+  gap: number,
+  color: string,
+) {
   ctx.fillStyle = color;
-  widths.forEach((w, i) => ctx.fillRect(x, y + i * gap, w, h));
+  widths.forEach((w, i) => {
+    ctx.fillRect(x, y + i * gap, w, h);
+  });
 }
 // a hand-drawn arrow pointer
 function pointer(ctx: CanvasRenderingContext2D, x: number, y: number) {
@@ -53,8 +61,13 @@ function pointer(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.strokeStyle = INK;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(0, 0); ctx.lineTo(0, 14); ctx.lineTo(4, 10.5); ctx.lineTo(7, 16);
-  ctx.lineTo(9, 15); ctx.lineTo(6.5, 9.5); ctx.lineTo(11, 9.5);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, 14);
+  ctx.lineTo(4, 10.5);
+  ctx.lineTo(7, 16);
+  ctx.lineTo(9, 15);
+  ctx.lineTo(6.5, 9.5);
+  ctx.lineTo(11, 9.5);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
@@ -66,8 +79,14 @@ function pointer(ctx: CanvasRenderingContext2D, x: number, y: number) {
 // a column of posts; the 5th (index 4) is the funny one, centred after the 4th flick
 const FB_POST = 150;
 const FB_PHOTOS = [
-  ['#ffd180', '🌅'], ['#b9f6ca', '🥗'], ['#80d8ff', '🏖️'], ['#ea80fc', '🎂'],
-  ['#ffe082', '😹'], ['#ffab91', '🐶'], ['#a7ffeb', '🌵'], ['#c5cae9', '🚀'],
+  ['#ffd180', '🌅'],
+  ['#b9f6ca', '🥗'],
+  ['#80d8ff', '🏖️'],
+  ['#ea80fc', '🎂'],
+  ['#ffe082', '😹'],
+  ['#ffab91', '🐶'],
+  ['#a7ffeb', '🌵'],
+  ['#c5cae9', '🚀'],
 ];
 function facebook(ctx: CanvasRenderingContext2D, t: number) {
   ctx.fillStyle = '#f0f2f5';
@@ -153,8 +172,13 @@ function facebook(ctx: CanvasRenderingContext2D, t: number) {
 
 // full-height vertical videos, one per swipe; the 5th (index 4) is the funny one
 const TT_VIDEOS = [
-  ['#ff6b81', '#ffd34d', '💃'], ['#5ac8fa', '#a29bfe', '🐶'], ['#ff9f43', '#ff6b6b', '🍜'], ['#2ed573', '#1e90ff', '🎸'],
-  ['#ffd34d', '#ff9ff3', '😹'], ['#a29bfe', '#ff6bd6', '🕺'], ['#70a1ff', '#7bed9f', '🐧'],
+  ['#ff6b81', '#ffd34d', '💃'],
+  ['#5ac8fa', '#a29bfe', '🐶'],
+  ['#ff9f43', '#ff6b6b', '🍜'],
+  ['#2ed573', '#1e90ff', '🎸'],
+  ['#ffd34d', '#ff9ff3', '😹'],
+  ['#a29bfe', '#ff6bd6', '🕺'],
+  ['#70a1ff', '#7bed9f', '🐧'],
 ];
 function tiktok(ctx: CanvasRenderingContext2D, t: number) {
   ctx.fillStyle = '#000000';
@@ -239,8 +263,16 @@ function tiktok(ctx: CanvasRenderingContext2D, t: number) {
 
 const YT_ROW = 96;
 const YT_THUMBS = [
-  ['#ff8a80', '🎮'], ['#80d8ff', '🍳'], ['#ea80fc', '🚗'], ['#ffd180', '🎸'], ['#b9f6ca', '🐱'],
-  ['#ffab91', '🏀'], ['#a7ffeb', '🧪'], ['#c5cae9', '🎤'], ['#ffe082', '🐶'], ['#f8bbd0', '🍰'],
+  ['#ff8a80', '🎮'],
+  ['#80d8ff', '🍳'],
+  ['#ea80fc', '🚗'],
+  ['#ffd180', '🎸'],
+  ['#b9f6ca', '🐱'],
+  ['#ffab91', '🏀'],
+  ['#a7ffeb', '🧪'],
+  ['#c5cae9', '🎤'],
+  ['#ffe082', '🐶'],
+  ['#f8bbd0', '🍰'],
 ];
 const YT_PICK = 4; // the thumbnail it clicks at 4.0 (row 2, left), a cat video
 function ytBar(ctx: CanvasRenderingContext2D) {
@@ -251,7 +283,9 @@ function ytBar(ctx: CanvasRenderingContext2D) {
   ctx.fill();
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.moveTo(18, 9.5); ctx.lineTo(25, 13.5); ctx.lineTo(18, 17.5);
+  ctx.moveTo(18, 9.5);
+  ctx.lineTo(25, 13.5);
+  ctx.lineTo(18, 17.5);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = '#0f0f0f';

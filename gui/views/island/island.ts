@@ -1,8 +1,12 @@
+import { $, el } from '@/lib/dom';
+import { onDrag } from '@/lib/drag';
 import type { IslandEdge, IslandNews, IslandRobot } from '@/types/ipc';
-import { showView } from '@/ui/view';
-import { EYES_OPEN, EYES_SHUT, HEAD } from '@/ui/head';
+import { showView } from '@/lib/page';
+import { EYES_OPEN, EYES_SHUT, HEAD } from '@/icons/head';
 import markup from './island.html?raw';
-import '@/ui/theme.css';
+import '@/theme/theme.css';
+import '@/theme/base.css';
+import '@/theme/dark.css';
 import './island.css';
 import * as ipc from '@/ipc';
 
@@ -17,7 +21,6 @@ showView(markup, { title: 'C-Bot robots' });
   // (island_size), so opening it never resizes the window (that flickers); main lets clicks
   // through the see-through rest of it, and hovers by where the strip is (island_box).
   // Updates change what's there in place: rebuilt, the rings would jump and hovers flicker.
-  const $ = (s: string) => document.querySelector<HTMLElement>(s)!;
   const body = document.body;
   const box = $('#island');
   const layers = { rest: $('#rest'), panel: $('#panel'), toast: $('#toast') };
@@ -44,17 +47,13 @@ showView(markup, { title: 'C-Bot robots' });
   const elapsed = (since: number | null) => {
     if (!since) return '';
     const s = Math.max(0, Math.round((Date.now() - since) / 1000));
-    return s < 3600 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+    return s < 3600
+      ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+      : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
   };
   const setText = (e: HTMLElement, text: string) => {
     if (e.textContent !== text) e.textContent = text;
   };
-  function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text) e.textContent = text;
-    return e;
-  }
 
   // ------------------------------------------------------------ faces
 
@@ -71,7 +70,7 @@ showView(markup, { title: 'C-Bot robots' });
     const sleepy = asleep(r) ? '1' : '0';
     if (f.dataset.sleepy !== sleepy) {
       f.dataset.sleepy = sleepy;
-      f.firstElementChild!.innerHTML = HEAD + (asleep(r) ? EYES_SHUT : EYES_OPEN);
+      $('svg', f).innerHTML = HEAD + (asleep(r) ? EYES_SHUT : EYES_OPEN);
     }
     const color = r.color || '#5ac8fa';
     if (f.dataset.color !== color) {
@@ -88,11 +87,19 @@ showView(markup, { title: 'C-Bot robots' });
 
   // One element per robot, in the robots' order; nodes only move when the order does
   // (taken out and put back, their animations would start over).
-  function keep<T extends { el: HTMLElement }>(parent: HTMLElement, made: Map<string, T>, make: (r: IslandRobot) => T, paint: (t: T, r: IslandRobot) => void) {
+  function keep<T extends { el: HTMLElement }>(
+    parent: HTMLElement,
+    made: Map<string, T>,
+    make: (r: IslandRobot) => T,
+    paint: (t: T, r: IslandRobot) => void,
+  ) {
     for (const id of [...made.keys()]) if (!byId(id)) made.delete(id);
     const want = robots.map((r) => {
       let t = made.get(r.id);
-      if (!t) made.set(r.id, (t = make(r)));
+      if (!t) {
+        t = make(r);
+        made.set(r.id, t);
+      }
       paint(t, r);
       return t.el;
     });
@@ -114,14 +121,20 @@ showView(markup, { title: 'C-Bot robots' });
 
   const restFaces = new Map<string, { el: HTMLElement }>();
   function renderRest() {
-    keep($('#faces'), restFaces, (r) => ({ el: face(r) }), (t, r) => paintFace(t.el, r));
+    keep(
+      $('#faces'),
+      restFaces,
+      (r) => ({ el: face(r) }),
+      (t, r) => paintFace(t.el, r),
+    );
     const t = $('#rest-text');
     if (target !== 'off') {
       t.className = 'drop';
       return setText(t, target === 'over' ? 'Let go to send it away' : 'Drop here to send away');
     }
     // a robot that's away and at work (or waiting on you) gets the line to itself
-    const news = robots.find((r) => r.away && !r.closed && r.asking) || robots.find((r) => r.away && !r.closed && r.busy);
+    const news =
+      robots.find((r) => r.away && !r.closed && r.asking) || robots.find((r) => r.away && !r.closed && r.busy);
     t.className = news ? `ticker${news.asking ? ' asking' : ''}` : '';
     if (news) {
       if (!t.querySelector('b')) t.replaceChildren(el('b'), el('span'), el('span', 'time'));
@@ -195,13 +208,38 @@ showView(markup, { title: 'C-Bot robots' });
   // button (none: just ✕); dot: what its face keeps till you look; robot: news of the
   // robot's own work, gone once it's back on the desk (the rest is for you, robot or not).
   type Kind = IslandNews['kind'];
-  const KINDS: Record<Kind, { title: (name: string, text: string) => string; text: (name: string, text: string) => string; go?: string; no?: string; waits?: boolean; dot?: boolean; robot?: boolean }> = {
+  const KINDS: Record<
+    Kind,
+    {
+      title: (name: string, text: string) => string;
+      text: (name: string, text: string) => string;
+      go?: string;
+      no?: string;
+      waits?: boolean;
+      dot?: boolean;
+      robot?: boolean;
+    }
+  > = {
     done: { title: (n) => `${n} finished`, text: (_, t) => t, go: 'Bring out', dot: true, robot: true },
     error: { title: (n) => `${n} hit a snag`, text: (_, t) => t, go: 'Bring out', dot: true, robot: true },
-    ask: { title: (n) => `${n} needs you`, text: (_, t) => t, go: 'Answer', no: 'Later', waits: true, dot: true, robot: true },
+    ask: {
+      title: (n) => `${n} needs you`,
+      text: (_, t) => t,
+      go: 'Answer',
+      no: 'Later',
+      waits: true,
+      dot: true,
+      robot: true,
+    },
     word: { title: (n) => `💭 ${n} dreamt of a word`, text: (_, t) => `“${t}” (its card is open beside me)` },
     quiz: { title: (n) => `🃏 ${n} is quizzing you`, text: (_, t) => `Do you remember “${t}”? The card is beside me.` },
-    notes: { title: (_, t) => `📒 ${t}`, text: (n) => `${n} is holding up your notes.`, go: 'Open', no: 'Later', waits: true },
+    notes: {
+      title: (_, t) => `📒 ${t}`,
+      text: (n) => `${n} is holding up your notes.`,
+      go: 'Open',
+      no: 'Later',
+      waits: true,
+    },
   };
   const ALL_KINDS = Object.keys(KINDS).map((k) => `kind-${k}`);
   const waits = (t: Toast | null) => !!t && !!KINDS[t.kind].waits;
@@ -245,7 +283,8 @@ showView(markup, { title: 'C-Bot robots' });
     if (!r?.away) return; // (out on the desk: its own bubble says it)
     if (KINDS[n.kind].dot && (n.kind === 'ask' || dots.get(n.id) !== 'ask')) dots.set(n.id, n.kind);
     // one toast per robot and kind waiting; the ones that wait for you jump the queue
-    for (let i = queue.length - 1; i >= 0; i--) if (queue[i].id === n.id && (queue[i].kind === n.kind || KINDS[n.kind].robot)) queue.splice(i, 1);
+    for (let i = queue.length - 1; i >= 0; i--)
+      if (queue[i].id === n.id && (queue[i].kind === n.kind || KINDS[n.kind].robot)) queue.splice(i, 1);
     if (KINDS[n.kind].waits) queue.unshift(n);
     else queue.push(n);
     if (toast?.id === n.id && toast.kind === n.kind) {
@@ -257,8 +296,10 @@ showView(markup, { title: 'C-Bot robots' });
   }
 
   function nextToast() {
-    if (toast || dragging || target !== 'off' || mode === 'panel' || !queue.length) return;
-    toast = queue.shift()!;
+    if (toast || dragging || target !== 'off' || mode === 'panel') return;
+    const next = queue.shift();
+    if (!next) return;
+    toast = next;
     renderToast();
     setMode('toast');
     if (!waits(toast)) startCountdown();
@@ -332,7 +373,12 @@ showView(markup, { title: 'C-Bot robots' });
       ipc.islandSize(W, H);
     }
     // where the strip ends up in it (body's flex puts it there: island.css)
-    const at = [edge === 'left' ? 0 : edge === 'right' ? W - w : (W - w) / 2, edge === 'top' ? 0 : edge === 'bottom' ? H - h : (H - h) / 2, w, h].map(Math.round);
+    const at = [
+      edge === 'left' ? 0 : edge === 'right' ? W - w : (W - w) / 2,
+      edge === 'top' ? 0 : edge === 'bottom' ? H - h : (H - h) / 2,
+      w,
+      h,
+    ].map(Math.round);
     if (at.join() !== hit) {
       hit = at.join();
       ipc.islandBox(at[0], at[1], at[2], at[3]);
@@ -383,24 +429,26 @@ showView(markup, { title: 'C-Bot robots' });
   });
 
   // press and hold (or press and pull) anywhere but a button: main moves it from there
-  let press: { x: number; y: number; timer: number } | null = null;
-  box.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || (e.target as Element).closest('button')) return;
-    press = { x: e.screenX, y: e.screenY, timer: window.setTimeout(lift, HOLD) };
-    box.setPointerCapture(e.pointerId);
-  });
-  box.addEventListener('pointermove', (e) => {
-    if (press && !dragging && Math.hypot(e.screenX - press.x, e.screenY - press.y) > 6) lift();
-  });
-  const letGo = () => {
-    const was = press;
-    if (was) clearTimeout(was.timer);
-    press = null;
-    if (dragging) ipc.islandDrag('end'); // (main may have seen it first: island:edge says)
-    else if (was && mode === 'rest') setMode('panel'); // a click opens it too
-  };
-  box.addEventListener('pointerup', letGo);
-  box.addEventListener('pointercancel', letGo);
+  let press: { timer: number } | null = null;
+  onDrag(
+    box,
+    (e) => {
+      if ((e.target as Element).closest('button')) return;
+      press = { timer: window.setTimeout(lift, HOLD) };
+      return {
+        begin: lift,
+        end: ({ letGo }) => {
+          const was = press;
+          if (was) clearTimeout(was.timer);
+          press = null;
+          if (dragging)
+            ipc.islandDrag('end'); // (main may have seen it first: island:edge says)
+          else if (was && letGo && mode === 'rest') setMode('panel'); // a click opens it too
+        },
+      };
+    },
+    { threshold: 6 },
+  );
   function lift() {
     if (!press || dragging) return;
     clearTimeout(press.timer);
@@ -456,7 +504,11 @@ showView(markup, { title: 'C-Bot robots' });
     for (const r of robots) if (!r.asking && dots.get(r.id) === 'ask') dots.delete(r.id); // (answered)
     if (toast) {
       const r = byId(toast.id);
-      if (!r || (KINDS[toast.kind].robot && !r.away) || (toast.kind === 'ask' && !r.asking)) return endToast(), render();
+      if (!r || (KINDS[toast.kind].robot && !r.away) || (toast.kind === 'ask' && !r.asking)) {
+        endToast();
+        render();
+        return;
+      }
     }
     render();
   });

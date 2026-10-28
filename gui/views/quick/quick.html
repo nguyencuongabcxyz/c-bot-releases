@@ -2,16 +2,16 @@
   <header>
     <h1 data-icon="sparkles">Quick actions</h1>
     <span id="source" class="source" hidden></span>
-    <button id="btn-close" class="icon-btn" title="Close (Esc)" data-icon="x"></button>
+    <button id="btn-close" type="button" class="icon-btn" title="Close (Esc)" data-icon="x"></button>
   </header>
 
   <!-- what to do with the text -->
-  <nav id="actions" role="tablist" aria-label="Action">
-    <button role="tab" data-action="refine" data-icon="edit">Refine text</button>
-    <button role="tab" data-action="translate" data-icon="globe">Translate</button>
-    <button role="tab" data-action="explain" data-icon="help">Explain</button>
-    <button role="tab" data-action="summarise" data-icon="plan">Summarise</button>
-  </nav>
+  <div id="actions" role="tablist" aria-label="Action">
+    <button type="button" role="tab" data-action="refine" data-icon="edit">Refine text</button>
+    <button type="button" role="tab" data-action="translate" data-icon="globe">Translate</button>
+    <button type="button" role="tab" data-action="explain" data-icon="help">Explain</button>
+    <button type="button" role="tab" data-action="summarise" data-icon="plan">Summarise</button>
+  </div>
 
   <!-- the text you selected (you can edit it, or paste some) -->
   <section id="input">
@@ -26,13 +26,15 @@
       <input id="custom" type="text" placeholder="Your own instruction (optional): e.g. sound more confident" aria-label="Your own instruction" />
     </div>
     <div class="opt" data-for="translate">
-      <div class="dir"><span id="dir-from"></span><button id="btn-swap" class="icon-btn" title="Translate the other way" data-icon="refresh"></button><span id="dir-to"></span></div>
+      <div class="dir"><span id="dir-from"></span><button id="btn-swap" type="button" class="icon-btn" title="Translate the other way" data-icon="refresh"></button><span id="dir-to"></span></div>
     </div>
     <div class="opt" data-for="explain summarise">
       <div class="chips" id="langs" role="radiogroup" aria-label="Answer in">
         <span class="legend">Answer in</span>
-        <button data-lang="en" role="radio">English</button>
-        <button data-lang="vi" role="radio">Tiếng Việt</button>
+        <!-- biome-ignore lint/a11y/useSemanticElements: a chip, drawn and toggled as a button -->
+        <button type="button" data-lang="en" role="radio" aria-checked="false">English</button>
+        <!-- biome-ignore lint/a11y/useSemanticElements: a chip, drawn and toggled as a button -->
+        <button type="button" data-lang="vi" role="radio" aria-checked="false">Tiếng Việt</button>
       </div>
     </div>
   </section>
@@ -40,6 +42,7 @@
   <!-- the answer, as it streams in -->
   <section id="result">
     <div class="result-head"><span class="legend" id="result-label">Result</span><span id="status" class="status"></span></div>
+    <!-- biome-ignore lint/a11y/noNoninteractiveTabindex: the answer scrolls, and quick.ts focuses it so the keys scroll it -->
     <div id="out" class="out" tabindex="0"></div>
     <details id="changes" hidden>
       <summary><span class="legend">What changed</span> <span id="changes-n" class="n"></span></summary>
@@ -48,9 +51,9 @@
   </section>
 
   <footer>
-    <button id="btn-replace" class="primary" title="Put it back over your selection (Ctrl+Enter)" data-icon="check">Replace</button>
-    <button id="btn-copy" title="Copy the result (Ctrl+Shift+C)" data-icon="copy">Copy</button>
-    <button id="btn-again" title="Run it again" data-icon="refresh">Again</button>
-    <button id="btn-ask" title="Talk it over with the robot in a chat" data-icon="chat">Ask more</button>
+    <button id="btn-replace" type="button" class="primary" title="Put it back over your selection (Ctrl+Enter)" data-icon="check">Replace</button>
+    <button id="btn-copy" type="button" title="Copy the result (Ctrl+Shift+C)" data-icon="copy">Copy</button>
+    <button id="btn-again" type="button" title="Run it again" data-icon="refresh">Again</button>
+    <button id="btn-ask" type="button" title="Talk it over with the robot in a chat" data-icon="chat">Ask more</button>
   </footer>
 </main>

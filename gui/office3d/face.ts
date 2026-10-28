@@ -5,7 +5,13 @@ export const FACE_W = 256;
 export const FACE_H = 176;
 
 // eye colour follows the robot's brain (model)
-const EYES: Record<string, string> = { default: '#7ff3ff', opus: '#c4a8ff', fable: '#ffd34d', sonnet: '#7ff3ff', haiku: '#7bed9f' };
+const EYES: Record<string, string> = {
+  default: '#7ff3ff',
+  opus: '#c4a8ff',
+  fable: '#ffd34d',
+  sonnet: '#7ff3ff',
+  haiku: '#7bed9f',
+};
 
 /** What the face shows: eyes 'open' | 'closed' | 'happy' | 'dizzy' | 'flat'; mouth 'smile' | 'talk' | 'o' | 'wide' | 'chomp' | 'flat'. */
 export type FaceState = {
@@ -88,8 +94,10 @@ export function drawFace(ctx: CanvasRenderingContext2D, f: FaceState) {
       ctx.shadowColor = '#ff8f8f';
       ctx.lineWidth = 8;
       ctx.beginPath();
-      ctx.moveTo(ex[0] - 24, ey - 30); ctx.lineTo(ex[0] + 18, ey - 20);
-      ctx.moveTo(ex[1] + 24, ey - 30); ctx.lineTo(ex[1] - 18, ey - 20);
+      ctx.moveTo(ex[0] - 24, ey - 30);
+      ctx.lineTo(ex[0] + 18, ey - 20);
+      ctx.moveTo(ex[1] + 24, ey - 30);
+      ctx.lineTo(ex[1] - 18, ey - 20);
       ctx.stroke();
       break;
     default: {

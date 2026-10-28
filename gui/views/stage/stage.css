@@ -1,17 +1,9 @@
 /* The stage's bar: always dark, whatever the theme (like the robot island). The pill while
-   picking, the bar along the bottom of the screen on stage; body.mode-* says which. */
+   picking, the bar along the bottom of the screen on stage; body.mode-* says which. The colours
+   it shares with the island: @/theme/dark.css. */
 :root {
-  --ink: #0b0f1a;
-  --slot: #1c2438;
-  --line: #273049;
-  --fg: #e6edf7;
-  --dim: #94a3b8;
-  --busy: #fbbf24;
-  --ask: #fb7185;
   --hot: #ff5fa2;
 }
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
 body { font: 12px/1.35 var(--font-ui); color: var(--fg); user-select: none; -webkit-user-select: none; }
 button { font: inherit; color: inherit; cursor: pointer; }

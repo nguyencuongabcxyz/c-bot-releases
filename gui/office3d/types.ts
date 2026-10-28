@@ -7,6 +7,7 @@ import type { CanvasTex } from './materials';
 import type { DrawFace } from './face';
 import type { Theme } from './themes';
 import type { Emit } from './antics/types';
+import type { OfficeData } from './protocol';
 
 export type { CanvasTex } from './materials';
 export type { DrawFace, FaceState } from './face';
@@ -73,7 +74,14 @@ export type Board = {
   stickyAt(id: string | undefined, out?: THREE.Vector3): THREE.Vector3 | null;
   update(t: number, dt: number): void;
   dispose(): void;
-  _parts: { body: THREE.Group; tilt: THREE.Group; face: THREE.Group; badge: THREE.Group; more: THREE.Group; allClear: THREE.Group };
+  _parts: {
+    body: THREE.Group;
+    tilt: THREE.Group;
+    face: THREE.Group;
+    badge: THREE.Group;
+    more: THREE.Group;
+    allClear: THREE.Group;
+  };
 };
 
 /** The office round the robot (scene buildOffice): desk, chair, monitor, mug, lamp… */
@@ -83,7 +91,11 @@ export type OfficeSet = {
   seatHeight: number;
   desk: { top: THREE.Group; buttons: THREE.Object3D; drawPanel: (cm?: number, pressed?: string) => void };
   chair: { lift(by: number): void };
-  screen: CanvasTex & { material: THREE.MeshBasicMaterial; light: THREE.PointLight; led: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial> };
+  screen: CanvasTex & {
+    material: THREE.MeshBasicMaterial;
+    light: THREE.PointLight;
+    led: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  };
   lamp: { group: THREE.Group; light: THREE.PointLight; bulb: THREE.MeshBasicMaterial };
   wordBox: { group: THREE.Group; setCount: (n: number) => void };
   stickies: Stickies;
@@ -101,7 +113,7 @@ export type BedFrame = {
   t: number;
   dt: number;
   pose: string;
-  d: { sleepStyle?: string }; // the page's state (data-sleep-style: 'chair' | 'floor')
+  d: Pick<OfficeData, 'sleepStyle'>; // the page's state (protocol.ts)
   robot: Rig;
   body: string;
   set: OfficeSet;

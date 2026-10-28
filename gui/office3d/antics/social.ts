@@ -1,25 +1,9 @@
+import { clamp, seg, wrap } from '@/office3d/core/math';
+import { HAND, armOf, at, blend, handAt } from './common';
 import * as THREE from 'three';
 import { LAYOUT } from '@/office3d/scene';
 import { buildPaperPlane } from '@/office3d/plane3d';
-import type { Antic, AnticCtx, AnticEndCtx, AnticPose } from './types';
-
-// Robots noticing each other (main social.js decides when; robot.js plays these):
-//   turn-to   2.6 s  c.text 'L' | 'R': turns in its chair towards the robot on that side of the
-//                    screen and looks over (robot.js adds the wave or the cheer pose on top)
-//   listen    10 s   c.text 'L' | 'R': a visitor is chatting beside its desk: it turns that
-//                    way and nods along now and then; robot.js stops it when the visitor goes
-//   clap-at   2.2 s  c.text 'L' | 'R': turns a little that way and claps (hands meet at 0.35,
-//                    0.75, 1.15, 1.55; robot.js plays the claps)
-//   plane-throw 1.8 s  c.text 'L' | 'R': turns that way with a paper plane in its hand, winds
-//                    up and throws it at 1.0 (the plane leaves its hand: main's plane window
-//                    flies it across the screen from there)
-//   plane-catch 2.6 s  c.text 'L' | 'R': a hand up that way, catches the plane at 0.3, unfolds
-//                    it in front of its face and reads it 0.6-2.1 (robot.js says what's on it)
-//   plane-read  2.6 s  the plane that landed on its desk: turns back to pick it up (0.2-0.6, the
-//                    desk's plane goes then), reads it 0.8-2.1
-// The shared rig only (yaw, head, arms), so every body does them.
-
-const HAND = 0.24; // how far down the forearm the hand is (as c.hand() has it)
+import type { Antic, AnticCtx, AnticEndCtx } from './types';
 // screen-left / screen-right in office space (the camera looks in from +x +z: index.js CAMERA),
 // pulled a little towards the camera so it turns to the neighbour rather than side-on
 const SIDE = { L: new THREE.Vector3(-0.79, 0, 0.61), R: new THREE.Vector3(0.79, 0, -0.61) };
@@ -28,15 +12,6 @@ const TO_CAMERA = new THREE.Vector3(0.62, 0, 0.8).normalize();
 type Side = 'L' | 'R';
 type PlaneRun = { plane?: THREE.Group | null }; // the plane antics' own scratch (c.run)
 
-const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const seg = (s: number, a: number, b: number) => smooth((s - a) / (b - a));
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
-function blend(A: AnticPose, key: 'armL' | 'armR' | 'head', target: readonly number[], w: number) {
-  for (let i = 0; i < 3; i++) A[key][i] = mix(A[key][i], target[i], w);
-}
-
 const V1 = new THREE.Vector3();
 const AIM = new THREE.Vector3();
 const QL = [0, 0, 0];
@@ -44,13 +19,12 @@ const QR = [0, 0, 0];
 
 // how far to swivel (relative to now) to face the robot on that side
 function turnTowards(c: AnticCtx, side: string, most: number) {
-  const p = V1.copy(LAYOUT.chair).addScaledVector(SIDE[side === 'L' ? 'L' : 'R'], 3).addScaledVector(TO_CAMERA, 1.6);
+  const p = V1.copy(LAYOUT.chair)
+    .addScaledVector(SIDE[side === 'L' ? 'L' : 'R'], 3)
+    .addScaledVector(TO_CAMERA, 1.6);
   const want = Math.atan2(p.x - LAYOUT.chair.x, p.z - LAYOUT.chair.z);
   return clamp(wrap(want - c.curYaw), -most, most);
 }
-
-const at = (c: AnticCtx, obj: THREE.Object3D, x: number, y: number, z: number, out: THREE.Vector3) => c.set.office.worldToLocal(obj.localToWorld(out.set(x, y, z)));
-const armOf = (c: AnticCtx, side: Side) => c.robot.arms[side === 'L' ? 'armL' : 'armR'];
 // arm angles that put a hand on a point (office space), as awake.js / notes.js
 function aim(c: AnticCtx, side: Side, p: THREE.Vector3, out: number[]) {
   const arm = armOf(c, side);
@@ -122,8 +96,7 @@ const clapAt: Antic = {
 
 // the arm on that side of the screen once it's turned that way
 const armFor = (side: Side) => (side === 'L' ? 'L' : 'R');
-const PLANE_SIZE = 1.7; // (held up close, it's drawn bigger than the one on the desk)
-const handAt = (c: AnticCtx, armSide: Side, out: THREE.Vector3) => at(c, armOf(c, armSide).elbow, 0, -HAND, 0, out);
+const PLANE_SIZE = 1.7;
 // a plane in its hand (made the first time it's asked for, freed in end())
 function planeIn(c: AnticCtx<PlaneRun>) {
   if (!c.run.plane) {
@@ -201,7 +174,7 @@ const planeCatch: Antic<PlaneRun> = {
       pl.scale.setScalar(PLANE_SIZE * (s > 2.2 ? Math.max(0.001, (2.35 - s) / 0.15) : 1));
       // unfolded to read: flat, facing it
       const open = seg(s, 0.6, 0.8);
-      pl.rotation.set(-Math.PI / 2 * open, c.curYaw + A.yaw, 0);
+      pl.rotation.set((-Math.PI / 2) * open, c.curYaw + A.yaw, 0);
     } else if (s >= 2.35) dropPlane(c);
   },
   end: dropPlane,
@@ -232,10 +205,17 @@ const planeRead: Antic<PlaneRun> = {
       if (s < 0.7) handAt(c, 'R', pl.position);
       else at(c, c.robot.torso, 0, READ_AT.y, READ_AT.z + 0.04, pl.position);
       pl.scale.setScalar(PLANE_SIZE * (s > 2.2 ? Math.max(0.001, (2.35 - s) / 0.15) : 1));
-      pl.rotation.set(-Math.PI / 2 * seg(s, 0.7, 0.9), c.curYaw + A.yaw, 0);
+      pl.rotation.set((-Math.PI / 2) * seg(s, 0.7, 0.9), c.curYaw + A.yaw, 0);
     } else if (s >= 2.35) dropPlane(c);
   },
   end: dropPlane,
 };
 
-export const SOCIAL: Record<string, Antic> = { 'turn-to': turnTo, listen, 'clap-at': clapAt, 'plane-throw': planeThrow, 'plane-catch': planeCatch, 'plane-read': planeRead };
+export const SOCIAL: Record<string, Antic> = {
+  'turn-to': turnTo,
+  listen,
+  'clap-at': clapAt,
+  'plane-throw': planeThrow,
+  'plane-catch': planeCatch,
+  'plane-read': planeRead,
+};

@@ -1,4 +1,4 @@
-//! Shells in the robot's folder, in a drawer of its chat (gui/views/robot/chat/shell.ts): one
+//! Shells in the robot's folder, in a drawer of its chat (gui/features/workbench/shell/shells.ts): one
 //! per tab there, each in a pseudoconsole (ConPTY, via portable-pty), and each belonging to a
 //! conversation (the chat tab it was opened in). What they print goes to the page as
 //! robot:shell events, what you type comes back with robot_shell_write. They go with their

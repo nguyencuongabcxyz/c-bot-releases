@@ -1,6 +1,4 @@
-/* The robot group chat. Colours, fonts and icons: ../ui/theme.css and ../ui/icons.js. */
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
+/* The robot group chat. Colours, fonts and icons: @/theme/theme.css and @/icons/icons.ts. */
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
 body { font: 13.5px/1.45 var(--font-ui); color: var(--fg); padding: 8px 8px 14px; }
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -12,7 +10,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0 14px 12px; overflow: hidden;
   animation: pop-in 0.22s ease-out;
 }
-@keyframes pop-in { from { transform: scale(0.97) translateY(6px); opacity: 0; } }
 
 /* the title bar is where you drag the window from */
 header {

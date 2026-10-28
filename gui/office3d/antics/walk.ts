@@ -1,8 +1,19 @@
+import { bump, mix, segLinear, smooth, wrap } from '@/office3d/core/math';
 import * as THREE from 'three';
 import { LAYOUT } from '@/office3d/scene';
 import { FLOOR } from '@/office3d/bed';
-import { legRig, newPose, mixPose, standPose, stridePose, hopPose, sleepwalkPose, AWAY_TURN } from '@/office3d/walker3d';
-import type { LegRig, WalkPose } from '@/office3d/walker3d';
+import { AWAY_TURN } from '@/office3d/walker3d';
+import {
+  hopPose,
+  type LegRig,
+  legRig,
+  mixPose,
+  newPose,
+  sleepwalkPose,
+  standPose,
+  stridePose,
+  type WalkPose,
+} from '@/office3d/walkpose';
 import type { Antic, AnticCtx, TickCtx } from './types';
 
 // Out for a walk: it gets up and leaves the desk (to stroll about the user's screen in
@@ -25,18 +36,18 @@ import type { Antic, AnticCtx, TickCtx } from './types';
 
 type Span = [number, number]; // [from, to] seconds
 const OUT: { up: number; turn: Span; walk: number } = { up: 0.5, turn: [0.4, 0.7], walk: 0.7 };
-const IN: Record<'walk' | 'turn' | 'sit' | 'settle', Span> = { walk: [0.3, 0.75], turn: [0.6, 0.85], sit: [0.75, 1.0], settle: [1.0, 1.4] };
+const IN: Record<'walk' | 'turn' | 'sit' | 'settle', Span> = {
+  walk: [0.3, 0.75],
+  turn: [0.6, 0.85],
+  sit: [0.75, 1.0],
+  settle: [1.0, 1.4],
+};
 
 // The camera looks at the desk along CAMERA.dir (index.js): its right, along the floor
 const RIGHT = new THREE.Vector3(0.8, 0, -0.62).normalize();
 const ENTRY = 0.72; // and where it pops back in (all of it in the window)
 const FACE = 1.0; // walking sideways it turns its face this far back to you (a 3/4 view)
 
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const seg = (s: number, a: number, b: number) => Math.min(1, Math.max(0, (s - a) / (b - a)));
-const bump = (s: number, a: number, b: number) => (s > a && s < b ? Math.sin((Math.PI * (s - a)) / (b - a)) : 0);
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const HALF_PI = Math.PI / 2;
 const set3 = (a: number[], x: number, y: number, z: number) => {
   a[0] = x;
@@ -182,10 +193,10 @@ const stepout: Antic<Partial<StepoutPlaced>> = {
     const run = c.run as WalkStarted; // (set up now: start())
     const P = run.pose;
     const rig = run.rig;
-    const up = smooth(seg(s, 0, OUT.up));
+    const up = smooth(segLinear(s, 0, OUT.up));
     // walking off: awake a brisk walk; asleep a slow shuffle, arms out (the walker's own paces)
     const w = s - OUT.walk;
-    const stride = smooth(seg(s, OUT.walk - 0.05, OUT.walk + 0.12));
+    const stride = smooth(segLinear(s, OUT.walk - 0.05, OUT.walk + 0.12));
     if (c.asleep) sleepwalkPose(P, rig, Math.max(0, w) * Math.PI * 2 * 1.0, c.t);
     else if (rig.plush) hopPose(P, rig, Math.max(0, w) * Math.PI * 2);
     else stridePose(P, rig, Math.max(0, w) * Math.PI * 2);
@@ -198,7 +209,7 @@ const stepout: Antic<Partial<StepoutPlaced>> = {
     A.lean = mix(A.lean, P.lean, up);
     for (let i = 0; i < 3; i++) A.head[i] = mix(A.head[i], P.head[i], up);
     // the empty chair turns as it goes, to how it'll stand while it's out
-    A.yaw += (run.awayYaw - c.curYaw) * smooth(seg(s, OUT.up, OUT.walk + 0.7));
+    A.yaw += (run.awayYaw - c.curYaw) * smooth(segLinear(s, OUT.up, OUT.walk + 0.7));
   },
 
   place(c) {
@@ -213,11 +224,11 @@ const stepout: Antic<Partial<StepoutPlaced>> = {
       run.yaw0 = c.camYaw;
       run.walkYaw = Math.atan2(RIGHT.x, RIGHT.z);
     }
-    const up = smooth(seg(s, 0, OUT.up));
+    const up = smooth(segLinear(s, 0, OUT.up));
     // where it got up: from here it's the walker window that moves
     run.at.copy(run.spot);
     // turn to screen-right, the face still turned a little back your way
-    const yaw = run.yaw0 + wrap(run.walkYaw - FACE * 0.55 - run.yaw0) * smooth(seg(s, ...OUT.turn));
+    const yaw = run.yaw0 + wrap(run.walkYaw - FACE * 0.55 - run.yaw0) * smooth(segLinear(s, ...OUT.turn));
     const lift = run.pose.y * HS.y + 0.08 * bump(s, 0.05, OUT.up) * HS.y;
     poseLimbs(c, run.pose, up);
     placeRoot(c, up, run.at, yaw, lift, 1);
@@ -225,7 +236,7 @@ const stepout: Antic<Partial<StepoutPlaced>> = {
     if (run.floor) {
       const props = c.bed?.props(c.set);
       if (props) props.blanket.scale.y *= 1 - 0.75 * up;
-      holdChair(c, 1 - smooth(seg(s, 0.25, OUT.walk + 0.2)));
+      holdChair(c, 1 - smooth(segLinear(s, 0.25, OUT.walk + 0.2)));
     }
   },
 
@@ -258,7 +269,9 @@ const stepin: Antic<Partial<StepinPlaced>> = {
     const w = s - IN.walk[0];
     if (c.asleep) sleepwalkPose(P, rig, s * Math.PI * 2 * 1.0, c.t);
     else {
-      const walking = smooth(seg(s, IN.walk[0] - 0.05, IN.walk[0] + 0.1)) * (1 - smooth(seg(s, IN.walk[1] - 0.05, IN.walk[1] + 0.1)));
+      const walking =
+        smooth(segLinear(s, IN.walk[0] - 0.05, IN.walk[0] + 0.1)) *
+        (1 - smooth(segLinear(s, IN.walk[1] - 0.05, IN.walk[1] + 0.1)));
       if (rig.plush) hopPose(P, rig, Math.max(0, w) * Math.PI * 2 * 1.8);
       else stridePose(P, rig, Math.max(0, w) * Math.PI * 2 * 1.8);
       standPose(run.stand, rig, c.t);
@@ -267,7 +280,7 @@ const stepin: Antic<Partial<StepinPlaced>> = {
       P.kneeL += 0.6 * bump(s, IN.sit[0], IN.sit[1]);
       P.kneeR += 0.6 * bump(s, IN.sit[0], IN.sit[1]);
     }
-    const out = 1 - smooth(seg(s, ...IN.sit)); // how much it's still out of the chair
+    const out = 1 - smooth(segLinear(s, ...IN.sit)); // how much it's still out of the chair
     A.lean = mix(A.lean, P.lean, out);
     for (let i = 0; i < 3; i++) A.head[i] = mix(A.head[i], P.head[i], out);
   },
@@ -281,7 +294,9 @@ const stepin: Antic<Partial<StepinPlaced>> = {
       run.set = true;
       spotFrom(c, run.spot, run.far, ENTRY);
       // put down somewhere on the desk's floor: it walks to its chair from there (not too far off)
-      const [x, z] = String(c.text || '').split(',').map(Number);
+      const [x, z] = String(c.text || '')
+        .split(',')
+        .map(Number);
       if (Number.isFinite(x) && Number.isFinite(z)) {
         run.far.set(x, 0, z).sub(run.spot);
         run.far.clampLength(0, 1.2).add(run.spot);
@@ -291,30 +306,33 @@ const stepin: Antic<Partial<StepinPlaced>> = {
     // back into bed: the chair waits where it is till it's at the bed, then rolls aside;
     // the blanket's tucked back over once it's lying down
     if (run.floor) {
-      holdChair(c, smooth(seg(s, IN.sit[0] - 0.1, IN.settle[0] + 0.1)));
+      holdChair(c, smooth(segLinear(s, IN.sit[0] - 0.1, IN.settle[0] + 0.1)));
       const props = c.bed?.props(c.set);
       if (props) {
-        const tuck = smooth(seg(s, IN.sit[1] - 0.05, IN.settle[1] - 0.05));
+        const tuck = smooth(segLinear(s, IN.sit[1] - 0.05, IN.settle[1] - 0.05));
         props.blanket.position.y = 0.45 * (1 - tuck);
         props.blanket.scale.y *= Math.max(0.001, tuck);
         props.blanket.visible = tuck > 0.01;
         props.pillow.scale.setScalar(1);
       }
     }
-    const out = 1 - smooth(seg(s, ...IN.sit));
-    const go = smooth(seg(s, ...IN.walk));
+    const out = 1 - smooth(segLinear(s, ...IN.sit));
+    const go = smooth(segLinear(s, ...IN.walk));
     run.at.lerpVectors(run.far, run.spot, go);
     // facing back towards the chair (3/4, its face your way), then round to sit down
     const sitYaw = run.floor ? c.camYaw : yawOf(HQ) - yawOf(c.set.office.getWorldQuaternion(OQ));
     const walkYaw = run.walkYaw + FACE * 0.55;
-    const yaw = walkYaw + wrap(sitYaw - walkYaw) * smooth(seg(s, ...IN.turn));
+    const yaw = walkYaw + wrap(sitYaw - walkYaw) * smooth(segLinear(s, ...IN.turn));
     // just put down: a little squash as it lands
     const k = 1;
     const land = s < 0.3 ? 0.18 * Math.exp(-s * 12) * Math.cos(s * 22) : 0;
     // the hop into the seat (or flop into bed), then a bounce settling down
     const hop = 0.16 * bump(s, IN.sit[0], IN.sit[1] + 0.05) * HS.y;
     const u = s - IN.settle[0];
-    const settle = u > 0 ? 0.13 * Math.exp(-u * 7) * Math.sin(u * 20) * (1 - smooth(seg(s, IN.settle[1] - 0.15, IN.settle[1]))) : 0;
+    const settle =
+      u > 0
+        ? 0.13 * Math.exp(-u * 7) * Math.sin(u * 20) * (1 - smooth(segLinear(s, IN.settle[1] - 0.15, IN.settle[1])))
+        : 0;
     const lift = run.pose.y * HS.y * k + hop;
     poseLimbs(c, run.pose, out);
     placeRoot(c, out, run.at, yaw, lift, k, settle + land);

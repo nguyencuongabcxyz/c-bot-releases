@@ -1,3 +1,6 @@
+import { ease, mix, smooth, wrap } from '@/office3d/core/math';
+import { mesh } from '@/office3d/core/mesh';
+import { ROBOT_SCALE } from '@/office3d/core/constants';
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { POSES } from './robot3d';
@@ -27,7 +30,14 @@ import type { Kit } from '@/types/model';
 //   onFrame()  after each frame drawn (the page moves the bubbles then)
 
 /** Someone at the table (seat): kit is its parts (JSON, or as an object: kit3d.js). */
-export type MeetingSeat = { id: string; name?: string; color?: string; kit?: string | Kit; acc?: string; theme: string };
+export type MeetingSeat = {
+  id: string;
+  name?: string;
+  color?: string;
+  kit?: string | Kit;
+  acc?: string;
+  theme: string;
+};
 /** What they can be doing (act): anything else is 'idle'. */
 export type MeetingMode = 'idle' | 'typing' | 'talking' | 'summary' | 'agree';
 export type MeetingOptions = { width: number; height: number; onFrame?: () => void };
@@ -60,7 +70,6 @@ type Person = {
   moving?: boolean; // still turning
 };
 
-const ROBOT_SCALE = 0.82;
 const SEAT_Y = 0.46;
 const TABLE = { x: 0, z: 0.25, rx: 1.05, rz: 0.6, h: 0.6 };
 const RING = { rx: 1.7, rz: 1.18 }; // where the chairs stand round the table
@@ -72,15 +81,6 @@ const MOODS: Record<string, Mood> = {
   talking: { pose: 'talking', eyes: 'open', mouth: 'talk' },
   summary: { pose: 'typing', eyes: 'open', mouth: 'flat' },
   agree: { pose: 'idle', eyes: 'happy', mouth: 'smile' },
-};
-const ease = (dt: number, rate: number) => 1 - Math.exp(-dt * rate);
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
-const mesh = (geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  return m;
 };
 
 // ------------------------------------------------------------ the room
@@ -109,9 +109,11 @@ function whiteboardText(ctx: CanvasRenderingContext2D, w: number, h: number, tex
   if (line) lines.push(line);
   if (lines.length > 3) {
     lines.length = 3;
-    lines[2] = lines[2].replace(/\s*\S*$/, '') + '…';
+    lines[2] = `${lines[2].replace(/\s*\S*$/, '')}…`;
   }
-  lines.forEach((l, i) => ctx.fillText(l, 34, 112 + i * 50));
+  lines.forEach((l, i) => {
+    ctx.fillText(l, 34, 112 + i * 50);
+  });
   // a few marker squiggles
   ctx.strokeStyle = '#e5484d';
   ctx.lineWidth = 5;
@@ -150,7 +152,12 @@ function buildRoom() {
   room.add(mesh(new THREE.BoxGeometry(0.95, 0.8, 0.05), toon('#9fb0c8'), -2.1, 1.7, -1.88));
   room.add(mesh(new THREE.PlaneGeometry(0.85, 0.7), glow('#bfe6ff'), -2.1, 1.7, -1.85));
   room.add(mesh(new THREE.CylinderGeometry(0.17, 0.13, 0.32, 16), toon('#c96f4a'), 2.65, 0.16, -1.55));
-  for (const [x, y, z, s] of [[2.65, 0.55, -1.55, 0.26], [2.55, 0.75, -1.5, 0.18], [2.75, 0.72, -1.62, 0.17]]) room.add(mesh(new THREE.SphereGeometry(s, 14, 10), toon('#4caf6e'), x, y, z));
+  for (const [x, y, z, s] of [
+    [2.65, 0.55, -1.55, 0.26],
+    [2.55, 0.75, -1.5, 0.18],
+    [2.75, 0.72, -1.62, 0.17],
+  ])
+    room.add(mesh(new THREE.SphereGeometry(s, 14, 10), toon('#4caf6e'), x, y, z));
   const clock = mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.04, 24), toon('#ffffff'), 2.2, 2.0, -1.88);
   clock.rotation.x = Math.PI / 2;
   room.add(clock);
@@ -163,8 +170,14 @@ function buildRoom() {
   room.add(foot);
   // on the table: a laptop, a coffee pot, notepads
   room.add(mesh(new THREE.BoxGeometry(0.34, 0.02, 0.24), toon('#3a4060'), 0.15, TABLE.h + 0.045, TABLE.z + 0.22));
-  room.add(mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.2, 14), toon('#e5484d'), -0.35, TABLE.h + 0.135, TABLE.z + 0.05));
-  for (const [x, z] of [[-0.1, -0.15], [0.45, -0.1]]) room.add(mesh(new THREE.BoxGeometry(0.16, 0.012, 0.21), toon('#fff2a8'), x, TABLE.h + 0.04, TABLE.z + z));
+  room.add(
+    mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.2, 14), toon('#e5484d'), -0.35, TABLE.h + 0.135, TABLE.z + 0.05),
+  );
+  for (const [x, z] of [
+    [-0.1, -0.15],
+    [0.45, -0.1],
+  ])
+    room.add(mesh(new THREE.BoxGeometry(0.16, 0.012, 0.21), toon('#fff2a8'), x, TABLE.h + 0.04, TABLE.z + z));
   return { room, board };
 }
 
@@ -188,7 +201,13 @@ function buildChair() {
   swivel.add(mesh(new THREE.BoxGeometry(0.58, 0.58, 0.09), seatMat, 0, 0.6, -0.3));
   chair.add(swivel);
   // a soft shadow under it (instead of a shadow map)
-  const blob = mesh(new THREE.CircleGeometry(0.42, 24), noOutline(new THREE.MeshBasicMaterial({ color: '#1d2235', transparent: true, opacity: 0.18, depthWrite: false })), 0, 0.012, 0);
+  const blob = mesh(
+    new THREE.CircleGeometry(0.42, 24),
+    noOutline(new THREE.MeshBasicMaterial({ color: '#1d2235', transparent: true, opacity: 0.18, depthWrite: false })),
+    0,
+    0.012,
+    0,
+  );
   blob.rotation.x = -Math.PI / 2;
   chair.add(blob);
   return { chair, swivel };
@@ -212,7 +231,11 @@ function mount(host: HTMLElement, { width, height, onFrame = () => {} }: Meeting
   renderer.setSize(width, height);
   renderer.setClearColor(0x000000, 0);
   host.appendChild(renderer.domElement);
-  const effect = new OutlineEffect(renderer, { defaultThickness: 0.004, defaultColor: [0.11, 0.13, 0.2], defaultAlpha: 1 });
+  const effect = new OutlineEffect(renderer, {
+    defaultThickness: 0.004,
+    defaultColor: [0.11, 0.13, 0.2],
+    defaultAlpha: 1,
+  });
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(28, width / height, 0.1, 40);
@@ -265,7 +288,15 @@ function mount(host: HTMLElement, { width, height, onFrame = () => {} }: Meeting
         chair.visible = false;
         scene.add(chair);
         // (arriveAt, home and homeYaw: set just below)
-        me = { robot, chair, swivel, mode: 'idle', cur: { yaw: 0, lean: 0, head: [0, 0, 0], armL: [...POSES.idle.armL], armR: [...POSES.idle.armR] }, face: '', blinkAt: 2 + Math.random() * 3 } as Person;
+        me = {
+          robot,
+          chair,
+          swivel,
+          mode: 'idle',
+          cur: { yaw: 0, lean: 0, head: [0, 0, 0], armL: [...POSES.idle.armL], armR: [...POSES.idle.armR] },
+          face: '',
+          blinkAt: 2 + Math.random() * 3,
+        } as Person;
         me.arriveAt = now() + ARRIVE.first + ARRIVE.gap * k++;
         people.set(p.id, me);
       }
@@ -313,10 +344,15 @@ function mount(host: HTMLElement, { width, height, onFrame = () => {} }: Meeting
     const s = smooth(p);
     const from = DOOR;
     // (bowing out towards the back wall, round the table)
-    chair.position.set(mix(from.x, me.home.x, s), 0, mix(from.z, me.home.z, s) - Math.sin(Math.PI * Math.min(1, s)) * 0.45);
+    chair.position.set(
+      mix(from.x, me.home.x, s),
+      0,
+      mix(from.z, me.home.z, s) - Math.sin(Math.PI * Math.min(1, s)) * 0.45,
+    );
     // facing where it rolls, then round to the table; then to whoever's talking
     let want = me.homeYaw;
-    if (focus && focus !== me && focus.home) want = mix(me.homeYaw, Math.atan2(focus.home.x - me.home.x, focus.home.z - me.home.z), 0.65);
+    if (focus && focus !== me && focus.home)
+      want = mix(me.homeYaw, Math.atan2(focus.home.x - me.home.x, focus.home.z - me.home.z), 0.65);
     if (p < 1) want = mix(Math.atan2(me.home.x - from.x, me.home.z - from.z), me.homeYaw, smooth((p - 0.55) / 0.45));
     const turn = wrap(want - me.cur.yaw);
     me.cur.yaw += turn * ease(dt, p < 1 ? 12 : 5);
@@ -340,7 +376,10 @@ function mount(host: HTMLElement, { width, height, onFrame = () => {} }: Meeting
       armR[2] += Math.sin(t * 6.1 + 1) * 0.25;
       armL[0] += Math.sin(t * 4.3 + 2) * 0.12;
     } else if (me.mode === 'summary') armL[2] += Math.sin(t * 14) * 0.12; // (writing)
-    for (const [arm, a] of [[robot.arms.armL, armL], [robot.arms.armR, armR]] as const) {
+    for (const [arm, a] of [
+      [robot.arms.armL, armL],
+      [robot.arms.armR, armR],
+    ] as const) {
       arm.shoulder.rotation.set(a[0], 0, a[1] * arm.side);
       arm.elbow.rotation.x = a[2];
     }
@@ -383,7 +422,7 @@ function mount(host: HTMLElement, { width, height, onFrame = () => {} }: Meeting
     /** Where its head is on the page (CSS px), or null while it isn't in the room yet. */
     headAt(id: string) {
       const me = people.get(id);
-      if (!me || !me.chair.visible) return null;
+      if (!me?.chair.visible) return null;
       V.set(0, (me.robot.headTop ?? 0.6) + 0.12, 0);
       me.robot.head.localToWorld(V);
       V.project(camera);

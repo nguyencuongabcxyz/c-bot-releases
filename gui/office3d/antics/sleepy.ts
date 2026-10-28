@@ -1,3 +1,6 @@
+import { bump, clamp, mix, seg, smooth } from '@/office3d/core/math';
+import { isMesh } from '@/office3d/core/mesh';
+import { HAND, at, headTop, once } from './common';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { toon, canvasTexture, noOutline, roundRect } from '@/office3d/materials';
@@ -14,16 +17,9 @@ import type { Antic, AnticCtx, ParticleKind } from './types';
 //              without waking, an arm swings out and slaps it face-down (2.8), then snuggles back
 // Timings are a contract: robot.js plays sounds and sets the face at the marked moments.
 
-const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const seg = (s: number, a: number, b: number) => smooth((s - a) / (b - a));
-const bump = (s: number, a: number, b: number) => (s > a && s < b ? Math.sin((Math.PI * (s - a)) / (b - a)) : 0);
 // overshoots a little, then settles (the bar's fill bouncing in)
 const backOut = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : 1 + 2.7 * (x - 1) ** 3 + 1.7 * (x - 1) ** 2);
-const once = (run: Record<string, unknown>, key: string) => (run[key] ? false : (run[key] = true));
-const floor = (c: AnticCtx) => c.bed?.onFloor ?? c.sleepStyle === 'floor'; // lying in bed on the floor
-const headTop = (c: AnticCtx) => c.robot.headTop ?? 0.6;
+const floor = (c: AnticCtx) => c.bed?.onFloor ?? c.sleepStyle === 'floor';
 const size = (c: AnticCtx) => c.robot.root.scale.x / 0.82; // custom models are scaled differently
 // a smooth curve through [time, value] keys
 function keys(s: number, ks: [number, number][]) {
@@ -43,15 +39,8 @@ const AX = new THREE.Vector3();
 const Q = new THREE.Quaternion();
 const QW = [0, 0, 0];
 const QS = [0, 0, 0];
-
-// a point on obj, in office space
-const at = (c: AnticCtx, obj: THREE.Object3D, x: number, y: number, z: number, out: THREE.Vector3) => c.set.office.worldToLocal(obj.localToWorld(out.set(x, y, z)));
 // the camera's right, flat on the floor (office space)
 const camRight = (c: AnticCtx, out: THREE.Vector3) => out.set(Math.cos(c.camYaw), 0, -Math.sin(c.camYaw));
-
-// Arm angles [pitch, out, elbow] that put the hand on a point (office space), as in phone.js;
-// returns the stretch needed if it's too far.
-const HAND = 0.24;
 function aim(c: AnticCtx, side: 'L' | 'R', p: THREE.Vector3, out: number[], most = 1.9) {
   const arm = c.robot.arms[side === 'L' ? 'armL' : 'armR'];
   const v = c.robot.torso.worldToLocal(c.set.office.localToWorld(AIM.copy(p))).sub(arm.shoulder.position);
@@ -81,7 +70,8 @@ function poseArm(arm: RigArm, q: number[], k: number) {
 // along: 'U' its length (rolls it), 'V' across it (+ lifts its head and shoulders).
 function tilt(c: AnticCtx, along: 'U' | 'V', angle: number, lift = 0) {
   const root = c.robot.root;
-  if (along === 'U') AX.set(0, 1, 0).applyQuaternion(root.quaternion); // its head end
+  if (along === 'U')
+    AX.set(0, 1, 0).applyQuaternion(root.quaternion); // its head end
   else {
     // across the body, horizontal: tipping about it lifts the head end up off the pillow
     AX.set(0, 1, 0).applyQuaternion(root.quaternion);
@@ -101,7 +91,6 @@ function sprite(w: number, h: number) {
 }
 
 // (three's types leave the isMesh / isSprite / isLight flags off Object3D)
-const isMesh = (o: THREE.Object3D): o is THREE.Mesh => 'isMesh' in o;
 const isSprite = (o: THREE.Object3D): o is THREE.Sprite => 'isSprite' in o;
 const isLight = (o: THREE.Object3D): o is THREE.Light => 'isLight' in o;
 type Mapped = THREE.Material & { map?: THREE.Texture | null }; // (a material, maybe with a texture)
@@ -117,18 +106,37 @@ function dispose(obj: THREE.Object3D) {
   });
 }
 
-const sweat = (c: AnticCtx) => c.emit('sweat', c.worldPoint(c.robot.head, 0.32, headTop(c) * 0.85, 0.12), { life: 0.8, vel: new THREE.Vector3(0.15 + Math.random() * 0.1, 0.3, 0), size: 0.08, gravity: 1.1 });
+const sweat = (c: AnticCtx) =>
+  c.emit('sweat', c.worldPoint(c.robot.head, 0.32, headTop(c) * 0.85, 0.12), {
+    life: 0.8,
+    vel: new THREE.Vector3(0.15 + Math.random() * 0.1, 0.3, 0),
+    size: 0.08,
+    gravity: 1.1,
+  });
 function puff(c: AnticCtx, where: THREE.Vector3, n = 5, kind: ParticleKind = 'star') {
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + 0.3;
-    c.emit(kind, where, { life: 0.5, vel: new THREE.Vector3(Math.cos(a) * 0.45, Math.sin(a) * 0.3 + 0.35, 0.1), size: 0.07, gravity: 0.6, spin: 4 });
+    c.emit(kind, where, {
+      life: 0.5,
+      vel: new THREE.Vector3(Math.cos(a) * 0.45, Math.sin(a) * 0.3 + 0.35, 0.1),
+      size: 0.07,
+      gravity: 0.6,
+      spin: 4,
+    });
   }
 }
 
 // ------------------------------------------------------------ nightmare
 
 // how far it looks left / right once it's up (head yaw)
-const LOOK: [number, number][] = [[2.8, 0], [3.1, 0.65], [3.5, 0.65], [3.85, -0.65], [4.15, -0.5], [4.4, 0]];
+const LOOK: [number, number][] = [
+  [2.8, 0],
+  [3.1, 0.65],
+  [3.5, 0.65],
+  [3.85, -0.65],
+  [4.15, -0.5],
+  [4.4, 0],
+];
 
 type NightmareRun = { mask?: THREE.Object3D | null; nextSweat?: number; up?: number };
 
@@ -210,7 +218,7 @@ const nightmare: Antic<NightmareRun> = {
 // ------------------------------------------------------------ snorebar
 
 const SNORES = [0.6, 2.4, 4.2, 6.0];
-const ZS = SNORES.map((t, i) => `z${i}`); // their one-shot keys
+const ZS = SNORES.map((_t, i) => `z${i}`); // their one-shot keys
 const BAR_W = 320;
 const BAR_H = 112;
 
@@ -268,8 +276,12 @@ const snorebar: Antic<SnoreRun> = {
       // where it floats: over its head (lying down: above it, nudged in from the window's edge)
       const top = headTop(c);
       // (a little to one side, so the z's float up past it)
-      if (floor(c)) at(c, c.robot.head, 0, top * 0.4, 0, run.bar.s.position).add(camRight(c, V1).multiplyScalar(0.5)).y += 0.72 * size(c);
-      else at(c, c.robot.head, 0, top * 0.8, 0, run.bar.s.position).add(camRight(c, V1).multiplyScalar(-0.16)).y += 0.42 * size(c);
+      if (floor(c))
+        at(c, c.robot.head, 0, top * 0.4, 0, run.bar.s.position).add(camRight(c, V1).multiplyScalar(0.5)).y +=
+          0.72 * size(c);
+      else
+        at(c, c.robot.head, 0, top * 0.8, 0, run.bar.s.position).add(camRight(c, V1).multiplyScalar(-0.16)).y +=
+          0.42 * size(c);
       run.barY = run.bar.s.position.y;
     }
     const bar = run.bar;
@@ -285,7 +297,9 @@ const snorebar: Antic<SnoreRun> = {
       pop = Math.max(pop, bump(s, t0 + 0.05, t0 + 0.35));
       if (s >= t0 && once(run, ZS[i])) {
         // lying down it drifts up past the bar's left end; in the chair, out to the right of it
-        const at0 = floor(c) ? c.worldPoint(c.robot.head, 0, headTop(c) * 0.45, 0.25) : c.worldPoint(c.robot.head, 0, headTop(c) * 0.6, 0.2);
+        const at0 = floor(c)
+          ? c.worldPoint(c.robot.head, 0, headTop(c) * 0.45, 0.25)
+          : c.worldPoint(c.robot.head, 0, headTop(c) * 0.6, 0.2);
         const vel = camRight(c, new THREE.Vector3()).multiplyScalar(floor(c) ? -0.12 : 0.32);
         if (!floor(c)) at0.addScaledVector(vel, 0.9);
         vel.y = floor(c) ? 0.4 : 0.16;
@@ -306,8 +320,10 @@ const snorebar: Antic<SnoreRun> = {
     }
     // done at 6.2; it rolls over at 7.6 and the bar runs back to 0% and fades away
     const done = s >= 6.2 && s < 7.7;
-    // (the office sits in the scene's world group)
-    if (done && once(run, 'done')) puff(c, c.set.office.parent!.worldToLocal(c.set.office.localToWorld(V2.copy(bar.s.position))), 6);
+    if (done && once(run, 'done')) {
+      const world = c.set.office.parent; // (the office sits in the scene's world group)
+      if (world) puff(c, world.worldToLocal(c.set.office.localToWorld(V2.copy(bar.s.position))), 6);
+    }
     fill *= 1 - seg(s, 7.8, 8.4);
     if (done) fill = 1;
     const key = `${Math.round(clamp(fill, 0, 1.03) * 100)}|${done}`;
@@ -426,7 +442,9 @@ function drawCard(card: Card, text: string) {
   ctx.fillText(fit(ctx, from, CARD_W - 92), 72, 37);
   ctx.font = '700 31px "Segoe UI", sans-serif';
   ctx.fillStyle = '#3d4460';
-  lines.forEach((l, j) => ctx.fillText(fit(ctx, l, room), 20, 82 + j * 34));
+  lines.forEach((l, j) => {
+    ctx.fillText(fit(ctx, l, room), 20, 82 + j * 34);
+  });
   card.tex.needsUpdate = true;
 }
 function fit(ctx: CanvasRenderingContext2D, s: string, room: number) {
@@ -439,7 +457,14 @@ const BUZZ = [0.3, 0.9, 1.5];
 const SLAP = 2.8;
 
 // (card is made along with p, on the first frame; slap: the swing's progress, slapped: its once() flag)
-type PingRun = { p?: ReturnType<typeof buildPhone>; home?: number; card: Card; reach?: number; slap?: number; slapped?: boolean };
+type PingRun = {
+  p?: ReturnType<typeof buildPhone>;
+  home?: number;
+  card: Card;
+  reach?: number;
+  slap?: number;
+  slapped?: boolean;
+};
 
 const ping: Antic<PingRun> = {
   dur: 5.0,

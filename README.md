@@ -199,13 +199,21 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
 gui/                  the pages (TypeScript, built by Vite into dist/)
   ipc/                main, through @tauri-apps/api: a typed function per command, events
   views/
-    robot/            the robot window: chat, tabs, moods, sounds
-    manager/          the Robot Workshop
-    …                 one folder per other window (card, words, notebook, quick, groupchat, …)
+    robot/            the robot window: its life (moods, antics, sounds), calling the parts below
+    workshop/         the Robot Workshop and Settings
+    …                 one folder per other window (island, stage, notebook, words, quick, …)
+  features/           what the robot window is built from (views/ shows, features/ handles)
+    chat/             a robot's chat: the log, replies, the box you type in, plans, side
+                      questions, past chats
+    notes/  vocab/    what the robot does with your notes, and with English words
+    robots/           robots noticing and asking each other, and the robot as a stage tile
+    workbench/        quick actions, snip, the shell drawer, the file viewer
+    mcp/              MCP Apps: a tool's own page, shown in the chat
   office3d/           the 3D desk and robot (Three.js)
     antics/           idle animations; index.ts explains how to write one
     kit3d.ts          robot parts; kitwear.ts clothes; themes.ts desk styles
-  ui/                 shared themes (theme.css, future.css, vintage.css) and icons
+  theme/  icons/      the themes (theme.css, future.css, vintage.css); the line icons
+  lib/                small helpers every page shares
   types/              the model, and every event main sends
 shared/
   personalities.json  system-prompt flavour and lines per personality

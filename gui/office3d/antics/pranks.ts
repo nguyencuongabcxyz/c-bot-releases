@@ -2,13 +2,8 @@
 // blue-screens: the robot jumps, stares at the monitor, then turns to you,
 // clutching its chest, and points. robot.js plays the crash at 0 and the
 // "betrayed" line at 1.2. See ./index.js for the contract.
+import { bump, mix, seg, wrap } from '@/office3d/core/math';
 import type { Antic, Vec3Tuple } from './types';
-
-const mix = (a: number, b: number, k: number) => a + (b - a) * k;
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const seg = (s: number, a: number, b: number) => smooth((s - a) / (b - a)); // eases 0 -> 1 over [a, b]
-const bump = (s: number, a: number, b: number) => (s > a && s < b ? Math.sin((Math.PI * (s - a)) / (b - a)) : 0);
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 const CLUTCH: Vec3Tuple = [-1.0, -0.5, -1.9]; // right hand on its chest
 const POINT: Vec3Tuple = [-1.6, 0.2, -0.3]; // left arm straight out at you: "YOU did this"

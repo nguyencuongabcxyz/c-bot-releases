@@ -2,13 +2,13 @@
   <header>
     <h1 data-icon="note">Notes <span id="count" class="count" hidden></span></h1>
     <div class="actions">
-      <button id="btn-more" title="More" aria-haspopup="menu" data-icon="more"></button>
-      <button id="btn-close" title="Close (Esc)" data-icon="x"></button>
+      <button id="btn-more" type="button" title="More" aria-haspopup="menu" data-icon="more"></button>
+      <button id="btn-close" type="button" title="Close (Esc)" data-icon="x"></button>
     </div>
     <div id="more" class="menu" role="menu" hidden>
-      <button data-act="copy-all" role="menuitem" data-icon="copy">Copy all notes</button>
-      <button data-act="toggle-done" role="menuitem" data-icon="check"><span>Show done notes</span></button>
-      <button data-act="clear-done" role="menuitem" data-icon="broom">Clear done notes</button>
+      <button type="button" data-act="copy-all" role="menuitem" data-icon="copy">Copy all notes</button>
+      <button type="button" data-act="toggle-done" role="menuitem" data-icon="check"><span>Show done notes</span></button>
+      <button type="button" data-act="clear-done" role="menuitem" data-icon="broom">Clear done notes</button>
     </div>
   </header>
 
@@ -16,9 +16,9 @@
   <section id="reminder" class="reminder" hidden>
     <p id="reminder-text"></p>
     <div class="reminder-actions">
-      <button id="btn-summary" class="primary" data-icon="sparkles" hidden>Summarise my day</button>
-      <button id="btn-snooze" data-icon="clock">In 15 min</button>
-      <button id="btn-today" data-icon="thumb">Done for today</button>
+      <button id="btn-summary" type="button" class="primary" data-icon="sparkles" hidden>Summarise my day</button>
+      <button id="btn-snooze" type="button" data-icon="clock">In 15 min</button>
+      <button id="btn-today" type="button" data-icon="thumb">Done for today</button>
     </div>
   </section>
 
@@ -28,11 +28,12 @@
   </form>
   <input id="filter" type="search" placeholder="Filter notes…" aria-label="Filter notes" hidden />
 
+  <!-- biome-ignore lint/a11y/useSemanticElements: notebook.ts fills it with group headings and note divs, which a <ul> can't hold -->
   <div id="list" role="list"></div>
   <p id="empty" class="empty" hidden>All clear. Nothing to do!<br /><small>Notes you add show up on the corkboard on the desk.</small></p>
 </main>
 
 <div id="toast" class="toast" role="status" hidden>
   <span id="toast-text"></span>
-  <button id="toast-undo">Undo</button>
+  <button id="toast-undo" type="button">Undo</button>
 </div>

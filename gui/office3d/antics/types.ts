@@ -5,9 +5,30 @@ import type { Bed, OfficeSet, Rig } from '@/office3d/types';
 export type Vec3Tuple = [number, number, number];
 
 /** The particle sprites there are (materials spriteTexture; index.ts makes one of each). */
-export type ParticleKind = 'steam' | 'z' | 'heart' | 'sweat' | 'bulb' | 'question' | 'doc' | 'crumb' | 'star' | 'squeak' | 'note' | 'ball' | 'bolt' | 'haha';
+export type ParticleKind =
+  | 'steam'
+  | 'z'
+  | 'heart'
+  | 'sweat'
+  | 'bulb'
+  | 'question'
+  | 'doc'
+  | 'crumb'
+  | 'star'
+  | 'squeak'
+  | 'note'
+  | 'ball'
+  | 'bolt'
+  | 'haha';
 /** A puff, a star, a Z… floating off from a point (index.ts emit). */
-export type ParticleOpts = { life?: number; vel?: THREE.Vector3; size?: number; grow?: number; spin?: number; gravity?: number };
+export type ParticleOpts = {
+  life?: number;
+  vel?: THREE.Vector3;
+  size?: number;
+  grow?: number;
+  spin?: number;
+  gravity?: number;
+};
 export type Emit = (kind: ParticleKind, pos: THREE.Vector3, opts?: ParticleOpts) => void;
 
 /** The pose being drawn this frame; an antic changes it in place. */

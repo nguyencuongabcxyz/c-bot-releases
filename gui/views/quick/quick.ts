@@ -2,20 +2,22 @@
 // a style, translate, explain, summarise) and the answer streaming in. Opening it runs the
 // last action you used; another action, style or language runs that (answers are kept, so
 // going back to one is instant). Replace puts the answer back over your selection.
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import { $ } from '@/lib/dom';
+import { markdown } from '@/lib/markdown';
 import type { QuickAction, QuickChange, QuickInit, QuickLang, QuickPrefs, QuickResult } from '@/types/pages';
-import { Icon } from '@/ui/icons';
-import { showView } from '@/ui/view';
+import { Icon } from '@/icons/icons';
+import { showView } from '@/lib/page';
 import markup from './quick.html?raw';
-import '@/ui/theme.css';
-import './quick.css';
+import '@/theme/theme.css';
+import '@/theme/base.css';
+import './quick.css';
+
 import * as ipc from '@/ipc';
 
 showView(markup, { title: 'Quick actions' });
 
 (() => {
-  const $ = <E extends HTMLElement = HTMLElement>(s: string) => document.querySelector<E>(s)!;
+  const answerMd = markdown({ breaks: false, newTab: false }); // (marked's own defaults: an answer reads as a document)
   const textEl = $<HTMLTextAreaElement>('#text');
   const out = $('#out');
   const status = $('#status');
@@ -28,8 +30,18 @@ showView(markup, { title: 'Quick actions' });
   let runId = 0;
   const cache = new Map<string, Answer>(); // key -> answer
 
-  const LABELS: Record<QuickAction, string> = { refine: 'Refined', translate: 'Translation', explain: 'Explanation', summarise: 'Summary' };
-  const VERBS: Record<QuickAction, string> = { refine: 'Refining', translate: 'Translating', explain: 'Reading it', summarise: 'Summarising' };
+  const LABELS: Record<QuickAction, string> = {
+    refine: 'Refined',
+    translate: 'Translation',
+    explain: 'Explanation',
+    summarise: 'Summary',
+  };
+  const VERBS: Record<QuickAction, string> = {
+    refine: 'Refining',
+    translate: 'Translating',
+    explain: 'Reading it',
+    summarise: 'Summarising',
+  };
   // (as main's quick.js: enough Vietnamese letters and it's Vietnamese)
   const VI_LETTERS = /[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹáàãéèíìóòõúùýđ]/gi;
   const looksVietnamese = (t: string) => {
@@ -60,9 +72,12 @@ showView(markup, { title: 'Quick actions' });
       b.classList.toggle('on', b.dataset.action === prefs.action);
       b.setAttribute('aria-selected', String(b.dataset.action === prefs.action));
     }
-    for (const o of document.querySelectorAll<HTMLElement>('.opt')) o.hidden = !o.dataset.for!.split(' ').includes(prefs.action);
-    for (const b of document.querySelectorAll<HTMLElement>('#styles button')) b.setAttribute('aria-checked', String(b.dataset.style === prefs.style));
-    for (const b of document.querySelectorAll<HTMLElement>('#langs button')) b.setAttribute('aria-checked', String(b.dataset.lang === prefs.lang));
+    for (const o of document.querySelectorAll<HTMLElement>('.opt'))
+      o.hidden = !(o.dataset.for ?? '').split(' ').includes(prefs.action); // (each .opt says what it's for)
+    for (const b of document.querySelectorAll<HTMLElement>('#styles button'))
+      b.setAttribute('aria-checked', String(b.dataset.style === prefs.style));
+    for (const b of document.querySelectorAll<HTMLElement>('#langs button'))
+      b.setAttribute('aria-checked', String(b.dataset.lang === prefs.lang));
     const t = target();
     $('#dir-from').textContent = NAMES[t === 'en' ? 'vi' : 'en'];
     $('#dir-to').textContent = NAMES[t];
@@ -81,8 +96,12 @@ showView(markup, { title: 'Quick actions' });
     out.classList.toggle('empty', !text && !running);
     out.classList.toggle('stale', !!answer && !a && !running);
     if (!text && !running) {
-      out.textContent = a?.error ? `Couldn't do it: ${a.error}` : textEl.value.trim() ? 'Pick an action, or press Again.' : 'Paste or type some text above.';
-    } else if (md) out.innerHTML = DOMPurify.sanitize(marked.parse(text) as string); // (no async extensions: it's parsed at once)
+      out.textContent = a?.error
+        ? `Couldn't do it: ${a.error}`
+        : textEl.value.trim()
+          ? 'Pick an action, or press Again.'
+          : 'Paste or type some text above.';
+    } else if (md) out.innerHTML = answerMd.html(text);
     else out.textContent = text;
     if (running) out.scrollTop = out.scrollHeight;
     // what changed (refine)
@@ -102,7 +121,13 @@ showView(markup, { title: 'Quick actions' });
     );
     // the status: working, or how long it took
     status.className = `status${running ? ' busy' : a?.error ? ' bad' : ''}`;
-    status.textContent = running ? `${VERBS[prefs.action]}…` : a?.error ? 'failed' : a ? `${a.model} · ${(a.ms! / 1000).toFixed(1)}s` : ''; // (an answer that isn't an error has its time)
+    status.textContent = running
+      ? `${VERBS[prefs.action]}…`
+      : a?.error
+        ? 'failed'
+        : a
+          ? `${a.model} · ${((a.ms ?? 0) / 1000).toFixed(1)}s`
+          : ''; // (an answer that isn't an error has its time)
     // the buttons
     const ready = !!a?.text && !running;
     $<HTMLButtonElement>('#btn-replace').disabled = !ready || !view?.canReplace;
@@ -121,7 +146,10 @@ showView(markup, { title: 'Quick actions' });
   function reportSize() {
     requestAnimationFrame(() => {
       const h = Math.ceil($('#qa').scrollHeight + 22);
-      if (Math.abs(h - lastH) > 2) ipc.quickSize((lastH = h));
+      if (Math.abs(h - lastH) > 2) {
+        lastH = h;
+        ipc.quickSize(h);
+      }
     });
   }
 
@@ -131,19 +159,29 @@ showView(markup, { title: 'Quick actions' });
     const text = textEl.value.trim();
     if (!text) return renderAnswer();
     const key = keyOf();
-    if (!force && cache.has(key)) {
-      answer = cache.get(key)!;
+    const cached = force ? undefined : cache.get(key);
+    if (cached) {
+      answer = cached;
       runningKey = null;
       return renderAnswer();
     }
     const id = ++runId;
     runningKey = key;
     renderAnswer('');
-    const res = (await ipc.quickRun({ action: prefs.action, text, style: prefs.style, custom: $<HTMLInputElement>('#custom').value.trim(), to: target(), lang: prefs.lang })) as QuickResult | null; // (main quickWindow.js)
+    const res = (await ipc.quickRun({
+      action: prefs.action,
+      text,
+      style: prefs.style,
+      custom: $<HTMLInputElement>('#custom').value.trim(),
+      to: target(),
+      lang: prefs.lang,
+    })) as QuickResult | null; // (main quickWindow.js)
     if (id !== runId) return; // (a newer one took over)
     runningKey = null;
     if (!res || res.cancelled) return renderAnswer();
-    answer = res.error ? { key, error: res.error } : { key, text: res.text, changes: res.changes || [], ms: res.ms, model: res.model };
+    answer = res.error
+      ? { key, error: res.error }
+      : { key, text: res.text, changes: res.changes || [], ms: res.ms, model: res.model };
     if (!res.error) cache.set(key, answer);
     renderAnswer();
   }
@@ -162,8 +200,8 @@ showView(markup, { title: 'Quick actions' });
     if (b && b.dataset.action !== prefs.action) pick({ action: b.dataset.action as QuickAction });
   });
   $('#styles').addEventListener('click', (e) => {
-    const b = (e.target as Element).closest<HTMLElement>('button[data-style]');
-    if (b) pick({ style: b.dataset.style! });
+    const style = (e.target as Element).closest<HTMLElement>('button[data-style]')?.dataset.style;
+    if (style !== undefined) pick({ style });
   });
   $('#langs').addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('button[data-lang]');
@@ -207,11 +245,13 @@ showView(markup, { title: 'Quick actions' });
     if (!a?.text) return;
     await ipc.quickAct('copy', { text: a.text, action: prefs.action });
     const b = $('#btn-copy');
+    const label = b.lastChild; // (its word, after the icon)
+    if (!label) return;
     b.classList.add('done');
-    b.lastChild!.textContent = 'Copied';
+    label.textContent = 'Copied';
     setTimeout(() => {
       b.classList.remove('done');
-      b.lastChild!.textContent = 'Copy';
+      label.textContent = 'Copy';
     }, 1400);
   });
   $('#btn-replace').addEventListener('click', () => {

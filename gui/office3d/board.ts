@@ -1,3 +1,6 @@
+import { ease } from '@/office3d/core/math';
+import { mesh } from '@/office3d/core/mesh';
+import { INK } from '@/office3d/core/constants';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { toon, noOutline, canvasTexture, roundRect } from './materials';
@@ -38,7 +41,6 @@ const FOOT = 0.018; // the feet lift the frame this much off the desk
 const STICKY = 0.088; // a sticky note's side
 const PIN_DROP = 0.013; // the pin sits this far below the sticky's top edge
 const CORK_Z = 0.0; // the cork's front face (in the board's own space)
-const INK = '#1d2235';
 const HAND = '"Segoe Print", "Ink Free", "Comic Sans MS", "Segoe UI", sans-serif';
 
 // (a touch stronger than true pastels: the toon lights wash them out)
@@ -54,17 +56,30 @@ const PINS = {
 const LAYOUTS: [number, number, number][][] = [
   [],
   [[0, 0.0, 1.35]],
-  [[-0.06, 0.012, 1.18], [0.064, -0.006, 1.18]],
-  [[-0.088, 0.024, 1.04], [0.004, -0.02, 1.04], [0.092, 0.026, 1.04]],
-  [[-0.058, 0.045, 1.0], [0.062, 0.05, 1.0], [-0.052, -0.048, 1.0], [0.064, -0.044, 1.0]],
-  [[-0.094, 0.048, 0.98], [0.0, 0.054, 0.98], [0.094, 0.046, 0.98], [-0.072, -0.05, 0.98], [0.022, -0.052, 0.98]],
+  [
+    [-0.06, 0.012, 1.18],
+    [0.064, -0.006, 1.18],
+  ],
+  [
+    [-0.088, 0.024, 1.04],
+    [0.004, -0.02, 1.04],
+    [0.092, 0.026, 1.04],
+  ],
+  [
+    [-0.058, 0.045, 1.0],
+    [0.062, 0.05, 1.0],
+    [-0.052, -0.048, 1.0],
+    [0.064, -0.044, 1.0],
+  ],
+  [
+    [-0.094, 0.048, 0.98],
+    [0.0, 0.054, 0.98],
+    [0.094, 0.046, 0.98],
+    [-0.072, -0.05, 0.98],
+    [0.022, -0.052, 0.98],
+  ],
 ];
 
-const mesh = <G extends THREE.BufferGeometry, M extends THREE.Material | THREE.Material[]>(geo: G, mat: M, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  return m;
-};
 const hash = (s: string | number) => {
   let h = 2166136261;
   for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
@@ -75,11 +90,17 @@ const hash = (s: string | number) => {
   h ^= h >>> 15;
   return (h >>> 0) / 4294967296; // 0..1
 };
-const ease = (dt: number, rate: number) => 1 - Math.exp(-dt * rate);
 
 // a pinned paper's bits, kept on its group's userData (paper() below), and a note as pinned up
 type PaperParts = { sheet: THREE.Mesh; pin: THREE.Mesh; base: number; phase: number };
-type PinnedNote = { id: string | undefined; group: THREE.Group; sheet: THREE.Mesh; pin: THREE.Mesh; tex: THREE.CanvasTexture; mat: THREE.MeshToonMaterial };
+type PinnedNote = {
+  id: string | undefined;
+  group: THREE.Group;
+  sheet: THREE.Mesh;
+  pin: THREE.Mesh;
+  tex: THREE.CanvasTexture;
+  mat: THREE.MeshToonMaterial;
+};
 
 // ---------------------------------------------------------------- textures
 
@@ -89,7 +110,10 @@ function corkTexture() {
     ctx.fillRect(0, 0, w, h);
     // speckle: lots of little darker and lighter crumbs
     let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
     for (let i = 0; i < 1400; i++) {
       const r = rnd();
       ctx.fillStyle = r < 0.45 ? 'rgba(120,72,30,0.45)' : r < 0.8 ? 'rgba(232,186,128,0.6)' : 'rgba(90,52,20,0.5)';
@@ -119,7 +143,11 @@ function haloTexture() {
 
 // the first one or two words of a note, for the front of its sticky
 function headline(text: string | undefined) {
-  const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const words = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
   if (!words.length) return ['…'];
   const [a, b] = words.map((w) => w.replace(/^[^\p{L}\p{N}#@]+|[^\p{L}\p{N}]+$/gu, '') || w);
   if (!b || a.length >= 8 || b.length >= 10) return [a];
@@ -127,7 +155,7 @@ function headline(text: string | undefined) {
 }
 
 function mixHex(a: string, b: string, k: number) {
-  return '#' + new THREE.Color(a).lerp(new THREE.Color(b), k).getHexString();
+  return `#${new THREE.Color(a).lerp(new THREE.Color(b), k).getHexString()}`;
 }
 
 function stickyTexture(item: BoardNote, paper: string) {
@@ -144,7 +172,11 @@ function stickyTexture(item: BoardNote, paper: string) {
     if ((item.age || 0) >= 3) {
       // old: blotchy and a bit browner, and a shade where the corner curls up
       ctx.fillStyle = 'rgba(150,110,40,0.14)';
-      for (const [x, y, r] of [[30, 90, 16], [96, 40, 11], [70, 108, 9]]) {
+      for (const [x, y, r] of [
+        [30, 90, 16],
+        [96, 40, 11],
+        [70, 108, 9],
+      ]) {
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fill();
@@ -170,8 +202,8 @@ function stickyTexture(item: BoardNote, paper: string) {
     const shown = lines.map((l) => {
       if (ctx.measureText(l).width <= maxW) return l;
       let s = l;
-      while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
-      return s + '…';
+      while (s.length > 1 && ctx.measureText(`${s}…`).width > maxW) s = s.slice(0, -1);
+      return `${s}…`;
     });
     const lh = size * 0.98;
     const y0 = 72 - ((shown.length - 1) * lh) / 2;
@@ -270,7 +302,10 @@ export function buildBoard(theme = THEMES.classic): Board {
   tilt.add(face);
 
   const owned: { dispose(): void }[] = []; // geometries / materials / textures made once, freed on dispose()
-  const own = <T extends { dispose(): void }>(x: T) => (owned.push(x), x);
+  const own = <T extends { dispose(): void }>(x: T) => {
+    owned.push(x);
+    return x;
+  };
 
   // ---- frame
   const frameMat = own(toon(T.desk.frame));
@@ -287,7 +322,9 @@ export function buildBoard(theme = THEMES.classic): Board {
   if (T.brand) {
     const capMat = own(toon(accent));
     const capGeo = own(new RoundedBoxGeometry(BAR + 0.006, BAR + 0.006, DEPTH + 0.004, 2, 0.006));
-    for (const sx of [-1, 1]) for (const sy of [-1, 1]) face.add(mesh(capGeo, capMat, sx * (W / 2 - BAR / 2), sy * (H / 2 - BAR / 2), DEPTH / 2 - 0.012 + CORK_Z));
+    for (const sx of [-1, 1])
+      for (const sy of [-1, 1])
+        face.add(mesh(capGeo, capMat, sx * (W / 2 - BAR / 2), sy * (H / 2 - BAR / 2), DEPTH / 2 - 0.012 + CORK_Z));
   }
 
   // ---- cork face (cork on the front, plain board on the back)
@@ -295,7 +332,13 @@ export function buildBoard(theme = THEMES.classic): Board {
   own(cork.tex);
   const corkMat = own(toon('#ffffff', { map: cork.tex }));
   const backMat = own(toon(mixHex(T.desk.frame, '#ffffff', 0.25)));
-  const corkMesh = mesh(own(new THREE.BoxGeometry(CORK_W, CORK_H, 0.012)), [backMat, backMat, backMat, backMat, corkMat, backMat], 0, 0, CORK_Z - 0.006);
+  const corkMesh = mesh(
+    own(new THREE.BoxGeometry(CORK_W, CORK_H, 0.012)),
+    [backMat, backMat, backMat, backMat, corkMat, backMat],
+    0,
+    0,
+    CORK_Z - 0.006,
+  );
   corkMesh.receiveShadow = true;
   face.add(corkMesh);
 
@@ -315,7 +358,18 @@ export function buildBoard(theme = THEMES.classic): Board {
   // ---- hover halo: a soft glow just behind the frame
   const halo = haloTexture();
   own(halo.tex);
-  const haloMat = own(noOutline(new THREE.MeshBasicMaterial({ map: halo.tex, color: glowHex, transparent: true, opacity: 0, depthWrite: false, toneMapped: false })));
+  const haloMat = own(
+    noOutline(
+      new THREE.MeshBasicMaterial({
+        map: halo.tex,
+        color: glowHex,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    ),
+  );
   const haloMesh = mesh(own(new THREE.PlaneGeometry(W + 0.07, H + 0.07)), haloMat, 0, 0, CORK_Z - 0.02);
   haloMesh.raycast = () => {};
   haloMesh.visible = false;
@@ -330,7 +384,15 @@ export function buildBoard(theme = THEMES.classic): Board {
   const badgeDisc = mesh(own(new THREE.CylinderGeometry(badgeR, badgeR, 0.008, 24)), own(toon(accent)));
   badgeDisc.rotation.x = Math.PI / 2;
   badge.add(badgeDisc);
-  badge.add(mesh(own(new THREE.CircleGeometry(badgeR * 0.98, 24)), own(noOutline(new THREE.MeshBasicMaterial({ map: badgeTex.tex, transparent: true, toneMapped: false }))), 0, 0, 0.0045));
+  badge.add(
+    mesh(
+      own(new THREE.CircleGeometry(badgeR * 0.98, 24)),
+      own(noOutline(new THREE.MeshBasicMaterial({ map: badgeTex.tex, transparent: true, toneMapped: false }))),
+      0,
+      0,
+      0.0045,
+    ),
+  );
   badge.visible = false;
   face.add(badge);
   function drawBadge(n: number) {
@@ -353,21 +415,36 @@ export function buildBoard(theme = THEMES.classic): Board {
   const flatGeo = own(new THREE.PlaneGeometry(STICKY, STICKY));
   const curlGeo = own(curledGeometry());
   const shadowGeo = own(new THREE.PlaneGeometry(STICKY, STICKY));
-  const shadowMat = own(noOutline(new THREE.MeshBasicMaterial({ color: '#3a2410', transparent: true, opacity: 0.32, depthWrite: false })));
+  const shadowMat = own(
+    noOutline(new THREE.MeshBasicMaterial({ color: '#3a2410', transparent: true, opacity: 0.32, depthWrite: false })),
+  );
   const pinGeo = own(new THREE.SphereGeometry(0.0085, 10, 8));
   const pinMats = new Map<string, THREE.MeshToonMaterial>();
   const pinMat = (c: string) => {
-    if (!pinMats.has(c)) pinMats.set(c, own(toon(c)));
-    return pinMats.get(c)!; // (made just above if it wasn't there)
+    let m = pinMats.get(c);
+    if (!m) {
+      m = own(toon(c));
+      pinMats.set(c, m);
+    }
+    return m;
   };
 
   // "+N" card and the "all clear" card
   const moreTex = cardTexture(() => {});
   own(moreTex.tex);
   const cardMatOf = (tex: THREE.Texture) => own(noOutline(toon('#ffffff', { map: tex, side: THREE.DoubleSide })));
-  const more = paper(own(new THREE.PlaneGeometry(0.075, 0.045)), cardMatOf(moreTex.tex), 0.11, -0.07, -0.1, pinMat(accent), 0.012, 0.026);
+  const more = paper(
+    own(new THREE.PlaneGeometry(0.075, 0.045)),
+    cardMatOf(moreTex.tex),
+    0.11,
+    -0.07,
+    -0.1,
+    pinMat(accent),
+    0.012,
+    0.026,
+  );
   more.visible = false;
-  const clear = cardTexture((ctx, w, h) => {
+  const clear = cardTexture((ctx, _w, h) => {
     ctx.fillStyle = '#2fa36b';
     ctx.font = `900 64px "Segoe UI Symbol", "Segoe UI", sans-serif`;
     ctx.fillText('✓', 34, h / 2 + 4);
@@ -375,13 +452,25 @@ export function buildBoard(theme = THEMES.classic): Board {
     ctx.strokeStyle = INK;
     ctx.lineWidth = 3;
     ctx.font = `700 34px ${HAND}`;
-    for (const [word, y] of [['all', h / 2 - 18], ['clear', h / 2 + 20]] as const) {
+    for (const [word, y] of [
+      ['all', h / 2 - 18],
+      ['clear', h / 2 + 20],
+    ] as const) {
       ctx.strokeText(word, 106, y);
       ctx.fillText(word, 106, y);
     }
   });
   own(clear.tex);
-  const allClear = paper(own(new THREE.PlaneGeometry(0.16, 0.096)), cardMatOf(clear.tex), 0, 0.0, 0.05, pinMat(accent), 0.006, 0.058);
+  const allClear = paper(
+    own(new THREE.PlaneGeometry(0.16, 0.096)),
+    cardMatOf(clear.tex),
+    0,
+    0.0,
+    0.05,
+    pinMat(accent),
+    0.006,
+    0.058,
+  );
   allClear.visible = false;
   function drawMore(n: number) {
     const { ctx } = moreTex;
@@ -396,7 +485,16 @@ export function buildBoard(theme = THEMES.classic): Board {
 
   // a pinned paper: pivot at the pin, the paper hanging below it, a soft shadow behind
   // (pinX: how far left of the middle the pin goes)
-  function paper(geo: THREE.PlaneGeometry, mat: THREE.Material, x: number, y: number, rot: number, pinMaterial: THREE.Material, z = 0.004, pinX = 0) {
+  function paper(
+    geo: THREE.PlaneGeometry,
+    mat: THREE.Material,
+    x: number,
+    y: number,
+    rot: number,
+    pinMaterial: THREE.Material,
+    z = 0.004,
+    pinX = 0,
+  ) {
     const g = new THREE.Group();
     const hh = geo.parameters?.height ?? STICKY;
     const drop = Math.min(PIN_DROP, hh * 0.3);
@@ -417,7 +515,13 @@ export function buildBoard(theme = THEMES.classic): Board {
 
   // the solid parts cast shadows on the desk (the papers are too thin to bother)
   group.traverse((o) => {
-    if (o instanceof THREE.Mesh && (Array.isArray(o.material) || (!(o.material instanceof THREE.MeshBasicMaterial) && !o.material.transparent)) && o.parent !== more && o.parent !== allClear) o.castShadow = true;
+    if (
+      o instanceof THREE.Mesh &&
+      (Array.isArray(o.material) || (!(o.material instanceof THREE.MeshBasicMaterial) && !o.material.transparent)) &&
+      o.parent !== more &&
+      o.parent !== allClear
+    )
+      o.castShadow = true;
   });
 
   // ---- the notes

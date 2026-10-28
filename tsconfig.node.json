@@ -1,5 +1,5 @@
 {
-  // vite.config.ts, which runs in Node (the pages: tsconfig.json)
+  // vite.config.ts and vitest.config.ts, which run in Node (the pages: tsconfig.json)
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023"],
@@ -7,8 +7,9 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts"]
 }

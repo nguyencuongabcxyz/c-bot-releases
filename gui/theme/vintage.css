@@ -1,0 +1,37 @@
+/* Vintage notebook: the touches on top of the tokens (theme.css). Paper and ink, square
+   corners, typewriter labels, ink stamps for the main actions, ruled lines only where you'd
+   write, and at most one bit of whimsy per window (tape on the word card, a margin line in
+   the notebook). The text keeps its clean sans face so it stays easy to read. Here: what
+   reaches several windows; a window's own touches are at the top of its stylesheet. */
+
+/* square corners everywhere: paper, not plastic (the pages round things a lot, hence !important) */
+[data-theme="vintage"] :is(button, input, select, textarea, .chip, .tool, .file-chip, .pos, .badge, .count, .q-key, .q-header, kbd, code) { border-radius: var(--r) !important; }
+[data-theme="vintage"] :is(#card, #panel, #book, .menu, #menu, #palette, .note-menu, #working, #undo, .toast, .q-card, #todo, #helpers, .diff, .app-card, pre, .row, .stat, #composer, #add, #tabs, #filters, .form, #tip, #older, #dream-ex, #quiz-hint, #quiz-result, .reminder, .msg.user, .qa-summary, .hv-prompt, .local-img) { border-radius: var(--r-lg) !important; }
+[data-theme="vintage"] :is(#card, #panel, #book) { border-color: var(--line-2); }
+
+/* the typewriter: labels, tabs and buttons in spaced capitals */
+[data-theme="vintage"] :is(#card footer button, #reveal, #details, .primary, button.primary, .q-send, .btn-accent, #h-resume, #export, .reminder-actions button) {
+  font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase;
+}
+/* an ink stamp: a crisp edge, pressed a hair when clicked, no glossy shadow */
+[data-theme="vintage"] :is(#reveal, #details, .primary, button.primary, .q-send, .btn-accent, #h-resume, #send, #btn-add) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--on-btn) 18%, transparent) !important; }
+[data-theme="vintage"] :is(#reveal, #details, .primary, button.primary, .q-send, #h-resume, #send, #btn-add):active { transform: translateY(1px) scale(0.99); }
+
+/* a highlight is a strip of tape (the word card's sentences, and any <mark> in markdown) */
+[data-theme="vintage"] mark { background: color-mix(in srgb, var(--tape) 70%, transparent); }
+
+/* What only one page uses is in that page's stylesheet. These reach two: */
+
+/* the notebook's ruled page (notebook) and the group chat's book (groupchat: its header, and
+   the .note label on a robot's message) */
+[data-theme="vintage"] #book header { border-bottom: 2px solid var(--line-2); }
+[data-theme="vintage"] #book h1 { font-weight: 400; font-size: 16px; }
+/* everything sits on the 26px lines: headings one line, a note its text plus a line for when */
+[data-theme="vintage"] #book .note { border-radius: 0; padding: 0 6px 0 4px; gap: 14px; line-height: 26px; }
+[data-theme="vintage"] #book .note:hover { background: color-mix(in srgb, var(--tape) 22%, transparent); border-color: transparent; }
+
+/* the chat (robot), and the island's card (#panel header) and the group chat (.msg.user, #composer) */
+[data-theme="vintage"] #panel header { border-bottom: 2px solid var(--line-2); }
+[data-theme="vintage"] .msg.user { background: var(--bg-2); border-color: var(--line-2); }
+[data-theme="vintage"] #composer { background: var(--bg); }
+

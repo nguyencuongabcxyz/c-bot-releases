@@ -1,6 +1,6 @@
 <header>
   <h1 data-icon="book">My words</h1>
-  <button id="quiz" class="primary" title="A robot quizzes you on a word now" data-icon="cards">Quiz me now</button>
+  <button id="quiz" type="button" class="primary" title="A robot quizzes you on a word now" data-icon="cards">Quiz me now</button>
 </header>
 <section id="stats" aria-label="How it's going"></section>
 <div id="tools">
@@ -15,10 +15,10 @@
   </label>
 </div>
 <div id="filters" role="radiogroup">
-  <button data-filter="all" class="on">All <span class="n"></span></button>
-  <button data-filter="due" data-icon="clock">Due <span class="n"></span></button>
-  <button data-filter="learning" data-icon="sprout">Learning <span class="n"></span></button>
-  <button data-filter="learnt" data-icon="check">Learnt <span class="n"></span></button>
+  <button type="button" data-filter="all" class="on">All <span class="n"></span></button>
+  <button type="button" data-filter="due" data-icon="clock">Due <span class="n"></span></button>
+  <button type="button" data-filter="learning" data-icon="sprout">Learning <span class="n"></span></button>
+  <button type="button" data-filter="learnt" data-icon="check">Learnt <span class="n"></span></button>
 </div>
 <ul id="list"></ul>
 <p id="empty" hidden></p>
@@ -27,5 +27,5 @@
   <label>from <select id="from"></select></label>
   <label>to <select id="to"></select></label>
   <span class="grow"></span>
-  <button id="export" title="A CSV file you can import into Anki or Quizlet" data-icon="download">Export</button>
+  <button id="export" type="button" title="A CSV file you can import into Anki or Quizlet" data-icon="download">Export</button>
 </footer>

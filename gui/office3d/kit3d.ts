@@ -1,3 +1,5 @@
+import { mesh } from '@/office3d/core/mesh';
+import { INK } from '@/office3d/core/constants';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { toon, glow, canvasTexture, badgeTexture } from './materials';
@@ -32,9 +34,22 @@ export const KIT_PARTS = {
 const HAIR = ['pigtails', 'ponytail', 'spiky', 'curly'];
 type KitSlot = keyof typeof KIT_PARTS;
 export const KIT_DEFAULT: KitParts = {
-  head: 'box', face: 'dots', top: 'antenna', body: 'box', arms: 'classic', base: 'legs', finish: 'matte',
-  clothes: 'none', neck: 'none', extra: 'none', specs: 'none',
-  second: '#8a90a6', accent: '#ff5e62', eye: '', cloth: '#4a90e2', hair: '#5a3a22',
+  head: 'box',
+  face: 'dots',
+  top: 'antenna',
+  body: 'box',
+  arms: 'classic',
+  base: 'legs',
+  finish: 'matte',
+  clothes: 'none',
+  neck: 'none',
+  extra: 'none',
+  specs: 'none',
+  second: '#8a90a6',
+  accent: '#ff5e62',
+  eye: '',
+  cloth: '#4a90e2',
+  hair: '#5a3a22',
 };
 const HEX = /^#[0-9a-f]{6}$/i;
 export function parseKit(json: string | Kit | null | undefined): KitParts {
@@ -45,18 +60,13 @@ export function parseKit(json: string | Kit | null | undefined): KitParts {
   } catch {}
   const out = { ...KIT_DEFAULT };
   const hex = (v: unknown): v is string => typeof v === 'string' && HEX.test(v);
-  for (const [slot, options] of Object.entries(KIT_PARTS)) if ((options as unknown[]).includes(k[slot])) out[slot as KitSlot] = k[slot] as string; // (one of its options)
+  for (const [slot, options] of Object.entries(KIT_PARTS))
+    if ((options as unknown[]).includes(k[slot])) out[slot as KitSlot] = k[slot] as string; // (one of its options)
   for (const c of ['second', 'accent', 'cloth', 'hair'] as const) if (hex(k[c])) out[c] = k[c];
   if (hex(k.eye)) out.eye = k.eye;
   return out;
 }
 
-const mesh = <G extends THREE.BufferGeometry, M extends THREE.Material | THREE.Material[]>(geo: G, mat: M, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  return m;
-};
-const INK = '#1d2235';
 // its materials: the paint, the second colour, the light colour and dark ink
 type KitMats = { paint: THREE.Material; second: THREE.Material; accent: string; ink: THREE.Material };
 
@@ -118,7 +128,10 @@ function wallPatch(rTop: number, rBottom: number, height: number, w: number) {
   return new THREE.CylinderGeometry(rTop, rBottom, height, 40, 1, true, -w / 2, w);
 }
 
-const HEADS: Record<string, (head: THREE.Group, paint: THREE.Material, faceMat: THREE.Material, second: THREE.Material) => HeadFit> = {
+const HEADS: Record<
+  string,
+  (head: THREE.Group, paint: THREE.Material, faceMat: THREE.Material, second: THREE.Material) => HeadFit
+> = {
   box(head, paint, faceMat) {
     head.add(mesh(new RoundedBoxGeometry(0.74, 0.58, 0.54, 4, 0.16), paint, 0, 0.3, 0));
     head.add(mesh(new THREE.PlaneGeometry(0.62, 0.426), faceMat, 0, 0.3, 0.273));
@@ -167,7 +180,11 @@ const HEADS: Record<string, (head: THREE.Group, paint: THREE.Material, faceMat: 
 
 // ---------------------------------------------------------------- what's on top
 
-function buildTop(kind: string, at: number, { paint, second, accent, ink, hair, width = 0.74 }: KitMats & { hair: string; width?: number }) {
+function buildTop(
+  kind: string,
+  at: number,
+  { paint, second, accent, ink, hair, width = 0.74 }: KitMats & { hair: string; width?: number },
+) {
   const g = new THREE.Group();
   g.position.y = at;
   const ball = glow(accent);
@@ -184,7 +201,11 @@ function buildTop(kind: string, at: number, { paint, second, accent, ink, hair, 
           const puff = mesh(new THREE.SphereGeometry(0.12, 18, 14), locks, side * (r + 0.04), -0.12, -0.02);
           puff.scale.set(0.85, 1.15, 0.85);
           g.add(puff);
-          g.add(mesh(new THREE.TorusGeometry(0.05, 0.022, 8, 16), ball, side * (r - 0.03), -0.05, -0.02).rotateY(Math.PI / 2));
+          g.add(
+            mesh(new THREE.TorusGeometry(0.05, 0.022, 8, 16), ball, side * (r - 0.03), -0.05, -0.02).rotateY(
+              Math.PI / 2,
+            ),
+          );
         }
         break;
       case 'ponytail': {
@@ -197,7 +218,13 @@ function buildTop(kind: string, at: number, { paint, second, accent, ink, hair, 
       case 'spiky':
         for (let i = 0; i < 7; i++) {
           const a = -1.2 + (i / 6) * 2.4;
-          const spike = mesh(new THREE.ConeGeometry(0.07, 0.18, 8), locks, Math.sin(a) * r * 0.62, 0.02 + Math.cos(a) * 0.04, Math.cos(a) * 0.04 - 0.02);
+          const spike = mesh(
+            new THREE.ConeGeometry(0.07, 0.18, 8),
+            locks,
+            Math.sin(a) * r * 0.62,
+            0.02 + Math.cos(a) * 0.04,
+            Math.cos(a) * 0.04 - 0.02,
+          );
           spike.rotation.z = -a * 0.45;
           spike.rotation.x = -0.25;
           g.add(spike);
@@ -206,7 +233,15 @@ function buildTop(kind: string, at: number, { paint, second, accent, ink, hair, 
       case 'curly':
         for (let i = 0; i < 11; i++) {
           const a = (i / 11) * Math.PI * 2;
-          g.add(mesh(new THREE.SphereGeometry(0.085, 12, 10), locks, Math.sin(a) * r * 0.75, -0.02 + (i % 2) * 0.04, Math.cos(a) * r * 0.62));
+          g.add(
+            mesh(
+              new THREE.SphereGeometry(0.085, 12, 10),
+              locks,
+              Math.sin(a) * r * 0.75,
+              -0.02 + (i % 2) * 0.04,
+              Math.cos(a) * r * 0.62,
+            ),
+          );
         }
         g.add(mesh(new THREE.SphereGeometry(0.1, 12, 10), locks, 0, 0.05, 0));
         break;
@@ -223,7 +258,8 @@ function buildTop(kind: string, at: number, { paint, second, accent, ink, hair, 
   };
   switch (kind) {
     case 'twin':
-      for (const side of [-1, 1]) stick(side * 0.14, -side * 0.35, 0.22).add(mesh(new THREE.SphereGeometry(0.04, 12, 10), ball, 0, 0.24, 0));
+      for (const side of [-1, 1])
+        stick(side * 0.14, -side * 0.35, 0.22).add(mesh(new THREE.SphereGeometry(0.04, 12, 10), ball, 0, 0.24, 0));
       break;
     case 'ears':
       // cat-ear antennas: a cone each side, glowing inside
@@ -358,7 +394,7 @@ function buildArm(kind: string, side: number, { paint, second, accent }: KitMats
 // Sitting: the seat top is the root's origin; legs go forward and down to the floor (-0.5).
 // Standing (out for a walk, on anything but legs): the same, straight under the body.
 
-function buildBase(kind: string, root: THREE.Object3D, { paint, second, accent, ink }: KitMats, standing = false) {
+function buildBase(kind: string, root: THREE.Object3D, { paint, second, accent }: KitMats, standing = false) {
   const fwd = (z: number) => (standing ? 0 : z); // (forward, under the knees, only when sitting)
   switch (kind) {
     case 'wheel': {
@@ -398,7 +434,13 @@ function buildBase(kind: string, root: THREE.Object3D, { paint, second, accent, 
       pod.position.set(0, -0.05, fwd(0.22));
       pod.add(mesh(new THREE.SphereGeometry(0.16, 20, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), second, 0, 0, 0));
       pod.add(mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.08, 16), toon(INK), 0, -0.17, 0));
-      const flame = mesh(new THREE.ConeGeometry(0.07, 0.22, 16), glow(new THREE.Color(accent).lerp(new THREE.Color('#ffd27a'), 0.5)), 0, -0.32, 0);
+      const flame = mesh(
+        new THREE.ConeGeometry(0.07, 0.22, 16),
+        glow(new THREE.Color(accent).lerp(new THREE.Color('#ffd27a'), 0.5)),
+        0,
+        -0.32,
+        0,
+      );
       flame.rotation.x = Math.PI;
       // (a flicker)
       flame.onBeforeRender = () => flame.scale.set(1, 0.8 + Math.random() * 0.4, 1);
@@ -436,7 +478,10 @@ function buildBase(kind: string, root: THREE.Object3D, { paint, second, accent, 
 
 // ---------------------------------------------------------------- the robot
 
-export function buildKit(kitIn: string | Kit | null | undefined, { color, name, standing = false }: { color: string; name?: string | null; standing?: boolean }): Rig {
+export function buildKit(
+  kitIn: string | Kit | null | undefined,
+  { color, name, standing = false }: { color: string; name?: string | null; standing?: boolean },
+): Rig {
   const kit = parseKit(kitIn);
   const paint = finishMat(color, kit.finish);
   const second = kit.finish === 'metal' ? finishMat(kit.second, 'metal') : toon(kit.second);
@@ -467,14 +512,26 @@ export function buildKit(kitIn: string | Kit | null | undefined, { color, name, 
   const strapMat = toon('#2b6fe0');
   const straps: THREE.Mesh[] = [];
   for (const side of [-1, 1]) {
-    const strap = mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.3, 6), strapMat, side * 0.055, b.mid + 0.1, b.front + 0.005);
+    const strap = mesh(
+      new THREE.CylinderGeometry(0.008, 0.008, 0.3, 6),
+      strapMat,
+      side * 0.055,
+      b.mid + 0.1,
+      b.front + 0.005,
+    );
     strap.rotation.z = side * 0.32;
     torso.add(strap);
     straps.push(strap);
   }
   const badge = badgeTexture(name, color);
   const white = toon('#fff');
-  const badgeMesh = mesh(new THREE.BoxGeometry(0.095, 0.125, 0.008), [white, white, white, white, new THREE.MeshToonMaterial({ map: badge.tex }), white], 0, b.mid - 0.09, b.front + 0.008);
+  const badgeMesh = mesh(
+    new THREE.BoxGeometry(0.095, 0.125, 0.008),
+    [white, white, white, white, new THREE.MeshToonMaterial({ map: badge.tex }), white],
+    0,
+    b.mid - 0.09,
+    b.front + 0.008,
+  );
   badgeMesh.rotation.x = -0.08;
   torso.add(badgeMesh);
 
@@ -493,7 +550,14 @@ export function buildKit(kitIn: string | Kit | null | undefined, { color, name, 
       head.add(ear);
     }
   }
-  const top = buildTop(kit.top, h.top - 0.01, { paint, second, accent: kit.accent, ink, hair: kit.hair, width: h.width });
+  const top = buildTop(kit.top, h.top - 0.01, {
+    paint,
+    second,
+    accent: kit.accent,
+    ink,
+    hair: kit.hair,
+    width: h.width,
+  });
   const antenna = top.group;
   head.add(antenna);
   const accessory = new THREE.Group();
@@ -509,7 +573,10 @@ export function buildKit(kitIn: string | Kit | null | undefined, { color, name, 
 
   // arms
   const arms = {} as Record<'armL' | 'armR', RigArm>; // (both filled in just below)
-  for (const [key, side] of [['armL', -1], ['armR', 1]] as const) {
+  for (const [key, side] of [
+    ['armL', -1],
+    ['armR', 1],
+  ] as const) {
     const { shoulder, elbow } = buildArm(kit.arms, side, parts);
     shoulder.position.set(side * (b.half + 0.05), b.top - 0.07, 0);
     torso.add(shoulder);
@@ -524,7 +591,15 @@ export function buildKit(kitIn: string | Kit | null | undefined, { color, name, 
   });
 
   return {
-    root, torso, head, antenna, antennaBall: top.ball, chest, arms, accessory, headband,
+    root,
+    torso,
+    head,
+    antenna,
+    antennaBall: top.ball,
+    chest,
+    arms,
+    accessory,
+    headband,
     headTop: h.top, // where the hammer lands
     light: kit.accent, // its antenna and chest light (index.js lights them in this colour)
     face: { ...face, material: faceMat },
@@ -541,7 +616,8 @@ export function buildKit(kitIn: string | Kit | null | undefined, { color, name, 
       // (pigtails and a ponytail still show under a hat; spikes and curls would poke through)
       antenna.visible = !BIG_HATS.includes(name) || ['pigtails', 'ponytail'].includes(kit.top);
       // on hair that shows, it sits on the hair
-      if (antenna.visible && HAIR.includes(kit.top) && !['glasses', 'bowtie', 'headphones', 'none'].includes(name)) accessory.position.y += kit.top === 'curly' ? 0.12 : kit.top === 'spiky' ? 0.08 : 0.05;
+      if (antenna.visible && HAIR.includes(kit.top) && !['glasses', 'bowtie', 'headphones', 'none'].includes(name))
+        accessory.position.y += kit.top === 'curly' ? 0.12 : kit.top === 'spiky' ? 0.08 : 0.05;
     },
     setTheme(theme: Theme) {
       strapMat.color.set(theme.robot?.lanyard || '#2b6fe0');

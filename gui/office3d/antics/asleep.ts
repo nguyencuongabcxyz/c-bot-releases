@@ -1,3 +1,6 @@
+import { bump, segLinear, smooth } from '@/office3d/core/math';
+import { isMesh } from '@/office3d/core/mesh';
+import { headTop, once } from './common';
 import * as THREE from 'three';
 import { toon, glow } from '@/office3d/materials';
 import type { Rig } from '@/office3d/types';
@@ -8,17 +11,12 @@ import type { Antic, AnticCtx, AnticEndCtx, AnticPose, Vec3Tuple, WearCtx } from
 // drifting round on the chair, drooling. Plus the nightcap (tick).
 // Timings are a contract: robot.js plays sounds at the marked moments.
 
-const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-const seg = (s: number, a: number, b: number) => Math.min(1, Math.max(0, (s - a) / (b - a)));
-const bump = (s: number, a: number, b: number) => (s > a && s < b ? Math.sin((Math.PI * (s - a)) / (b - a)) : 0);
 const set3 = (arr: number[], x: number, y: number, z: number) => {
   arr[0] = x;
   arr[1] = y;
   arr[2] = z;
   return arr;
 };
-// true the first time it's asked for this run (one-shot emits)
-const once = (run: Record<string, unknown>, key: string) => (run[key] ? false : (run[key] = true));
 // a smooth curve through [time, value] keys
 function keys(s: number, ks: [number, number][]) {
   if (s <= ks[0][0]) return ks[0][1];
@@ -30,8 +28,6 @@ function keys(s: number, ks: [number, number][]) {
   }
   return ks[ks.length - 1][1];
 }
-// (three's types leave the isMesh flag off Object3D)
-const isMesh = (o: THREE.Object3D): o is THREE.Mesh => 'isMesh' in o;
 function disposeTree(obj: THREE.Object3D) {
   obj.traverse((o) => {
     if (!isMesh(o)) return;
@@ -60,18 +56,27 @@ function spot(c: AnticCtx, which: 'nose' | 'mouth'): Vec3Tuple {
   const h = c.robot.headTop ?? 0.6;
   return which === 'nose' ? [0.05, h * 0.42, h * 0.52] : [-0.06, h * 0.33, h * 0.5];
 }
-const headTop = (c: AnticCtx) => c.robot.headTop ?? 0.6;
 
 // ------------------------------------------------------------ snot bubble
 
 // bubble radius over time: two breaths, the second bigger, a last tremble, pop at 4.4
-const BUBBLE_KEYS: [number, number][] = [[0, 0], [0.4, 0.025], [1.6, 0.08], [2.4, 0.035], [4.15, 0.15], [4.4, 0.16]];
+const BUBBLE_KEYS: [number, number][] = [
+  [0, 0],
+  [0.4, 0.025],
+  [1.6, 0.08],
+  [2.4, 0.035],
+  [4.15, 0.15],
+  [4.4, 0.16],
+];
 
 function snotBubble(head: THREE.Object3D, [x, y, z]: Vec3Tuple) {
   const group = new THREE.Group();
   group.position.set(x, y, z);
   // unlit, so it still reads as a bubble in the dimmed night-time lighting
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), glow('#d8f2ff', { transparent: true, opacity: 0.6, depthWrite: false }));
+  const ball = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 20, 14),
+    glow('#d8f2ff', { transparent: true, opacity: 0.6, depthWrite: false }),
+  );
   const shine = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), glow('#ffffff'));
   shine.position.set(-0.38, 0.42, 0.72);
   shine.scale.set(1, 1.3, 0.5);
@@ -120,13 +125,19 @@ export const ASLEEP: Record<string, Antic> = {
         const at = c.worldPoint(b.ball, 0, 0, 0);
         for (let i = 0; i < 5; i++) {
           const a = (i / 5) * Math.PI * 2 + 0.3;
-          c.emit('star', at, { life: 0.5, vel: new THREE.Vector3(Math.cos(a) * 0.45, Math.sin(a) * 0.45 + 0.1, 0.1), size: 0.06, gravity: 0.6, spin: 4 });
+          c.emit('star', at, {
+            life: 0.5,
+            vel: new THREE.Vector3(Math.cos(a) * 0.45, Math.sin(a) * 0.45 + 0.1, 0.1),
+            size: 0.06,
+            gravity: 0.6,
+            spin: 4,
+          });
         }
       }
       if (s >= 4.4) {
         // startled: the head jerks up (with a little shiver)
-        const k = c.w * smooth(seg(s, 4.4, 4.52));
-        const jit = Math.sin(s * 55) * 0.05 * (1 - seg(s, 4.4, 4.9));
+        const k = c.w * smooth(segLinear(s, 4.4, 4.52));
+        const jit = Math.sin(s * 55) * 0.05 * (1 - segLinear(s, 4.4, 4.9));
         c.toward(A.head, set3(T, 0.02 + jit, 0, 0.04), k);
         A.lean = c.mix(A.lean, -0.14, k);
       }
@@ -146,7 +157,7 @@ export const ASLEEP: Record<string, Antic> = {
     update(c, A) {
       const { s } = c;
       if (s >= 0.3 && s < 3.3) c.say(c.text, 'speech');
-      const talk = c.w * smooth(seg(s, 0.2, 0.6)) * (1 - smooth(seg(s, 3.1, 3.5)));
+      const talk = c.w * smooth(segLinear(s, 0.2, 0.6)) * (1 - smooth(segLinear(s, 3.1, 3.5)));
       A.head[0] += talk * (Math.sin(s * 7) * 0.05 + Math.sin(s * 2.9) * 0.04);
       A.head[1] += talk * Math.sin(s * 1.9) * 0.14;
       A.head[2] -= talk * (0.1 + Math.sin(s * 2.4) * 0.05);
@@ -195,19 +206,24 @@ export const ASLEEP: Record<string, Antic> = {
     update(c, A) {
       const { s, w } = c;
       // creeping slowly at first, faster as it goes; snapped back in 0.15 s
-      const slip = s < 5.4 ? seg(s, 0.2, 5.4) ** 1.6 : 1 - smooth(seg(s, 5.4, 5.55));
+      const slip = s < 5.4 ? segLinear(s, 0.2, 5.4) ** 1.6 : 1 - smooth(segLinear(s, 5.4, 5.55));
       A.rootY -= 0.12 * slip * w;
       A.rootZ += 0.18 * slip * w;
       A.lean -= 0.16 * slip * w;
       c.toward(A.head, set3(T, -0.42 + Math.sin(s * 1.1) * 0.04, Math.sin(s * 0.7) * 0.12, 0.55), slip * w);
       if (s >= 5.4) {
         // wide awake for a moment, then nodding off again
-        const up = smooth(seg(s, 5.4, 5.5)) * (1 - smooth(seg(s, 5.9, 6.4)));
+        const up = smooth(segLinear(s, 5.4, 5.5)) * (1 - smooth(segLinear(s, 5.9, 6.4)));
         c.toward(A.head, set3(T, 0.05, -0.12, -0.05), up * w);
         A.lean = c.mix(A.lean, -0.08, up * w);
-        A.shake = Math.max(A.shake, 0.4 * (1 - seg(s, 5.4, 5.8)));
+        A.shake = Math.max(A.shake, 0.4 * (1 - segLinear(s, 5.4, 5.8)));
         if (once(c.run, 'sweat')) {
-          c.emit('sweat', c.worldPoint(c.robot.head, 0.34, headTop(c) * 0.85, 0.1), { life: 0.9, vel: new THREE.Vector3(0.1, 0.25, 0), size: 0.08, gravity: 1 });
+          c.emit('sweat', c.worldPoint(c.robot.head, 0.34, headTop(c) * 0.85, 0.1), {
+            life: 0.9,
+            vel: new THREE.Vector3(0.1, 0.25, 0),
+            size: 0.08,
+            gravity: 1,
+          });
         }
       }
     },
@@ -218,7 +234,7 @@ export const ASLEEP: Record<string, Antic> = {
     dur: 2.4,
     update(c, A) {
       const { s, w } = c;
-      const inhale = s < 0.6 ? smooth(s / 0.6) : 1 - smooth(seg(s, 0.6, 1.3));
+      const inhale = s < 0.6 ? smooth(s / 0.6) : 1 - smooth(segLinear(s, 0.6, 1.3));
       A.lean -= 0.07 * inhale * w; // chest up
       A.rootY += 0.015 * inhale * w;
       A.head[0] -= 0.14 * inhale * w; // head tips back
@@ -226,7 +242,12 @@ export const ASLEEP: Record<string, Antic> = {
       if (s >= 0.6) {
         const k = s - 0.6;
         if (once(c.run, 'z')) {
-          c.emit('z', c.worldPoint(c.robot.head, 0.25, headTop(c) + 0.05, 0.1), { life: 1.8, vel: new THREE.Vector3(0.16, 0.3, 0), size: 0.3, grow: 2.5 });
+          c.emit('z', c.worldPoint(c.robot.head, 0.25, headTop(c) + 0.05, 0.1), {
+            life: 1.8,
+            vel: new THREE.Vector3(0.16, 0.3, 0),
+            size: 0.3,
+            grow: 2.5,
+          });
         }
         A.shake = Math.max(A.shake, Math.max(0, 1 - k / 0.9) ** 2);
         // the mug hops (twice, the second smaller) and rattles
@@ -255,7 +276,12 @@ export const ASLEEP: Record<string, Antic> = {
       A.head[0] += w * (0.05 * bump(s, 0.4, 1.2) + 0.02 * Math.sin(s * 3));
       if (s >= 0.8 && once(c.run, 'drip')) {
         const [x, y, z] = spot(c, 'mouth');
-        c.emit('sweat', c.worldPoint(c.robot.head, x, y, z), { life: 1.1, vel: new THREE.Vector3(0, -0.05, 0.04), size: 0.06, gravity: 1.4 });
+        c.emit('sweat', c.worldPoint(c.robot.head, x, y, z), {
+          life: 1.1,
+          vel: new THREE.Vector3(0, -0.05, 0.04),
+          size: 0.06,
+          gravity: 1.4,
+        });
       }
     },
   },
@@ -332,14 +358,21 @@ function hatFit(robot: Rig): HatFit {
 }
 
 let cap: ReturnType<typeof buildNightcap> | null = null;
-const worn: { robot: Rig | null; on: boolean; grow: number; accVis: boolean; antenna: THREE.Object3D | null; antVis: boolean } = { robot: null, on: false, grow: 0, accVis: true, antenna: null, antVis: true };
+const worn: {
+  robot: Rig | null;
+  on: boolean;
+  grow: number;
+  accVis: boolean;
+  antenna: THREE.Object3D | null;
+  antVis: boolean;
+} = { robot: null, on: false, grow: 0, accVis: true, antenna: null, antVis: true };
 
 function takeOff() {
   if (!worn.on) return;
   // (worn.on: it's on a robot, and the cap has been built)
-  worn.robot!.accessory.visible = worn.accVis;
+  if (worn.robot) worn.robot.accessory.visible = worn.accVis;
   if (worn.antenna) worn.antenna.visible = worn.antVis;
-  cap!.fit.removeFromParent();
+  cap?.fit.removeFromParent();
   worn.on = false;
 }
 

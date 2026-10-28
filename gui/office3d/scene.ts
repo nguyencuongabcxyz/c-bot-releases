@@ -1,7 +1,8 @@
+import { mesh } from '@/office3d/core/mesh';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { toon, glow, noOutline, canvasTexture, roundRect } from './materials';
-import { SCREEN_W, SCREEN_H } from './screens';
+import { SCREEN_H, SCREEN_W } from '@/office3d/core/constants';
 import { THEMES } from './themes';
 import type { OfficeSet, Stickies, StickyItem } from './types';
 
@@ -15,11 +16,6 @@ export const LAYOUT = {
 };
 
 const box = (w: number, h: number, d: number, r = 0.03) => new RoundedBoxGeometry(w, h, d, 3, r);
-const mesh = <G extends THREE.BufferGeometry, M extends THREE.Material | THREE.Material[]>(geo: G, mat: M, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  return m;
-};
 
 export function buildOffice(theme = THEMES.classic): OfficeSet {
   const office = new THREE.Group();
@@ -27,7 +23,13 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
   const T = theme;
 
   // ---- invisible ground that only shows the shadows, so the desk sits on the desktop
-  const ground = mesh(new THREE.PlaneGeometry(4, 4), noOutline(new THREE.ShadowMaterial({ color: '#1d2235', opacity: 0.22 })), -0.4, 0, -0.6);
+  const ground = mesh(
+    new THREE.PlaneGeometry(4, 4),
+    noOutline(new THREE.ShadowMaterial({ color: '#1d2235', opacity: 0.22 })),
+    -0.4,
+    0,
+    -0.6,
+  );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   office.add(ground);
@@ -52,7 +54,8 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
   }
   // a rolling drawer unit stays on the floor
   desk.add(mesh(box(0.42, 0.6, 0.66, 0.02), woodDark, deskX + 0.46, 0.34, deskZ));
-  for (const y of [0.5, 0.24]) desk.add(mesh(box(0.14, 0.03, 0.03, 0.01), toon(T.desk.handle), deskX + 0.46, y, deskZ + 0.34));
+  for (const y of [0.5, 0.24])
+    desk.add(mesh(box(0.14, 0.03, 0.03, 0.01), toon(T.desk.handle), deskX + 0.46, y, deskZ + 0.34));
   // the control panel, under the top at the right-hand end (where the camera can see it)
   const panelFace = canvasTexture(256, 64);
   function drawPanel(cm = 72, pressed = '') {
@@ -67,7 +70,10 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(cm), 62, 34);
-    for (const [i, dir] of [[0, 'up'], [1, 'down']] as const) {
+    for (const [i, dir] of [
+      [0, 'up'],
+      [1, 'down'],
+    ] as const) {
       const x = 132 + i * 60;
       const lit = pressed === dir;
       ctx.fillStyle = lit ? '#ffd34d' : '#3d4459';
@@ -93,7 +99,13 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
   panel.position.set(deskX + 0.79, deskTop - 0.078, deskZ + 0.24);
   panel.rotation.y = Math.PI / 2; // facing out of the desk's end
   panel.add(mesh(box(0.2, 0.05, 0.07, 0.012), toon('#23283a'), 0, 0, 0));
-  const face = mesh(new THREE.PlaneGeometry(0.19, 0.0475), new THREE.MeshBasicMaterial({ map: panelFace.tex }), 0, 0, 0.0352);
+  const face = mesh(
+    new THREE.PlaneGeometry(0.19, 0.0475),
+    new THREE.MeshBasicMaterial({ map: panelFace.tex }),
+    0,
+    0,
+    0.0352,
+  );
   noOutline(face.material);
   panel.add(face);
   const buttons = new THREE.Object3D(); // where a finger presses (between ▲ and ▼)
@@ -134,7 +146,9 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
   const keyMat = toon(T.keyboard.keys);
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 9; c++) {
-      keyboard.add(mesh(new THREE.BoxGeometry(0.045, 0.012, 0.042), keyMat, -0.22 + c * 0.055, 0.02, -0.055 + r * 0.055));
+      keyboard.add(
+        mesh(new THREE.BoxGeometry(0.045, 0.012, 0.042), keyMat, -0.22 + c * 0.055, 0.02, -0.055 + r * 0.055),
+      );
     }
   }
   top.add(keyboard);
@@ -181,7 +195,12 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
   const boxMat = toon('#7fb7e6');
   const boxDark = toon('#4f86b8');
   wordBox.add(mesh(new THREE.BoxGeometry(0.17, 0.012, 0.11), boxDark, 0, 0.006, 0));
-  for (const [w, d, x, z] of [[0.17, 0.012, 0, 0.049], [0.17, 0.012, 0, -0.049], [0.012, 0.11, 0.079, 0], [0.012, 0.11, -0.079, 0]]) {
+  for (const [w, d, x, z] of [
+    [0.17, 0.012, 0, 0.049],
+    [0.17, 0.012, 0, -0.049],
+    [0.012, 0.11, 0.079, 0],
+    [0.012, 0.11, -0.079, 0],
+  ]) {
     wordBox.add(mesh(new THREE.BoxGeometry(w, 0.07, d), boxMat, x, 0.035, z));
   }
   const tag = canvasTexture(96, 40, (ctx) => {
@@ -194,7 +213,13 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
     ctx.textBaseline = 'middle';
     ctx.fillText('ABC', 48, 21);
   });
-  const tagMesh = mesh(new THREE.PlaneGeometry(0.07, 0.03), noOutline(new THREE.MeshToonMaterial({ map: tag.tex, transparent: true })), 0, 0.04, 0.0562);
+  const tagMesh = mesh(
+    new THREE.PlaneGeometry(0.07, 0.03),
+    noOutline(new THREE.MeshToonMaterial({ map: tag.tex, transparent: true })),
+    0,
+    0.04,
+    0.0562,
+  );
   wordBox.add(tagMesh);
   const cardMat = toon('#fffdf5');
   const cardTip = toon('#ff8fab');
@@ -214,7 +239,9 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
   // how many words there are: one card showing for each, up to ten
   const setWordCount = (n: number) => {
     wordBox.visible = n > 0;
-    cards.forEach((card, i) => (card.visible = i < n));
+    cards.forEach((card, i) => {
+      card.visible = i < n;
+    });
   };
 
   // ---- swivel chair: the base stays put, the top (seat + back + robot) spins
@@ -226,7 +253,9 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
     const leg = mesh(new THREE.BoxGeometry(0.05, 0.04, 0.3), chairDark, Math.sin(a) * 0.15, 0.07, Math.cos(a) * 0.15);
     leg.rotation.y = a;
     chair.add(leg);
-    chair.add(mesh(new THREE.SphereGeometry(0.04, 10, 8), toon(T.chair.wheel), Math.sin(a) * 0.3, 0.04, Math.cos(a) * 0.3));
+    chair.add(
+      mesh(new THREE.SphereGeometry(0.04, 10, 8), toon(T.chair.wheel), Math.sin(a) * 0.3, 0.04, Math.cos(a) * 0.3),
+    );
   }
   // the gas column: stretches when the seat is pumped up (set.chair.lift)
   const column = mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.4, 12), metal, 0, 0.28, 0);
@@ -241,36 +270,37 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
   office.add(chair);
 
   // ---- brand touches: a nameplate on the desk, a logo on the mug and the back of the chair
-  if (T.brand) {
+  const brand = T.brand;
+  if (brand) {
     const plate = canvasTexture(256, 96, (ctx, w, h) => {
-      ctx.fillStyle = T.brand!.plate || '#ffffff'; // (T.brand!: drawn right here, inside the if)
+      ctx.fillStyle = brand.plate || '#ffffff';
       ctx.fillRect(0, 0, w, h);
-      T.brand!.logo(ctx, 14, 14, 68, false);
-      ctx.fillStyle = T.brand!.ink || '#1d2235';
+      brand.logo(ctx, 14, 14, 68, false);
+      ctx.fillStyle = brand.ink || '#1d2235';
       ctx.textBaseline = 'middle';
       // as big as fits beside the logo
       let size = 34;
-      do ctx.font = `800 ${size--}px ${T.brand!.font || '"Segoe UI", sans-serif'}`;
-      while (size > 12 && ctx.measureText(T.brand!.short || T.brand!.name).width > w - 104);
-      ctx.fillText(T.brand!.short || T.brand!.name, 94, 40);
-      ctx.font = `600 17px ${T.brand!.font || '"Segoe UI", sans-serif'}`;
+      do ctx.font = `800 ${size--}px ${brand.font || '"Segoe UI", sans-serif'}`;
+      while (size > 12 && ctx.measureText(brand.short || brand.name).width > w - 104);
+      ctx.fillText(brand.short || brand.name, 94, 40);
+      ctx.font = `600 17px ${brand.font || '"Segoe UI", sans-serif'}`;
       ctx.globalAlpha = 0.7;
-      ctx.fillText(T.brand!.tagline || '', 95, 70);
+      ctx.fillText(brand.tagline || '', 95, 70);
       ctx.globalAlpha = 1;
     });
     const nameplate = new THREE.Group();
     nameplate.position.set(0.12, deskTop, -0.78);
     nameplate.rotation.y = -0.35;
     const front = new THREE.MeshToonMaterial({ map: plate.tex });
-    const side = toon(T.brand.plate || '#ffffff');
+    const side = toon(brand.plate || '#ffffff');
     // a little tent card leaning back
     const card = mesh(new THREE.BoxGeometry(0.34, 0.13, 0.012), [side, side, side, side, front, side], 0, 0.065, 0);
     card.rotation.x = -0.32;
     nameplate.add(card);
-    nameplate.add(mesh(new THREE.BoxGeometry(0.34, 0.012, 0.06), toon(T.brand.accent || T.mug.band), 0, 0.006, -0.02));
+    nameplate.add(mesh(new THREE.BoxGeometry(0.34, 0.012, 0.06), toon(brand.accent || T.mug.band), 0, 0.006, -0.02));
     top.add(nameplate);
 
-    const decal = canvasTexture(128, 128, (ctx) => T.brand!.logo(ctx, 14, 14, 100, false));
+    const decal = canvasTexture(128, 128, (ctx) => brand.logo(ctx, 14, 14, 100, false));
     const logoMat = new THREE.MeshToonMaterial({ map: decal.tex, transparent: true });
     noOutline(logoMat);
     const mugLogo = mesh(new THREE.PlaneGeometry(0.075, 0.075), logoMat, 0, 0.055, 0.0605);
@@ -327,7 +357,11 @@ export function buildOffice(theme = THEMES.classic): OfficeSet {
 //                              straightens and comes in towards the screen's middle
 //   stickies.update(dt)        every frame (the zoom springs); true while something's moving
 const STICKY_SIDES: Record<string, number> = { vocab: -1, note: 1 };
-const STICKY: { size: number; slots: number; colors: Record<string, string> } = { size: 0.19, slots: 3, colors: { vocab: '#bfe7ff', note: '#fff2a8' } };
+const STICKY: { size: number; slots: number; colors: Record<string, string> } = {
+  size: 0.19,
+  slots: 3,
+  colors: { vocab: '#bfe7ff', note: '#fff2a8' },
+};
 const ZOOM = { scale: 2.6, inward: 0.2, out: 0.08, stiff: 260, damp: 17 }; // hovered: how big, how far in and out, its spring
 function stickyTexture(text: string, sub: string, color: string) {
   return canvasTexture(160, 160, (ctx, w, h) => {
@@ -359,10 +393,20 @@ function stickyTexture(text: string, sub: string, color: string) {
       } else line = next;
     }
     if (line) lines.push(line);
-    lines.slice(0, 3).forEach((l, i) => ctx.fillText(i === 2 && lines.length > 3 ? l + '…' : l, w / 2, 104 + i * 20));
+    lines.slice(0, 3).forEach((l, i) => {
+      ctx.fillText(i === 2 && lines.length > 3 ? `${l}…` : l, w / 2, 104 + i * 20);
+    });
   });
 }
-type ShownNote = { id: string; group: THREE.Group; mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>; base: { x: number; y: number; z: number; rz: number }; side: number; zoom: number; vel: number };
+type ShownNote = {
+  id: string;
+  group: THREE.Group;
+  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  base: { x: number; y: number; z: number; rz: number };
+  side: number;
+  zoom: number;
+  vel: number;
+};
 function buildStickies(monitor: THREE.Group, office: THREE.Group): Stickies {
   const rack = new THREE.Group();
   rack.position.set(0, 0.68, 0.034); // the frame's face (see the monitor above)
@@ -374,7 +418,7 @@ function buildStickies(monitor: THREE.Group, office: THREE.Group): Stickies {
   function clear(kind: string) {
     for (const n of shown[kind] || []) {
       n.group.removeFromParent();
-      n.mesh.material.map!.dispose(); // (every note has its own)
+      n.mesh.material.map?.dispose(); // (every note has its own)
       n.mesh.material.dispose();
       n.mesh.geometry.dispose();
       owner.delete(n.mesh);
@@ -399,7 +443,10 @@ function buildStickies(monitor: THREE.Group, office: THREE.Group): Stickies {
         group.rotation.z = side * (0.06 + 0.05 * ((i * 7) % 3)) * (i % 2 ? -1 : 1);
         const base = { x: group.position.x, y: group.position.y, z: group.position.z, rz: group.rotation.z };
         const tex = stickyTexture(String(item.text || ''), String(item.sub || ''), item.color || STICKY.colors[kind]);
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(STICKY.size, STICKY.size), glow('#ffffff', { map: tex.tex, side: THREE.DoubleSide })); // lit: readable in a dark room too
+        const mesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(STICKY.size, STICKY.size),
+          glow('#ffffff', { map: tex.tex, side: THREE.DoubleSide }),
+        ); // lit: readable in a dark room too
         mesh.castShadow = true;
         group.add(mesh);
         rack.add(group);

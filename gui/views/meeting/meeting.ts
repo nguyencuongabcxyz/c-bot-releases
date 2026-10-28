@@ -2,20 +2,28 @@
 // (office3d/meeting.js draws it), and a speech bubble over whoever just said something.
 // From main: meeting:state (who's typing, talking, agreeing; the phase) and meeting:say
 // (a line of what someone just posted).
+import { $ } from '@/lib/dom';
 import { Meeting3D } from '@/office3d/meeting';
 import type { MeetingState } from '@/types/pages';
-import { showView } from '@/ui/view';
+import { showView } from '@/lib/page';
 import markup from './meeting.html?raw';
-import './meeting.css';
+import './meeting.css';
+
 import * as ipc from '@/ipc';
 
 showView(markup, { title: 'Meeting room' });
 
 (() => {
-  const host = document.getElementById('room')!;
+  const host = $('#room');
   const bubbles = new Map<string, { el: HTMLDivElement; timer?: number; kind?: string }>(); // robot id -> { el, until, kind }
   let view: ReturnType<typeof Meeting3D.mount> | null = null;
-  let state: Omit<MeetingState, 'ids'> & { ids?: string[] } = { speaker: null, typing: [], agree: [], phase: 'running', mode: 'free' };
+  let state: Omit<MeetingState, 'ids'> & { ids?: string[] } = {
+    speaker: null,
+    typing: [],
+    agree: [],
+    phase: 'running',
+    mode: 'free',
+  };
   const talking = new Map<string, number>(); // robot id -> talking until (ms): it just posted something
 
   // the bubbles follow the heads, only while there are any
@@ -64,7 +72,8 @@ showView(markup, { title: 'Meeting room' });
       let mode = 'idle';
       if (state.phase === 'summarising' && id === state.speaker) mode = 'summary';
       else if ((talking.get(id) || 0) > now) mode = 'talking';
-      else if (id === state.speaker) mode = 'talking'; // (taking turns: its words are coming in)
+      else if (id === state.speaker)
+        mode = 'talking'; // (taking turns: its words are coming in)
       else if (typing.has(id)) mode = 'typing';
       else if (agree.has(id)) mode = 'agree';
       view.act(id, mode);
