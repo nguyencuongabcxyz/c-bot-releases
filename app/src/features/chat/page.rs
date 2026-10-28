@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::*;
 use crate::runtime::{Error, Locked};
+use crate::store::Fields;
 
 // ---------------------------------------------------------------- what the page asks
 
@@ -200,7 +201,7 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
     if locate::find(settings["claudePath"].as_str().unwrap_or("")).is_none() {
         return json!({ "ok": false, "error": "I can't find Claude Code anywhere on this computer. Install it, then press “Search again” in the Robot Workshop (bottom left), or point me to it there." });
     }
-    let folder = c["folder"].as_str().unwrap_or("").to_string();
+    let folder = c.folder().to_string();
     if folder.is_empty() || !Path::new(&folder).exists() {
         let shown = if folder.is_empty() { "(none)" } else { &folder };
         return json!({ "ok": false, "error": format!("My folder is missing: {shown}. Point me at a new one in the Robot Workshop.") });
@@ -349,7 +350,7 @@ pub fn remote(app: &AppHandle, id: &str, tab_id: &str, on: bool) -> Value {
     if with(app, |st| st.terminals.get(id).is_some_and(|t| t == tab_id)) {
         return json!({ "ok": false, "error": "This conversation is open in the terminal. Close it first (or type /remote-control there)." });
     }
-    let folder = c["folder"].as_str().unwrap_or("");
+    let folder = c.folder();
     if folder.is_empty() || !Path::new(folder).exists() {
         return json!({ "ok": false, "error": "My folder is missing. Point me at a new one in the Robot Workshop." });
     }
@@ -371,13 +372,13 @@ pub fn revive_remote(app: &AppHandle) {
             .list()
             .iter()
             .flat_map(|c| {
-                let id = c["id"].as_str().unwrap_or("").to_string();
+                let id = c.id().to_string();
                 c["tabs"]
                     .as_array()
                     .into_iter()
                     .flatten()
                     .filter(|t| t["remote"] == true)
-                    .map(move |t| (id.clone(), t["id"].as_str().unwrap_or("").to_string()))
+                    .map(move |t| (id.clone(), t.id().to_string()))
             })
             .collect()
     });
@@ -425,7 +426,7 @@ pub fn brain(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         Some((
             st.model_choices.clone(),
             model,
-            tab["effort"].as_str().unwrap_or("").to_string(),
+            tab.effort().to_string(),
             mode_of(c, tab).to_string(),
             allowed_mode(c, "bypassPermissions"),
         ))
@@ -550,7 +551,7 @@ pub fn sessions(app: &AppHandle, id: &str) -> Value {
     let Some(c) = with(app, |st| st.store.get(id).cloned()) else {
         return json!([]);
     };
-    let folder = c["folder"].as_str().unwrap_or("");
+    let folder = c.folder();
     if folder.is_empty() {
         return json!([]);
     }
@@ -574,7 +575,7 @@ pub fn sessions(app: &AppHandle, id: &str) -> Value {
         .collect();
     let open: HashMap<String, Value> = tabs
         .iter()
-        .filter_map(|t| Some((t["sessionId"].as_str()?.to_string(), t["id"].clone())))
+        .filter_map(|t| Some((t.session_id()?.to_string(), t["id"].clone())))
         .collect();
     let mut mine: Vec<String> = c["sessionIds"]
         .as_array()
@@ -586,7 +587,7 @@ pub fn sessions(app: &AppHandle, id: &str) -> Value {
     let active_session = tabs
         .iter()
         .find(|t| t["id"] == c["activeTab"])
-        .and_then(|t| t["sessionId"].as_str())
+        .and_then(|t| t.session_id())
         .map(str::to_string);
     let rows = transcripts::list(folder, &mine, 60)
         .into_iter()

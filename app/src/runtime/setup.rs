@@ -18,6 +18,7 @@ use crate::mcp::{apps, link};
 use crate::robots;
 use crate::robots::{island, maid, planes, revive, screens, social, stage, topmost, walkers};
 use crate::runtime::updater;
+use crate::store::Fields;
 use crate::store::Store;
 use crate::ui::{tray, workshop};
 use crate::workbench::{capture, palette, paste, quick, shell, snip, terminal};
@@ -50,7 +51,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .store
         .list()
         .iter()
-        .filter(|c| c["visible"].as_bool().unwrap_or(false))
+        .filter(|c| c.visible())
         .filter_map(|c| c["id"].as_str().map(str::to_string))
         .collect();
     let order: Vec<String> = st

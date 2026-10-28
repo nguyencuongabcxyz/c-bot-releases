@@ -1,7 +1,8 @@
 //! Small helpers every module uses to read what a page sent and to answer it.
 
-use super::Error;
 use serde_json::{Map, Value};
+
+use super::Error;
 
 /// A command only one window may send (the palette's, the snip screen's…).
 pub fn only(window: &tauri::WebviewWindow, label: &str) -> Result<(), Error> {

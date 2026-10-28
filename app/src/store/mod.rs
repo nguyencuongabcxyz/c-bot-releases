@@ -7,15 +7,19 @@
 //! Characters stay plain JSON objects: the pages read and write fields this side
 //! never needs to know about.
 
+mod fields;
 pub mod saved;
+
+pub use fields::Fields;
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::runtime::Error;
 use serde_json::{Map, Value, json};
+
+use crate::runtime::Error;
 
 const HISTORY_LIMIT: usize = 60;
 pub const MAX_TABS: usize = 8;

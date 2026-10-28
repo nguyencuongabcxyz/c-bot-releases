@@ -6,6 +6,8 @@ use std::sync::LazyLock;
 
 use serde_json::{Map, Value};
 
+use crate::store::Fields;
+
 static RAW: &str = include_str!("../../../shared/personalities.json");
 
 pub fn all() -> &'static Map<String, Value> {
@@ -45,14 +47,14 @@ pub fn public() -> Value {
 /// What Claude Code is told about the robot it's playing (--append-system-prompt).
 pub fn system_prompt_for(c: &Value) -> String {
     let p = all()
-        .get(c["personality"].as_str().unwrap_or(""))
+        .get(c.personality())
         .or_else(|| all().get("cheerful"))
         .unwrap();
     [
         format!(
             "You are \"{}\", a small cartoon robot that lives on the user's desktop and looks after the folder {}.",
             c["name"].as_str().unwrap_or("Robo"),
-            c["folder"].as_str().unwrap_or("")
+            c.folder()
         ),
         format!("Personality: {}", p["prompt"].as_str().unwrap_or("")),
         "Your replies appear in a small speech bubble, so keep them short and conversational: lead with the answer, use brief markdown, and avoid long preambles.".into(),

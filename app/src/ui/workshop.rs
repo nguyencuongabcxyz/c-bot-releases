@@ -18,6 +18,7 @@ use crate::robots;
 use crate::robots::ipc;
 use crate::runtime::util::patch;
 use crate::runtime::{Locked, hub, with};
+use crate::store::Fields;
 use crate::ui::{tray, views};
 
 const LABEL: &str = "manager";
@@ -354,7 +355,7 @@ fn create(app: &AppHandle, fields: &Value) -> Value {
         let c = st.store.create(fields);
         (c, st.store.list().len().saturating_sub(1))
     });
-    let id = c["id"].as_str().unwrap_or("").to_string();
+    let id = c.id().to_string();
     if let Err(err) = robots::open(app, &id, index) {
         eprintln!("[robots] couldn't open {id}: {err}");
     }

@@ -4,6 +4,7 @@
 use std::sync::MutexGuard;
 
 use super::*;
+use crate::store::Fields;
 
 /// The tab an event is for.
 #[derive(Clone, Copy)]
@@ -244,12 +245,7 @@ fn on_commands(e: Ev, data: Value) {
             .and_then(|c| c["claudeCommands"].as_array().cloned())
             .unwrap_or_default()
             .into_iter()
-            .map(|c| {
-                (
-                    c["name"].as_str().unwrap_or("").to_string(),
-                    c["description"].clone(),
-                )
-            })
+            .map(|c| (c.name().to_string(), c["description"].clone()))
             .collect();
         let merged: Vec<Value> = data
             .as_array()
@@ -257,7 +253,7 @@ fn on_commands(e: Ev, data: Value) {
             .flatten()
             .take(200)
             .map(|c| {
-                let name = c["name"].as_str().unwrap_or("");
+                let name = c.name();
                 let desc = c["description"]
                     .as_str()
                     .filter(|d| !d.is_empty())

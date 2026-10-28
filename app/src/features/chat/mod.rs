@@ -28,6 +28,7 @@ use crate::agents::{claude, personalities};
 use crate::mcp::{apps, link, tools};
 use crate::robots::label_of;
 use crate::runtime::{Locked, with};
+use crate::store::Fields;
 use crate::workbench::files;
 
 const IDLE_CLOSE: Duration = Duration::from_secs(15 * 60); // an idle conversation's process is closed; it resumes on the next question
@@ -283,7 +284,7 @@ fn patch(pairs: Vec<(&str, Value)>) -> Map<String, Value> {
 
 /// Its personality, and the other robots it can ask (mcp/link.rs).
 pub fn prompt_for(app: &AppHandle, c: &Value) -> String {
-    let id = c["id"].as_str().unwrap_or("");
+    let id = c.id();
     let mut prompt = personalities::system_prompt_for(c);
     if let Some(note) = link::note(app, id) {
         prompt.push('\n');
@@ -318,11 +319,11 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     let mcp_config = link::mcp_config(app, id, tab_id);
     let opts = claude::Opts {
         claude_path: locate::find(settings["claudePath"].as_str().unwrap_or(""))?,
-        cwd: c["folder"].as_str().unwrap_or("").into(),
+        cwd: c.folder().into(),
         system_prompt: prompt_for(app, &c),
         permission_mode: mode_of(&c, &tab).into(),
         model: model.into(),
-        effort: tab["effort"].as_str().unwrap_or("").into(),
+        effort: tab.effort().into(),
         add_dirs: vec![],
         tools: settings["toolset"]["tools"].as_array().map(|t| {
             t.iter()
@@ -355,7 +356,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     let handler: claude::Handler = Arc::new(move |session, event, data| {
         events::on_event(&app2, &id2, &tab2, &book2, session, event, data)
     });
-    let session = Session::new(opts, tab["sessionId"].as_str().map(str::to_string), handler);
+    let session = Session::new(opts, tab.session_id().map(str::to_string), handler);
     let chat = Arc::new(Chat { session, book });
     with(app, |st| st.chats.insert(key, chat.clone()));
     Some(chat)

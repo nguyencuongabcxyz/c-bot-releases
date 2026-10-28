@@ -3,6 +3,7 @@
 //! moves, the cost so far, and the end.
 
 use super::*;
+use crate::store::Fields;
 
 impl Chat {
     pub(super) fn free(&self) -> bool {
@@ -118,26 +119,26 @@ impl Chat {
                 let p = personality_of(oc);
                 Some(format!(
                     "{} ({}, looks after {})",
-                    oc["name"].as_str().unwrap_or(""),
+                    oc.name(),
                     p["label"].as_str().unwrap_or("robot"),
-                    oc["folder"].as_str().unwrap_or("")
+                    oc.folder()
                 ))
             })
             .collect();
         let opts = claude::Opts {
             // (not found: starting fails, and the turn with it)
             claude_path: locate::find(&claude_path).unwrap_or_default(),
-            cwd: c["folder"].as_str().unwrap_or("").into(),
+            cwd: c.folder().into(),
             system_prompt: format!(
                 "{}\n{}",
                 personalities::system_prompt_for(&c),
-                rules(c["name"].as_str().unwrap_or(""), &others, self.mode)
+                rules(c.name(), &others, self.mode)
             ),
             permission_mode: "default".into(),
             model: if self.fast {
                 "haiku".into()
             } else {
-                c["model"].as_str().unwrap_or("").into()
+                c.model().into()
             },
             tools: Some(TOOLS.iter().map(|t| t.to_string()).collect()),
             extra_args: vec!["--strict-mcp-config".into()], // (no MCP servers: talk only)

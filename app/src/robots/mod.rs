@@ -30,6 +30,7 @@ use crate::features::chat;
 use crate::platform::window;
 use crate::platform::window::Rect;
 use crate::runtime::{Error, State, with};
+use crate::store::Fields;
 use crate::store::title_for;
 use crate::ui::views;
 use crate::workbench::{shell, terminal};
@@ -343,7 +344,7 @@ pub fn apply_layout(app: &AppHandle, id: &str) {
 
 /// What the page knows about its robot (main.js robotView).
 pub fn view(st: &State, c: &Value) -> Value {
-    let id = c["id"].as_str().unwrap_or("");
+    let id = c.id();
     let mut v = c.clone();
     let mut any_busy = false;
     let tabs: Vec<Value> = c["tabs"]
@@ -352,7 +353,7 @@ pub fn view(st: &State, c: &Value) -> Value {
             t.iter()
                 .map(|t| {
                     let mut t = t.clone();
-                    let busy = chat::is_busy(st, id, t["id"].as_str().unwrap_or(""));
+                    let busy = chat::is_busy(st, id, t.id());
                     any_busy |= busy;
                     t["custom"] = json!(!t["title"].as_str().unwrap_or("").is_empty());
                     t["title"] = json!(title_for(&t));

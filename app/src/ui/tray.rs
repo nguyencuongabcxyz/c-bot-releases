@@ -23,6 +23,7 @@ use crate::features::{notes, vocab};
 use crate::robots;
 use crate::robots::{ipc, maid, stage, walkers};
 use crate::runtime::{Error, hub, updater, with};
+use crate::store::Fields;
 use crate::ui::{views, workshop};
 use crate::workbench::{palette, paste, quick, snip};
 
@@ -150,10 +151,7 @@ fn sounds_menu(app: &AppHandle, s: &Value) -> Item {
 }
 
 fn visible_count(chars: &[Value]) -> usize {
-    chars
-        .iter()
-        .filter(|c| c["visible"].as_bool().unwrap_or(false))
-        .count()
+    chars.iter().filter(|c| c.visible()).count()
 }
 
 /// The stage (robots/stage/mod.rs): the robots on the desk to tick for it, and taking it (or leaving it).
@@ -176,12 +174,9 @@ fn stage_menu(app: &AppHandle, chars: &[Value]) -> Item {
         ));
     }
     items.push(separator(app));
-    let out: Vec<&Value> = chars
-        .iter()
-        .filter(|c| c["visible"].as_bool().unwrap_or(false))
-        .collect();
+    let out: Vec<&Value> = chars.iter().filter(|c| c.visible()).collect();
     for c in &out {
-        let id = c["id"].as_str().unwrap_or("");
+        let id = c.id();
         let ticked = if on {
             cast.iter().any(|x| x == id)
         } else {
@@ -241,26 +236,18 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         items.push(note(app, "No robots yet"));
     }
     for c in &chars {
-        let id = c["id"].as_str().unwrap_or("");
+        let id = c.id();
         let label = format!(
             "{}  {}",
-            personalities::emoji(c["personality"].as_str().unwrap_or("")),
+            personalities::emoji(c.personality()),
             c["name"].as_str().unwrap_or("Robo")
         );
-        items.push(check(
-            app,
-            format!("tray|robot|{id}"),
-            &label,
-            c["visible"].as_bool().unwrap_or(false),
-        ));
+        items.push(check(app, format!("tray|robot|{id}"), &label, c.visible()));
     }
-    for c in chars
-        .iter()
-        .filter(|c| walkers::has(app, c["id"].as_str().unwrap_or("")))
-    {
+    for c in chars.iter().filter(|c| walkers::has(app, c.id())) {
         items.push(item(
             app,
-            format!("tray|dock|{}", c["id"].as_str().unwrap_or("")),
+            format!("tray|dock|{}", c.id()),
             &format!(
                 "🚶  Call {} back to the desk",
                 c["name"].as_str().unwrap_or("Robo")
@@ -661,7 +648,7 @@ fn robot_menu_of(
         )
         .map(Some);
     }
-    let folder = c["folder"].as_str().unwrap_or("");
+    let folder = c.folder();
     let base = folder
         .rsplit(['\\', '/'])
         .find(|s| !s.is_empty())
@@ -864,7 +851,7 @@ fn picked(app: &AppHandle, id: &str) {
                     st.store
                         .list()
                         .iter()
-                        .filter(|c| c["visible"].as_bool().unwrap_or(false))
+                        .filter(|c| c.visible())
                         .filter_map(|c| c["id"].as_str().map(str::to_string))
                         .collect()
                 });

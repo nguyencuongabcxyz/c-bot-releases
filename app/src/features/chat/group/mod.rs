@@ -57,6 +57,7 @@ use crate::robots;
 use crate::robots::{planes, social, walkers};
 use crate::runtime::util::{only, patch, text};
 use crate::runtime::{Locked, hub, with};
+use crate::store::Fields;
 use crate::store::now_ms;
 use crate::ui::views;
 
@@ -382,7 +383,7 @@ fn is_asleep(app: &AppHandle, id: &str) -> bool {
 
 fn personality_of(c: &Value) -> Value {
     let all = personalities::all();
-    all.get(c["personality"].as_str().unwrap_or(""))
+    all.get(c.personality())
         .or_else(|| all.values().next())
         .cloned()
         .unwrap_or(json!({}))
@@ -391,7 +392,7 @@ fn personality_of(c: &Value) -> Value {
 fn robot_info(app: &AppHandle, id: &str) -> Option<Value> {
     let c = with(app, |st| st.store.get(id).cloned())?;
     let p = personality_of(&c);
-    let folder = c["folder"].as_str().unwrap_or("");
+    let folder = c.folder();
     let base = Path::new(folder)
         .file_name()
         .map(|b| b.to_string_lossy().into_owned())

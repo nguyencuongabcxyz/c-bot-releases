@@ -19,6 +19,7 @@ use crate::robots::label_of;
 use crate::runtime::util::patch;
 use crate::runtime::{Locked, with};
 use crate::store;
+use crate::store::Fields;
 
 // (looking, not changing: the web ones without asking)
 const TOOLS: [&str; 5] = ["Read", "Glob", "Grep", "WebSearch", "WebFetch"];
@@ -122,7 +123,7 @@ pub fn ask(
     }) else {
         return fail("That conversation is gone.");
     };
-    let folder = c["folder"].as_str().unwrap_or("");
+    let folder = c.folder();
     if folder.is_empty() || !Path::new(folder).exists() {
         return fail("My folder is missing. Point me at a new one in the Robot Workshop.");
     }
@@ -150,7 +151,7 @@ pub fn ask(
             t
         }
     };
-    let thread_id = thread["id"].as_str().unwrap_or("").to_string();
+    let thread_id = thread.id().to_string();
     let key = key_of(id, tab_id, &thread_id);
     if with(app, |st| {
         st.chats.get(&key).is_some_and(|c| c.session.busy())
@@ -196,7 +197,7 @@ fn start(
     tab: &Value,
     claude_path: PathBuf,
 ) -> Arc<Chat> {
-    let thread_id = thread["id"].as_str().unwrap_or("").to_string();
+    let thread_id = thread.id().to_string();
     let busy = with(app, |st| chat::is_busy(st, id, tab_id));
     let last_answer = || {
         tab["history"]
@@ -208,19 +209,18 @@ fn start(
             .and_then(|h| h["uuid"].as_str())
             .map(str::to_string)
     };
-    let (session_id, fork, resume_at) =
-        match (thread["sessionId"].as_str(), tab["sessionId"].as_str()) {
-            (Some(own), _) => (Some(own.to_string()), false, None),
-            (None, Some(main)) => (
-                Some(main.to_string()),
-                true,
-                if busy { last_answer() } else { None },
-            ),
-            (None, None) => (None, false, None),
-        };
+    let (session_id, fork, resume_at) = match (thread.session_id(), tab.session_id()) {
+        (Some(own), _) => (Some(own.to_string()), false, None),
+        (None, Some(main)) => (
+            Some(main.to_string()),
+            true,
+            if busy { last_answer() } else { None },
+        ),
+        (None, None) => (None, false, None),
+    };
     let opts = claude::Opts {
         claude_path,
-        cwd: c["folder"].as_str().unwrap_or("").into(),
+        cwd: c.folder().into(),
         system_prompt: format!("{}\n{NOTE}", chat::prompt_for(app, c)),
         permission_mode: "default".into(),
         model: tab["model"]
@@ -228,7 +228,7 @@ fn start(
             .or(c["model"].as_str())
             .unwrap_or("")
             .into(), // (the tab's brain)
-        effort: tab["effort"].as_str().unwrap_or("").into(),
+        effort: tab.effort().into(),
         tools: Some(TOOLS.iter().map(|t| t.to_string()).collect()),
         allowed_tools: vec!["WebSearch".into(), "WebFetch".into()],
         extra_args: vec!["--strict-mcp-config".into()], // (none of the robot's MCP tools)
@@ -411,7 +411,7 @@ pub fn kept_for(tab: &Value, history: &[Value]) -> (Value, Vec<String>) {
     (
         Value::Array(kept),
         gone.iter()
-            .filter_map(|t| t["sessionId"].as_str().map(str::to_string))
+            .filter_map(|t| t.session_id().map(str::to_string))
             .collect(),
     )
 }
@@ -422,7 +422,7 @@ pub fn sessions_of(tab: &Value) -> Vec<String> {
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|t| t["sessionId"].as_str().map(str::to_string))
+        .filter_map(|t| t.session_id().map(str::to_string))
         .collect()
 }
 

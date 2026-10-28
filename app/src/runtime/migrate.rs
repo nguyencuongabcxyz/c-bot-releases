@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use super::State;
 use super::util::patch;
+use crate::store::Fields;
 
 // The characters there used to be, as robots built from parts that look like them
 // (office3d/kit3d.ts); main.js OLD_LOOKS.
@@ -47,7 +48,7 @@ pub fn migrate_looks(st: &mut State) {
                     c["color"].as_str().unwrap_or(""),
                 )
             });
-            (c["id"].as_str().unwrap_or("").to_string(), kit)
+            (c.id().to_string(), kit)
         })
         .collect();
     for (id, kit) in old {

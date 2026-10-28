@@ -38,6 +38,7 @@ use crate::robots;
 use crate::robots::{planes, social, walkers};
 use crate::runtime::util::text;
 use crate::runtime::{Error, hub, part_or_default, with};
+use crate::store::Fields;
 use crate::store::now_ms;
 use crate::workbench::shell;
 
@@ -123,9 +124,9 @@ pub(super) fn others(app: &AppHandle, from: &str) -> Vec<(String, String, String
             .iter()
             .map(|c| {
                 (
-                    c["id"].as_str().unwrap_or("").to_string(),
-                    c["name"].as_str().unwrap_or("").to_string(),
-                    c["folder"].as_str().unwrap_or("").to_string(),
+                    c.id().to_string(),
+                    c.name().to_string(),
+                    c.folder().to_string(),
                 )
             })
             .collect()
@@ -246,9 +247,9 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
             .iter()
             .map(|c| {
                 (
-                    c["id"].as_str().unwrap_or("").to_string(),
-                    c["name"].as_str().unwrap_or("").to_string(),
-                    c["folder"].as_str().unwrap_or("").to_string(),
+                    c.id().to_string(),
+                    c.name().to_string(),
+                    c.folder().to_string(),
                 )
             })
             .collect()

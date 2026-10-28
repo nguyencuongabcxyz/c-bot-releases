@@ -23,6 +23,7 @@ use crate::platform::process;
 use crate::robots;
 use crate::runtime::util::patch;
 use crate::runtime::{Error, State, part_or_default, with};
+use crate::store::Fields;
 use crate::ui::workshop;
 
 const POLL: Duration = Duration::from_millis(700);
@@ -282,18 +283,18 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
     let Some(claude_path) = locate::find(settings["claudePath"].as_str().unwrap_or("")) else {
         return json!({ "ok": false, "error": "I can't find the `claude` command." });
     };
-    let folder = c["folder"].as_str().unwrap_or("").to_string();
+    let folder = c.folder().to_string();
     if folder.is_empty() || !Path::new(&folder).exists() {
         return json!({ "ok": false, "error": format!("My folder is missing: {}.", if folder.is_empty() { "(none)" } else { &folder }) });
     }
-    let session_id = tab["sessionId"].as_str().unwrap_or("").to_string();
+    let session_id = tab.session_id().unwrap_or("").to_string();
     let title = format!("C-Bot - {}", c["name"].as_str().unwrap_or("Robo"));
     let since = SystemTime::now();
     let mut child = match launch(
         &claude_path.to_string_lossy(),
         &folder,
         &session_id,
-        c["model"].as_str().unwrap_or(""),
+        c.model(),
         chat::mode_of(&c, &tab),
         &title,
     ) {
@@ -372,8 +373,8 @@ fn close_terminal(app: &AppHandle, id: &str) {
         let c = st.store.get(id)?;
         let tab = st.store.tab(id, &tab_id)?;
         Some((
-            c["folder"].as_str().unwrap_or("").to_string(),
-            tab["sessionId"].as_str().unwrap_or("").to_string(),
+            c.folder().to_string(),
+            tab.session_id().unwrap_or("").to_string(),
         ))
     }) else {
         return;

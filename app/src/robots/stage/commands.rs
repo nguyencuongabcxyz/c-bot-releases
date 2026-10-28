@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::runtime::Error;
+use crate::store::Fields;
 
 // ---------------------------------------------------------------- what the pages ask
 
@@ -210,7 +211,7 @@ pub fn stage_add_menu(app: AppHandle, window: tauri::WebviewWindow) -> Result<()
         st.store
             .list()
             .iter()
-            .filter(|c| c["visible"].as_bool().unwrap_or(false))
+            .filter(|c| c.visible())
             .filter_map(|c| {
                 Some((
                     c["id"].as_str()?.to_string(),

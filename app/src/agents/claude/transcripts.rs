@@ -10,9 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::UNIX_EPOCH;
 
-use crate::runtime::Locked;
 use regex::Regex;
 use serde_json::{Value, json};
+
+use crate::runtime::Locked;
 
 const BIG_FILE: u64 = 2 * 1024 * 1024; // only skim the head and tail of transcripts larger than this
 

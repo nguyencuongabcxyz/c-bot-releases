@@ -27,6 +27,7 @@ use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::util::{only, patch};
 use crate::runtime::{Error, hub, part, with};
+use crate::store::Fields;
 use crate::ui::views;
 
 pub const LABEL: &str = "island";
@@ -197,7 +198,7 @@ pub fn robots_view(app: &AppHandle) -> Value {
             .list()
             .iter()
             .map(|c| {
-                let id = c["id"].as_str().unwrap_or("");
+                let id = c.id();
                 (
                     json!({ "id": id, "name": c["name"], "color": c["color"] }),
                     st.robots.get(id).map(|r| r.peek),

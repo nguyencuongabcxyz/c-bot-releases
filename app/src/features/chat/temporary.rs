@@ -2,6 +2,7 @@
 //! never among the past conversations).
 
 use super::*;
+use crate::store::Fields;
 
 // ---------------------------------------------------------------- temporary chats
 
@@ -13,10 +14,7 @@ pub(super) fn sessions_of(tab: &Value) -> Vec<String> {
         .flatten()
         .filter_map(|s| s.as_str().map(str::to_string))
         .collect();
-    if let Some(s) = tab["sessionId"]
-        .as_str()
-        .filter(|s| !all.iter().any(|a| a == s))
-    {
+    if let Some(s) = tab.session_id().filter(|s| !all.iter().any(|a| a == s)) {
         all.push(s.to_string());
     }
     all
@@ -51,7 +49,7 @@ pub fn sweep_temporary(app: &AppHandle) {
             .list()
             .iter()
             .flat_map(|c| {
-                let id = c["id"].as_str().unwrap_or("").to_string();
+                let id = c.id().to_string();
                 c["tabs"]
                     .as_array()
                     .into_iter()
@@ -64,9 +62,7 @@ pub fn sweep_temporary(app: &AppHandle) {
     });
     for (id, tab) in left {
         erase_temporary(app, &id, &tab);
-        with(app, |st| {
-            st.store.remove_tab(&id, tab["id"].as_str().unwrap_or(""))
-        });
+        with(app, |st| st.store.remove_tab(&id, tab.id()));
     }
 }
 
@@ -120,8 +116,7 @@ pub fn resume(app: &AppHandle, id: &str, tab_id: &str, session_id: &str) -> Valu
         });
         return json!({ "ok": true, "tabId": owner["id"], "already": true });
     }
-    let Some(session) = transcripts::read(c["folder"].as_str().unwrap_or(""), session_id, 60)
-    else {
+    let Some(session) = transcripts::read(c.folder(), session_id, 60) else {
         return json!({ "ok": false, "error": "I couldn't find that conversation any more." });
     };
     let history = history_of(&session);
