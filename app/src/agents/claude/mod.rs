@@ -8,12 +8,15 @@ mod event;
 mod lines;
 pub mod locate;
 mod protocol;
+mod reports;
 mod session;
 mod steps;
 mod stream;
 pub mod transcripts;
 
 pub use event::Event;
+pub use protocol::Model;
+pub use reports::*;
 pub use steps::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};

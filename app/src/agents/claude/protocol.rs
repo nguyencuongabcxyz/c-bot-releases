@@ -322,6 +322,32 @@ pub(super) struct Denial {
     pub tool_name: Value,
 }
 
+/// A model Claude Code offers (from its answer to initialize).
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Model {
+    /// What --model takes ("default": its own choice).
+    #[serde(default, deserialize_with = "text")]
+    pub value: String,
+    #[serde(default)]
+    pub display_name: Value,
+    #[serde(default)]
+    pub description: Value,
+    /// The effort levels it takes.
+    #[serde(default)]
+    pub supported_effort_levels: Option<Value>,
+}
+
+/// The models in Claude Code's answer to initialize (one it can't read is left out).
+pub(super) fn models_of(info: &Value) -> Vec<Model> {
+    info["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| Model::deserialize(m).ok())
+        .collect()
+}
+
 // ---------------------------------------------------------------- reading forgivingly
 
 /// Text, or "" for anything else (as `s()` reads it).

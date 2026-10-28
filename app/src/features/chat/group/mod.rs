@@ -391,7 +391,6 @@ fn hand(app: &AppHandle, id: &str, side: &str, up: bool) -> Option<(f64, f64)> {
 
 /// The session's events, for the robot whose chat process it is (an old one's are ignored).
 fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: Event) {
-    let failed = matches!(event, Event::Fail(_));
     act(app, |g, env| {
         let Some(c) = g.chat.as_mut() else { return };
         let Some(me) = c.people.get_mut(id) else {
@@ -414,14 +413,13 @@ fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: Event) {
                     ));
                 }
             }
-            Event::Tool(data) => {
+            Event::Tool(tool) => {
                 let Some(t) = me.turn.as_mut() else { return };
-                let detail = data["detail"]
-                    .as_str()
-                    .filter(|d| !d.is_empty())
-                    .or(data["name"].as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let detail = if tool.detail.is_empty() {
+                    tool.name
+                } else {
+                    tool.detail
+                };
                 t.looked.push(detail);
                 let (looked, msg) = (t.looked.clone(), t.msg);
                 if let Some(m) = msg.and_then(|m| c.msg(m)) {
@@ -434,23 +432,15 @@ fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: Event) {
                     env.tell(id, json!({ "phase": "say", "text": format!("💭 {text}") }));
                 }
             }
-            Event::Done(data) | Event::Fail(data) => {
-                if me
-                    .turn
-                    .as_ref()
-                    .is_none_or(|t| data["turnId"] != t.turn_id.as_str())
-                {
-                    return;
-                }
-                let r = if !failed {
-                    data
-                } else {
-                    let mut r = data.clone();
-                    r["isError"] = json!(true);
-                    r["text"] = json!("");
-                    r["error"] = data["message"].clone();
-                    r
-                };
+            // (its turn's end, as the group chat keeps it: text, isError, interrupted, error, costUsd)
+            Event::Done(d) if me.turn.as_ref().is_some_and(|t| d.turn_id == t.turn_id) => {
+                c.end_turn(env, id, json!(d));
+            }
+            Event::Fail(f) if me.turn.as_ref().is_some_and(|t| f.turn_id == t.turn_id) => {
+                let mut r = json!(f);
+                r["isError"] = json!(true);
+                r["text"] = json!("");
+                r["error"] = json!(f.message);
                 c.end_turn(env, id, r);
             }
             _ => {}

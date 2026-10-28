@@ -373,7 +373,7 @@ pub(super) fn result_text(content: &Value) -> String {
 
 /// A file change Claude Code made (Edit, MultiEdit, Write), from its tool result: hunks of
 /// unified-diff lines (" " kept, "-" removed, "+" added), as its terminal shows them.
-pub(super) fn edit_diff(r: &Value) -> Option<Value> {
+pub(super) fn edit_diff(r: &Value) -> Option<Diff> {
     const MAX_LINES: usize = 400;
     let file = r.get("filePath")?.as_str()?;
     let created = s(r, "type") == "create";
@@ -440,9 +440,19 @@ pub(super) fn edit_diff(r: &Value) -> Option<Value> {
             truncated = true;
         }
         budget -= kept.len();
-        out.push(json!({ "oldStart": h["oldStart"].as_i64().unwrap_or(0), "newStart": h["newStart"].as_i64().unwrap_or(0), "lines": kept }));
+        out.push(Hunk {
+            old_start: h["oldStart"].as_i64().unwrap_or(0),
+            new_start: h["newStart"].as_i64().unwrap_or(0),
+            lines: kept,
+        });
     }
-    Some(
-        json!({ "file": file, "created": created, "added": added, "removed": removed, "hunks": out, "truncated": truncated }),
-    )
+    Some(Diff {
+        id: String::new(),
+        file: file.to_string(),
+        created,
+        added,
+        removed,
+        hunks: out,
+        truncated,
+    })
 }

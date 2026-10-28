@@ -85,21 +85,30 @@ impl Session {
             t => t.to_string(),
         };
         i.last_used = Instant::now();
-        let denials: Vec<Value> = f
+        let denials = f
             .permission_denials
-            .into_iter()
-            .map(|d| d.tool_name)
+            .iter()
+            .filter_map(|d| d.tool_name.as_str().map(str::to_string))
             .collect();
         let session_id = if sid.is_empty() {
-            json!(i.session_id)
+            i.session_id.clone()
         } else {
-            json!(sid)
+            Some(sid.to_string())
         };
-        i.emit(Event::Done(json!({
-            "turnId": turn.id, "text": text, "asides": i.asides.asides, "isError": f.is_error && !interrupted,
-            "interrupted": interrupted, "costUsd": cost, "denials": denials, "sessionId": session_id, "uuid": i.last_uuid,
-            "outputTokens": f.usage["output_tokens"], "ms": f.duration_ms,
-        })));
+        let done = Done {
+            turn_id: turn.id,
+            text,
+            asides: i.asides.asides.clone(),
+            is_error: f.is_error && !interrupted,
+            interrupted,
+            cost_usd: cost,
+            denials,
+            session_id,
+            uuid: i.last_uuid.clone(),
+            output_tokens: f.usage["output_tokens"].clone(),
+            ms: f.duration_ms,
+        };
+        i.emit(Event::Done(done));
         // ours, waiting behind a message from Remote Control, is next
         if let Some(t) = i.displaced.take() {
             i.begin_turn(t.id, Some(t.uuid));
@@ -141,9 +150,10 @@ impl Inner {
             if self.turn.as_ref().is_some_and(|t| !t.started) {
                 self.displaced = self.turn.take();
             }
-            self.emit(Event::RemotePrompt(
-                json!({ "uuid": uuid, "sessionId": sid }),
-            ));
+            self.emit(Event::RemotePrompt(RemotePrompt {
+                uuid,
+                session_id: sid.to_string(),
+            }));
             if self.turn.is_none() {
                 self.begin_auto_turn();
             }
@@ -154,7 +164,7 @@ impl Inner {
     fn request_cancelled(&mut self, id: String) {
         if self.pending_questions.remove(&id).is_some() || self.pending_plans.remove(&id).is_some()
         {
-            self.emit(Event::RequestCancelled(json!({ "requestId": id })));
+            self.emit(Event::RequestCancelled(id));
         }
     }
 
@@ -222,13 +232,17 @@ impl Inner {
         self.task_tool(id, name, &args);
         self.agent_start(id, name, &args, None);
         // MCP tools also pass their input on: some come with a view that draws from it
-        let mut ev =
-            json!({ "name": name, "detail": describe_tool(name, &args), "id": id, "args": args });
-        if name.starts_with("mcp__") {
+        let mcp = name.starts_with("mcp__");
+        if mcp {
             self.mcp_tool_ids.insert(id.to_string());
-            ev["input"] = ev["args"].clone();
         }
-        self.emit(Event::Tool(ev));
+        self.emit(Event::Tool(Tool {
+            id: id.to_string(),
+            name: name.to_string(),
+            detail: describe_tool(name, &args),
+            input: mcp.then(|| args.clone()),
+            args,
+        }));
     }
 
     /// What its tools gave back (sent to it as the user's message).
@@ -248,10 +262,15 @@ impl Inner {
     fn tool_result(&mut self, id: String, content: &Value, is_error: bool, use_result: &Value) {
         self.task_result(&id, content);
         // what the tool gave back, as Claude read it (the chat shows it when you click the step)
-        self.emit(Event::ToolOutput(json!({ "id": id, "text": output_text(content), "media": output_media(content), "isError": is_error })));
+        self.emit(Event::ToolOutput(ToolOutput {
+            id: id.clone(),
+            text: output_text(content),
+            media: output_media(content),
+            is_error,
+        }));
         // a file it changed: show the diff, like Claude Code's terminal
         if !is_error && let Some(mut diff) = edit_diff(use_result) {
-            diff["id"] = json!(id);
+            diff.id = id.clone();
             self.emit(Event::Edit(diff));
         }
         // an MCP tool's result, as the MCP server gave it (for its view)
@@ -266,13 +285,23 @@ impl Inner {
             if !structured.is_null() {
                 result["structuredContent"] = structured.clone();
             }
-            self.emit(Event::ToolResult(json!({ "id": id, "result": result })));
+            self.emit(Event::ToolResult(ToolResult {
+                id: id.clone(),
+                result,
+            }));
         }
         // a helper that ran in the foreground is done when its tool call returns
         if self.agent_tools.contains(&id) && !use_result["isAsync"].as_bool().unwrap_or(false) {
             self.agent_running.remove(&id);
             let status = if is_error { "failed" } else { "completed" };
-            self.emit(Event::Agent(json!({ "op": "done", "id": id, "status": status, "summary": result_text(content) })));
+            self.emit(Event::Agent(AgentEvent::Done {
+                id,
+                status: status.into(),
+                summary: result_text(content),
+                output_file: None,
+                report: None,
+                usage: HelperUsage::default(),
+            }));
         }
     }
 
@@ -286,15 +315,29 @@ impl Inner {
             } => {
                 // the slash commands Claude Code offers in this folder (skills, custom commands)
                 if let Some(cmds) = slash_commands.as_array() {
-                    self.emit(Event::Commands(Value::Array(
-                        cmds.iter().map(|n| json!({ "name": n })).collect(),
-                    )));
+                    self.emit(Event::Commands(
+                        cmds.iter()
+                            .filter_map(Value::as_str)
+                            .map(|n| SlashCommand {
+                                name: n.to_string(),
+                                description: String::new(),
+                            })
+                            .collect(),
+                    ));
                 }
                 if tools.is_array() {
                     let chosen = self.opts.tools.is_some();
-                    self.emit(Event::Tools(
-                        json!({ "version": claude_code_version, "tools": tools, "chosen": chosen }),
-                    ));
+                    self.emit(Event::Tools(Tools {
+                        version: claude_code_version.as_str().unwrap_or("").to_string(),
+                        tools: tools
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect(),
+                        chosen,
+                    }));
                 }
             }
             System::Status {
@@ -307,7 +350,11 @@ impl Inner {
                     self.emit(Event::Mode(mode));
                 }
                 if status == "compacting" {
-                    self.emit(Event::Compact(json!({ "phase": "start" })));
+                    self.emit(Event::Compact(Compact {
+                        phase: CompactPhase::Start,
+                        pre: None,
+                        post: None,
+                    }));
                 }
             }
             System::BridgeState { state } => {
@@ -317,18 +364,23 @@ impl Inner {
             }
             System::CommandsChanged { commands } => {
                 if let Some(cmds) = commands.as_array() {
-                    self.emit(Event::Commands(Value::Array(
+                    self.emit(Event::Commands(
                         cmds.iter()
-                            .map(|c| json!({ "name": c["name"], "description": s(c, "description") }))
+                            .map(|c| SlashCommand {
+                                name: s(c, "name").to_string(),
+                                description: s(c, "description").to_string(),
+                            })
                             .collect(),
-                    )));
+                    ));
                 }
             }
             System::CompactBoundary { compact_metadata } => {
                 let meta = compact_metadata;
-                self.emit(Event::Compact(
-                    json!({ "phase": "done", "pre": meta["pre_tokens"], "post": meta["post_tokens"] }),
-                ));
+                self.emit(Event::Compact(Compact {
+                    phase: CompactPhase::Done,
+                    pre: meta["pre_tokens"].as_f64(),
+                    post: meta["post_tokens"].as_f64(),
+                }));
             }
             System::TaskStarted(t) => self.helper_started(*t),
             System::TaskProgress(t) => self.helper_progress(*t),
@@ -336,8 +388,8 @@ impl Inner {
             System::TaskNotification(t) => self.helper_done(*t),
             System::TaskSummary(t) => {
                 self.helper_of(&t);
-                if t.detail.as_str().is_some_and(|d| !d.is_empty()) {
-                    self.emit(Event::Status(t.detail));
+                if let Some(detail) = t.detail.as_str().filter(|d| !d.is_empty()) {
+                    self.emit(Event::Status(detail.to_string()));
                 }
             }
             System::Other => {}

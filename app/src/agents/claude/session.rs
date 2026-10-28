@@ -152,7 +152,7 @@ impl Session {
             json!({ "subtype": "initialize" }),
             Box::new(move |r| {
                 if let Ok(info) = r {
-                    let _ = events.send(Event::Initialized(info));
+                    let _ = events.send(Event::Initialized(protocol::models_of(&info)));
                 }
             }),
         );
@@ -173,28 +173,39 @@ impl Session {
             req["reattach_session_id"] = json!(s);
         }
         let me = self.me.clone();
-        i.control(req, Box::new(move |r| {
-            let Some(session) = me.upgrade() else { return };
-            let mut i = session.lock();
-            if i.opts.remote.is_none() || i.proc.is_none() {
-                return; // (turned off meanwhile, or the process is gone: the next one tries again)
-            }
-            match r {
-                Ok(v) => {
-                    i.opts.remote_session = v["bridge_session_id"].as_str().map(str::to_string);
-                    i.emit(Event::Remote(json!({ "on": true, "url": v["session_url"], "remoteSession": v["bridge_session_id"] })));
+        i.control(
+            req,
+            Box::new(move |r| {
+                let Some(session) = me.upgrade() else { return };
+                let mut i = session.lock();
+                if i.opts.remote.is_none() || i.proc.is_none() {
+                    return; // (turned off meanwhile, or the process is gone: the next one tries again)
                 }
-                // the old remote session is gone (they expire after a while): start a new one
-                Err(_) if i.opts.remote_session.is_some() => {
-                    i.opts.remote_session = None;
-                    session.enable_remote(&mut i);
+                match r {
+                    Ok(v) => {
+                        i.opts.remote_session = v["bridge_session_id"].as_str().map(str::to_string);
+                        i.emit(Event::Remote(Remote {
+                            on: true,
+                            url: v["session_url"].as_str().map(str::to_string),
+                            remote_session: i.opts.remote_session.clone(),
+                            error: None,
+                        }));
+                    }
+                    // the old remote session is gone (they expire after a while): start a new one
+                    Err(_) if i.opts.remote_session.is_some() => {
+                        i.opts.remote_session = None;
+                        session.enable_remote(&mut i);
+                    }
+                    Err(e) => {
+                        i.opts.remote = None;
+                        i.emit(Event::Remote(Remote {
+                            error: Some(e.to_string()),
+                            ..Remote::default()
+                        }));
+                    }
                 }
-                Err(e) => {
-                    i.opts.remote = None;
-                    i.emit(Event::Remote(json!({ "on": false, "error": e })));
-                }
-            }
-        }));
+            }),
+        );
     }
 
     /// Remote Control (claude.ai/code and the Claude app): on, under this name, or off.
@@ -210,7 +221,7 @@ impl Session {
                     Box::new(|_| {}),
                 );
             }
-            i.emit(Event::Remote(json!({ "on": false })));
+            i.emit(Event::Remote(Remote::default()));
         } else if i.proc.is_some() {
             self.enable_remote(&mut i);
         } else {
@@ -219,9 +230,10 @@ impl Session {
             }
             if i.proc.is_none() {
                 i.opts.remote = None;
-                i.emit(Event::Remote(
-                    json!({ "on": false, "error": "Couldn't start Claude Code." }),
-                ));
+                i.emit(Event::Remote(Remote {
+                    error: Some("Couldn't start Claude Code.".into()),
+                    ..Remote::default()
+                }));
             }
         }
     }
@@ -243,7 +255,14 @@ impl Session {
                 .unwrap_or_default();
             // helpers die with the process: say so, or their cards would spin forever
             for id in i.agent_running.drain().collect::<Vec<_>>() {
-                i.emit(Event::Agent(json!({ "op": "done", "id": id, "status": "stopped", "summary": "Stopped: Claude Code closed before this helper finished." })));
+                i.emit(Event::Agent(AgentEvent::Done {
+                    id,
+                    status: "stopped".into(),
+                    summary: "Stopped: Claude Code closed before this helper finished.".into(),
+                    output_file: None,
+                    report: None,
+                    usage: HelperUsage::default(),
+                }));
             }
             if i.turn.is_some() || !i.queue.is_empty() {
                 let msg = if i.closing {

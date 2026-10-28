@@ -73,7 +73,7 @@ struct Book {
     mcp_calls: Map<String, Value>, // tool call id -> { name, input, result, view, noView } (in the order they came)
     images: Vec<Value>,
     edits: Vec<Value>,
-    last_compact: Value,
+    last_compact: Option<claude::Compact>,
     thinking: Option<String>, // the step its thinking is going into, while it thinks
     thoughts: usize,          // (to name them)
 }
@@ -166,30 +166,25 @@ fn step_media(media: &Value, budget: usize) -> (Value, usize) {
     (Value::Array(out.collect()), left)
 }
 
-fn count_lines(hunks: &Value) -> usize {
-    hunks
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|h| h["lines"].as_array().map_or(0, Vec::len))
-        .sum()
+fn count_lines(hunks: &[claude::Hunk]) -> usize {
+    hunks.iter().map(|h| h.lines.len()).sum()
 }
 
 // Diffs kept in history are cut down so the store file stays small.
-fn trim_hunks(hunks: &Value, max: usize) -> Value {
-    let mut left = max as i64;
+fn trim_hunks(hunks: &[claude::Hunk], max: usize) -> Vec<claude::Hunk> {
+    let mut left = max;
     let mut out = vec![];
-    for h in hunks.as_array().into_iter().flatten() {
-        if left <= 0 {
+    for h in hunks {
+        if left == 0 {
             break;
         }
-        let lines = h["lines"].as_array().cloned().unwrap_or_default();
         let mut h = h.clone();
-        h["lines"] = Value::Array(lines.iter().take(left as usize).cloned().collect());
-        left -= lines.len() as i64;
+        let all = h.lines.len();
+        h.lines.truncate(left);
+        left = left.saturating_sub(all);
         out.push(h);
     }
-    Value::Array(out)
+    out
 }
 
 impl Book {

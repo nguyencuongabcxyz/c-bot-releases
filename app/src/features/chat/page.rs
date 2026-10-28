@@ -380,8 +380,8 @@ pub fn remote(app: &AppHandle, id: &str, tab_id: &str, on: bool) -> Value {
                 tab_id,
                 PageEvent::Remote {
                     on: false,
-                    url: Value::Null,
-                    error: Value::Null,
+                    url: None,
+                    error: None,
                 },
             ),
         }

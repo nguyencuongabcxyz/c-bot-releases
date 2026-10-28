@@ -4,7 +4,10 @@
 use std::sync::MutexGuard;
 
 use super::*;
-use crate::agents::claude::Event;
+use crate::agents::claude::{
+    AgentEvent, Compact, Diff, Done, Event, Fail, Model, Remote, RemotePrompt, SlashCommand,
+    TaskChange, Tool, ToolOutput, ToolResult, Tools,
+};
 use crate::store::Fields;
 
 /// The tab an event is for.
@@ -60,8 +63,10 @@ pub(super) fn on_event(
             },
         ),
         Event::Status(text) => tell(app, id, tab_id, PageEvent::Status { text }),
-        Event::Question(p) => tell(app, id, tab_id, PageEvent::Question(p)),
-        Event::RequestCancelled(p) => tell(app, id, tab_id, PageEvent::RequestCancelled(p)),
+        Event::Question(q) => tell(app, id, tab_id, PageEvent::Question(q)),
+        Event::RequestCancelled(request_id) => {
+            tell(app, id, tab_id, PageEvent::RequestCancelled { request_id })
+        }
         Event::Plan(p) => tell(app, id, tab_id, PageEvent::Plan(p)),
         Event::Mode(mode) => on_mode(e, &mode),
         Event::Tool(data) => on_tool(e, data),
@@ -78,19 +83,18 @@ pub(super) fn on_event(
 }
 
 /// Remote Control came on (its page on claude.ai), went off, or couldn't
-fn on_remote(e: Ev, data: Value) {
+fn on_remote(e: Ev, r: Remote) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let on = data["on"] == true;
     with(app, |st| {
         st.store.update_tab(
             id,
             tab_id,
             patch(vec![
-                ("remote", json!(on)),
-                ("remoteSession", data["remoteSession"].clone()),
-                ("remoteUrl", data["url"].clone()),
+                ("remote", json!(r.on)),
+                ("remoteSession", json!(r.remote_session)),
+                ("remoteUrl", json!(r.url)),
             ]),
         )
     });
@@ -99,15 +103,15 @@ fn on_remote(e: Ev, data: Value) {
         id,
         tab_id,
         PageEvent::Remote {
-            on,
-            url: data["url"].clone(),
-            error: data["error"].clone(),
+            on: r.on,
+            url: r.url,
+            error: r.error,
         },
     );
 }
 
 /// A message typed on claude.ai/code or in the Claude app: into the chat as yours
-fn on_remote_prompt(e: Ev, data: Value) {
+fn on_remote_prompt(e: Ev, p: RemotePrompt) {
     let Ev {
         app, id, tab_id, ..
     } = e;
@@ -117,10 +121,7 @@ fn on_remote_prompt(e: Ev, data: Value) {
             .and_then(|c| c["folder"].as_str().map(str::to_string))
     })
     .unwrap_or_default();
-    let (sid, uuid) = (
-        data["sessionId"].as_str().unwrap_or(""),
-        data["uuid"].as_str().unwrap_or(""),
-    );
+    let (sid, uuid) = (p.session_id.as_str(), p.uuid.as_str());
     // (it's written to the transcript about when it starts: give it a moment)
     let mut text = None;
     for _ in 0..30 {
@@ -188,33 +189,35 @@ fn on_session(e: Ev, sid: &str) {
     });
 }
 
-fn on_initialized(e: Ev, data: Value) {
+fn on_initialized(e: Ev, models: Vec<Model>) {
     let Ev { app, .. } = e;
-    let models: Vec<Value> = data["models"].as_array().into_iter().flatten().filter(|m| !m["value"].as_str().unwrap_or("").starts_with("claude-")).map(|m| {
-        let value = if m["value"] == "default" { json!("") } else { m["value"].clone() };
-        json!({ "value": value, "displayName": m["displayName"], "description": m["description"], "efforts": m.get("supportedEffortLevels").cloned().unwrap_or(json!([])) })
-    }).collect();
+    let models: Vec<Value> = models
+        .into_iter()
+        .filter(|m| !m.value.starts_with("claude-"))
+        .map(|m| {
+            let value = if m.value == "default" { String::new() } else { m.value };
+            let efforts = m.supported_effort_levels.unwrap_or(json!([]));
+            json!({ "value": value, "displayName": m.display_name, "description": m.description, "efforts": efforts })
+        })
+        .collect();
     if !models.is_empty() {
         with(app, |st| st.model_choices = Value::Array(models));
     }
 }
 
-fn on_tools(e: Ev, data: Value) {
+fn on_tools(e: Ev, t: Tools) {
     let Ev { app, session, .. } = e;
     // learn Claude Code's default tools once (per version), so later sessions can add the task tools to them
-    if data["chosen"].as_bool() != Some(true) {
-        let tools: Vec<String> = data["tools"]
-            .as_array()
+    if !t.chosen {
+        let tools: Vec<String> = t
+            .tools
             .into_iter()
-            .flatten()
-            .filter_map(|t| t.as_str())
             .filter(|t| !t.starts_with("mcp__"))
-            .map(str::to_string)
             .collect();
         with(app, |st| {
             st.store.update_settings(patch(vec![(
                 "toolset",
-                json!({ "version": data["version"], "tools": tools }),
+                json!({ "version": t.version, "tools": tools }),
             )]))
         });
         // this conversation started without the task tools: pick them up from its next question
@@ -222,7 +225,7 @@ fn on_tools(e: Ev, data: Value) {
     } else {
         with(app, |st| {
             let cached = &st.store.settings()["toolset"];
-            if cached.is_object() && cached["version"] != data["version"] {
+            if cached.is_object() && cached["version"] != t.version.as_str() {
                 st.store
                     .update_settings(patch(vec![("toolset", Value::Null)]));
             }
@@ -230,7 +233,7 @@ fn on_tools(e: Ev, data: Value) {
     }
 }
 
-fn on_commands(e: Ev, data: Value) {
+fn on_commands(e: Ev, commands: Vec<SlashCommand>) {
     let Ev { app, id, .. } = e;
     with(app, |st| {
         // keep descriptions we already know when init only gives us names
@@ -242,20 +245,16 @@ fn on_commands(e: Ev, data: Value) {
             .into_iter()
             .map(|c| (c.name().to_string(), c["description"].clone()))
             .collect();
-        let merged: Vec<Value> = data
-            .as_array()
-            .into_iter()
-            .flatten()
+        let merged: Vec<Value> = commands
+            .iter()
             .take(200)
             .map(|c| {
-                let name = c.name();
-                let desc = c["description"]
-                    .as_str()
+                let desc = Some(c.description.as_str())
                     .filter(|d| !d.is_empty())
                     .map(|d| json!(d))
-                    .or_else(|| known.get(name).cloned())
+                    .or_else(|| known.get(&c.name).cloned())
                     .unwrap_or(json!(""));
-                json!({ "name": name, "description": desc })
+                json!({ "name": c.name, "description": desc })
             })
             .collect();
         st.store
@@ -301,7 +300,13 @@ fn on_thinking(e: Ev) {
         app,
         id,
         tab_id,
-        PageEvent::Tool(json!({ "id": step, "name": "Thinking", "detail": "", "args": null })),
+        PageEvent::Tool(Tool {
+            id: step,
+            name: "Thinking".into(),
+            detail: String::new(),
+            args: Value::Null,
+            input: None,
+        }),
     );
 }
 
@@ -343,7 +348,7 @@ fn on_mode(e: Ev, mode: &str) {
     tell(app, id, tab_id, PageEvent::Mode { mode: mode.into() });
 }
 
-fn on_tool(e: Ev, data: Value) {
+fn on_tool(e: Ev, t: Tool) {
     let Ev {
         app,
         id,
@@ -353,26 +358,24 @@ fn on_tool(e: Ev, data: Value) {
     } = e;
     e.book().thinking = None; // (done thinking: it's doing)
     // what it was called with (click the step in the chat to see it), and a smaller copy kept with the answer
-    let args = data["args"].clone();
-    let mut p = data.clone();
-    let o = p.as_object_mut().unwrap();
-    o.remove("input");
-    o.insert("args".into(), clip(&args, &LIVE, 0));
-    tell(app, id, tab_id, PageEvent::Tool(p));
+    let shown = Tool {
+        args: clip(&t.args, &LIVE, 0),
+        input: None,
+        ..t.clone()
+    };
+    tell(app, id, tab_id, PageEvent::Tool(shown));
     let mut b = e.book();
     if b.calls.len() < KEEP_CALLS {
         let at = b.text_len;
-        b.calls.push(json!({ "id": data["id"], "name": data["name"], "detail": data["detail"], "args": clip(&args, &KEEP, 0), "at": at }));
+        b.calls.push(json!({ "id": t.id, "name": t.name, "detail": t.detail, "args": clip(&t.args, &KEEP, 0), "at": at }));
     }
-    if data.get("input").is_none() {
+    let Some(input) = t.input else {
         return;
-    }
+    };
     // an MCP tool: if it comes with its own view (an MCP App), show it in the chat
-    let call_id = data["id"].as_str().unwrap_or("").to_string();
-    b.mcp_calls.insert(
-        call_id.clone(),
-        json!({ "name": data["name"], "input": data["input"] }),
-    );
+    let call_id = t.id.clone();
+    b.mcp_calls
+        .insert(call_id.clone(), json!({ "name": t.name, "input": input }));
     drop(b);
     let (app, id, tab_id, book) = (
         app.clone(),
@@ -380,7 +383,7 @@ fn on_tool(e: Ev, data: Value) {
         tab_id.to_string(),
         book.clone(),
     );
-    let tool = data["name"].as_str().unwrap_or("").to_string();
+    let tool = t.name;
     // (looked up off this thread: it may ask the tool's server, which takes a moment)
     thread::spawn(move || {
         let folder = with(&app, |st| {
@@ -409,49 +412,49 @@ fn on_tool(e: Ev, data: Value) {
 }
 
 /// What a tool gave back: to the chat (its step shows it), and trimmed with the answer
-fn on_tool_output(e: Ev, data: Value) {
+/// What a tool gave back: to the chat (its step shows it), and trimmed with the answer
+fn on_tool_output(e: Ev, o: ToolOutput) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let text = data["text"].as_str().unwrap_or("");
-    let (live, _) = step_media(&data["media"], LIVE_MEDIA);
+    let (live, _) = step_media(&o.media, LIVE_MEDIA);
     tell(
         app,
         id,
         tab_id,
-        PageEvent::ToolOutput {
-            id: data["id"].clone(),
-            text: cut(text, LIVE.output),
+        PageEvent::ToolOutput(ToolOutput {
+            id: o.id.clone(),
+            text: cut(&o.text, LIVE.output),
             media: live,
-            is_error: data["isError"].clone(),
-        },
+            is_error: o.is_error,
+        }),
     );
     let mut b = e.book();
     let left = b.media_left;
-    let Some(call) = b.calls.iter_mut().find(|c| c["id"] == data["id"]) else {
+    let Some(call) = b.calls.iter_mut().find(|c| c["id"] == o.id.as_str()) else {
         return;
     };
-    call["output"] = json!(cut(text, KEEP.output));
-    if data["isError"].as_bool() == Some(true) {
+    call["output"] = json!(cut(&o.text, KEEP.output));
+    if o.is_error {
         call["isError"] = json!(true);
     }
-    let (kept, rest) = step_media(&data["media"], left);
+    let (kept, rest) = step_media(&o.media, left);
     if kept.as_array().is_some_and(|k| !k.is_empty()) {
         call["media"] = kept;
     }
     b.media_left = rest;
 }
 
-fn on_tool_result(e: Ev, data: Value) {
+fn on_tool_result(e: Ev, r: ToolResult) {
     let Ev {
         app, id, tab_id, ..
     } = e;
     let mut b = e.book();
-    let call_id = data["id"].as_str().unwrap_or("").to_string();
+    let call_id = r.id;
     let Some(call) = b.mcp_calls.get_mut(&call_id) else {
         return;
     };
-    call["result"] = data["result"].clone();
+    call["result"] = r.result.clone();
     if call.get("view").is_some() {
         tell(
             app,
@@ -459,12 +462,12 @@ fn on_tool_result(e: Ev, data: Value) {
             tab_id,
             PageEvent::AppResult {
                 id: call_id.clone(),
-                result: data["result"].clone(),
+                result: r.result.clone(),
             },
         );
     }
     // pictures the tool returned (a screenshot, a rendered chart): shown in the answer
-    let pics: Vec<Value> = data["result"]["content"]
+    let pics: Vec<Value> = r.result["content"]
         .as_array()
         .into_iter()
         .flatten()
@@ -503,70 +506,92 @@ fn on_tool_result(e: Ev, data: Value) {
 }
 
 /// Files it changed: shown as diffs now, and kept (trimmed) with the answer in history
-fn on_edit(e: Ev, data: Value) {
+fn on_edit(e: Ev, d: Diff) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    tell(app, id, tab_id, PageEvent::Edit(data.clone()));
+    tell(app, id, tab_id, PageEvent::Edit(d.clone()));
     let mut b = e.book();
     if b.edits.len() < 20 {
-        let mut kept = data.clone();
-        let truncated =
-            data["truncated"].as_bool().unwrap_or(false) || count_lines(&data["hunks"]) > 120;
-        kept["hunks"] = trim_hunks(&data["hunks"], 120);
-        kept["truncated"] = json!(truncated);
-        b.edits.push(kept);
+        let kept = Diff {
+            truncated: d.truncated || count_lines(&d.hunks) > 120,
+            hunks: trim_hunks(&d.hunks, 120),
+            ..d
+        };
+        b.edits.push(json!(kept));
     }
 }
 
-fn on_agent(e: Ev, data: Value) {
+fn on_agent(e: Ev, ev: AgentEvent) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let mut ev = data;
-    // a background helper's full report sits in a file; short ones are already in the summary
-    if ev["op"] == "done"
-        && !ev["outputFile"].as_str().unwrap_or("").is_empty()
-        && let Ok(report) = std::fs::read_to_string(ev["outputFile"].as_str().unwrap())
-    {
-        let report = report.trim();
-        if !report.is_empty() && report.len() > ev["summary"].as_str().map_or(0, str::len) {
-            let chars: Vec<char> = report.chars().collect();
-            ev["report"] = json!(
-                chars[chars.len().saturating_sub(20000)..]
-                    .iter()
-                    .collect::<String>()
-            );
+    let ev = match ev {
+        // a background helper's full report sits in a file; short ones are already in the summary
+        AgentEvent::Done {
+            id,
+            status,
+            summary,
+            output_file,
+            usage,
+            ..
+        } => {
+            let report = output_file
+                .filter(|f| !f.is_empty())
+                .and_then(|f| std::fs::read_to_string(f).ok())
+                .map(|r| r.trim().to_string())
+                .filter(|r| !r.is_empty() && r.len() > summary.len())
+                .map(|r| {
+                    let chars: Vec<char> = r.chars().collect();
+                    chars[chars.len().saturating_sub(20000)..].iter().collect()
+                });
+            AgentEvent::Done {
+                id,
+                status,
+                summary,
+                output_file: None,
+                report,
+                usage,
+            }
         }
-    }
-    if let Some(o) = ev.as_object_mut() {
-        o.remove("outputFile");
-    }
+        ev => ev,
+    };
     tell(app, id, tab_id, PageEvent::Agent(ev));
 }
 
-fn on_task(e: Ev, data: Value) {
+fn on_task(e: Ev, change: TaskChange) {
     let Ev {
         app, id, tab_id, ..
     } = e;
     let tasks = with(app, |st| {
         let t = st.store.tab(id, tab_id)?;
         let mut tasks: Vec<Value> = t["tasks"].as_array().cloned().unwrap_or_default();
-        match data["op"].as_str() {
-            Some("replace") => tasks = data["tasks"].as_array().cloned().unwrap_or_default(),
-            Some("create") => {
-                tasks.retain(|x| x["id"] != data["id"]);
-                tasks.push(json!({ "id": data["id"], "subject": data["subject"], "activeForm": data["activeForm"], "status": "pending" }));
+        match &change {
+            TaskChange::Replace { tasks: list } => tasks = list.iter().map(|x| json!(x)).collect(),
+            TaskChange::Create {
+                id: task,
+                subject,
+                active_form,
+                ..
+            } => {
+                tasks.retain(|x| x["id"] != task.as_str());
+                tasks.push(json!({ "id": task, "subject": subject, "activeForm": active_form, "status": "pending" }));
             }
-            _ => {
-                for x in tasks.iter_mut().filter(|x| x["id"] == data["id"]) {
-                    for (k, v) in data.as_object().unwrap() {
-                        let set = !matches!(v, Value::Null | Value::Bool(false))
-                            && v != ""
-                            && v != 0
-                            && k != "op";
-                        if set {
-                            x[k] = v.clone();
+            TaskChange::Update {
+                id: task,
+                status,
+                subject,
+                active_form,
+            } => {
+                for x in tasks.iter_mut().filter(|x| x["id"] == task.as_str()) {
+                    let said = [
+                        ("status", status),
+                        ("subject", subject),
+                        ("activeForm", active_form),
+                    ];
+                    for (k, v) in said {
+                        if let Some(v) = v.as_ref().filter(|v| !v.is_empty()) {
+                            x[k] = json!(v);
                         }
                     }
                 }
@@ -578,31 +603,23 @@ fn on_task(e: Ev, data: Value) {
         Some(tasks)
     });
     if let Some(tasks) = tasks {
-        tell(
-            app,
-            id,
-            tab_id,
-            PageEvent::Tasks {
-                tasks,
-                change: data,
-            },
-        );
+        tell(app, id, tab_id, PageEvent::Tasks { tasks, change });
     }
 }
 
-fn on_compact(e: Ev, data: Value) {
+fn on_compact(e: Ev, c: Compact) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    e.book().last_compact = data.clone();
-    tell(app, id, tab_id, PageEvent::Compact(data));
+    e.book().last_compact = Some(c.clone());
+    tell(app, id, tab_id, PageEvent::Compact(c));
 }
 
-fn on_done(e: Ev, data: Value) {
+fn on_done(e: Ev, d: Done) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let turn_id = data["turnId"].as_str().unwrap_or("").to_string();
+    let turn_id = d.turn_id.clone();
     let (kind, last_compact, (edits, apps, images, tools)) = {
         let mut b = e.book();
         let kind = b.turns.remove(&turn_id).map(|t| t.kind);
@@ -611,7 +628,8 @@ fn on_done(e: Ev, data: Value) {
     let kept = with(app, |st| {
         let c = st.store.get(id)?.clone();
         if kind == Some(AskKind::Compact) {
-            let text = match (last_compact["pre"].as_f64(), last_compact["post"].as_f64()) {
+            let (pre, post) = last_compact.map_or((None, None), |c| (c.pre, c.post));
+            let text = match (pre, post) {
                 (Some(pre), Some(post)) if pre > 0.0 => format!(
                     "🗜️ Compacted my memory: {}k → {}k tokens",
                     (pre / 1000.0).round(),
@@ -627,26 +645,25 @@ fn on_done(e: Ev, data: Value) {
                 tab_id,
                 entry(vec![
                     ("role", json!("assistant")),
-                    ("text", data["text"].clone()),
-                    ("asides", data["asides"].clone()),
-                    ("isError", data["isError"].clone()),
-                    ("denials", data["denials"].clone()),
-                    ("interrupted", data["interrupted"].clone()),
+                    ("text", json!(d.text)),
+                    ("asides", json!(d.asides)),
+                    ("isError", json!(d.is_error)),
+                    ("denials", json!(d.denials)),
+                    ("interrupted", json!(d.interrupted)),
                     ("edits", edits),
                     ("apps", apps),
                     ("images", images),
                     ("tools", tools),
-                    ("uuid", data["uuid"].clone()), // (where an edited question after it rewinds to)
+                    ("uuid", json!(d.uuid)), // (where an edited question after it rewinds to)
                 ]),
             );
         }
-        if let Some(sid) = data["sessionId"].as_str() {
+        if let Some(sid) = &d.session_id {
             st.store
                 .update_tab(id, tab_id, patch(vec![("sessionId", json!(sid))]));
         }
         let mut stats = c["stats"].as_object().cloned().unwrap_or_default();
-        let cost = stats.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0)
-            + data["costUsd"].as_f64().unwrap_or(0.0);
+        let cost = stats.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0) + d.cost_usd;
         stats.insert("costUsd".into(), json!(cost));
         st.store
             .update(id, patch(vec![("stats", Value::Object(stats))]));
@@ -659,14 +676,11 @@ fn on_done(e: Ev, data: Value) {
         )
     });
     let Some(at) = kept else { return };
-    let mut p = data;
-    p["at"] = at;
-    p["kind"] = json!(kind);
-    tell(app, id, tab_id, PageEvent::Done(p));
+    tell(app, id, tab_id, PageEvent::Done { done: d, at, kind });
     refresh_context(app, id, tab_id);
 }
 
-fn on_fail(e: Ev, data: Value) {
+fn on_fail(e: Ev, f: Fail) {
     let Ev {
         app,
         id,
@@ -674,15 +688,11 @@ fn on_fail(e: Ev, data: Value) {
         session,
         ..
     } = e;
-    let turn_id = data["turnId"].as_str().unwrap_or("").to_string();
+    let turn_id = f.turn_id.clone();
     let retry = {
         let mut b = e.book();
         match b.turns.get_mut(&turn_id) {
-            Some(t)
-                if data["sessionMissing"].as_bool() == Some(true)
-                    && session.session_id().is_some()
-                    && !t.retried =>
-            {
+            Some(t) if f.session_missing && session.session_id().is_some() && !t.retried => {
                 t.retried = true;
                 Some(t.prompt.clone())
             }
@@ -704,14 +714,14 @@ fn on_fail(e: Ev, data: Value) {
         b.turns.remove(&turn_id);
         b.take()
     };
-    if data["cancelled"].as_bool() != Some(true) {
+    if !f.cancelled {
         with(app, |st| {
             st.store.push_history(
                 id,
                 tab_id,
                 entry(vec![
                     ("role", json!("assistant")),
-                    ("text", data["message"].clone()),
+                    ("text", json!(f.message)),
                     ("isError", json!(true)),
                     ("edits", edits),
                     ("apps", apps),
@@ -721,5 +731,5 @@ fn on_fail(e: Ev, data: Value) {
             )
         });
     }
-    tell(app, id, tab_id, PageEvent::Fail(data));
+    tell(app, id, tab_id, PageEvent::Fail(f));
 }

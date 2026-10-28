@@ -98,7 +98,12 @@ impl Inner {
             .collect();
         ids.extend(self.queue.drain(..).map(|(id, _)| id));
         for id in ids {
-            self.emit(Event::Fail(json!({ "turnId": id, "message": message, "cancelled": cancelled, "sessionMissing": session_missing })));
+            self.emit(Event::Fail(Fail {
+                turn_id: id,
+                message: message.to_string(),
+                cancelled,
+                session_missing,
+            }));
         }
     }
 
@@ -114,12 +119,27 @@ impl Inner {
                     .as_str()
                     .map(str::to_string)
                     .unwrap_or_else(|| input["taskId"].to_string());
-                self.emit(Event::Task(json!({ "op": "update", "id": id, "status": input["status"], "subject": input["subject"], "activeForm": input["activeForm"] })));
+                let text = |k: &str| input[k].as_str().map(str::to_string);
+                self.emit(Event::Task(TaskChange::Update {
+                    id,
+                    status: text("status"),
+                    subject: text("subject"),
+                    active_form: text("activeForm"),
+                }));
             }
             "TodoWrite" => {
                 if let Some(todos) = input["todos"].as_array() {
-                    let tasks: Vec<Value> = todos.iter().enumerate().map(|(i, t)| json!({ "id": (i + 1).to_string(), "subject": t["content"], "activeForm": t["activeForm"], "status": t["status"] })).collect();
-                    self.emit(Event::Task(json!({ "op": "replace", "tasks": tasks })));
+                    let tasks = todos
+                        .iter()
+                        .enumerate()
+                        .map(|(i, t)| TodoItem {
+                            id: (i + 1).to_string(),
+                            subject: s(t, "content").to_string(),
+                            active_form: t["activeForm"].as_str().map(str::to_string),
+                            status: s(t, "status").to_string(),
+                        })
+                        .collect();
+                    self.emit(Event::Task(TaskChange::Replace { tasks }));
                 }
             }
             _ => {}
@@ -142,7 +162,12 @@ impl Inner {
             })
             .filter(|d| !d.is_empty());
         if let Some(id) = id {
-            self.emit(Event::Task(json!({ "op": "create", "id": id, "subject": input["subject"], "activeForm": input["activeForm"], "status": "pending" })));
+            self.emit(Event::Task(TaskChange::Create {
+                id,
+                subject: s(&input, "subject").to_string(),
+                active_form: input["activeForm"].as_str().map(str::to_string),
+                status: "pending".into(),
+            }));
         }
     }
 
@@ -164,10 +189,14 @@ impl Inner {
         } else {
             s(input, "description")
         };
-        self.emit(Event::Agent(json!({
-            "op": "start", "id": id, "parent": parent, "description": description, "kind": s(input, "subagent_type"),
-            "prompt": s(input, "prompt"), "background": input["run_in_background"].as_bool().unwrap_or(false),
-        })));
+        self.emit(Event::Agent(AgentEvent::Start {
+            id: id.to_string(),
+            parent: parent.map(str::to_string),
+            description: description.to_string(),
+            kind: s(input, "subagent_type").to_string(),
+            prompt: s(input, "prompt").to_string(),
+            background: input["run_in_background"].as_bool().unwrap_or(false),
+        }));
     }
 
     // A helper agent's own steps and words: shown in its card, not voiced by the robot.
@@ -176,12 +205,18 @@ impl Inner {
             match block {
                 Block::ToolUse { id, name, input } => {
                     self.agent_start(&id, &name, &input, Some(parent)); // a helper sending its own helper
-                    self.emit(Event::Agent(json!({ "op": "step", "id": parent, "tool": name, "detail": describe_tool(&name, &input) })));
+                    let detail = describe_tool(&name, &input);
+                    self.emit(Event::Agent(AgentEvent::Step {
+                        id: parent.to_string(),
+                        tool: name,
+                        detail,
+                    }));
                 }
                 Block::Text { text } if !text.trim().is_empty() => {
-                    self.emit(Event::Agent(
-                        json!({ "op": "text", "id": parent, "text": text }),
-                    ));
+                    self.emit(Event::Agent(AgentEvent::Text {
+                        id: parent.to_string(),
+                        text,
+                    }));
                 }
                 _ => {}
             }
@@ -209,24 +244,33 @@ impl Inner {
         let Some(id) = self.helper_of(&t) else { return };
         self.agent_tools.insert(id.clone());
         self.agent_running.insert(id.clone());
-        self.emit(Event::Agent(json!({ "op": "start", "id": id, "description": t.description, "kind": t.subagent_type, "prompt": t.prompt, "background": t.is_backgrounded })));
+        self.emit(Event::Agent(AgentEvent::Start {
+            id,
+            parent: None,
+            description: t.description.as_str().unwrap_or("").to_string(),
+            kind: t.subagent_type,
+            prompt: t.prompt,
+            background: t.is_backgrounded,
+        }));
     }
 
     pub(super) fn helper_progress(&mut self, t: HelperTask) {
         let Some(id) = self.helper_of(&t) else { return };
         let activity = t.description.as_str().unwrap_or("").to_string();
-        self.emit(Event::Agent(with_usage(
-            &t,
-            json!({ "op": "progress", "id": id, "activity": activity }),
-        )));
+        self.emit(Event::Agent(AgentEvent::Progress {
+            id,
+            activity,
+            usage: usage_of(&t),
+        }));
     }
 
     pub(super) fn helper_updated(&mut self, t: HelperTask) {
         let Some(id) = self.helper_of(&t) else { return };
-        if !t.patch["status"].is_null() {
-            self.emit(Event::Agent(
-                json!({ "op": "status", "id": id, "status": t.patch["status"] }),
-            ));
+        if let Some(status) = t.patch["status"].as_str() {
+            self.emit(Event::Agent(AgentEvent::Status {
+                id,
+                status: status.to_string(),
+            }));
         }
     }
 
@@ -238,7 +282,14 @@ impl Inner {
         } else {
             &t.status
         };
-        self.emit(Event::Agent(with_usage(&t, json!({ "op": "done", "id": id, "status": status, "summary": t.summary, "outputFile": t.output_file }))));
+        self.emit(Event::Agent(AgentEvent::Done {
+            id,
+            status: status.to_string(),
+            summary: t.summary.clone(),
+            output_file: Some(t.output_file.clone()),
+            report: None,
+            usage: usage_of(&t),
+        }));
     }
 
     // Claude Code asks before using a tool its permission mode doesn't cover. Questions
@@ -250,15 +301,20 @@ impl Inner {
             return;
         }
         if req.tool_name == "AskUserQuestion" && req.input["questions"].is_array() {
-            self.emit(Event::Question(
-                json!({ "requestId": request_id, "questions": req.input["questions"] }),
-            ));
+            self.emit(Event::Question(Question {
+                request_id: request_id.clone(),
+                questions: req.input["questions"].clone(),
+            }));
             self.pending_questions.insert(request_id, req.input);
             return;
         }
         // a plan, finished: it waits for your go-ahead (or your notes) before anything changes
         if req.tool_name == "ExitPlanMode" {
-            self.emit(Event::Plan(json!({ "requestId": request_id, "plan": s(&req.input, "plan"), "file": s(&req.input, "planFilePath") })));
+            self.emit(Event::Plan(Plan {
+                request_id: request_id.clone(),
+                plan: s(&req.input, "plan").to_string(),
+                file: s(&req.input, "planFilePath").to_string(),
+            }));
             self.pending_plans.insert(request_id, req.input);
             return;
         }
@@ -278,13 +334,15 @@ impl Inner {
     }
 }
 
-/// A helper's usage so far, added to what's said about it: tokens, tool calls, time.
-fn with_usage(t: &HelperTask, mut v: Value) -> Value {
+/// A helper's work so far, when the event says it: tokens, tool calls, time.
+fn usage_of(t: &HelperTask) -> HelperUsage {
     let u = &t.usage;
-    if u.is_object() {
-        v["tokens"] = u["total_tokens"].clone();
-        v["tools"] = u["tool_uses"].clone();
-        v["ms"] = u["duration_ms"].clone();
+    if !u.is_object() {
+        return HelperUsage::default();
     }
-    v
+    HelperUsage {
+        tokens: Some(u["total_tokens"].clone()),
+        tools: Some(u["tool_uses"].clone()),
+        ms: Some(u["duration_ms"].clone()),
+    }
 }

@@ -281,22 +281,22 @@ fn on_event(
             "text",
             json!({ "delta": delta }),
         ),
-        Event::Tool(data) => tell(
+        Event::Tool(t) => tell(
             app,
             id,
             tab_id,
             thread_id,
             "step",
-            json!({ "name": data["name"], "detail": data["detail"] }),
+            json!({ "name": t.name, "detail": t.detail }),
         ),
-        Event::Done(data) => {
-            turns(|t| t.remove(data["turnId"].as_str().unwrap_or("")));
+        Event::Done(d) => {
+            turns(|t| t.remove(&d.turn_id));
             push(
                 app,
                 id,
                 tab_id,
                 thread_id,
-                json!({ "role": "assistant", "text": data["text"], "isError": data["isError"], "interrupted": data["interrupted"] }),
+                json!({ "role": "assistant", "text": d.text, "isError": d.is_error, "interrupted": d.interrupted }),
             );
             tell(
                 app,
@@ -304,16 +304,14 @@ fn on_event(
                 tab_id,
                 thread_id,
                 "done",
-                json!({ "text": data["text"], "isError": data["isError"], "interrupted": data["interrupted"] }),
+                json!({ "text": d.text, "isError": d.is_error, "interrupted": d.interrupted }),
             );
         }
-        Event::Fail(data) => {
-            let turn_id = data["turnId"].as_str().unwrap_or("").to_string();
+        Event::Fail(f) => {
+            let turn_id = f.turn_id.clone();
             let retry = turns(|t| match t.get_mut(&turn_id) {
                 Some((prompt, retried))
-                    if data["sessionMissing"] == true
-                        && session.session_id().is_some()
-                        && !*retried =>
+                    if f.session_missing && session.session_id().is_some() && !*retried =>
                 {
                     *retried = true;
                     Some(prompt.clone())
@@ -330,11 +328,11 @@ fn on_event(
                 session.ask(prompt, turn_id);
                 return;
             }
-            let cancelled = data["cancelled"] == true;
+            let cancelled = f.cancelled;
             let entry = if cancelled {
                 json!({ "role": "assistant", "text": "", "interrupted": true })
             } else {
-                json!({ "role": "assistant", "text": data["message"], "isError": true })
+                json!({ "role": "assistant", "text": f.message, "isError": true })
             };
             push(app, id, tab_id, thread_id, entry);
             tell(
@@ -343,7 +341,7 @@ fn on_event(
                 tab_id,
                 thread_id,
                 "fail",
-                json!({ "message": data["message"], "cancelled": cancelled }),
+                json!({ "message": f.message, "cancelled": cancelled }),
             );
         }
         _ => {}
