@@ -13,7 +13,7 @@
 pub mod drone;
 
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -26,7 +26,7 @@ use crate::platform::window::Rect;
 use crate::platform::{clipboard, window};
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::only;
-use crate::runtime::{hub, with};
+use crate::runtime::{Locked, hub, with};
 use crate::workbench::quick::{MAX_TEXT, slice16};
 use crate::workbench::{capture, quick, snip};
 
@@ -61,14 +61,15 @@ struct Palette {
     opening: bool,
 }
 
-static PALETTE: Mutex<Option<Palette>> = Mutex::new(None);
-
-fn pal<R>(f: impl FnOnce(&mut Palette) -> R) -> R {
-    let mut guard = PALETTE.lock().unwrap_or_else(|e| e.into_inner());
-    f(guard.get_or_insert_with(|| Palette {
+static PALETTE: LazyLock<Mutex<Palette>> = LazyLock::new(|| {
+    Mutex::new(Palette {
         height: 300.0,
         ..Palette::default()
-    }))
+    })
+});
+
+fn pal<R>(f: impl FnOnce(&mut Palette) -> R) -> R {
+    f(&mut PALETTE.locked())
 }
 
 fn hwnd(app: &AppHandle) -> Option<isize> {
@@ -118,8 +119,9 @@ fn place(app: &AppHandle) {
 
 /// A selection's leading and trailing quotes, brackets and punctuation (main.js EDGES).
 fn edges() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"^[\s"'“”‘’(\[{]+|[\s"'“”‘’)\]}.,;:!?]+$"#).unwrap())
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"^[\s"'“”‘’(\[{]+|[\s"'“”‘’)\]}.,;:!?]+$"#).unwrap());
+    &RE
 }
 
 /// What the menu offers for this text (main.js paletteItems).
@@ -237,7 +239,7 @@ fn on_pick(app: &AppHandle, id: &str, ctx: Ctx) {
 /// Make the window (hidden) if it isn't there.
 fn make(app: &AppHandle) {
     static MAKING: Mutex<()> = Mutex::new(());
-    let _one = MAKING.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = MAKING.locked();
     if app.get_webview_window(LABEL).is_some() {
         return;
     }

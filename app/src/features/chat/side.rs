@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -17,7 +17,7 @@ use crate::agents::claude::{self, Session, locate, transcripts};
 use crate::features::chat::{self, Chat};
 use crate::robots::label_of;
 use crate::runtime::util::patch;
-use crate::runtime::with;
+use crate::runtime::{Locked, with};
 use crate::store;
 
 // (looking, not changing: the web ones without asking)
@@ -27,13 +27,10 @@ const THREADS_MAX: usize = 100; // (per tab)
 const NOTE: &str = "This is a side question: the user is asking about something in your conversation, beside it, so the conversation itself stays on track (it won't see this). Answer briefly and plainly. Explain, don't do: you may look at files, but change nothing.";
 
 // A question's words, to ask it again in a fresh conversation if the one it carries on is gone.
-static TURNS: Mutex<Option<HashMap<String, (String, bool)>>> = Mutex::new(None);
+static TURNS: LazyLock<Mutex<HashMap<String, (String, bool)>>> = LazyLock::new(Mutex::default);
 
 fn turns<R>(f: impl FnOnce(&mut HashMap<String, (String, bool)>) -> R) -> R {
-    f(TURNS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get_or_insert_with(HashMap::new))
+    f(&mut TURNS.locked())
 }
 
 pub fn is_side(key: &str) -> bool {

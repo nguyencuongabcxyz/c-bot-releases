@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 
 use crate::platform::input::Key;
 use crate::platform::{clipboard, input, window};
+use crate::runtime::Locked;
 
 /// What was selected in the app in front when a hotkey went: its text, that app's window
 /// title, and its window (to paste a result back into).
@@ -28,8 +29,9 @@ pub struct Selection {
 
 /// The hotkeys bound, by name (their setting), to unbind one when it changes.
 fn bound() -> &'static Mutex<HashMap<String, Shortcut>> {
-    static BOUND: OnceLock<Mutex<HashMap<String, Shortcut>>> = OnceLock::new();
-    BOUND.get_or_init(|| Mutex::new(HashMap::new()))
+    static BOUND: LazyLock<Mutex<HashMap<String, Shortcut>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    &BOUND
 }
 
 /// The key of an Electron accelerator ("W", "Space", "F5", "Plus", "num4"…) as the plugin's
@@ -229,10 +231,7 @@ pub fn register(app: &AppHandle, name: &str, keys: &str, run: fn(&AppHandle)) ->
         });
     match res {
         Ok(()) => {
-            bound()
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(name.to_string(), shortcut);
+            bound().locked().insert(name.to_string(), shortcut);
             true
         }
         Err(err) => {
@@ -244,10 +243,7 @@ pub fn register(app: &AppHandle, name: &str, keys: &str, run: fn(&AppHandle)) ->
 
 /// Unbind a hotkey bound under this name (if it is).
 pub fn unregister(app: &AppHandle, name: &str) {
-    let old = bound()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(name);
+    let old = bound().locked().remove(name);
     if let Some(shortcut) = old {
         let _ = app.global_shortcut().unregister(shortcut);
     }

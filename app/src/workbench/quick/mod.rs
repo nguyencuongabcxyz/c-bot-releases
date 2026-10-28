@@ -25,7 +25,7 @@ use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::{only, patch, text};
-use crate::runtime::{hub, with};
+use crate::runtime::{Locked, hub, part, with};
 use crate::store::now_ms;
 use crate::ui::place;
 use crate::workbench::capture;
@@ -56,9 +56,7 @@ struct Quick {
 }
 
 fn quick<R>(app: &AppHandle, f: impl FnOnce(&mut Quick) -> R) -> R {
-    let state = app.state::<Mutex<Quick>>();
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    f(&mut guard)
+    part(app, f)
 }
 
 /// Stop the action running now, if any.
@@ -193,7 +191,7 @@ pub fn open_with(app: &AppHandle, ctx: Ctx) {
 
 fn open_now(app: &AppHandle, ctx: Ctx) {
     static OPENING: Mutex<()> = Mutex::new(());
-    let _one = OPENING.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = OPENING.locked();
     cancel_job(app);
     let v = view(app, &ctx);
     quick(app, |q| q.ctx = Some(ctx));

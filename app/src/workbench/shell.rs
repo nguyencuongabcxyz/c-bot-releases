@@ -24,7 +24,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use crate::agents::claude;
 use crate::platform::process::Job;
 use crate::robots::{ipc, label_of, sender};
-use crate::runtime::with;
+use crate::runtime::{part, with};
 
 const READ_BUF: usize = 16 * 1024;
 /// The most shells one robot keeps going at once.
@@ -68,9 +68,7 @@ impl Shells {
 }
 
 fn shells<R>(app: &AppHandle, f: impl FnOnce(&mut Shells) -> R) -> R {
-    let state = app.state::<Mutex<Shells>>();
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    f(&mut guard)
+    part(app, f)
 }
 
 pub fn setup(app: &AppHandle) {

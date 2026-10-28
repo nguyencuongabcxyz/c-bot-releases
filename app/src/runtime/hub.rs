@@ -15,7 +15,7 @@ use crate::platform::window::Rect;
 use crate::platform::{presence, window};
 use crate::robots;
 use crate::robots::walkers;
-use crate::runtime::{updater, with};
+use crate::runtime::{part, updater, with};
 use crate::ui::{tray, views, workshop};
 use crate::workbench::capture;
 
@@ -288,9 +288,7 @@ struct Hub {
 }
 
 fn hub_state<R>(app: &AppHandle, f: impl FnOnce(&mut Hub) -> R) -> R {
-    let state = app.state::<Mutex<Hub>>();
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    f(&mut guard)
+    part(app, f)
 }
 
 /// The keys a hotkey is set to (the setting, or its default).

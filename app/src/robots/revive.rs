@@ -23,7 +23,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use crate::platform::webview::Failure;
 use crate::platform::{presence, webview, window};
 use crate::robots;
-use crate::runtime::with;
+use crate::runtime::{part, with};
 
 const EVERY: Duration = Duration::from_secs(5);
 // a look that comes this late means the PC was asleep (pages checked in meanwhile or not)
@@ -64,9 +64,7 @@ struct Revive {
 }
 
 fn rv<R>(app: &AppHandle, f: impl FnOnce(&mut Revive) -> R) -> R {
-    let state = app.state::<Mutex<Revive>>();
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    f(&mut guard)
+    part(app, f)
 }
 
 // ---------------------------------------------------------------- a robot's window

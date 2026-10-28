@@ -7,6 +7,7 @@
 //! Nothing here touches a window or a file: the module saves when `dirty` says so.
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone, Timelike};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 pub const MIN: i64 = 60_000;
@@ -267,15 +268,15 @@ impl Notes {
     }
 
     /// Which day each reminder last went off, saved with the notes.
-    pub fn reminded(&self, kind: &str) -> String {
-        str_of(&self.data["reminded"], kind).to_string()
+    pub fn reminded(&self, kind: Reminder) -> String {
+        str_of(&self.data["reminded"], kind.key()).to_string()
     }
 
-    pub fn mark_reminded(&mut self, kind: &str, day: &str) {
+    pub fn mark_reminded(&mut self, kind: Reminder, day: &str) {
         if !self.data["reminded"].is_object() {
             self.data["reminded"] = json!({});
         }
-        self.data["reminded"][kind] = json!(day);
+        self.data["reminded"][kind.key()] = json!(day);
         self.dirty = true;
     }
 }
@@ -336,10 +337,28 @@ fn last_workday_start(d: DateTime<Local>, days: &[u32]) -> i64 {
     start_of_day(d) - DAY
 }
 
+/// The daily reminders: what's on from yesterday, and before you go.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Reminder {
+    Morning,
+    Evening,
+}
+
+impl Reminder {
+    /// Its name in the notes file (which day it last went off) and to the page.
+    pub fn key(self) -> &'static str {
+        match self {
+            Reminder::Morning => "morning",
+            Reminder::Evening => "evening",
+        }
+    }
+}
+
 /// What a reminder of this kind would list, at time d: { kind, notes, open, today, taken, since }.
-pub fn gather(notes: &Notes, kind: &str, d: DateTime<Local>, c: &Cfg) -> Value {
+pub fn gather(notes: &Notes, kind: Reminder, d: DateTime<Local>, c: &Cfg) -> Value {
     let open = notes.open();
-    let morning = kind == "morning";
+    let morning = kind == Reminder::Morning;
     let today = start_of_day(d);
     let since = if morning {
         last_workday_start(d, &c.workdays)
@@ -368,14 +387,14 @@ pub fn gather(notes: &Notes, kind: &str, d: DateTime<Local>, c: &Cfg) -> Value {
 /// A reminder that's due: its kind, and whether it's one you put off.
 #[derive(Debug, PartialEq)]
 pub struct Due {
-    pub kind: String,
+    pub kind: Reminder,
     pub snoozed: bool,
 }
 
 /// When the reminders go off. Checked once a minute (and whenever you come back to the PC).
 #[derive(Default)]
 pub struct NoteClock {
-    pending: Option<(String, i64)>, // put off: which, and till when
+    pending: Option<(Reminder, i64)>, // put off: which, and till when
 }
 
 impl NoteClock {
@@ -392,11 +411,10 @@ impl NoteClock {
             return None;
         }
         // put off with "remind me later"
-        if let Some((kind, at)) = &self.pending {
-            if d.timestamp_millis() < *at {
+        if let Some((kind, at)) = self.pending {
+            if d.timestamp_millis() < at {
                 return None;
             }
-            let kind = kind.clone();
             self.pending = None;
             return Some(Due {
                 kind,
@@ -409,19 +427,20 @@ impl NoteClock {
         let day = local_day(d);
         let mins = d.hour() * 60 + d.minute();
         // end of the day first: if it's already past it, the morning one has had its chance
-        if mins >= c.evening && d.hour() < EVENING_UNTIL && notes.reminded("evening") != day {
+        if mins >= c.evening && d.hour() < EVENING_UNTIL && notes.reminded(Reminder::Evening) != day
+        {
             return Some(Due {
-                kind: "evening".into(),
+                kind: Reminder::Evening,
                 snoozed: false,
             });
         }
         if c.morning
             && d.hour() >= MORNING_FROM
             && mins < c.evening
-            && notes.reminded("morning") != day
+            && notes.reminded(Reminder::Morning) != day
         {
             return Some(Due {
-                kind: "morning".into(),
+                kind: Reminder::Morning,
                 snoozed: false,
             });
         }
@@ -434,23 +453,23 @@ impl NoteClock {
             return;
         }
         let day = local_day(d);
-        notes.mark_reminded(&due.kind, &day);
-        if due.kind == "evening" {
-            notes.mark_reminded("morning", &day);
+        notes.mark_reminded(due.kind, &day);
+        if due.kind == Reminder::Evening {
+            notes.mark_reminded(Reminder::Morning, &day);
         }
     }
 
     /// "Remind me in N minutes".
-    pub fn snooze(&mut self, kind: &str, minutes: i64, now: i64) {
-        self.pending = Some((kind.to_string(), now + minutes * MIN));
+    pub fn snooze(&mut self, kind: Reminder, minutes: i64, now: i64) {
+        self.pending = Some((kind, now + minutes * MIN));
     }
 
     /// "Done for today": nothing more today (the snooze too).
     pub fn done_for_today(&mut self, notes: &mut Notes, d: DateTime<Local>) {
         self.pending = None;
         let day = local_day(d);
-        notes.mark_reminded("evening", &day);
-        notes.mark_reminded("morning", &day);
+        notes.mark_reminded(Reminder::Evening, &day);
+        notes.mark_reminded(Reminder::Morning, &day);
     }
 }
 
@@ -481,9 +500,9 @@ mod tests {
         d: DateTime<Local>,
         present: bool,
         fire: bool,
-    ) -> Option<String> {
+    ) -> Option<Reminder> {
         let due = clock.due(notes, c, d, present)?;
-        let info = gather(notes, &due.kind, d, c);
+        let info = gather(notes, due.kind, d, c);
         let shown = info["notes"].as_array().unwrap().is_empty() || fire;
         if !shown {
             return None;
@@ -492,6 +511,15 @@ mod tests {
         Some(due.kind)
     }
 
+    #[test]
+    fn reminders_keep_their_names() {
+        // (the notes file keeps the day each last went off under them; the page hears them)
+        assert_eq!(json!(Reminder::Morning), "morning");
+        assert_eq!(json!(Reminder::Evening), Reminder::Evening.key());
+        let kind: Reminder = serde_json::from_value(json!("evening")).unwrap();
+        assert_eq!(kind, Reminder::Evening);
+        assert!(serde_json::from_value::<Reminder>(json!("")).is_err());
+    }
     #[test]
     fn adding_and_editing() {
         let mut n = Notes::from(None, 0);
@@ -637,7 +665,7 @@ mod tests {
         assert!(n.get("old").is_none());
         assert!(n.get("open").unwrap().get("working").is_none()); // (nobody's on it after a restart)
         assert!(n.dirty);
-        assert_eq!(n.reminded("evening"), "");
+        assert_eq!(n.reminded(Reminder::Evening), "");
     }
 
     #[test]
@@ -687,7 +715,7 @@ mod tests {
         n.set_done(&fri_done, true, at(2026, 10, 23, 12, 0).timestamp_millis());
         let mon = note(&mut n, "monday", at(2026, 10, 26, 8, 0));
         let mon_morning = at(2026, 10, 26, 9, 0);
-        let info = gather(&n, "morning", mon_morning, &c);
+        let info = gather(&n, Reminder::Morning, mon_morning, &c);
         // taken since Friday (before today), plus every open one (carried over)
         let ids: Vec<Value> = info["notes"]
             .as_array()
@@ -709,10 +737,10 @@ mod tests {
         );
         // without carrying: only what was taken since the last workday
         let c2 = cfg(&json!({ "notesCarry": false }));
-        let info = gather(&n, "morning", mon_morning, &c2);
+        let info = gather(&n, Reminder::Morning, mon_morning, &c2);
         assert_eq!(info["notes"].as_array().unwrap().len(), 2);
         // the evening: today's, plus every open one
-        let info = gather(&n, "evening", at(2026, 10, 26, 18, 0), &c2);
+        let info = gather(&n, Reminder::Evening, at(2026, 10, 26, 18, 0), &c2);
         let ids: Vec<Value> = info["notes"]
             .as_array()
             .unwrap()
@@ -748,7 +776,7 @@ mod tests {
         );
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 1), true, true),
-            Some("morning".into())
+            Some(Reminder::Morning)
         );
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 2), true, true),
@@ -761,7 +789,7 @@ mod tests {
         );
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 17, 30), true, true),
-            Some("evening".into())
+            Some(Reminder::Evening)
         );
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 17, 31), true, true),
@@ -770,9 +798,9 @@ mod tests {
         // first at the PC after the evening: the evening one (and no morning one after it)
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 27, 19, 0), true, true),
-            Some("evening".into())
+            Some(Reminder::Evening)
         );
-        assert_eq!(n.reminded("morning"), "2026-10-27");
+        assert_eq!(n.reminded(Reminder::Morning), "2026-10-27");
         // too late in the evening: the next morning covers it
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 28, 22, 0), true, true),
@@ -787,9 +815,9 @@ mod tests {
         let mut clock = NoteClock::default();
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 9, 0), true, false),
-            Some("morning".into())
+            Some(Reminder::Morning)
         );
-        assert_eq!(n.reminded("morning"), "2026-10-26");
+        assert_eq!(n.reminded(Reminder::Morning), "2026-10-26");
     }
 
     #[test]
@@ -801,23 +829,23 @@ mod tests {
         let six = at(2026, 10, 26, 18, 0);
         assert_eq!(
             check(&mut clock, &mut n, &c, six, true, true),
-            Some("evening".into())
+            Some(Reminder::Evening)
         );
-        clock.snooze("evening", 15, six.timestamp_millis());
+        clock.snooze(Reminder::Evening, 15, six.timestamp_millis());
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 14), true, true),
             None
         );
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 15), true, true),
-            Some("evening".into())
+            Some(Reminder::Evening)
         );
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 18, 30), true, true),
             None
         );
         // put off, then done for today: nothing more
-        clock.snooze("evening", 15, six.timestamp_millis());
+        clock.snooze(Reminder::Evening, 15, six.timestamp_millis());
         clock.done_for_today(&mut n, six);
         assert_eq!(
             check(&mut clock, &mut n, &c, at(2026, 10, 26, 19, 0), true, true),

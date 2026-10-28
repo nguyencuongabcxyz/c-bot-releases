@@ -9,8 +9,8 @@
 //! Shown and hidden straight through Windows (SW_SHOWNOACTIVATE): Tauri's show() would
 //! activate it. So nothing else here changes the window through Tauri once it's made.
 
-use std::sync::Mutex;
 use std::sync::mpsc::{self, Sender};
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::platform::window;
 use crate::platform::window::Rect;
+use crate::runtime::Locked;
 use crate::ui::views;
 
 pub const LABEL: &str = "drone";
@@ -33,11 +34,10 @@ struct Drone {
     arrivals: Vec<Sender<()>>, // waiting for it to get where it's going
 }
 
-static DRONE: Mutex<Option<Drone>> = Mutex::new(None);
+static DRONE: LazyLock<Mutex<Drone>> = LazyLock::new(Mutex::default);
 
 fn drone<R>(f: impl FnOnce(&mut Drone) -> R) -> R {
-    let mut guard = DRONE.lock().unwrap_or_else(|e| e.into_inner());
-    f(guard.get_or_insert_with(Drone::default))
+    f(&mut DRONE.locked())
 }
 
 fn hwnd(app: &AppHandle) -> Option<isize> {
@@ -71,7 +71,7 @@ fn start_point(area: Rect, s: f64, from: (f64, f64)) -> (f64, f64) {
 /// most) for its page to be there.
 pub fn prepare(app: &AppHandle) {
     static MAKING: Mutex<()> = Mutex::new(());
-    let _one = MAKING.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = MAKING.locked();
     if app.get_webview_window(LABEL).is_some() {
         return;
     }

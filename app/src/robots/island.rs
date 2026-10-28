@@ -26,7 +26,7 @@ use crate::platform::{input, window};
 use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::util::{only, patch};
-use crate::runtime::{hub, with};
+use crate::runtime::{hub, part, with};
 use crate::ui::views;
 
 pub const LABEL: &str = "island";
@@ -50,9 +50,7 @@ struct Island {
 }
 
 fn isl<R>(app: &AppHandle, f: impl FnOnce(&mut Island) -> R) -> R {
-    let state = app.state::<Mutex<Island>>();
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    f(&mut guard)
+    part(app, f)
 }
 
 // ---------------------------------------------------------------- where it goes

@@ -22,7 +22,7 @@ use crate::features::chat;
 use crate::platform::process;
 use crate::robots;
 use crate::runtime::util::patch;
-use crate::runtime::{State, with};
+use crate::runtime::{State, part_or_default, with};
 use crate::ui::workshop;
 
 const POLL: Duration = Duration::from_millis(700);
@@ -243,10 +243,7 @@ struct Open {
 }
 
 fn open_state<R>(app: &AppHandle, f: impl FnOnce(&mut Open) -> R) -> R {
-    match app.try_state::<Mutex<Open>>() {
-        Some(state) => f(&mut state.lock().unwrap_or_else(|e| e.into_inner())),
-        None => f(&mut Open::default()),
-    }
+    part_or_default(app, f)
 }
 
 fn tell(app: &AppHandle, id: &str, tab_id: &str, payload: Value) {

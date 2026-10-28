@@ -16,7 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use crate::platform::window;
 use crate::platform::window::Rect;
-use crate::runtime::with;
+use crate::runtime::{part_if, with};
 use crate::ui::{place, views};
 
 pub const LABEL: &str = "notebook";
@@ -48,9 +48,7 @@ struct Book {
 }
 
 fn book<R>(app: &AppHandle, f: impl FnOnce(&mut Book) -> R) -> Option<R> {
-    let state = app.try_state::<Mutex<Book>>()?;
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    Some(f(&mut guard))
+    part_if(app, f)
 }
 
 /// Beside the robot's box (`near`), on the side with room, bottoms lined up; else by the

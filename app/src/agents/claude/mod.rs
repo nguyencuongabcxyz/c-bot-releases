@@ -21,7 +21,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -30,14 +30,14 @@ use serde_json::{Value, json};
 
 use crate::platform::process;
 use crate::platform::process::NoWindow;
+use crate::runtime::Locked;
 
 /// When C-Bot itself was started from inside a Claude Code session, it inherits that
 /// session's private markers. Passed on, they make every robot's `claude` think it's a
 /// helper of that session (e.g. CLAUDE_CODE_CHILD_SESSION turns off transcript saving).
 /// Drop them; genuine user settings such as CLAUDE_CODE_GIT_BASH_PATH are kept.
 fn host_session_var() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(concat!(
             "(?i)^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_PREVIEW_\\w*|CLAUDE_AGENT_SDK_\\w*|MCP_SERVER_CONNECTION_BATCH_SIZE|MCP_CONNECTION_NONBLOCKING",
             "|CLAUDE_CODE_(CHILD_SESSION|SESSION_ID|HOST_SESSION_ID|SESSION_ATTENDED|ENTRYPOINT\\w*|EXECPATH|DESKTOP_APP_VERSION",
@@ -45,7 +45,8 @@ fn host_session_var() -> &'static Regex {
             "|OAUTH_SCOPES|ACCOUNT_UUID|ORGANIZATION_UUID|USER_EMAIL|MESSAGING_\\w*|EMIT_\\w*|SDK_\\w*|ENABLE_SDK_\\w*|ENABLE_ASK_USER_QUESTION_TOOL))$",
         ))
         .unwrap()
-    })
+    });
+    &RE
 }
 
 pub fn clean_env() -> Vec<(String, String)> {
@@ -74,7 +75,7 @@ impl Killer {
 
     /// End it, unless it has exited already.
     pub fn kill(&self) {
-        let gone = self.gone.lock().unwrap_or_else(|e| e.into_inner());
+        let gone = self.gone.locked();
         if !*gone {
             process::kill_tree(self.pid);
         }
@@ -82,7 +83,7 @@ impl Killer {
 
     /// It has exited (call it before dropping the Child).
     pub fn gone(&self) {
-        *self.gone.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        *self.gone.locked() = true;
     }
 }
 
@@ -102,7 +103,7 @@ mod live_tests {
         let (tx, rx) = mpsc::channel::<(String, Value)>();
         let tx = Mutex::new(tx);
         let handler: Handler = Arc::new(move |_, event, data| {
-            let _ = tx.lock().unwrap().send((event.to_string(), data));
+            let _ = tx.locked().send((event.to_string(), data));
         });
         let opts = Opts {
             claude_path: claude,
@@ -159,7 +160,7 @@ mod live_tests {
         let (tx, rx) = mpsc::channel::<(String, Value)>();
         let tx = Mutex::new(tx);
         let handler: Handler = Arc::new(move |_, event, data| {
-            let _ = tx.lock().unwrap().send((event.to_string(), data));
+            let _ = tx.locked().send((event.to_string(), data));
         });
         let opts = Opts {
             claude_path: claude,
@@ -224,7 +225,7 @@ mod live_tests {
         let (tx, rx) = mpsc::channel::<(String, Value)>();
         let tx = Mutex::new(tx);
         let handler: Handler = Arc::new(move |_, event, data| {
-            let _ = tx.lock().unwrap().send((event.to_string(), data));
+            let _ = tx.locked().send((event.to_string(), data));
         });
         let remote = |rx: &mpsc::Receiver<(String, Value)>| loop {
             let (event, data) = rx

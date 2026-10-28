@@ -38,11 +38,12 @@ pub use commands::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use regex::Regex;
+use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Manager};
@@ -55,7 +56,7 @@ use crate::platform::{clipboard, window};
 use crate::robots;
 use crate::robots::{planes, social, walkers};
 use crate::runtime::util::{only, patch, text};
-use crate::runtime::{hub, with};
+use crate::runtime::{Locked, hub, with};
 use crate::store::now_ms;
 use crate::ui::views;
 
@@ -78,22 +79,22 @@ const THROW_AT_MS: u64 = 900; // into its throw that the plane leaves its hand (
 const ROOM_GAP: f64 = 10.0;
 
 fn pass_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?i)<pass\s*/?>").unwrap())
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<pass\s*/?>").unwrap());
+    &RE
 }
 
 fn agree_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?i)</?agree\s*/?>").unwrap())
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)</?agree\s*/?>").unwrap());
+    &RE
 }
 
 fn mention_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"@([\p{L}\p{N}_-]+)").unwrap())
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"@([\p{L}\p{N}_-]+)").unwrap());
+    &RE
 }
 
 /// What the robots are told, on top of their personality.
-fn rules(name: &str, others: &[String], mode: &str) -> String {
+fn rules(name: &str, others: &[String], mode: Style) -> String {
     let mut lines: Vec<String> = vec![
         String::new(),
         "You are taking part in a group chat with other C-Bot robots and the user, about one topic. Each robot looks after its own project folder.".into(),
@@ -103,7 +104,7 @@ fn rules(name: &str, others: &[String], mode: &str) -> String {
         "- This chat is talk only: do not change files or run commands (you cannot here). No <aside> remarks in this chat.".into(),
         format!("- Speak only for yourself, {name}, in your own personality. Never write lines for the others."),
     ];
-    let more: &[&str] = if mode == "turns" {
+    let more: &[&str] = if mode == Style::Turns {
         &[
             "- One message per turn, 2 to 6 sentences (a short list is fine).",
             "- Respond to what the others and the user said: agree, disagree, build on it, or ask someone directly with @Name. When the user speaks, answer them.",
@@ -280,8 +281,16 @@ struct Person {
     agree: bool,
 }
 
+/// How the talk goes: anyone may speak (the robots keep it going themselves), or in turns.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Style {
+    Free,
+    Turns,
+}
+
 struct Chat {
-    mode: &'static str, // free | turns
+    mode: Style,
     topic: String,
     host_id: String,
     members: Vec<String>,
@@ -335,7 +344,7 @@ fn act<R>(app: &AppHandle, f: impl FnOnce(&mut Group, &mut Env) -> R) -> R {
         changed: false,
     };
     let r = {
-        let mut g = state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut g = state.locked();
         let r = f(&mut g, &mut env);
         if env.changed {
             let view = view(app, &g);
@@ -603,9 +612,9 @@ fn start(g: &mut Group, env: &mut Env, p: &Value) -> Value {
         .unwrap_or(1.0);
     let mut c = Chat {
         mode: if p["style"] == "turns" {
-            "turns"
+            Style::Turns
         } else {
-            "free"
+            Style::Free
         },
         topic,
         host_id,
@@ -702,13 +711,13 @@ mod tests {
         let free = rules(
             "Bolt",
             &["Captain (Cheerful, looks after C:\\a)".into()],
-            "free",
+            Style::Free,
         );
         assert!(free.starts_with("\nYou are taking part in a group chat"));
         assert!(free.contains("The others: Captain (Cheerful, looks after C:\\a); and the user."));
         assert!(free.contains("- Speak only for yourself, Bolt, in your own personality."));
         assert!(free.contains("<pass/>") && !free.contains("One message per turn"));
-        let turns = rules("Bolt", &[], "turns");
+        let turns = rules("Bolt", &[], Style::Turns);
         assert!(turns.contains("One message per turn") && !turns.contains("exactly <pass/>"));
     }
 

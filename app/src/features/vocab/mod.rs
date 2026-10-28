@@ -35,7 +35,7 @@ use crate::robots;
 use crate::robots::{social, walkers};
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::{only, patch, text};
-use crate::runtime::{hub, with};
+use crate::runtime::{Locked, hub, part_if, with};
 use crate::store::saved::Saved;
 use crate::ui::{tray, views};
 use crate::workbench::{capture, snip};
@@ -65,14 +65,14 @@ struct Words {
 
 fn words<R>(app: &AppHandle, f: impl FnOnce(&mut Words) -> R) -> Option<R> {
     // (None before setup: the tray asks for the count while it's being built)
-    let state = app.try_state::<Mutex<Words>>()?;
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    let out = f(&mut guard);
-    if guard.vocab.dirty {
-        guard.vocab.dirty = false;
-        guard.saved.save();
-    }
-    Some(out)
+    part_if(app, |w: &mut Words| {
+        let out = f(w);
+        if w.vocab.dirty {
+            w.vocab.dirty = false;
+            w.saved.save();
+        }
+        out
+    })
 }
 
 fn now() -> i64 {
@@ -440,7 +440,7 @@ fn card_closed(app: &AppHandle) {
 
 fn open_words_window(app: &AppHandle) {
     static OPENING: Mutex<()> = Mutex::new(());
-    let _one = OPENING.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = OPENING.locked();
     if let Some(w) = app.get_webview_window(WORDS) {
         let _ = w.unminimize();
         let _ = w.show();

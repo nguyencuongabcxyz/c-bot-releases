@@ -26,7 +26,7 @@ use crate::agents::claude::{Session, locate, transcripts};
 use crate::agents::{claude, personalities};
 use crate::mcp::{apps, link, tools};
 use crate::robots::label_of;
-use crate::runtime::with;
+use crate::runtime::{Locked, with};
 use crate::workbench::files;
 
 const IDLE_CLOSE: Duration = Duration::from_secs(15 * 60); // an idle conversation's process is closed; it resumes on the next question
@@ -55,7 +55,7 @@ const KEEP_MEDIA: usize = 400_000;
 
 struct TurnInfo {
     prompt: String,
-    kind: String,
+    kind: AskKind,
     retried: bool,
 }
 
@@ -393,7 +393,7 @@ fn on_event(
     event: &str,
     data: Value,
 ) {
-    let book_of = || book.lock().unwrap_or_else(|e| e.into_inner());
+    let book_of = || book.locked();
     match event {
         // Remote Control came on (its page on claude.ai), went off, or couldn't
         "remote" => {
@@ -468,7 +468,7 @@ fn on_event(
                 let mut b = book_of();
                 b.text_len = 0;
                 b.media_left = KEEP_MEDIA;
-                b.turns.get(&turn_id).map(|t| t.kind.clone())
+                b.turns.get(&turn_id).map(|t| t.kind)
             };
             tell(
                 app,
@@ -681,7 +681,7 @@ fn on_event(
                 .unwrap_or_default();
                 let view = apps::app_for(&app, &tool, &folder);
                 let shown = {
-                    let mut b = book.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut b = book.locked();
                     let Some(call) = b.mcp_calls.get_mut(&call_id) else {
                         return;
                     }; // (its answer is already done with it)
@@ -860,12 +860,12 @@ fn on_event(
             let turn_id = data["turnId"].as_str().unwrap_or("").to_string();
             let (kind, last_compact, (edits, apps, images, tools)) = {
                 let mut b = book_of();
-                let kind = b.turns.remove(&turn_id).map(|t| t.kind).unwrap_or_default();
+                let kind = b.turns.remove(&turn_id).map(|t| t.kind);
                 (kind, b.last_compact.clone(), b.take())
             };
             let kept = with(app, |st| {
                 let c = st.store.get(id)?.clone();
-                if kind == "compact" {
+                if kind == Some(AskKind::Compact) {
                     let text = match (last_compact["pre"].as_f64(), last_compact["post"].as_f64()) {
                         (Some(pre), Some(post)) if pre > 0.0 => format!(
                             "🗜️ Compacted my memory: {}k → {}k tokens",
@@ -917,11 +917,7 @@ fn on_event(
             let mut p = data;
             p["type"] = json!("done");
             p["at"] = at;
-            p["kind"] = if kind.is_empty() {
-                Value::Null
-            } else {
-                json!(kind)
-            };
+            p["kind"] = json!(kind);
             tell(app, id, tab_id, p);
             refresh_context(app, id, tab_id);
         }

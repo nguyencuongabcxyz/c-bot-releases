@@ -34,7 +34,7 @@ use crate::platform::window::Rect;
 use crate::robots;
 use crate::robots::{island, walkers};
 use crate::runtime::util::only;
-use crate::runtime::with;
+use crate::runtime::{part, with};
 use crate::ui::{tray, views};
 
 use grid::*;
@@ -124,9 +124,7 @@ struct Stage {
 }
 
 fn stg<R>(app: &AppHandle, f: impl FnOnce(&mut Stage) -> R) -> R {
-    let state = app.state::<Mutex<Stage>>();
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    f(&mut guard)
+    part(app, f)
 }
 
 fn ready(app: &AppHandle) -> bool {

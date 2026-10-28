@@ -199,9 +199,9 @@ pub(super) fn partial_suffix(s: &str, tag: &str) -> usize {
 }
 
 pub fn strip_asides(s: &str) -> String {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE
-        .get_or_init(|| Regex::new(r"(^|\n)[ \t]*<aside>(?s:.*?)</aside>[ \t]*(?:\n|$)").unwrap());
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(^|\n)[ \t]*<aside>(?s:.*?)</aside>[ \t]*(?:\n|$)").unwrap());
+    let re = &*RE;
     re.replace_all(s, "$1").into_owned()
 }
 

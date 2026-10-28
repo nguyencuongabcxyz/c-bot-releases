@@ -17,7 +17,7 @@ use crate::features::{chat, notes};
 use crate::robots;
 use crate::robots::ipc;
 use crate::runtime::util::patch;
-use crate::runtime::{hub, with};
+use crate::runtime::{Locked, hub, with};
 use crate::ui::{tray, views};
 
 const LABEL: &str = "manager";
@@ -57,7 +57,7 @@ pub fn open(app: &AppHandle, focus: Option<&str>) {
 fn open_now(app: &AppHandle, focus: Option<&str>) {
     // (two at once, say a double click on the tray: one window)
     static OPENING: Mutex<()> = Mutex::new(());
-    let _one = OPENING.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = OPENING.locked();
     if let Some(w) = app.get_webview_window(LABEL) {
         let _ = w.unminimize();
         let _ = w.show();

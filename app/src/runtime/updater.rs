@@ -14,7 +14,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::features::chat;
-use crate::runtime::with;
+use crate::runtime::{part_if, with};
 use crate::ui::tray;
 
 const CHECK_EVERY: Duration = Duration::from_secs(4 * 60 * 60);
@@ -35,9 +35,7 @@ struct Updates {
 }
 
 fn updates<R>(app: &AppHandle, f: impl FnOnce(&mut Updates) -> R) -> Option<R> {
-    let state = app.try_state::<Mutex<Updates>>()?;
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    Some(f(&mut guard))
+    part_if(app, f)
 }
 
 /// Is this the installed app (Electron's app.isPackaged)? A build run from source lives in

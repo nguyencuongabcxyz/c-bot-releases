@@ -1,6 +1,7 @@
 //! The words' commands: a robot's page, the word card and the My words window ask these.
 
 use super::*;
+use crate::runtime::Locked;
 
 // ---------------------------------------------------------------- commands
 
@@ -121,7 +122,7 @@ pub fn words_quiz(app: AppHandle) -> bool {
 /// Write vocab.json now if a change is waiting (C-Bot is quitting).
 pub(super) fn flush(app: &AppHandle) {
     if let Some(state) = app.try_state::<Mutex<Words>>() {
-        let mut w = state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut w = state.locked();
         let Words { vocab, saved, .. } = &mut *w;
         if vocab.dirty {
             vocab.dirty = false;
@@ -173,7 +174,7 @@ pub fn setup(app: &AppHandle) {
         loop {
             thread::sleep(Duration::from_millis(100));
             if let Some(state) = a.try_state::<Mutex<Words>>() {
-                let mut w = state.lock().unwrap_or_else(|e| e.into_inner());
+                let mut w = state.locked();
                 let Words { vocab, saved, .. } = &mut *w;
                 saved.tick(&vocab.data);
             }

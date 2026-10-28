@@ -264,17 +264,17 @@ pub struct AskArgs {
     #[serde(default)]
     attachments: Vec<String>,
     turn_id: Option<String>,
-    kind: Option<String>, // "bonk": starting over, quicker; else a chat
+    #[serde(default)]
+    kind: chat::AskKind, // (the page asks a chat or a bonk; compacting is robot_compact)
     tag: Option<String>,
 }
 
 #[tauri::command(async)]
 pub fn robot_ask(app: AppHandle, window: WebviewWindow, tab_id: String, ask: AskArgs) -> Answer {
     let attachments: Vec<Value> = ask.attachments.into_iter().map(Value::from).collect();
-    let kind = if ask.kind.as_deref() == Some("bonk") {
-        "bonk"
-    } else {
-        "chat"
+    let kind = match ask.kind {
+        chat::AskKind::Bonk => chat::AskKind::Bonk,
+        _ => chat::AskKind::Chat,
     };
     let turn_id = ask.turn_id.filter(|t| !t.is_empty());
     let ask = chat::Ask {
@@ -298,7 +298,7 @@ pub fn robot_compact(
         prompt: "/compact",
         attachments: &[],
         turn_id: Some(turn_id),
-        kind: "compact",
+        kind: chat::AskKind::Compact,
         tag: None,
     };
     Ok(chat::ask(&app, &sender(&window)?, &tab_id, ask))

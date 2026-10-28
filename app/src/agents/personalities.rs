@@ -2,15 +2,16 @@
 //! the robot says without a round trip to Claude. The lines are shared with the
 //! Electron app (shared/personalities.json).
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use serde_json::{Map, Value};
 
 static RAW: &str = include_str!("../../../shared/personalities.json");
 
 pub fn all() -> &'static Map<String, Value> {
-    static ALL: OnceLock<Map<String, Value>> = OnceLock::new();
-    ALL.get_or_init(|| serde_json::from_str(RAW).expect("shared/personalities.json"))
+    static ALL: LazyLock<Map<String, Value>> =
+        LazyLock::new(|| serde_json::from_str(RAW).expect("shared/personalities.json"));
+    &ALL
 }
 
 /// What the robot pages get: everything but the prompt and the social lines.

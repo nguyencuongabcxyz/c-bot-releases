@@ -26,12 +26,12 @@ use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::{only, text};
-use crate::runtime::{hub, with};
+use crate::runtime::{Locked, hub, part_if, with};
 use crate::store::saved::Saved;
 use crate::ui::tray;
 use crate::workbench::capture;
 
-use book::{Due, NoteClock, Notes};
+use book::{Due, NoteClock, Notes, Reminder};
 use notebook::Ctx;
 
 const BOARD_MAX: usize = 5;
@@ -49,14 +49,14 @@ struct State {
 
 fn state<R>(app: &AppHandle, f: impl FnOnce(&mut State) -> R) -> Option<R> {
     // (None before setup: the tray asks for the count while it's being built)
-    let st = app.try_state::<Mutex<State>>()?;
-    let mut guard = st.lock().unwrap_or_else(|e| e.into_inner());
-    let out = f(&mut guard);
-    if guard.notes.dirty {
-        guard.notes.dirty = false;
-        guard.saved.save();
-    }
-    Some(out)
+    part_if(app, |st: &mut State| {
+        let out = f(st);
+        if st.notes.dirty {
+            st.notes.dirty = false;
+            st.saved.save();
+        }
+        out
+    })
 }
 
 fn notes<R>(app: &AppHandle, f: impl FnOnce(&mut Notes) -> R) -> Option<R> {
@@ -224,8 +224,9 @@ fn day_summary(list: &[Value], open: &[Value], start: i64) -> Option<String> {
     }
     let line = |n: &&Value| {
         // (on one line: each run of line breaks a space)
-        static BREAKS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-        let breaks = BREAKS.get_or_init(|| regex::Regex::new(r"\n+").unwrap());
+        static BREAKS: std::sync::LazyLock<regex::Regex> =
+            std::sync::LazyLock::new(|| regex::Regex::new(r"\n+").unwrap());
+        let breaks = &*BREAKS;
         let flat = breaks.replace_all(&text(&n["text"]), " ").into_owned();
         format!(
             "- {}{}{}",
@@ -289,16 +290,13 @@ fn on_action(app: &AppHandle, action: &str, ctx: &Ctx, p: &Value) -> Value {
         "ask" => json!(ask_about(app, &text(&p["id"]), robot)),
         "summary" => json!(summarise_day(app, robot)),
         "snooze" => {
-            let kind = ctx.reminder["kind"]
-                .as_str()
-                .filter(|k| !k.is_empty())
-                .unwrap_or("evening")
-                .to_string();
+            let kind =
+                serde_json::from_value(ctx.reminder["kind"].clone()).unwrap_or(Reminder::Evening);
             let minutes = p["minutes"]
                 .as_f64()
                 .filter(|m| *m != 0.0 && m.is_finite())
                 .unwrap_or(15.0);
-            state(app, |s| s.clock.snooze(&kind, minutes as i64, now()));
+            state(app, |s| s.clock.snooze(kind, minutes as i64, now()));
             notebook::clear_reminder(app);
             notebook::close(app);
             Value::Null
@@ -445,11 +443,11 @@ fn act(app: &AppHandle, action: &str, p: &Value) -> Value {
 /// A daily reminder is due: a robot holds up its corkboard and the notebook opens (robot.ts
 /// asks for it with notes:remind-open). It waits while that robot's busy; with no robot out,
 /// a Windows notification. False: it couldn't be shown now (tried again on the next check).
-fn remind(app: &AppHandle, kind: &str, info: &Value) -> bool {
+fn remind(app: &AppHandle, kind: Reminder, info: &Value) -> bool {
     let summary = json!({ "today": info["today"], "open": info["open"], "taken": info["taken"] });
     let Some(id) = hub::notes_robot(app) else {
         use tauri_plugin_notification::NotificationExt;
-        let title = if kind == "morning" {
+        let title = if kind == Reminder::Morning {
             "🌅 Your notes from yesterday"
         } else {
             "🌇 Before you go: your notes"
@@ -483,7 +481,7 @@ fn remind(app: &AppHandle, kind: &str, info: &Value) -> bool {
     };
     // away on the island: the island holds it up for you, the robot stays put (busy or not)
     if robots::is_away(app, &id) {
-        let title = if kind == "morning" {
+        let title = if kind == Reminder::Morning {
             "Your notes from yesterday"
         } else {
             "Before you go: your notes"
@@ -515,13 +513,13 @@ fn check(app: &AppHandle) {
     let d = Local::now();
     let Some(Some((due, info))) = state(app, |s| {
         let due: Due = s.clock.due(&s.notes, &c, d, present)?;
-        let info = book::gather(&s.notes, &due.kind, d, &c);
+        let info = book::gather(&s.notes, due.kind, d, &c);
         Some((due, info))
     }) else {
         return;
     };
     // nothing to say: counts as done for today
-    let shown = info["notes"].as_array().is_none_or(Vec::is_empty) || remind(app, &due.kind, &info);
+    let shown = info["notes"].as_array().is_none_or(Vec::is_empty) || remind(app, due.kind, &info);
     if shown {
         state(app, |s| NoteClock::shown(&mut s.notes, &due, d));
     }
@@ -840,7 +838,7 @@ pub fn notebook_act(
 /// Write notes.json now if a change is waiting (C-Bot is quitting).
 fn flush(app: &AppHandle) {
     if let Some(st) = app.try_state::<Mutex<State>>() {
-        let mut s = st.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = st.locked();
         let State { notes, saved, .. } = &mut *s;
         if notes.dirty {
             notes.dirty = false;
@@ -888,7 +886,7 @@ pub fn setup(app: &AppHandle) {
         loop {
             thread::sleep(Duration::from_millis(100));
             if let Some(st) = a.try_state::<Mutex<State>>() {
-                let mut s = st.lock().unwrap_or_else(|e| e.into_inner());
+                let mut s = st.locked();
                 let State { notes, saved, .. } = &mut *s;
                 saved.tick(&notes.data);
             }

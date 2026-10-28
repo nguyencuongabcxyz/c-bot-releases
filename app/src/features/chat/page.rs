@@ -1,7 +1,10 @@
 //! What a robot's page asks of its chats: a question, stopping, answering Claude, the queue,
 //! rewinding, the brain (model, effort, permission mode), plans to approve, Remote Control.
 
+use serde::{Deserialize, Serialize};
+
 use super::*;
+use crate::runtime::Locked;
 
 // ---------------------------------------------------------------- what the page asks
 
@@ -158,12 +161,22 @@ pub fn close_idle(app: AppHandle) {
     });
 }
 
+/// What a question is (the page hears it back with the turn: "chat", "bonk", "compact").
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AskKind {
+    #[default]
+    Chat,
+    Bonk, // starting over, quicker
+    Compact,
+}
+
 /// A question for a tab's conversation.
 pub struct Ask<'a> {
     pub prompt: &'a str,
     pub attachments: &'a [Value], // (paths of files dropped on it)
     pub turn_id: Option<String>,  // (none: a new one)
-    pub kind: &'a str,            // chat, bonk (starting over, quicker), compact
+    pub kind: AskKind,
     pub tag: Option<&'a str>, // a line kept above your message (sent to everyone on the stage: who got it)
 }
 
@@ -259,14 +272,14 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
     }
 
     with(app, |st| {
-        if kind == "bonk" {
+        if kind == AskKind::Bonk {
             st.store.push_history(
                 id,
                 tab_id,
                 json!({ "role": "note", "text": "🔨 Bonked! Starting over, quicker." }),
             );
         }
-        if kind == "chat" {
+        if kind == AskKind::Chat {
             let fed: Vec<Value> = dropped
                 .iter()
                 .map(|f| json!({ "name": f["name"], "isDir": f["isDir"], "isImage": f["isImage"] }))
@@ -289,11 +302,11 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
     };
     chat.session.set_system_prompt(&prompt_for(app, &c)); // personality changes (and who else is out) apply from the next question
     chat.session.allow_dirs(&add_dirs);
-    chat.book.lock().unwrap().turns.insert(
+    chat.book.locked().turns.insert(
         turn_id.clone(),
         TurnInfo {
             prompt: full.clone(),
-            kind: kind.into(),
+            kind,
             retried: false,
         },
     );

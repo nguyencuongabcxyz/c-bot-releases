@@ -1,6 +1,7 @@
 //! The group chat's windows: the chat itself and the meeting room it plays out in.
 
 use super::*;
+use crate::runtime::Locked;
 
 // ---------------------------------------------------------------- the windows
 
@@ -30,7 +31,7 @@ pub(super) fn place(app: &AppHandle, host: Option<&str>) -> Rect {
 pub(super) fn build_window(app: &AppHandle) {
     // (two at once: one window)
     static OPENING: Mutex<()> = Mutex::new(());
-    let _one = OPENING.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = OPENING.locked();
     if app.get_webview_window(LABEL).is_some() {
         return;
     }

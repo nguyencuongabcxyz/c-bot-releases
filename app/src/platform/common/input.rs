@@ -11,6 +11,7 @@ pub use super::types::Key;
 pub use crate::platform::os::input::is_down;
 pub use crate::platform::os::input::main_button_down;
 pub use crate::platform::os::input::press;
+use crate::runtime::Locked;
 
 /// Wait (a second at most) for Shift, Ctrl, Alt, Meta (and `extra`) to come up, so a key
 /// pressed now isn't mixed up with a hotkey still held: our Ctrl+C isn't Ctrl+Alt+C.
@@ -31,7 +32,7 @@ pub fn wait_released(extra: Option<Key>) {
 pub fn idle_secs() -> u64 {
     static LAST: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
     let stamp = crate::platform::os::input::last_input_stamp();
-    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    let mut last = LAST.locked();
     let now = Instant::now();
     match *last {
         Some((seen, at)) if seen == stamp => now.duration_since(at).as_secs(),

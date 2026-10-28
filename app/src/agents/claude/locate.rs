@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use crate::platform::process;
 use crate::platform::process::NoWindow;
-use crate::runtime::paths;
+use crate::runtime::{Locked, paths};
 
 const NAMES: [&str; 2] = ["claude.exe", "claude.cmd"];
 
@@ -256,7 +256,7 @@ pub fn locate(chosen: &str, fresh: bool) -> Option<Found> {
             source: "picked by you".into(),
         });
     }
-    let mut cached = CACHED.lock().unwrap();
+    let mut cached = CACHED.locked();
     if !fresh && let Some(c) = cached.as_ref().filter(|c| is_file(&c.path)) {
         return Some(c.clone());
     }

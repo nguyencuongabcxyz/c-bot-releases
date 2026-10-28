@@ -14,13 +14,14 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use regex::Regex;
 use serde_json::{Value, json};
 
 use crate::platform::process::NoWindow;
+use crate::runtime::Locked;
 
 const SKIP: [&str; 23] = [
     "node_modules",
@@ -109,12 +110,8 @@ fn walk_files(folder: &str) -> Vec<String> {
 type Index = HashMap<String, (Instant, Vec<Entry>)>; // folder: when it was listed, what's in it
 
 fn entries_of(folder: &str) -> Vec<Entry> {
-    static INDEX: Mutex<Option<Index>> = Mutex::new(None);
-    if let Some((at, entries)) = INDEX
-        .lock()
-        .unwrap()
-        .get_or_insert_with(HashMap::new)
-        .get(folder)
+    static INDEX: LazyLock<Mutex<Index>> = LazyLock::new(Mutex::default);
+    if let Some((at, entries)) = INDEX.locked().get(folder)
         && at.elapsed() < FRESH
     {
         return entries.clone();
@@ -137,9 +134,7 @@ fn entries_of(folder: &str) -> Vec<Entry> {
         .chain(files.into_iter().map(|rel| Entry { rel, dir: false }))
         .collect();
     INDEX
-        .lock()
-        .unwrap()
-        .get_or_insert_with(HashMap::new)
+        .locked()
         .insert(folder.to_string(), (Instant::now(), entries.clone()));
     entries
 }
@@ -207,8 +202,9 @@ pub fn search(folder: &str, query: &str, limit: usize) -> Value {
 
 /// The files a message @-mentions (that exist), as absolute paths. "@a/b.ts" and "@\"with space.md\"".
 pub fn mentioned(folder: &str, text: &str) -> Vec<String> {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r#"(?:^|\s)@(?:"([^"]+)"|([^\s"]+))"#).unwrap());
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?:^|\s)@(?:"([^"]+)"|([^\s"]+))"#).unwrap());
+    let re = &*RE;
     let mut out: Vec<String> = vec![];
     for c in re.captures_iter(text) {
         let raw = c

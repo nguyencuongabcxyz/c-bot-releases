@@ -18,6 +18,7 @@ use std::thread;
 use serde_json::{Value, json};
 
 use super::tools;
+use crate::runtime::Locked;
 
 pub const FLAG: &str = "--robots-mcp";
 
@@ -106,7 +107,7 @@ struct Server {
 
 impl Server {
     fn send(&self, msg: &Value) {
-        let mut out = self.out.lock().unwrap_or_else(|e| e.into_inner());
+        let mut out = self.out.locked();
         let _ = writeln!(out, "{msg}").and_then(|_| out.flush());
     }
 
@@ -118,10 +119,7 @@ impl Server {
             Err(e) => return fail(format!("C-Bot isn't reachable ({e}). Is it still running?")),
         };
         if let Ok(clone) = sock.try_clone() {
-            self.open
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(key_of(id), clone);
+            self.open.locked().insert(key_of(id), clone);
         }
         let request = json!({ "token": self.token, "from": self.robot, "tab": self.tab, "tool": tool, "args": args });
         let answer = (|| {
@@ -138,10 +136,7 @@ impl Server {
                 _ => fail("C-Bot closed the line before answering.".into()),
             }
         })();
-        self.open
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&key_of(id));
+        self.open.locked().remove(&key_of(id));
         let _ = sock.shutdown(Shutdown::Both);
         answer
     }
@@ -185,12 +180,7 @@ pub fn run_if_asked() -> Option<i32> {
                 });
             }
             Step::Cancel(id) => {
-                if let Some(sock) = server
-                    .open
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .remove(&key_of(&id))
-                {
+                if let Some(sock) = server.open.locked().remove(&key_of(&id)) {
                     let _ = sock.shutdown(Shutdown::Both);
                 }
             }

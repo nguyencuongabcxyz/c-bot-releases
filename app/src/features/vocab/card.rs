@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use crate::platform::window;
 use crate::platform::window::Rect;
+use crate::runtime::part_if;
 use crate::ui::{place, views};
 
 pub const LABEL: &str = "card";
@@ -47,9 +48,7 @@ struct Card {
 }
 
 fn card<R>(app: &AppHandle, f: impl FnOnce(&mut Card) -> R) -> Option<R> {
-    let state = app.try_state::<Mutex<Card>>()?;
-    let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-    Some(f(&mut guard))
+    part_if(app, f)
 }
 
 /// A small card by `near` (a robot's box, or the mouse's point) on its screen `wa` (its work

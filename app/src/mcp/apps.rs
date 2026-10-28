@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ use tauri::{AppHandle, Manager};
 use crate::platform::window;
 use crate::robots;
 use crate::runtime::util::text;
-use crate::runtime::{paths, with};
+use crate::runtime::{Locked, part_or_default, paths, with};
 use crate::ui::views;
 
 /// Where the pages are served from (the cbot-app protocol, as WebView2 serves it).
@@ -57,8 +57,8 @@ fn safe_name(name: &str) -> String {
 
 /// "mcp__claude_ai_Excalidraw__create_view" -> ("claude_ai_Excalidraw", "create_view")
 pub fn parse_tool_name(name: &str) -> Option<(String, String)> {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"^mcp__(.+?)__(.+)$").unwrap());
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^mcp__(.+?)__(.+)$").unwrap());
+    let re = &*RE;
     let m = re.captures(name)?;
     Some((m[1].to_string(), m[2].to_string()))
 }
@@ -156,17 +156,15 @@ fn off_runtime<T: Send>(f: impl FnOnce() -> T + Send) -> Option<T> {
 }
 
 fn http() -> Option<&'static reqwest::blocking::Client> {
-    static CLIENT: OnceLock<Option<reqwest::blocking::Client>> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| {
-            let _ = rustls::crypto::ring::default_provider().install_default(); // (as the updater does)
-            reqwest::blocking::Client::builder()
-                .timeout(HTTP_TIMEOUT)
-                .build()
-                .map_err(|e| eprintln!("[mcp apps] no HTTP client: {e}"))
-                .ok()
-        })
-        .as_ref()
+    static CLIENT: LazyLock<Option<reqwest::blocking::Client>> = LazyLock::new(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default(); // (as the updater does)
+        reqwest::blocking::Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .build()
+            .map_err(|e| eprintln!("[mcp apps] no HTTP client: {e}"))
+            .ok()
+    });
+    CLIENT.as_ref()
 }
 
 /// The JSON-RPC messages in a reply: one JSON body, or an event stream's data lines.
@@ -300,10 +298,7 @@ struct Apps {
 }
 
 fn apps<R>(app: &AppHandle, f: impl FnOnce(&mut Apps) -> R) -> R {
-    match app.try_state::<Mutex<Apps>>() {
-        Some(state) => f(&mut state.lock().unwrap_or_else(|e| e.into_inner())),
-        None => f(&mut Apps::default()),
-    }
+    part_or_default(app, f)
 }
 
 fn client_for(app: &AppHandle, server: &str, folder: &str) -> Option<Arc<Mutex<McpHttp>>> {
@@ -329,13 +324,8 @@ fn client_for(app: &AppHandle, server: &str, folder: &str) -> Option<Arc<Mutex<M
 fn request(client: &Arc<Mutex<McpHttp>>, method: &str, params: Value) -> Result<Value, RpcError> {
     let client = client.clone();
     let method = method.to_string();
-    off_runtime(move || {
-        client
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .request(&method, params)
-    })
-    .unwrap_or_else(|| Err(RpcError::new("The MCP request failed")))
+    off_runtime(move || client.locked().request(&method, params))
+        .unwrap_or_else(|| Err(RpcError::new("The MCP request failed")))
 }
 
 fn tools_of(app: &AppHandle, server: &str, folder: &str) -> Result<Vec<Value>, RpcError> {
@@ -375,8 +365,9 @@ fn page_key(server: &str, uri: &str) -> String {
 
 /// The page's Content-Security-Policy, from the domains the app declares (MCP Apps rules).
 fn csp_for(meta: &Value) -> String {
-    static DOMAIN: OnceLock<Regex> = OnceLock::new();
-    let domain = DOMAIN.get_or_init(|| Regex::new(r"^https://[\w.-]+(:\d+)?$").unwrap());
+    static DOMAIN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^https://[\w.-]+(:\d+)?$").unwrap());
+    let domain = &*DOMAIN;
     let csp = &meta["csp"];
     let list = |k: &str| {
         csp[k]

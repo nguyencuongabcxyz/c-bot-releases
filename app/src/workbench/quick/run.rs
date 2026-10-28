@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 
 use crate::agents::claude::{Killer, clean_env, locate};
 use crate::platform::process::NoWindow;
+use crate::runtime::Locked;
 
 const TIMEOUT: Duration = Duration::from_secs(90);
 /// Characters (a long email is fine; a whole document is not what this is for).
@@ -95,14 +96,14 @@ pub fn slice16(s: &str, n: usize) -> &str {
 
 /// Vietnamese has letters English doesn't: enough of them and the text is Vietnamese.
 pub fn looks_vietnamese(text: &str) -> bool {
-    static RE: OnceLock<(Regex, Regex)> = OnceLock::new();
-    let (letters, vi) = RE.get_or_init(|| {
+    static RE: LazyLock<(Regex, Regex)> = LazyLock::new(|| {
         (
             Regex::new(r"\p{L}").unwrap(),
             Regex::new("(?i)[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹáàãéèíìóòõúùýđ]")
                 .unwrap(),
         )
     });
+    let (letters, vi) = &*RE;
     let n = letters.find_iter(text).count();
     n > 0 && vi.find_iter(text).count() as f64 / n as f64 > 0.04
 }
@@ -179,8 +180,7 @@ fn unquote(s: &str) -> String {
 /// Refine's reply: the text, then the changes ("original → new | why", one per line).
 /// Returns the text and [{ from, to, why }] (at most 6).
 pub fn split_refine(reply: &str) -> (String, Vec<Value>) {
-    static RE: OnceLock<(Regex, Regex, Regex, Regex)> = OnceLock::new();
-    let (bullet, none, bar, arrow) = RE.get_or_init(|| {
+    static RE: LazyLock<(Regex, Regex, Regex, Regex)> = LazyLock::new(|| {
         (
             Regex::new(r"^\s*[-*•\d.)]+\s*").unwrap(),
             Regex::new(r"(?i)^none\.?$").unwrap(),
@@ -188,6 +188,7 @@ pub fn split_refine(reply: &str) -> (String, Vec<Value>) {
             Regex::new(r"\s*(?:→|->)\s*").unwrap(),
         )
     });
+    let (bullet, none, bar, arrow) = &*RE;
     let Some(i) = reply.find(CHANGES) else {
         return (reply.trim().to_string(), vec![]);
     };
@@ -237,12 +238,7 @@ pub struct Handle {
 impl Handle {
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
-        if let Some(k) = self
-            .killer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-        {
+        if let Some(k) = self.killer.locked().as_ref() {
             k.kill(); // (nothing if it has finished: Stop pressed after the answer came)
         }
     }
@@ -324,7 +320,7 @@ pub fn run(job: &Job, handle: &Handle, mut on_text: impl FnMut(&str)) -> Result<
     let mut child =
         spawned.map_err(|e| Failed::Error(format!("Couldn't start Claude Code: {e}")))?;
     let killer = Killer::new(child.id());
-    *handle.killer.lock().unwrap_or_else(|e| e.into_inner()) = Some(killer.clone());
+    *handle.killer.locked() = Some(killer.clone());
     if handle.is_cancelled() {
         killer.kill(); // (stopped while it was starting)
     }

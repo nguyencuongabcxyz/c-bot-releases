@@ -6,7 +6,7 @@ use super::*;
 
 impl Chat {
     pub(super) fn free(&self) -> bool {
-        self.mode == "free"
+        self.mode == Style::Free
     }
 
     /// The members still in it: on the desktop, and not dropped out.

@@ -37,57 +37,36 @@ pub(super) fn try_visit(app: &AppHandle, now: Instant) -> bool {
             })
             .collect();
         let Some(b) = pick(&hosts) else { continue };
-        let rb = rep(app, b);
-        let mode = if rb.b("busy") {
-            "watch"
-        } else if rb.b("awake") {
-            "chat"
-        } else {
-            "tiptoe"
-        };
-        start(app, a, b, mode, vec![], None);
+        start(app, a, b, Mode::for_host(&rep(app, b)), vec![], None);
         return true;
     }
     false
 }
 
-/// Send a over to b's desk (mode: chat | watch | tiptoe; "" from how b is), or an office
-/// scene: order (lunch), goout (lunch together), tea (b, then the stops, desk to desk).
+/// Send a over to b's desk (Chat, Watch, Tiptoe: Mode::for_host), or an office scene: Order
+/// (lunch), GoOut (lunch together), Tea (b, then the stops, desk to desk).
 /// delivery: ms till the food / tea comes.
 pub fn start(
     app: &AppHandle,
     a: &str,
     b: &str,
-    mode: &str,
+    mode: Mode,
     stops: Vec<String>,
     delivery: Option<u64>,
 ) -> bool {
     if visit(app).is_some() || a == b || !is_open(app, a) || !is_open(app, b) || !at_desk(app, b) {
         return false;
     }
-    let mode = if !mode.is_empty() {
-        mode.to_string()
-    } else {
-        let rb = rep(app, b);
-        (if rb.b("busy") {
-            "watch"
-        } else if rb.b("awake") {
-            "chat"
-        } else {
-            "tiptoe"
-        })
-        .to_string()
-    };
     let side = side_of(app, b, a); // the side of b's desk it comes from, and stands on
     let now = Instant::now();
     let v = Visit {
         a: a.into(),
         b: b.into(),
-        mode: mode.clone(),
+        mode,
         side,
         face: face_for(side),
         face_b: None,
-        phase: "out".into(),
+        phase: Phase::Out,
         epoch: next_gen(),
         delivery,
         stops,
@@ -118,7 +97,7 @@ pub fn start(
     // (it never set off: it's sitting tight)
     let who = a.to_string();
     later(app, 9000, move |app| {
-        if visit(app).is_some_and(|v| v.phase == "out") && !walkers::is_out(app, &who) {
+        if visit(app).is_some_and(|v| v.phase == Phase::Out) && !walkers::is_out(app, &who) {
             end_visit(app, "never left");
         }
     });
@@ -138,7 +117,7 @@ pub(super) fn spot(app: &AppHandle) -> Option<(f64, f64)> {
 pub fn errand_for(app: &AppHandle, id: &str) -> Option<Value> {
     let v = visit(app)?;
     // asked out to lunch: its walk to the spot beside the visitor
-    if v.mode == "goout" && v.phase == "outing" && v.b == id {
+    if v.mode == Mode::GoOut && v.phase == Phase::Outing && v.b == id {
         let to = v.spot_b?;
         vset(app, |v| {
             if let Some(out) = v.out.as_mut() {
@@ -147,12 +126,12 @@ pub fn errand_for(app: &AppHandle, id: &str) -> Option<Value> {
         });
         return Some(json!({ "to": { "x": to.0, "y": to.1 }, "face": v.face_b }));
     }
-    if v.a != id || v.phase != "out" {
+    if v.a != id || v.phase != Phase::Out {
         return None;
     }
     let to = spot(app)?;
-    vset(app, |v| v.phase = "walking".into());
-    let tiptoe = v.mode == "tiptoe";
+    vset(app, |v| v.phase = Phase::Walking);
+    let tiptoe = v.mode == Mode::Tiptoe;
     Some(
         json!({ "to": { "x": to.0, "y": to.1 }, "gait": if tiptoe { "tiptoe" } else { "walk" }, "speedK": if tiptoe { 0.6 } else { 1.0 }, "face": v.face }),
     )
@@ -161,7 +140,7 @@ pub fn errand_for(app: &AppHandle, id: &str) -> Option<Value> {
 /// It got where errand_for sent it.
 pub fn errand_arrived(app: &AppHandle, id: &str) {
     match visit(app) {
-        Some(v) if v.mode == "goout" && v.b == id => sit_down(app, id),
+        Some(v) if v.mode == Mode::GoOut && v.b == id => sit_down(app, id),
         Some(_) => arrived(app),
         None => {}
     }
@@ -180,26 +159,21 @@ pub(super) fn arrived(app: &AppHandle) {
     let (a, b) = (v.a.clone(), v.b.clone());
     let rb = rep(app, &b);
     // things may have changed on the way
-    let mut mode = v.mode.clone();
-    if mode == "chat" && rb.b("busy") {
-        mode = "watch".into();
-    }
-    if mode == "chat" && !rb.b("awake") {
-        mode = "tiptoe".into();
-    }
-    if mode == "tiptoe" && rb.b("awake") {
-        mode = "chat".into();
-    }
-    let m = mode.clone();
+    let mode = match v.mode {
+        Mode::Chat if rb.b("busy") => Mode::Watch,
+        Mode::Chat if !rb.b("awake") => Mode::Tiptoe,
+        Mode::Tiptoe if rb.b("awake") => Mode::Chat,
+        mode => mode,
+    };
     vset(app, move |v| {
-        v.phase = "there".into();
+        v.phase = Phase::There;
         v.arrived_at = Instant::now();
-        v.mode = m;
+        v.mode = mode;
     });
     let mine = v.side; // b turns to the side the visitor stands on
     let face = v.face.clone();
-    match mode.as_str() {
-        "chat" => {
+    match mode {
+        Mode::Chat => {
             tell(app, &b, json!({ "phase": "listen", "side": mine }));
             let lines = [
                 (a.clone(), line(app, &a, "hi", &b)),
@@ -230,15 +204,15 @@ pub(super) fn arrived(app: &AppHandle) {
                 homeward(app, None, 1.0)
             });
         }
-        "order" | "goout" if !free_awake(app, &b) => {
+        Mode::Order | Mode::GoOut if !free_awake(app, &b) => {
             // it got busy (or dozed off) while the visitor walked over: maybe next time
             talk(app, &a, &line(app, &a, "goOutBusy", &b));
             later(app, 1800, |app| homeward(app, None, 1.0));
         }
-        "order" | "goout" => {
+        Mode::Order | Mode::GoOut => {
             // lunch: "order?" / "yes, …" / "ordered!", or "go out?" / "yes!" and off they go
             tell(app, &b, json!({ "phase": "listen", "side": mine }));
-            let lines: Vec<(String, String)> = if mode == "order" {
+            let lines: Vec<(String, String)> = if mode == Mode::Order {
                 vec![
                     (a.clone(), line(app, &a, "lunchAsk", &b)),
                     (b.clone(), line(app, &b, "lunchDish", &a)),
@@ -256,13 +230,13 @@ pub(super) fn arrived(app: &AppHandle) {
                     talk(app, &who, &text)
                 });
             }
-            if mode == "order" {
+            if mode == Mode::Order {
                 let (a2, b2) = (a.clone(), b.clone());
                 later(app, after_lines, move |app| {
                     let face = visit(app).map(|v| v.face).unwrap_or_default();
                     walkers::pose(app, &a2, "wave", Some(&face));
                     tell(app, &b2, json!({ "phase": "listen-end", "wave": true }));
-                    deliver(app, vec![a2.clone(), b2.clone()], "food");
+                    deliver(app, vec![a2.clone(), b2.clone()], Treat::Food);
                     soc(app, |s| s.lunch_day = today());
                 });
                 later(app, after_lines + 1300, |app| homeward(app, None, 1.0));
@@ -270,7 +244,7 @@ pub(super) fn arrived(app: &AppHandle) {
                 later(app, after_lines - 600, go_out);
             }
         }
-        "tea" => {
+        Mode::Tea => {
             // milk tea: takes this desk's order (the usual for a busy one), then on to the next
             let wants_tea = free_awake(app, &b);
             if wants_tea {
@@ -301,13 +275,13 @@ pub(super) fn arrived(app: &AppHandle) {
                 next_tea_stop,
             );
         }
-        "watch" => {
+        Mode::Watch => {
             walkers::pose(app, &a, "stand", Some(&face));
             cheer(app, a.clone(), b.clone(), 0);
             later(app, WATCH_MAX, |app| homeward(app, None, 1.0));
         }
-        _ => {
-            // tiptoe: a sticky on its monitor, and back without waking it
+        Mode::Tiptoe => {
+            // a sticky on its monitor, and back without waking it
             walkers::pose(app, &a, "stand", Some(&face));
             walkers::say(app, &a, &line(app, &a, "tiptoe", &b), 2200);
             tell(
@@ -343,7 +317,7 @@ pub(super) fn talk(app: &AppHandle, who: &str, text: &str) {
         return;
     }
     if walkers::has(app, who) {
-        let sitting = v.phase == "sitting";
+        let sitting = v.phase == Phase::Sitting;
         let face = if who == v.a {
             Some(v.face.clone())
         } else {
@@ -395,7 +369,7 @@ pub(super) fn go_out(app: &AppHandle) {
         v.spot_b = Some(spot_b);
         v.face = face.into();
         v.face_b = Some(face_b.into());
-        v.phase = "outing".into();
+        v.phase = Phase::Outing;
         v.out = Some(HashSet::from([a2]));
         v.there = HashSet::new();
     });
@@ -412,7 +386,7 @@ pub(super) fn go_out(app: &AppHandle) {
         json!({ "phase": "go-out", "with": name_of(app, &a) }),
     ); // (it gets up: robot:wander asks errand_for for its walk)
     later(app, 12000, move |app| {
-        if visit(app).is_some_and(|v| v.phase == "outing") && !walkers::is_out(app, &b) {
+        if visit(app).is_some_and(|v| v.phase == Phase::Outing) && !walkers::is_out(app, &b) {
             homeward(app, None, 1.0); // (it never came)
         }
     });
@@ -426,7 +400,7 @@ pub(super) fn sit_down(app: &AppHandle, id: &str) {
     vset(app, |x| {
         x.there = there;
         if both {
-            x.phase = "sitting".into();
+            x.phase = Phase::Sitting;
         }
     });
     let face = if id == v.a {
@@ -469,7 +443,7 @@ pub(super) fn next_tea_stop(app: &AppHandle) {
     vset(app, move |v| v.stops.retain(|x| Some(x) != n2.as_ref()));
     let Some(next) = next else {
         talk(app, &v.a, &line(app, &v.a, "teaOrdered", &v.b));
-        deliver(app, v.ordered.clone(), "tea");
+        deliver(app, v.ordered.clone(), Treat::Tea);
         soc(app, |s| s.tea_day = today());
         return later(app, LINE_GAP, |app| homeward(app, None, 1.0));
     };
@@ -479,7 +453,7 @@ pub(super) fn next_tea_stop(app: &AppHandle) {
         v.b = n3;
         v.side = side;
         v.face = face_for(side);
-        v.phase = "walking".into();
+        v.phase = Phase::Walking;
     });
     tell(app, &next, json!({ "phase": "hosting", "on": true }));
     let ok = match spot(app) {
@@ -492,14 +466,11 @@ pub(super) fn next_tea_stop(app: &AppHandle) {
 }
 
 /// The food / the milk tea comes, a few minutes later, to every robot in on it.
-pub(super) fn deliver(app: &AppHandle, ids: Vec<String>, kind: &'static str) {
-    let ms = visit(app)
-        .and_then(|v| v.delivery)
-        .unwrap_or(if kind == "food" {
-            DELIVERY_FOOD
-        } else {
-            DELIVERY_TEA
-        });
+pub(super) fn deliver(app: &AppHandle, ids: Vec<String>, kind: Treat) {
+    let ms = visit(app).and_then(|v| v.delivery).unwrap_or(match kind {
+        Treat::Food => DELIVERY_FOOD,
+        Treat::Tea => DELIVERY_TEA,
+    });
     after(app, ms, move |app| {
         let mut seen = HashSet::new();
         for id in ids.into_iter().filter(|id| seen.insert(id.clone())) {
@@ -507,10 +478,9 @@ pub(super) fn deliver(app: &AppHandle, ids: Vec<String>, kind: &'static str) {
                 let text = line(
                     app,
                     &id,
-                    if kind == "food" {
-                        "lunchArrived"
-                    } else {
-                        "teaArrived"
+                    match kind {
+                        Treat::Food => "lunchArrived",
+                        Treat::Tea => "teaArrived",
                     },
                     "",
                 );
@@ -526,12 +496,12 @@ pub(super) fn deliver(app: &AppHandle, ids: Vec<String>, kind: &'static str) {
 
 pub(super) fn homeward(app: &AppHandle, gait: Option<&str>, speed_k: f64) {
     let Some(v) = visit(app) else { return };
-    if v.phase == "home" {
+    if v.phase == Phase::Home {
         return;
     }
-    let out = v.mode == "goout" && v.out.is_some();
-    vset(app, |v| v.phase = "home".into());
-    if v.mode == "chat" {
+    let out = v.mode == Mode::GoOut && v.out.is_some();
+    vset(app, |v| v.phase = Phase::Home);
+    if v.mode == Mode::Chat {
         tell(app, &v.b, json!({ "phase": "listen-end" }));
     }
     walkers::go_home(app, &v.a, gait, speed_k);
@@ -545,11 +515,11 @@ pub(super) fn end_visit(app: &AppHandle, why: &str) {
     let Some(v) = soc(app, |s| s.visit.take()) else {
         return;
     };
-    if v.mode == "chat" {
+    if v.mode == Mode::Chat {
         tell(app, &v.b, json!({ "phase": "listen-end" }));
     }
     tell(app, &v.a, json!({ "phase": "visit-over", "why": why }));
-    if v.mode == "goout" {
+    if v.mode == Mode::GoOut {
         tell(app, &v.b, json!({ "phase": "visit-over", "why": why }));
     }
     tell(app, &v.b, json!({ "phase": "hosting", "on": false }));
@@ -557,14 +527,14 @@ pub(super) fn end_visit(app: &AppHandle, why: &str) {
 
 /// A visit that should end early: you're using the host or the visitor, or the host got busy.
 pub(super) fn check(app: &AppHandle) {
-    let Some(v) = visit(app).filter(|v| v.phase == "there") else {
+    let Some(v) = visit(app).filter(|v| v.phase == Phase::There) else {
         return;
     };
     if !at_desk(app, &v.b) {
         return homeward(app, None, 1.0); // (the host's gone off: nobody to visit)
     }
     let rb = rep(app, &v.b);
-    if rb.b("chat") || (v.mode == "chat" && rb.b("busy")) {
+    if rb.b("chat") || (v.mode == Mode::Chat && rb.b("busy")) {
         walkers::say(
             app,
             &v.a,
@@ -572,7 +542,9 @@ pub(super) fn check(app: &AppHandle) {
             1800,
         );
         later(app, 1200, |app| homeward(app, None, 1.4));
-    } else if v.mode == "watch" && !rb.b("busy") && v.arrived_at.elapsed() > Duration::from_secs(3)
+    } else if v.mode == Mode::Watch
+        && !rb.b("busy")
+        && v.arrived_at.elapsed() > Duration::from_secs(3)
     {
         // its task ended without a "done" (stopped, an error): back home
         later(app, 800, |app| homeward(app, None, 1.0));

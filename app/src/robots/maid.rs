@@ -25,7 +25,7 @@ use crate::platform::{input, presence, window};
 use crate::robots;
 use crate::robots::walkers::{Errand, after, pick};
 use crate::robots::{social, walkers};
-use crate::runtime::{hub, util, with};
+use crate::runtime::{hub, part_or_default, util, with};
 use crate::workbench::quick;
 
 const ID: &str = "maid";
@@ -100,13 +100,7 @@ struct Maid {
 }
 
 fn md<R>(app: &AppHandle, f: impl FnOnce(&mut Maid) -> R) -> R {
-    match app.try_state::<Mutex<Maid>>() {
-        Some(state) => {
-            let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-            f(&mut guard)
-        }
-        None => f(&mut Maid::default()),
-    }
+    part_or_default(app, f)
 }
 
 /// Do this in ms, if her round's still on.

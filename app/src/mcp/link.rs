@@ -37,7 +37,7 @@ use crate::platform::window;
 use crate::robots;
 use crate::robots::{planes, social, walkers};
 use crate::runtime::util::text;
-use crate::runtime::{hub, with};
+use crate::runtime::{hub, part_or_default, with};
 use crate::store::now_ms;
 use crate::workbench::shell;
 
@@ -96,13 +96,7 @@ struct Link {
 }
 
 fn link<R>(app: &AppHandle, f: impl FnOnce(&mut Link) -> R) -> R {
-    match app.try_state::<Mutex<Link>>() {
-        Some(state) => {
-            let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-            f(&mut guard)
-        }
-        None => f(&mut Link::default()),
-    }
+    part_or_default(app, f)
 }
 
 // ---------------------------------------------------------------- who's who

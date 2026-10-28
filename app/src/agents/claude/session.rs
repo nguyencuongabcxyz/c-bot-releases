@@ -2,7 +2,10 @@
 //! questions in turn (and the queue behind them), control requests (interrupt, model, effort,
 //! Remote Control), answering Claude's questions, and closing it.
 
+use std::sync::MutexGuard;
+
 use super::*;
+use crate::runtime::Locked;
 
 impl Session {
     pub fn new(opts: Opts, session_id: Option<String>, handler: Handler) -> Arc<Session> {
@@ -51,8 +54,8 @@ impl Session {
         session
     }
 
-    pub(super) fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    pub(super) fn lock(&self) -> MutexGuard<'_, Inner> {
+        self.inner.locked()
     }
 
     pub fn alive(&self) -> bool {
@@ -174,7 +177,7 @@ impl Session {
             let mut err_pipe = err_pipe;
             let mut buf = String::new();
             let _ = err_pipe.read_to_string(&mut buf);
-            stderr.lock().unwrap().push_str(&buf);
+            stderr.locked().push_str(&buf);
         });
         let me = self.me.clone();
         thread::spawn(move || {
@@ -288,7 +291,7 @@ impl Session {
             let stderr = i
                 .proc
                 .take()
-                .map(|p| p.stderr.lock().unwrap().clone())
+                .map(|p| p.stderr.locked().clone())
                 .unwrap_or_default();
             // helpers die with the process: say so, or their cards would spin forever
             for id in i.agent_running.drain().collect::<Vec<_>>() {

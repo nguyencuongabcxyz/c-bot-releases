@@ -7,17 +7,14 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 use std::time::UNIX_EPOCH;
 
+use crate::runtime::Locked;
 use regex::Regex;
 use serde_json::{Value, json};
 
 const BIG_FILE: u64 = 2 * 1024 * 1024; // only skim the head and tail of transcripts larger than this
-
-fn re(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
-    cell.get_or_init(|| Regex::new(pattern).unwrap())
-}
 
 pub fn project_dir(folder: &str) -> PathBuf {
     let name: String = folder
@@ -69,10 +66,9 @@ fn read_slice(file: &Path, size: u64) -> String {
 }
 
 fn without_reminders(s: &str) -> String {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    re(&RE, r"(?s)<system-reminder>.*?</system-reminder>")
-        .replace_all(s, "")
-        .into_owned()
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?s)<system-reminder>.*?</system-reminder>").unwrap());
+    RE.replace_all(s, "").into_owned()
 }
 
 /// Claude Code also writes messages *as the user* that the user never typed: notices
@@ -81,7 +77,8 @@ fn without_reminders(s: &str) -> String {
 /// have no origin, so they're also recognised by their tags. Returns a short note to
 /// show instead, Some("") to show nothing, or None when it's the user's own words.
 pub fn automatic_note(entry: &Value, raw: &str) -> Option<String> {
-    static SUMMARY: OnceLock<Regex> = OnceLock::new();
+    static SUMMARY: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?s)<summary>(.*?)</summary>").unwrap());
     let kind = entry["origin"]["kind"].as_str().unwrap_or("");
     let text = without_reminders(raw); // look past hidden reminders
     let lead = text.trim_start();
@@ -92,7 +89,7 @@ pub fn automatic_note(entry: &Value, raw: &str) -> Option<String> {
         return None;
     }
     if kind == "task-notification" || lead.starts_with("<task-notification>") {
-        let summary = re(&SUMMARY, r"(?s)<summary>(.*?)</summary>")
+        let summary = SUMMARY
             .captures(&text)
             .map(|c| c[1].split_whitespace().collect::<Vec<_>>().join(" "));
         return Some(
@@ -116,18 +113,20 @@ pub fn automatic_note(entry: &Value, raw: &str) -> Option<String> {
 
 /// What the user actually typed, minus the scaffolding Claude Code wraps around it.
 fn clean_user_text(text: &str) -> String {
-    static CMD: OnceLock<Regex> = OnceLock::new();
-    static PASTED: OnceLock<Regex> = OnceLock::new();
+    static CMD: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(?s)<command-name>\s*([^<]+)</command-name>(?:<command-args>(.*?)</command-args>)?",
+        )
+        .unwrap()
+    });
+    static PASTED: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?s)<pasted_content[^>]*>.*?</pasted_content[^>]*>").unwrap()
+    });
     if text.is_empty() || text.trim_start().starts_with("<task-notification>") {
         return String::new();
     }
     // (its args count only right after the name, as sessions.js reads them)
-    if let Some(c) = re(
-        &CMD,
-        r"(?s)<command-name>\s*([^<]+)</command-name>(?:<command-args>(.*?)</command-args>)?",
-    )
-    .captures(text)
-    {
+    if let Some(c) = CMD.captures(text) {
         let args = c.get(2).map(|a| a.as_str().trim()).unwrap_or("");
         return if args.is_empty() {
             c[1].trim().to_string()
@@ -148,13 +147,10 @@ fn clean_user_text(text: &str) -> String {
         return String::new();
     }
     let text = without_reminders(text);
-    re(
-        &PASTED,
-        r"(?s)<pasted_content[^>]*>.*?</pasted_content[^>]*>",
-    )
-    .replace_all(&text, "[pasted text]")
-    .trim()
-    .to_string()
+    PASTED
+        .replace_all(&text, "[pasted text]")
+        .trim()
+        .to_string()
 }
 
 /// What the user typed in this message of the conversation (one sent through Remote Control,
@@ -222,12 +218,12 @@ struct Parsed {
 }
 
 fn parse_transcript(text: &str) -> Parsed {
-    static ASIDE: OnceLock<Regex> = OnceLock::new();
-    static ANSWER: OnceLock<Regex> = OnceLock::new();
-    let aside = re(
-        &ASIDE,
-        r"(^|\n)[ \t]*<aside>((?s:.*?))</aside>[ \t]*(?:\n|$)",
-    );
+    static ASIDE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(^|\n)[ \t]*<aside>((?s:.*?))</aside>[ \t]*(?:\n|$)").unwrap()
+    });
+    static ANSWER: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#""([^"]+)"="([^"]*)""#).unwrap());
+    let aside = &*ASIDE;
     let mut messages: Vec<Value> = vec![];
     let (mut title, mut summary): (Option<String>, Option<String>) = (None, None);
     let mut cur: Option<usize> = None; // the assistant message being added to
@@ -279,7 +275,7 @@ fn parse_transcript(text: &str) -> Parsed {
                     let Some(questions) = asked.get(b["tool_use_id"].as_str().unwrap_or("")) else {
                         continue;
                     };
-                    let picked: HashMap<String, String> = re(&ANSWER, r#""([^"]+)"="([^"]*)""#)
+                    let picked: HashMap<String, String> = ANSWER
                         .captures_iter(&result)
                         .map(|c| (c[1].to_string(), c[2].to_string()))
                         .collect();
@@ -400,7 +396,8 @@ fn mtime_ms(meta: &fs::Metadata) -> f64 {
 
 /// Past conversations for a folder, newest first.
 pub fn list(folder: &str, robot_session_ids: &[String], limit: usize) -> Vec<Value> {
-    static CACHE: Mutex<Option<HashMap<PathBuf, (String, Value)>>> = Mutex::new(None);
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, (String, Value)>>> =
+        LazyLock::new(Mutex::default);
     let Ok(dir) = fs::read_dir(project_dir(folder)) else {
         return vec![];
     };
@@ -421,9 +418,7 @@ pub fn list(folder: &str, robot_session_ids: &[String], limit: usize) -> Vec<Val
         let (size, mtime) = (meta.len(), mtime_ms(&meta));
         let key = format!("{size}:{mtime}");
         let cached = CACHE
-            .lock()
-            .unwrap()
-            .get_or_insert_with(HashMap::new)
+            .locked()
             .get(&file)
             .filter(|(k, _)| *k == key)
             .map(|(_, v)| v.clone());
@@ -435,7 +430,7 @@ pub fn list(folder: &str, robot_session_ids: &[String], limit: usize) -> Vec<Val
                 "preview": one_line(last_prompt, 120),
                 "messages": if size > BIG_FILE { Value::Null } else { json!(parsed.messages.len()) },
             });
-            CACHE.lock().unwrap().get_or_insert_with(HashMap::new).insert(file.clone(), (key, info.clone()));
+            CACHE.locked().insert(file.clone(), (key, info.clone()));
             info
         });
         if info["messages"] == 0 {

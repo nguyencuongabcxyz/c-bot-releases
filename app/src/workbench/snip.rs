@@ -25,7 +25,7 @@ use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::only;
-use crate::runtime::{hub, with};
+use crate::runtime::{Locked, hub, with};
 use crate::ui::views;
 use crate::workbench::{files, paste};
 
@@ -53,7 +53,7 @@ static STARTING: AtomicBool = AtomicBool::new(false);
 
 // (never held across a window call: the window's events, on the main thread, take it too)
 fn take_shot(round: Option<u64>) -> Option<Shot> {
-    let mut shot = SHOT.lock().unwrap_or_else(|e| e.into_inner());
+    let mut shot = SHOT.locked();
     if round.is_some_and(|g| shot.as_ref().map(|s| s.round) != Some(g)) {
         return None;
     }
@@ -111,9 +111,7 @@ pub fn start(
     on_shot: OnShot,
 ) -> Result<(), String> {
     // one box at a time (a second press of the hotkey while one's up does nothing)
-    if app.get_webview_window(LABEL).is_some()
-        || SHOT.lock().unwrap_or_else(|e| e.into_inner()).is_some()
-    {
+    if app.get_webview_window(LABEL).is_some() || SHOT.locked().is_some() {
         return Ok(());
     }
     if STARTING.swap(true, Ordering::SeqCst) {
@@ -150,7 +148,7 @@ fn begin(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Res
     let image = image.ok_or("couldn't capture the screen")?;
     let data_url = data_url(&image).ok_or("couldn't encode the screen")?;
     let round = ROUND.fetch_add(1, Ordering::SeqCst) + 1;
-    *SHOT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Shot {
+    *SHOT.locked() = Some(Shot {
         round,
         image,
         scale: screen.scale,
@@ -274,7 +272,7 @@ pub fn robot_screen_ask(app: AppHandle, window: tauri::WebviewWindow) -> bool {
 #[tauri::command(async)]
 pub fn snip_init(window: tauri::WebviewWindow) -> Result<Value, String> {
     only(&window, LABEL)?;
-    let shot = SHOT.lock().unwrap_or_else(|e| e.into_inner());
+    let shot = SHOT.locked();
     Ok(shot.as_ref().map_or(
         Value::Null,
         |s| json!({ "image": s.data_url, "hint": s.hint }),

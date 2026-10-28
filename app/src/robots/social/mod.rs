@@ -34,6 +34,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use chrono::{Datelike, Local, Timelike};
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Manager};
 
@@ -44,7 +45,7 @@ use crate::platform::{input, presence, window};
 use crate::robots;
 use crate::robots::walkers::{Errand, after, pick, random};
 use crate::robots::{maid, planes, walkers};
-use crate::runtime::{hub, with};
+use crate::runtime::{hub, part_or_default, with};
 use crate::workbench::quick;
 
 const TICK: Duration = Duration::from_secs(6);
@@ -93,16 +94,60 @@ impl Rep {
     }
 }
 
+/// What a visit is: one to b's desk (how b is says which), or an office scene.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    Chat,   // b's awake and free: a word or two
+    Watch,  // b's at work: cheering it on over its shoulder
+    Tiptoe, // b's asleep: a "came by" sticky on its monitor
+    Order,  // lunch, ordered in
+    GoOut,  // lunch out, the two of them
+    Tea,    // a milk-tea round, b and then the stops
+}
+
+impl Mode {
+    /// A visit to b as it is now.
+    fn for_host(rb: &Rep) -> Self {
+        if rb.b("busy") {
+            Mode::Watch
+        } else if rb.b("awake") {
+            Mode::Chat
+        } else {
+            Mode::Tiptoe
+        }
+    }
+}
+
+/// Where a visit's got to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Phase {
+    Out,     // sent off, not walking yet
+    Walking, // on its way to b's desk
+    There,   // at b's desk
+    Outing,  // lunch out: both walking to the spot between their desks
+    Sitting, // lunch out: both sat down
+    Home,    // on its way back
+}
+
+/// What's brought round after a lunch order or a milk-tea round.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Treat {
+    Food,
+    Tea,
+}
+
 /// A visit (or an office scene) going on: a, the visitor, at b's desk.
 #[derive(Clone)]
 struct Visit {
     a: String,
     b: String,
-    mode: String, // chat | watch | tiptoe | order | goout | tea
+    mode: Mode,
     side: &'static str,
     face: String,
     face_b: Option<String>,
-    phase: String, // out | walking | there | outing | sitting | home
+    phase: Phase,
     epoch: u64,
     delivery: Option<u64>,
     stops: Vec<String>,
@@ -130,13 +175,7 @@ struct Social {
 }
 
 fn soc<R>(app: &AppHandle, f: impl FnOnce(&mut Social) -> R) -> R {
-    match app.try_state::<Mutex<Social>>() {
-        Some(state) => {
-            let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-            f(&mut guard)
-        }
-        None => f(&mut Social::default()),
-    }
+    part_or_default(app, f)
 }
 
 fn next_gen() -> u64 {
@@ -363,10 +402,10 @@ fn report(app: &AppHandle, id: &str, r: &Value) {
             let Some(v) = visit(app) else { return };
             if v.a == id {
                 end_visit(app, "declined");
-            } else if v.b == id && v.mode == "goout" {
+            } else if v.b == id && v.mode == Mode::GoOut {
                 // asked out to lunch, but it can't come (busy, or it stays at its desk)
                 walkers::say(app, &v.a, &line(app, &v.a, "goOutBusy", id), 2200);
-                vset(app, |v| v.phase = "there".into());
+                vset(app, |v| v.phase = Phase::There);
                 later(app, 1600, |app| homeward(app, None, 1.0));
             }
         }
@@ -388,7 +427,9 @@ fn report(app: &AppHandle, id: &str, r: &Value) {
 
 fn on_done(app: &AppHandle, id: &str) {
     // the visitor watching it work cheers, and goes home
-    if let Some(v) = visit(app).filter(|v| v.b == id && v.mode == "watch" && v.phase == "there") {
+    if let Some(v) =
+        visit(app).filter(|v| v.b == id && v.mode == Mode::Watch && v.phase == Phase::There)
+    {
         walkers::say(app, &v.a, &line(app, &v.a, "clap", id), 2400);
         walkers::pose(app, &v.a, "clap", Some(&v.face));
         later(app, 2600, |app| homeward(app, None, 1.0));
@@ -510,7 +551,7 @@ fn try_wave(app: &AppHandle, now: Instant) -> bool {
 pub fn clicked(app: &AppHandle, id: &str) -> bool {
     let Some(v) = visit(app) else { return false };
     // out at lunch: both head back
-    if v.mode == "goout" && v.out.as_ref().is_some_and(|o| o.contains(id)) {
+    if v.mode == Mode::GoOut && v.out.as_ref().is_some_and(|o| o.contains(id)) {
         let other = if id == v.a { &v.b } else { &v.a };
         walkers::say(app, id, &line(app, id, "gotta", other), 1600);
         clear_timers(app);
@@ -522,8 +563,8 @@ pub fn clicked(app: &AppHandle, id: &str) -> bool {
     }
     walkers::say(app, id, &line(app, id, "gotta", &v.b), 1600);
     clear_timers(app);
-    if v.phase == "there" || v.phase == "walking" {
-        vset(app, |v| v.phase = "there".into());
+    if v.phase == Phase::There || v.phase == Phase::Walking {
+        vset(app, |v| v.phase = Phase::There);
         later(app, 700, |app| homeward(app, None, 1.6));
     }
     true
@@ -533,7 +574,7 @@ pub fn clicked(app: &AppHandle, id: &str) -> bool {
 /// you put it back).
 pub fn held(app: &AppHandle, id: &str) {
     if visit(app).is_some_and(|v| {
-        v.a == id || (v.mode == "goout" && v.out.as_ref().is_some_and(|o| o.contains(id)))
+        v.a == id || (v.mode == Mode::GoOut && v.out.as_ref().is_some_and(|o| o.contains(id)))
     }) {
         end_visit(app, "picked up");
     }
@@ -543,7 +584,7 @@ pub fn held(app: &AppHandle, id: &str) {
 pub fn gone(app: &AppHandle, id: &str) {
     let Some(v) = visit(app) else { return };
     // out at lunch: over once both are back
-    if v.mode == "goout" && v.out.as_ref().is_some_and(|o| o.contains(id)) {
+    if v.mode == Mode::GoOut && v.out.as_ref().is_some_and(|o| o.contains(id)) {
         let mut left = 0;
         vset(app, |v| {
             if let Some(out) = v.out.as_mut() {
@@ -553,7 +594,7 @@ pub fn gone(app: &AppHandle, id: &str) {
         });
         if left == 0 {
             end_visit(app, "home");
-        } else if v.phase != "home" {
+        } else if v.phase != Phase::Home {
             homeward(app, None, 1.0);
         }
         return;
@@ -604,7 +645,13 @@ fn try_scene(app: &AppHandle) -> bool {
                 })
                 .collect();
             if let Some(b) = pick(&hosts) {
-                return scene(app, if out { "goout" } else { "order" }, a, b, vec![]);
+                return scene(
+                    app,
+                    if out { Mode::GoOut } else { Mode::Order },
+                    a,
+                    b,
+                    vec![],
+                );
             }
         }
         if tea_day != day && within(mins, SCENE_TEA) {
@@ -623,17 +670,17 @@ fn try_scene(app: &AppHandle) -> bool {
             stops.sort_by(|x, y| dist(app, a, x).total_cmp(&dist(app, a, y)));
             if !stops.is_empty() {
                 let first = stops.remove(0);
-                return scene(app, "tea", a, &first, stops);
+                return scene(app, Mode::Tea, a, &first, stops);
             }
         }
     }
     false
 }
 
-/// An office scene: order | goout | tea (a goes to b; tea: then the stops).
-pub fn scene(app: &AppHandle, kind: &str, a: &str, b: &str, stops: Vec<String>) -> bool {
+/// An office scene: Order, GoOut or Tea (a goes to b; tea: then the stops).
+pub fn scene(app: &AppHandle, kind: Mode, a: &str, b: &str, stops: Vec<String>) -> bool {
     soc(app, |s| {
-        if kind == "tea" {
+        if kind == Mode::Tea {
             s.tea_day = today()
         } else {
             s.lunch_day = today()

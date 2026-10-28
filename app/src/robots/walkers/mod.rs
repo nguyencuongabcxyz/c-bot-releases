@@ -35,7 +35,7 @@ use crate::platform::window::Rect;
 use crate::platform::{input, window};
 use crate::robots;
 use crate::robots::{maid, social};
-use crate::runtime::with;
+use crate::runtime::{Locked, part_or_default, with};
 use crate::ui::{tray, views};
 
 // The walker box at size 1 (CSS px): the page draws the character as big as at its desk,
@@ -161,13 +161,7 @@ struct Walkers {
 }
 
 fn ws<R>(app: &AppHandle, f: impl FnOnce(&mut HashMap<String, Walker>) -> R) -> R {
-    match app.try_state::<Mutex<Walkers>>() {
-        Some(state) => {
-            let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
-            f(&mut guard.map)
-        }
-        None => f(&mut HashMap::new()),
-    }
+    part_or_default(app, |w: &mut Walkers| f(&mut w.map))
 }
 
 pub fn label_of(id: &str) -> String {
@@ -542,7 +536,7 @@ fn prepare(
 ) -> bool {
     // (one at a time: wander-prep and wander can come close together)
     static BUILD: Mutex<()> = Mutex::new(());
-    let _one = BUILD.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = BUILD.locked();
     if has(app, id) {
         return true;
     }
