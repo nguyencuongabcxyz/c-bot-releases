@@ -3,15 +3,6 @@
 
 use super::*;
 
-/// The text on the clipboard (Quick actions from a menu work on it), trimmed and capped.
-fn clipboard_text() -> String {
-    crate::platform::clipboard::text()
-        .trim()
-        .chars()
-        .take(12000)
-        .collect()
-}
-
 fn set(app: &AppHandle, key: &str, value: Value) {
     let mut patch = Map::new();
     patch.insert(key.into(), value);
@@ -30,10 +21,6 @@ fn pick_robot(app: &AppHandle, key: &str, id: &str) {
     set(app, key, json!(if now { "" } else { id }));
 }
 
-fn message(app: &AppHandle, text: &str) {
-    app.dialog().message(text).title("C-Bot").show(|_| {});
-}
-
 pub(super) fn picked(app: &AppHandle, id: &str) {
     let parts: Vec<&str> = id.split('|').collect();
     match parts.as_slice() {
@@ -45,14 +32,6 @@ pub(super) fn picked(app: &AppHandle, id: &str) {
         }
         ["tray", "dock", id] => walkers::dock(app, id),
         ["stage", "add", id] => stage::add(app, id),
-        ["tray", "stage-pick", id] => {
-            if stage::cast(app).iter().any(|c| c == id) {
-                stage::leave(app, id);
-            } else {
-                stage::toggle_pick(app, id);
-            }
-            refresh(app);
-        }
         ["tray", what] => tray_action(app, what),
         ["robot", id, "personality", key] => {
             workshop::update_character(
@@ -94,19 +73,13 @@ fn tray_action(app: &AppHandle, what: &str) {
         "stage-last" => stage::start_last(app),
         "stage-exit" => stage::exit(app),
         "palette" => palette::open(app),
-        "screen" => snip::ask_screen(app, None, None),
-        "quick" => quick::open(app, clipboard_text(), None),
         "notebook" => notes::open_notebook(app, None, None),
         "note" => notes::open_notebook(app, None, Some("add")),
+        "routines" => routines::open_window(app, None),
         "words" => vocab::open_words(app),
         "box-word" => {
             thread::sleep(Duration::from_millis(250)); // (after the menu has gone)
             vocab::box_word(app, None, String::new());
-        }
-        "quiz" => {
-            if !vocab::quiz_now(app) {
-                message(app, "No robot is free to quiz you right now.");
-            }
         }
         "maid" => maid::start(app),
         "backups" => {
@@ -124,20 +97,11 @@ fn tray_action(app: &AppHandle, what: &str) {
 fn robot_action(app: &AppHandle, id: &str, action: &str) {
     let rid = Some(id.to_string());
     match action {
-        // (the page acts these out: robot.ts robot:action)
-        "wake" | "sleep" | "new-tab" | "history" | "paste" | "terminal" | "shell" | "bonk"
-        | "wander" | "peek" | "unpeek" => {
-            let _ = app.emit_to(robots::label_of(id), "robot:action", action);
-        }
         "hide" => hub::set_visible(app, id, false),
-        "open-folder" => ipc::open_folder(app, id),
-        "dock" => walkers::dock(app, id),
-        "screen" => snip::ask_screen(app, rid, None),
         "groupchat" => group::open(app, rid),
-        "stage-pick" => stage::toggle_pick(app, id),
-        "quick" => quick::open(app, clipboard_text(), rid),
         "notebook" => notes::open_notebook(app, rid, None),
         "note" => notes::open_notebook(app, rid, Some("add")),
+        "routines" => routines::open_window(app, rid),
         "notes-robot" => pick_robot(app, "notesRobot", id),
         "words" => vocab::open_words(app),
         "box-word" => {
@@ -146,9 +110,6 @@ fn robot_action(app: &AppHandle, id: &str, action: &str) {
         }
         "dream" => {
             vocab::dream_for(app, id);
-        }
-        "quiz" => {
-            vocab::quiz_for(app, id, true);
         }
         "tutor" => pick_robot(app, "vocabTutor", id),
         "workshop" => workshop::open(app, Some(id)),

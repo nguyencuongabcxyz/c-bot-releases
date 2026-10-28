@@ -20,7 +20,6 @@ use windows_sys::Win32::System::Ole::{CF_DIB, CF_HDROP, CF_UNICODETEXT};
 
 use crate::platform::image::{opaque_if_blank, png_bytes};
 
-const CF_BITMAP: u32 = 2;
 // (nothing on a clipboard is this big but a mistake; not worth copying to put back)
 const MAX_FORMAT: usize = 256 * 1024 * 1024;
 
@@ -262,15 +261,7 @@ pub fn files() -> Vec<String> {
     }
 }
 
-pub fn has_files() -> bool {
-    has(CF_HDROP as u32) || matches!(format_id("FileNameW"), id if id != 0 && has(id))
-}
-
 // ---------------------------------------------------------------- pictures
-
-pub fn has_image() -> bool {
-    has(CF_DIB as u32) || has(CF_BITMAP) || matches!(format_id("PNG"), id if id != 0 && has(id))
-}
 
 /// A device-independent bitmap (CF_DIB: a BITMAPINFOHEADER and its pixels, no file
 /// header) as a picture. Screenshots are 32-bit with nothing in the alpha byte: made opaque.

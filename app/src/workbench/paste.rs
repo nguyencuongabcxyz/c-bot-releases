@@ -74,11 +74,6 @@ pub fn inspect(path: &str) -> Option<Value> {
     files::inspect(path).map(with_thumb)
 }
 
-/// Is there something on the clipboard to paste into a robot (a picture or a file)?
-pub fn has_something() -> bool {
-    clipboard::has_image() || clipboard::has_files()
-}
-
 /// What's on the clipboard, as attachments: a copied picture or screenshot (saved like a
 /// pasted one), or the files copied in Explorer.
 fn entries(app: &AppHandle) -> Value {

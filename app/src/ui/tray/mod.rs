@@ -20,19 +20,18 @@ use tauri::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
 };
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Wry};
-use tauri_plugin_dialog::DialogExt;
+use tauri::{AppHandle, Wry};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::agents::personalities;
 use crate::features::chat::group;
-use crate::features::{notes, vocab};
+use crate::features::{notes, routines, vocab};
 use crate::robots;
-use crate::robots::{ipc, maid, stage, walkers};
+use crate::robots::{maid, stage, walkers};
 use crate::runtime::{Error, hub, updater, with};
 use crate::store::Fields;
 use crate::ui::{views, workshop};
-use crate::workbench::{palette, paste, quick, snip};
+use crate::workbench::palette;
 
 pub type MenuItems = Vec<Box<dyn IsMenuItem<Wry>>>;
 type Item = tauri::Result<Box<dyn IsMenuItem<Wry>>>;
@@ -88,19 +87,6 @@ pub fn build_menu(app: &AppHandle, items: Vec<Item>) -> tauri::Result<Menu<Wry>>
 fn hotkey(app: &AppHandle, setting: &str, default: &str) -> (String, bool) {
     hub::hotkey_status(app, setting)
         .unwrap_or_else(|| (hub::hotkey_keys(app, setting, default), true))
-}
-
-/// A hotkey's line in its feature's menu: what it does, or that another app has it.
-fn hotkey_line(app: &AppHandle, setting: &str, default: &str, what: &str) -> Item {
-    let (keys, ok) = hotkey(app, setting, default);
-    note(
-        app,
-        &if ok {
-            format!("{keys} anywhere: {what}")
-        } else {
-            format!("{keys} is taken by another app")
-        },
-    )
 }
 
 fn settings(app: &AppHandle) -> Value {

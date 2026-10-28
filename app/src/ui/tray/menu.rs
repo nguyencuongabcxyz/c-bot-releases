@@ -60,60 +60,36 @@ fn robot_items(app: &AppHandle, chars: &[Value]) -> Vec<Item> {
     items
 }
 
-/// The stage (robots/stage/mod.rs): the robots on the desk to tick for it, and taking it (or leaving it).
+/// The stage (robots/stage/mod.rs): taking it with the robots picked (Ctrl+click), or leaving it.
 fn stage_menu(app: &AppHandle, chars: &[Value]) -> Item {
     let on = stage::is_on(app);
-    let (picked, cast) = (stage::picked(app), stage::cast(app));
     let mut items: Vec<Item> = vec![];
     if on {
-        items.push(note(app, &format!("{} robots on stage", cast.len())));
+        items.push(note(
+            app,
+            &format!("{} robots on stage", stage::cast(app).len()),
+        ));
         items.push(item(
             app,
             "tray|stage-exit".into(),
             "⎋ Off the stage, back to the desks",
             true,
         ));
+        items.push(separator(app));
     } else {
-        items.push(note(
-            app,
-            "Ctrl+click robots to pick them, or tick them here",
-        ));
-    }
-    items.push(separator(app));
-    let out: Vec<&Value> = chars.iter().filter(|c| c.visible()).collect();
-    for c in &out {
-        let id = c.id();
-        let ticked = if on {
-            cast.iter().any(|x| x == id)
+        let picked = stage::picked(app).len();
+        let label = if picked == 0 {
+            "▦ Take the stage (Ctrl+click robots first)".to_string()
         } else {
-            picked.iter().any(|x| x == id)
+            format!("▦ Take the stage ({picked} picked)")
         };
-        items.push(check(
-            app,
-            format!("tray|stage-pick|{id}"),
-            c["name"].as_str().unwrap_or("Robo"),
-            ticked,
-        ));
-    }
-    items.push(separator(app));
-    if !on {
-        let label = if picked.is_empty() {
-            "▦ Take the stage".to_string()
-        } else {
-            format!("▦ Take the stage ({} picked)", picked.len())
-        };
-        items.push(item(
-            app,
-            "tray|stage-start".into(),
-            &label,
-            !picked.is_empty(),
-        ));
+        items.push(item(app, "tray|stage-start".into(), &label, picked > 0));
     }
     items.push(item(
         app,
         "tray|stage-all".into(),
         "▦ Every robot on the desk",
-        !out.is_empty(),
+        visible_count(chars) > 0,
     ));
     items.push(item(
         app,
@@ -132,7 +108,7 @@ fn stage_menu(app: &AppHandle, chars: &[Value]) -> Item {
     )
 }
 
-/// The features: the action menu, the screen, Quick actions, notes and words.
+/// The features with no hotkey of their own: notes, routines and words (the rest: the action menu).
 fn feature_items(app: &AppHandle, s: &Value) -> Vec<Item> {
     let (palette_keys, palette_ok) = hotkey(app, "paletteHotkey", "Ctrl+Alt+C");
     let palette_label = if palette_ok {
@@ -140,58 +116,12 @@ fn feature_items(app: &AppHandle, s: &Value) -> Vec<Item> {
     } else {
         format!("⌨️ All actions… ({palette_keys} is taken by another app)")
     };
-    let (screen_keys, _) = hotkey(app, "screenHotkey", "Ctrl+Alt+B");
     vec![
         item(app, "tray|palette".into(), &palette_label, true),
-        item(
-            app,
-            "tray|screen".into(),
-            &format!("🔍 Ask about part of the screen… ({screen_keys})"),
-            true,
-        ),
-        quick_menu(app, s),
         notes_menu(app),
+        item(app, "tray|routines".into(), "⏰ Routines…", true),
         words_menu(app, s),
     ]
-}
-
-fn quick_menu(app: &AppHandle, s: &Value) -> Item {
-    let quick_model = s["quickModel"]
-        .as_str()
-        .filter(|m| !m.is_empty())
-        .unwrap_or("haiku");
-    sub(
-        app,
-        "✨ Quick actions",
-        vec![
-            item(
-                app,
-                "tray|quick".into(),
-                &format!("✨ Quick actions on text… ({})", quick::hotkey(app)),
-                true,
-            ),
-            separator(app),
-            check(
-                app,
-                "set|quickModel|haiku".into(),
-                "Fast brain (Haiku)",
-                quick_model == "haiku",
-            ),
-            check(
-                app,
-                "set|quickModel|sonnet".into(),
-                "Better writing (Sonnet)",
-                quick_model == "sonnet",
-            ),
-            separator(app),
-            hotkey_line(
-                app,
-                "quickHotkey",
-                "Ctrl+Alt+R",
-                "select text, then refine, translate or explain it",
-            ),
-        ],
-    )
 }
 
 fn notes_menu(app: &AppHandle) -> Item {
@@ -205,13 +135,6 @@ fn notes_menu(app: &AppHandle) -> Item {
                 "tray|note".into(),
                 &format!("📝 Take a note… ({})", notes::hotkey(app)),
                 true,
-            ),
-            separator(app),
-            hotkey_line(
-                app,
-                "noteHotkey",
-                "Ctrl+Alt+N",
-                "take a note (with what you selected)",
             ),
         ],
     )
@@ -229,12 +152,6 @@ fn words_menu(app: &AppHandle, s: &Value) -> Item {
                 "🔍 Box a word on screen to save it…",
                 true,
             ),
-            item(
-                app,
-                "tray|quiz".into(),
-                "🃏 Quiz me now",
-                vocab::ready_count(app) > 0,
-            ),
             separator(app),
             check(
                 app,
@@ -242,8 +159,32 @@ fn words_menu(app: &AppHandle, s: &Value) -> Item {
                 "💭 Dream about my words during the day",
                 on(s, "vocabReminders"),
             ),
-            separator(app),
-            hotkey_line(app, "vocabHotkey", "Ctrl+Alt+W", "select a word to save it"),
+        ],
+    )
+}
+
+/// Which brain Quick actions use.
+fn quick_brain_menu(app: &AppHandle, s: &Value) -> Item {
+    let quick_model = s["quickModel"]
+        .as_str()
+        .filter(|m| !m.is_empty())
+        .unwrap_or("haiku");
+    sub(
+        app,
+        "✨ Quick actions brain",
+        vec![
+            check(
+                app,
+                "set|quickModel|haiku".into(),
+                "Fast (Haiku)",
+                quick_model == "haiku",
+            ),
+            check(
+                app,
+                "set|quickModel|sonnet".into(),
+                "Better writing (Sonnet)",
+                quick_model == "sonnet",
+            ),
         ],
     )
 }
@@ -259,6 +200,7 @@ fn settings_menu(app: &AppHandle, s: &Value) -> Item {
         vec![
             theme_menu(app, s),
             sounds_menu(app, s),
+            quick_brain_menu(app, s),
             sub(
                 app,
                 "🧹 Evening housemaid",

@@ -292,16 +292,6 @@ pub fn dream_for(app: &AppHandle, robot_id: &str) -> bool {
     start_dream(app, quiz_pick(app, 4), Some(robot_id.to_string()))
 }
 
-/// A quiz on one of your words from this robot (asked: you asked for it).
-pub fn quiz_for(app: &AppHandle, robot_id: &str, asked: bool) -> bool {
-    start_quiz(app, quiz_pick(app, 4), asked, Some(robot_id.to_string()))
-}
-
-/// A quiz now, from a robot that's free. False if none is.
-pub fn quiz_now(app: &AppHandle) -> bool {
-    quiz_now_from(app)
-}
-
 /// A word card is up.
 pub fn card_showing(app: &AppHandle) -> bool {
     card::shown(app).is_some()
