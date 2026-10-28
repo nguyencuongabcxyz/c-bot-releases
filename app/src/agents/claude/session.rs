@@ -576,3 +576,33 @@ impl Inner {
         args
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_to_do_tools_go_with_the_default_ones() {
+        let opts = Opts {
+            tools: Some(vec!["Read".into(), "TodoWrite".into()]),
+            ..Default::default()
+        };
+        let handler: Handler = Arc::new(|_, _| {});
+        let session = Session::new(opts, None, handler);
+        let args = session.lock().command_line();
+        let at = args.iter().position(|a| a == "--tools").expect("--tools");
+        let tools: Vec<&str> = args[at + 1].split(',').collect();
+        // (TodoWrite once, though the defaults had it already)
+        assert_eq!(
+            tools,
+            [
+                "Read",
+                "TodoWrite",
+                "TaskCreate",
+                "TaskUpdate",
+                "TaskList",
+                "TaskGet"
+            ]
+        );
+    }
+}

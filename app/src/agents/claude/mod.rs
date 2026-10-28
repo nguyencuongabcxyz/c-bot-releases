@@ -217,6 +217,50 @@ mod live_tests {
 
     #[test]
     #[ignore]
+    fn the_to_do_list_comes_through() {
+        let claude = crate::agents::claude::locate::find("").expect("Claude Code installed");
+        let dir = std::env::temp_dir().join("cbot-todo-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = mpsc::channel::<(String, Value)>();
+        let tx = Mutex::new(tx);
+        let handler: Handler = Arc::new(move |_, event: Event| {
+            let _ = tx.locked().send((event.name().to_string(), event.data()));
+        });
+        // (tools known: the session asks for the to-do ones with them, as after a first start)
+        let opts = Opts {
+            claude_path: claude,
+            cwd: dir.to_string_lossy().into(),
+            model: "haiku".into(),
+            tools: Some(vec!["Read".into()]),
+            ..Default::default()
+        };
+        let session = Session::new(opts, None, handler);
+        session.ask("Make a to-do list with your to-do tool: one item, \"Write notes\". Then mark it done. Then reply: ok.".into(), "t1".into());
+        let mut tasks = vec![];
+        loop {
+            let (event, data) = rx
+                .recv_timeout(Duration::from_secs(120))
+                .expect("an answer in time");
+            match event.as_str() {
+                "task" => tasks.push(data),
+                "done" => break,
+                "fail" => panic!("failed: {data}"),
+                _ => {}
+            }
+        }
+        assert!(!tasks.is_empty(), "no to-do list came");
+        let last = tasks.last().unwrap();
+        assert!(
+            last["tasks"]
+                .as_array()
+                .is_some_and(|t| t.iter().any(|x| x["status"] == "completed")),
+            "{tasks:?}"
+        );
+        session.close();
+    }
+
+    #[test]
+    #[ignore]
     fn remote_control_comes_on_and_survives_a_restart() {
         let claude = crate::agents::claude::locate::find("").expect("Claude Code installed");
         let dir = std::env::temp_dir().join("cbot-session-test");
@@ -262,8 +306,16 @@ mod live_tests {
     }
 }
 
-// Claude Code's task tools, which print mode leaves out unless asked for.
-const TASK_TOOLS: [&str; 4] = ["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"];
+// Claude Code's to-do tools, which a session like ours (print mode, stream-json) leaves out
+// unless --tools names them: TodoWrite (what 2.1 has), and the Task* ones some versions have
+// instead. A name a version doesn't know is left out quietly, so all of them are asked for.
+const TASK_TOOLS: [&str; 5] = [
+    "TodoWrite",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskList",
+    "TaskGet",
+];
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Default)]
