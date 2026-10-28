@@ -8,10 +8,12 @@ pub mod awake;
 mod events;
 pub mod group;
 mod page;
+mod page_event;
 pub mod side;
 mod temporary;
 
 pub use page::*;
+use page_event::PageEvent;
 pub use temporary::*;
 
 use std::collections::HashMap;
@@ -95,8 +97,10 @@ pub fn key_of(id: &str, tab_id: &str) -> String {
     format!("{id}|{tab_id}")
 }
 
-fn tell(app: &AppHandle, id: &str, tab_id: &str, payload: Value) {
-    let mut p = payload;
+fn tell(app: &AppHandle, id: &str, tab_id: &str, event: PageEvent) {
+    let Ok(mut p) = serde_json::to_value(event) else {
+        return;
+    };
     p["tabId"] = json!(tab_id);
     let _ = app.emit_to(label_of(id), "robot:event", p);
 }
@@ -411,7 +415,9 @@ fn refresh_context(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         app,
         id,
         tab_id,
-        json!({ "type": "context", "context": context }),
+        PageEvent::Context {
+            context: context.clone(),
+        },
     );
     context
 }

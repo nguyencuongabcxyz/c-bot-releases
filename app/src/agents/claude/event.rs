@@ -1,7 +1,7 @@
 //! What a conversation reports to its handler, in order, on a thread of its own (so a handler
 //! may wait on the session, e.g. context_usage, without holding up what comes next). The
-//! objects are what the robot's page gets (features/chat/events.rs passes them on), under
-//! the names name() gives.
+//! objects are what the robot's page gets (features/chat/events.rs passes them on, as its
+//! PageEvent).
 
 use serde_json::Value;
 #[cfg(test)]
@@ -66,7 +66,8 @@ pub enum Event {
 }
 
 impl Event {
-    /// Its name, as the robot's page knows it.
+    /// Its name (the live tests look for it).
+    #[cfg(test)]
     pub fn name(&self) -> &'static str {
         match self {
             Event::TurnStart(_) => "turn-start",

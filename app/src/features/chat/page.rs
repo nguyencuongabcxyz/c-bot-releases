@@ -56,7 +56,7 @@ pub fn set_permission_mode(app: &AppHandle, id: &str, mode: &str) {
             st.store
                 .update_tab(id, &tab_id, patch(vec![("permissionMode", Value::Null)]))
         });
-        tell(app, id, &tab_id, json!({ "type": "mode", "mode": mode }));
+        tell(app, id, &tab_id, PageEvent::Mode { mode: mode.into() });
     }
     let prefix = format!("{id}|");
     // (side questions stay read-only)
@@ -373,7 +373,16 @@ pub fn remote(app: &AppHandle, id: &str, tab_id: &str, on: bool) -> Value {
         });
         match chat_of(app, id, tab_id) {
             Some(chat) => chat.session.set_remote(None),
-            None => tell(app, id, tab_id, json!({ "type": "remote", "on": false })),
+            None => tell(
+                app,
+                id,
+                tab_id,
+                PageEvent::Remote {
+                    on: false,
+                    url: Value::Null,
+                    error: Value::Null,
+                },
+            ),
         }
         return json!({ "ok": true });
     }
@@ -429,7 +438,9 @@ pub fn cancel(app: &AppHandle, id: &str, tab_id: &str) -> Value {
             app,
             id,
             tab_id,
-            json!({ "type": "dropped", "turnIds": dropped }),
+            PageEvent::Dropped {
+                turn_ids: dropped.clone(),
+            },
         );
     }
     json!(dropped)
@@ -571,7 +582,7 @@ pub fn decide_plan(
         st.store.push_history(id, tab_id, json!({ "role": "plan", "plan": plan, "approved": go_mode.is_some(), "mode": go_mode, "feedback": feedback }));
     });
     if let Some(mode) = go_mode {
-        tell(app, id, tab_id, json!({ "type": "mode", "mode": mode }));
+        tell(app, id, tab_id, PageEvent::Mode { mode: mode.into() });
     }
     json!({ "ok": true })
 }

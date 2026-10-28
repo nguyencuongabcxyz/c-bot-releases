@@ -38,15 +38,9 @@ pub(super) fn on_event(
         book,
         session,
     };
-    let name = event.name();
     match event {
         Event::Remote(data) => on_remote(e, data),
-        Event::RemoteState(state) => tell(
-            app,
-            id,
-            tab_id,
-            json!({ "type": "remote-state", "state": state }),
-        ),
+        Event::RemoteState(state) => tell(app, id, tab_id, PageEvent::RemoteState { state }),
         Event::RemotePrompt(data) => on_remote_prompt(e, data),
         Event::TurnStart(turn_id) => on_turn_start(e, turn_id),
         Event::Session(sid) => on_session(e, &sid),
@@ -54,20 +48,21 @@ pub(super) fn on_event(
         Event::Tools(data) => on_tools(e, data),
         Event::Commands(data) => on_commands(e, data),
         Event::Text(delta) => on_text(e, &delta),
-        Event::Aside(text) => tell(app, id, tab_id, json!({ "type": "aside", "text": text })),
+        Event::Aside(text) => tell(app, id, tab_id, PageEvent::Aside { text }),
         Event::Thinking => on_thinking(e),
         Event::ThinkingText(delta) => on_thinking_text(e, &delta),
         Event::Usage(tokens) => tell(
             app,
             id,
             tab_id,
-            json!({ "type": "usage", "outputTokens": tokens }),
+            PageEvent::Usage {
+                output_tokens: tokens,
+            },
         ),
-        Event::Status(text) => tell(app, id, tab_id, json!({ "type": "status", "text": text })),
-        Event::Question(mut p) | Event::RequestCancelled(mut p) | Event::Plan(mut p) => {
-            p["type"] = json!(name);
-            tell(app, id, tab_id, p);
-        }
+        Event::Status(text) => tell(app, id, tab_id, PageEvent::Status { text }),
+        Event::Question(p) => tell(app, id, tab_id, PageEvent::Question(p)),
+        Event::RequestCancelled(p) => tell(app, id, tab_id, PageEvent::RequestCancelled(p)),
+        Event::Plan(p) => tell(app, id, tab_id, PageEvent::Plan(p)),
         Event::Mode(mode) => on_mode(e, &mode),
         Event::Tool(data) => on_tool(e, data),
         Event::ToolOutput(data) => on_tool_output(e, data),
@@ -103,7 +98,11 @@ fn on_remote(e: Ev, data: Value) {
         app,
         id,
         tab_id,
-        json!({ "type": "remote", "on": on, "url": data["url"], "error": data["error"] }),
+        PageEvent::Remote {
+            on,
+            url: data["url"].clone(),
+            error: data["error"].clone(),
+        },
     );
 }
 
@@ -147,7 +146,10 @@ fn on_remote_prompt(e: Ev, data: Value) {
         app,
         id,
         tab_id,
-        json!({ "type": "remote-prompt", "text": text, "tag": tag }),
+        PageEvent::RemotePrompt {
+            text,
+            tag: tag.into(),
+        },
     );
 }
 
@@ -161,12 +163,7 @@ fn on_turn_start(e: Ev, turn_id: String) {
         b.media_left = KEEP_MEDIA;
         b.turns.get(&turn_id).map(|t| t.kind)
     };
-    tell(
-        app,
-        id,
-        tab_id,
-        json!({ "type": "turn-start", "turnId": turn_id, "kind": kind }),
-    );
+    tell(app, id, tab_id, PageEvent::TurnStart { turn_id, kind });
 }
 
 fn on_session(e: Ev, sid: &str) {
@@ -274,7 +271,14 @@ fn on_text(e: Ev, delta: &str) {
     b.text_len += delta.encode_utf16().count();
     b.thinking = None; // (done thinking: it's talking)
     drop(b);
-    tell(app, id, tab_id, json!({ "type": "text", "delta": delta }));
+    tell(
+        app,
+        id,
+        tab_id,
+        PageEvent::Text {
+            delta: delta.into(),
+        },
+    );
 }
 
 /// Its thinking: a step of its own in the answer (where it came), its words streamed into it
@@ -282,7 +286,7 @@ fn on_thinking(e: Ev) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    tell(app, id, tab_id, json!({ "type": "thinking" }));
+    tell(app, id, tab_id, PageEvent::Thinking);
     let mut b = e.book();
     b.thoughts += 1;
     let step = format!("think-{}", b.thoughts);
@@ -297,7 +301,7 @@ fn on_thinking(e: Ev) {
         app,
         id,
         tab_id,
-        json!({ "type": "tool", "id": step, "name": "Thinking", "detail": "", "args": null }),
+        PageEvent::Tool(json!({ "id": step, "name": "Thinking", "detail": "", "args": null })),
     );
 }
 
@@ -320,7 +324,10 @@ fn on_thinking_text(e: Ev, delta: &str) {
         app,
         id,
         tab_id,
-        json!({ "type": "thinking-text", "id": step, "delta": delta }),
+        PageEvent::ThinkingText {
+            id: step,
+            delta: delta.into(),
+        },
     );
 }
 
@@ -333,7 +340,7 @@ fn on_mode(e: Ev, mode: &str) {
         st.store
             .update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))]))
     });
-    tell(app, id, tab_id, json!({ "type": "mode", "mode": mode }));
+    tell(app, id, tab_id, PageEvent::Mode { mode: mode.into() });
 }
 
 fn on_tool(e: Ev, data: Value) {
@@ -350,9 +357,8 @@ fn on_tool(e: Ev, data: Value) {
     let mut p = data.clone();
     let o = p.as_object_mut().unwrap();
     o.remove("input");
-    o.insert("type".into(), json!("tool"));
     o.insert("args".into(), clip(&args, &LIVE, 0));
-    tell(app, id, tab_id, p);
+    tell(app, id, tab_id, PageEvent::Tool(p));
     let mut b = e.book();
     if b.calls.len() < KEEP_CALLS {
         let at = b.text_len;
@@ -392,13 +398,13 @@ fn on_tool(e: Ev, data: Value) {
             call["noView"] = json!(view.is_none());
             let Some(view) = view else { return };
             call["view"] = view.clone();
-            let mut p = json!({ "type": "app", "id": call_id, "input": call["input"], "result": call["result"] });
+            let mut p = json!({ "id": call_id, "input": call["input"], "result": call["result"] });
             for (k, v) in view.as_object().into_iter().flatten() {
                 p[k] = v.clone();
             }
             p
         };
-        tell(&app, &id, &tab_id, shown);
+        tell(&app, &id, &tab_id, PageEvent::App(shown));
     });
 }
 
@@ -413,7 +419,12 @@ fn on_tool_output(e: Ev, data: Value) {
         app,
         id,
         tab_id,
-        json!({ "type": "tool-output", "id": data["id"], "text": cut(text, LIVE.output), "media": live, "isError": data["isError"] }),
+        PageEvent::ToolOutput {
+            id: data["id"].clone(),
+            text: cut(text, LIVE.output),
+            media: live,
+            is_error: data["isError"].clone(),
+        },
     );
     let mut b = e.book();
     let left = b.media_left;
@@ -446,7 +457,10 @@ fn on_tool_result(e: Ev, data: Value) {
             app,
             id,
             tab_id,
-            json!({ "type": "app-result", "id": call_id, "result": data["result"] }),
+            PageEvent::AppResult {
+                id: call_id.clone(),
+                result: data["result"].clone(),
+            },
         );
     }
     // pictures the tool returned (a screenshot, a rendered chart): shown in the answer
@@ -481,7 +495,10 @@ fn on_tool_result(e: Ev, data: Value) {
         app,
         id,
         tab_id,
-        json!({ "type": "tool-images", "id": call_id, "images": pics }),
+        PageEvent::ToolImages {
+            id: call_id,
+            images: pics,
+        },
     );
 }
 
@@ -490,9 +507,7 @@ fn on_edit(e: Ev, data: Value) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let mut p = data.clone();
-    p["type"] = json!("edit");
-    tell(app, id, tab_id, p);
+    tell(app, id, tab_id, PageEvent::Edit(data.clone()));
     let mut b = e.book();
     if b.edits.len() < 20 {
         let mut kept = data.clone();
@@ -527,8 +542,7 @@ fn on_agent(e: Ev, data: Value) {
     if let Some(o) = ev.as_object_mut() {
         o.remove("outputFile");
     }
-    ev["type"] = json!("agent");
-    tell(app, id, tab_id, ev);
+    tell(app, id, tab_id, PageEvent::Agent(ev));
 }
 
 fn on_task(e: Ev, data: Value) {
@@ -568,7 +582,10 @@ fn on_task(e: Ev, data: Value) {
             app,
             id,
             tab_id,
-            json!({ "type": "tasks", "tasks": tasks, "change": data }),
+            PageEvent::Tasks {
+                tasks,
+                change: data,
+            },
         );
     }
 }
@@ -578,9 +595,7 @@ fn on_compact(e: Ev, data: Value) {
         app, id, tab_id, ..
     } = e;
     e.book().last_compact = data.clone();
-    let mut p = data;
-    p["type"] = json!("compact");
-    tell(app, id, tab_id, p);
+    tell(app, id, tab_id, PageEvent::Compact(data));
 }
 
 fn on_done(e: Ev, data: Value) {
@@ -645,10 +660,9 @@ fn on_done(e: Ev, data: Value) {
     });
     let Some(at) = kept else { return };
     let mut p = data;
-    p["type"] = json!("done");
     p["at"] = at;
     p["kind"] = json!(kind);
-    tell(app, id, tab_id, p);
+    tell(app, id, tab_id, PageEvent::Done(p));
     refresh_context(app, id, tab_id);
 }
 
@@ -707,7 +721,5 @@ fn on_fail(e: Ev, data: Value) {
             )
         });
     }
-    let mut p = data;
-    p["type"] = json!("fail");
-    tell(app, id, tab_id, p);
+    tell(app, id, tab_id, PageEvent::Fail(data));
 }
