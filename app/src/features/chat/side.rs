@@ -13,7 +13,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 
-use crate::agents::claude::{self, Event, Session, locate, transcripts};
+use crate::agents::Event;
+use crate::agents::claude::{self, Session, locate, transcripts};
 use crate::features::chat::{self, Chat};
 use crate::robots::label_of;
 use crate::runtime::util::patch;

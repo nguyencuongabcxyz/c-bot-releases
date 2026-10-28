@@ -8,7 +8,7 @@ These rules are strict. New code follows them; code you touch is brought in line
 | --- | --- |
 | `runtime/` | The app's own life: `State` and `with()`, `setup.rs`, `commands.rs` (every command registered), `hub.rs` (what features share), `error.rs`, `logging.rs`, `paths.rs`, `util.rs`, updates |
 | `store/` | `c-bot.json` (`Store`), `saved.rs` (the other JSON files), `fields.rs` (named reads) |
-| `agents/` | Coding agents. `claude/`: the `claude -p` session, its stream (`lines.rs`), `Event`, transcripts, locating the CLI |
+| `agents/` | Coding agents. `event.rs` and `reports.rs`: what any agent reports to the chat (`Event` and its payloads), the same for every agent. `claude/`: the `claude -p` session, reading its stream (`protocol.rs`, `lines.rs`), transcripts, locating the CLI |
 | `robots/` | Robot windows and what they do on the desktop (walkers, social, stage, island, maid, planes) |
 | `features/` | What robots do for the user: `chat/` (tabs, side questions, `group/`), `notes/`, `vocab/` |
 | `mcp/` | What Claude itself calls: `server.rs` (the `--robots-mcp` process), `link/`, `tools/` (one file per tool group), `apps/` |
@@ -83,14 +83,14 @@ These rules are strict. New code follows them; code you touch is brought in line
   - `#[derive(Serialize, Deserialize)]` with `#[serde(rename_all = "…")]`, so the strings stay exactly what they were.
   - A test pins the JSON.
 
-  Existing examples: `chat::AskKind`, `social::{Mode, Phase, Treat}`, `group::Style`, `notes::book::Reminder`, `claude::Event`.
+  Existing examples: `chat::AskKind`, `social::{Mode, Phase, Treat}`, `group::Style`, `notes::book::Reminder`, `agents::Event`.
 - Values owned by Claude Code stay strings when it can send ones we don't know (permission modes, tool names).
 
 ## Talking to the pages
 
 - **Chat → robot page:** only `features/chat/page_event.rs` `PageEvent`. It mirrors `ChatEvent` in `gui/types/model.ts`, with `#[serde(tag = "type", rename_all = "kebab-case", rename_all_fields = "camelCase")]`. A new message means changing both sides in the same commit, plus the test in `page_event.rs`.
 - **Claude Code → us:** its stream-json lines are read into `agents/claude/protocol.rs` types (`Line`, `Kind`, `Block`, `StreamEvent`, `System`…), never with `msg["…"]` by hand. Reading stays forgiving, since the protocol changes between versions: missing or odd fields read as empty (the `text` / `flag` / `lenient` deserializers), unknown kinds as `Other`, and what goes on to the page as it is (a tool's input or result) stays `Value`. A new field or kind is added there, with a test.
-- **Session → handlers:** `agents::claude::Event`. What each carries is a struct or enum in `agents/claude/reports.rs` (`Done`, `Fail`, `Tool`, `Diff`, `AgentEvent`, `TaskChange`…), never a `json!` object. They have the TypeScript names and fields (camelCase), so `PageEvent` embeds them as they are; a new field goes in `reports.rs`, `gui/types/model.ts` and their tests together. Only what passes straight through stays `Value` (a tool's input and result, media, the questions Claude asked). Handlers `match` on it. The chat's `match` lists every variant (no `_ =>`), so a new variant has to be handled.
+- **Session → handlers:** `agents::Event`. What each carries is a struct or enum in `agents/reports.rs` (`Done`, `Fail`, `Tool`, `Diff`, `AgentEvent`, `TaskChange`…), never a `json!` object. They have the TypeScript names and fields (camelCase), so `PageEvent` embeds them as they are; a new field goes in `reports.rs`, `gui/types/model.ts` and their tests together. Only what passes straight through stays `Value` (a tool's input and result, media, the questions Claude asked). Handlers `match` on it. The chat's `match` lists every variant (no `_ =>`), so a new variant has to be handled.
 - **Commands:**
   - `#[tauri::command(async)]` when the command opens a window, waits, or does I/O. Plain `#[tauri::command]` only for instant ones.
   - Several arguments become one `#[derive(Deserialize)] #[serde(rename_all = "camelCase")]` struct.

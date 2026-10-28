@@ -2,21 +2,17 @@
 //! `claude -p` process that stays open and takes question after question over
 //! stream-json. Questions sent while it works wait their turn.
 //!
-//! What happens is reported to the session's handler as an Event (event.rs).
+//! What happens is reported to the session's handler as an agents::Event (agents/event.rs),
+//! the same as any agent's; what Claude Code writes is read in protocol.rs.
 
-mod event;
 mod lines;
 pub mod locate;
 mod protocol;
-mod reports;
 mod session;
 mod steps;
 mod stream;
 pub mod transcripts;
 
-pub use event::Event;
-pub use protocol::Model;
-pub use reports::*;
 pub use steps::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -31,6 +27,8 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde_json::{Value, json};
 
+use super::Event;
+use super::reports::*;
 use crate::platform::process;
 use crate::platform::process::NoWindow;
 use crate::runtime::{Error, Locked};

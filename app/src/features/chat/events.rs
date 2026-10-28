@@ -4,8 +4,8 @@
 use std::sync::MutexGuard;
 
 use super::*;
-use crate::agents::claude::{
-    AgentEvent, Compact, Diff, Done, Event, Fail, Model, Remote, RemotePrompt, SlashCommand,
+use crate::agents::{
+    AgentEvent, Compact, Diff, Done, Event, Fail, ModelChoice, Remote, RemotePrompt, SlashCommand,
     TaskChange, Tool, ToolOutput, ToolResult, Tools,
 };
 use crate::store::Fields;
@@ -189,19 +189,10 @@ fn on_session(e: Ev, sid: &str) {
     });
 }
 
-fn on_initialized(e: Ev, models: Vec<Model>) {
+fn on_initialized(e: Ev, models: Vec<ModelChoice>) {
     let Ev { app, .. } = e;
-    let models: Vec<Value> = models
-        .into_iter()
-        .filter(|m| !m.value.starts_with("claude-"))
-        .map(|m| {
-            let value = if m.value == "default" { String::new() } else { m.value };
-            let efforts = m.supported_effort_levels.unwrap_or(json!([]));
-            json!({ "value": value, "displayName": m.display_name, "description": m.description, "efforts": efforts })
-        })
-        .collect();
     if !models.is_empty() {
-        with(app, |st| st.model_choices = Value::Array(models));
+        with(app, |st| st.model_choices = json!(models));
     }
 }
 

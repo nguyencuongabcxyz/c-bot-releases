@@ -1,10 +1,22 @@
-//! What a conversation reports (the payloads of its Events), as the robot's page gets them:
+//! What an agent's conversation reports (the payloads of its Events), as the robot's page gets them:
 //! the names and fields of gui/types/model.ts (Diff, AgentEvent, TaskChange, Question and
 //! the robot:event ones), so PageEvent (features/chat/page_event.rs) passes them on as they
 //! are. What only goes through (a tool's input and what it gave back, its media) stays JSON.
 
 use serde::Serialize;
 use serde_json::Value;
+
+/// A model it offers, for the chat's model picker.
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelChoice {
+    /// What the agent takes to use it ("": its own default).
+    pub value: String,
+    pub display_name: Value,
+    pub description: Value,
+    /// The effort levels it takes.
+    pub efforts: Value,
+}
 
 /// The turn's end.
 #[derive(Serialize, Debug, Clone)]
@@ -244,7 +256,7 @@ pub struct RemotePrompt {
     pub session_id: String,
 }
 
-/// Claude Code's tools, as it started.
+/// The agent's tools, as it started.
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Tools {

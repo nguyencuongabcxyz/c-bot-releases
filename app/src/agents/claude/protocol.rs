@@ -9,6 +9,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 
+use crate::agents::ModelChoice;
+
 /// A line, read: who it's from, and what it is.
 pub(super) struct Line {
     /// The conversation it belongs to (Claude Code says it on most lines).
@@ -325,7 +327,7 @@ pub(super) struct Denial {
 /// A model Claude Code offers (from its answer to initialize).
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct Model {
+struct Model {
     /// What --model takes ("default": its own choice).
     #[serde(default, deserialize_with = "text")]
     pub value: String,
@@ -338,13 +340,26 @@ pub struct Model {
     pub supported_effort_levels: Option<Value>,
 }
 
-/// The models in Claude Code's answer to initialize (one it can't read is left out).
-pub(super) fn models_of(info: &Value) -> Vec<Model> {
+/// The models in Claude Code's answer to initialize, for the chat's picker: not the ones
+/// named by their full id ("claude-…", the same models again), and "default" as "" (its own
+/// choice). One it can't read is left out.
+pub(super) fn model_choices(info: &Value) -> Vec<ModelChoice> {
     info["models"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|m| Model::deserialize(m).ok())
+        .filter(|m| !m.value.starts_with("claude-"))
+        .map(|m| ModelChoice {
+            value: if m.value == "default" {
+                String::new()
+            } else {
+                m.value
+            },
+            display_name: m.display_name,
+            description: m.description,
+            efforts: m.supported_effort_levels.unwrap_or(json!([])),
+        })
         .collect()
 }
 
@@ -521,6 +536,23 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn its_models_become_the_pickers_choices() {
+        let info = json!({ "models": [
+            { "value": "default", "displayName": "Default", "description": "Its pick" },
+            { "value": "claude-opus-4-1", "displayName": "Opus" },
+            { "value": "sonnet", "displayName": "Sonnet", "supportedEffortLevels": ["low", "high"] },
+            "not a model",
+        ] });
+        let choices = model_choices(&info);
+        assert_eq!(
+            json!(choices),
+            json!([
+                { "value": "", "displayName": "Default", "description": "Its pick", "efforts": [] },
+                { "value": "sonnet", "displayName": "Sonnet", "description": null, "efforts": ["low", "high"] },
+            ])
+        );
+    }
     #[test]
     fn the_end_and_the_controls_read_too() {
         let Kind::Result(f) = kind(

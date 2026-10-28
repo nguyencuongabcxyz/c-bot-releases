@@ -54,7 +54,8 @@ use serde_json::{Value, json};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::agents::claude::{Event, Session, locate};
+use crate::agents::Event;
+use crate::agents::claude::{Session, locate};
 use crate::agents::{claude, personalities};
 use crate::features::notes;
 use crate::platform::window::Rect;

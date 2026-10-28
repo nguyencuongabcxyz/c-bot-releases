@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::AskKind;
-use crate::agents::claude::{
+use crate::agents::{
     AgentEvent, Compact, Diff, Done, Fail, Plan, Question, TaskChange, Tool, ToolOutput,
 };
 

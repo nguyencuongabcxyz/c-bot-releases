@@ -152,7 +152,7 @@ impl Session {
             json!({ "subtype": "initialize" }),
             Box::new(move |r| {
                 if let Ok(info) = r {
-                    let _ = events.send(Event::Initialized(protocol::models_of(&info)));
+                    let _ = events.send(Event::Initialized(protocol::model_choices(&info)));
                 }
             }),
         );

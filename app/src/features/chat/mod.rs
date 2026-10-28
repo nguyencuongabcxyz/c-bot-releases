@@ -26,7 +26,7 @@ use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter};
 
 use crate::agents::claude::{Session, locate, transcripts};
-use crate::agents::{claude, personalities};
+use crate::agents::{self, claude, personalities};
 use crate::mcp::{apps, link, tools};
 use crate::robots::label_of;
 use crate::runtime::{Locked, with};
@@ -73,7 +73,7 @@ struct Book {
     mcp_calls: Map<String, Value>, // tool call id -> { name, input, result, view, noView } (in the order they came)
     images: Vec<Value>,
     edits: Vec<Value>,
-    last_compact: Option<claude::Compact>,
+    last_compact: Option<agents::Compact>,
     thinking: Option<String>, // the step its thinking is going into, while it thinks
     thoughts: usize,          // (to name them)
 }
@@ -166,12 +166,12 @@ fn step_media(media: &Value, budget: usize) -> (Value, usize) {
     (Value::Array(out.collect()), left)
 }
 
-fn count_lines(hunks: &[claude::Hunk]) -> usize {
+fn count_lines(hunks: &[agents::Hunk]) -> usize {
     hunks.iter().map(|h| h.lines.len()).sum()
 }
 
 // Diffs kept in history are cut down so the store file stays small.
-fn trim_hunks(hunks: &[claude::Hunk], max: usize) -> Vec<claude::Hunk> {
+fn trim_hunks(hunks: &[agents::Hunk], max: usize) -> Vec<agents::Hunk> {
     let mut left = max;
     let mut out = vec![];
     for h in hunks {
