@@ -2,7 +2,7 @@
 // way an editor would: code highlighted with line numbers, markdown as a page (or its source),
 // JSON tidied, CSV as a table, HTML as a page with no scripts, pictures, PDFs, songs and
 // videos (through cbot-file), a folder's list to go into; anything else says what it is and
-// opens in its own app.
+// opens in its own app. A file the conversation changed has its Changes too: every diff, in turn.
 import type { FileView } from '@/types/model';
 import { Icon } from '@/ui/icons';
 import { highlightFile } from './code';
@@ -17,6 +17,10 @@ export type FileViewDeps = {
   reveal: (path: string) => void;
   copy: (text: string, btn: HTMLButtonElement) => void;
 };
+
+/** What this conversation changed in the file (its diff cards' bodies, oldest first), and
+ *  the way to show it first ('changes': as the Outputs panel opens a changed file). */
+export type FileViewOpts = { changes?: { body: HTMLElement; created: boolean; added: number; removed: number }[]; start?: string };
 
 type Mode = { id: string; label: string; show: (body: HTMLElement) => void };
 
@@ -373,6 +377,24 @@ function modesFor(f: FileView, deps: FileViewDeps): Mode[] {
   return [source(text)];
 }
 
+/** Every change the conversation made to it, one after another, as its diff cards show them. */
+function changesView(changes: NonNullable<FileViewOpts['changes']>) {
+  const box = el('div', 'fv-changes');
+  changes.forEach((c, i) => {
+    const part = el('section', 'fv-change');
+    if (changes.length > 1) {
+      const head = el('div', 'fv-change-head');
+      head.append(el('span', 'd-verb', `${c.created ? 'Created' : 'Change'} ${i + 1} of ${changes.length}`));
+      if (c.added) head.append(el('span', 'd-add', `+${c.added}`));
+      if (c.removed) head.append(el('span', 'd-del', `−${c.removed}`));
+      part.append(head);
+    }
+    part.append(c.body);
+    box.append(part);
+  });
+  return box;
+}
+
 function listView(f: Extract<FileView, { kind: 'dir' }>, deps: FileViewDeps) {
   const list = el('div', 'fv-list');
   list.setAttribute('role', 'list');
@@ -413,7 +435,7 @@ function meta(body: HTMLElement, more: string) {
 }
 
 /** Show `f` in `box` (the helper panel's body). */
-export function renderFileView(box: HTMLElement, f: FileView, deps: FileViewDeps) {
+export function renderFileView(box: HTMLElement, f: FileView, deps: FileViewDeps, opts: FileViewOpts = {}) {
   box.replaceChildren();
   const root = el('div', `fv kind-${f.kind}`);
   const bar = el('div', 'fv-bar');
@@ -433,6 +455,8 @@ export function renderFileView(box: HTMLElement, f: FileView, deps: FileViewDeps
   box.append(root);
 
   const modes = modesFor(f, deps);
+  const changes = opts.changes;
+  if (changes?.length && f.kind !== 'dir') modes.push({ id: 'changes', label: 'Changes', show: (b) => b.append(changesView(changes)) });
   const seg = el('div', 'fv-modes');
   seg.setAttribute('role', 'tablist');
   const show = (m: Mode) => {
@@ -482,5 +506,5 @@ export function renderFileView(box: HTMLElement, f: FileView, deps: FileViewDeps
   actions.append(reveal);
 
   if ('truncated' in f && f.truncated && f.kind !== 'dir') root.append(el('div', 'fv-note fv-cut', `It’s ${fileSize(f.size)}: only the start is shown. Open it in its app for the rest.`));
-  show(modes[0]);
+  show(modes.find((m) => m.id === opts.start) ?? modes[0]);
 }

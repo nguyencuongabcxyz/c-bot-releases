@@ -949,6 +949,15 @@ body.resizing-d.side-right.chat-from-top, body.resizing-d.side-right.chat-from-t
 .fv-src { margin: 0; padding: 10px 16px 14px 12px; font: inherit; tab-size: 4; user-select: text; }
 .fv-src code { font: inherit; background: none; padding: 0; border: 0; color: inherit; }
 
+/* what the conversation changed in it: its diffs, one after another, at full height */
+.fv-changes { min-height: 100%; background: var(--code-bg); width: max-content; min-width: 100%; }
+.fv-change-head {
+  position: sticky; left: 0; display: flex; align-items: baseline; gap: 7px; padding: 5px 12px; font-size: 12px;
+  background: var(--bg-2); border-bottom: 1px solid var(--line); width: fit-content; min-width: 100%; box-sizing: border-box;
+}
+.fv-change + .fv-change .fv-change-head { border-top: 1px solid var(--line); }
+.fv-changes .d-body { max-height: none; overflow: visible; padding: 6px 0 10px; }
+
 /* markdown as a page */
 .fv-page.msg.bot { max-width: none; margin: 0; padding: 14px 18px 20px; background: none; border: 0; box-shadow: none; animation: none; }
 

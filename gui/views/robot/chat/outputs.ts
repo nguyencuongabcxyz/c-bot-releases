@@ -5,7 +5,7 @@
 // Over the chat box, an "Outputs 4" button (renderOutputsStrip) that opens them all in the
 // helper panel (renderOutputsPanel): by folder, pictures as thumbnails, a GitHub-style bar
 // for what changed, and a way to its app or its folder. A file opened from there goes
-// through robot.ts's [data-open] (Ctrl+click: its app).
+// through robot.ts's [data-open] (Ctrl+click: its app); a changed one opens on its Changes.
 import { Icon } from '@/ui/icons';
 import { fileIcon } from './fileview';
 
@@ -141,7 +141,8 @@ export function renderOutputsPanel(
       const main = el('button', 'op-main');
       main.type = 'button';
       main.dataset.open = out.path;
-      main.title = `${out.path}\nClick to look at it here (Ctrl+click: open it)`;
+      if (out.kind === 'edited') main.dataset.view = 'changes'; // (opens on its diff: robot.ts)
+      main.title = `${out.path}\nClick to see ${out.kind === 'edited' ? 'what changed' : 'it here'} (Ctrl+click: open it)`;
       main.append(mark(out, o.thumb, 'op-icon'), el('span', 'op-name', nameOf(out.path)), diffBar(out));
       row.append(main, actions(out.path, o));
       group.append(row);

@@ -467,7 +467,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     e.stopPropagation();
     const p = link.dataset.open || new URL(link.href).searchParams.get('path')!; // (our file links carry their path)
     if (e.ctrlKey || e.metaKey) openInApp(p);
-    else openFileView(p);
+    else openFileView(p, { start: link.dataset.view });
   });
   // a picture that isn't there (yet, or anymore) just disappears
   document.addEventListener('error', (e) => (e.target as Element).matches?.('img.local-img') && (e.target as Element).remove(), true);
@@ -3670,7 +3670,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
   // A file or folder up close, in the chat (chat/fileview.ts): clicking a file in the chat
   // shows it here; a file in a folder's list (or the folder a file is in) opens in its place.
   let fileViewSeq = 0;
-  async function openFileView(path: string, { back = false } = {}) {
+  async function openFileView(path: string, { back = false, start = undefined as string | undefined } = {}) {
     if (history.isOpen()) history.close();
     clearInterval(helperView.timer);
     if (!back && helperView.file && helperView.file !== path) helperView.trail.push(helperView.file);
@@ -3695,6 +3695,15 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     }
     title.innerHTML = Icon(viewIcon(res), 'sm lead');
     title.append(res.name);
+    // what this conversation changed in it: its diff cards, oldest first (copies: they stay put)
+    const changes = [...(helperView.tab?.log.querySelectorAll<HTMLElement>('details.diff[data-file]') || [])]
+      .filter((card) => samePath(card.dataset.file) === samePath(path))
+      .map((card) => ({
+        body: card.querySelector('.d-body')!.cloneNode(true) as HTMLElement,
+        created: !!card.dataset.created,
+        added: +card.dataset.added! || 0,
+        removed: +card.dataset.removed! || 0,
+      }));
     renderFileView(bodyEl, res, {
       md,
       fileUrl: FILE_URL,
@@ -3742,7 +3751,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
       li.querySelector<HTMLElement>('.st')!.title = stepLabel(s);
       li.querySelector('.sw')!.textContent = `+${Math.max(0, Math.round((s.at - a.started) / 1000))}s`;
       steps.appendChild(li);
-    });
+    }, { changes, start });
     const report = a.report || a.summary || '';
     if (a.text && a.text.trim() !== report.trim()) {
       bodyEl.querySelector<HTMLElement>('.hv-said')!.hidden = false;

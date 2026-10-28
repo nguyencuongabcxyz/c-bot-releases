@@ -37,7 +37,7 @@ Click a robot to wake it and open its chat. Under the hood it *is* your own Clau
 - **Plan first:** press **Shift+Tab** (or `/plan`) for plan mode. The robot looks around, changes nothing, and comes back with a plan card: go ahead in the mode you pick, or send it back with notes.
 - **Side questions:** select part of an answer and *Ask about this*. A thread opens under it that knows the whole conversation, but the conversation never hears about it, like Claude Code's `/btw`. It works while the robot is still answering; *Use in main* brings a side answer back.
 - **Steps, folded:** what it did folds under one line (*"Read 2 files, ran 1 command · 4 steps"*) that says what it's on while it works. Open a step to see the command or file and what came back, and its thinking too.
-- **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file.
+- **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file; click a changed file to see its **Changes**, every diff in turn.
 - **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), and 👁 temporary chats that keep nothing.
 
 Drag the chat's edges or corner to resize it; double-click to put it back.
