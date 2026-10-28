@@ -4,6 +4,7 @@
 use std::sync::MutexGuard;
 
 use super::*;
+use crate::agents::claude::Event;
 use crate::store::Fields;
 
 /// The tab an event is for.
@@ -28,8 +29,7 @@ pub(super) fn on_event(
     tab_id: &str,
     book: &Arc<Mutex<Book>>,
     session: &Arc<Session>,
-    event: &str,
-    data: Value,
+    event: Event,
 ) {
     let e = Ev {
         app,
@@ -38,47 +38,47 @@ pub(super) fn on_event(
         book,
         session,
     };
+    let name = event.name();
     match event {
-        "remote" => on_remote(e, data),
-        "remote-state" => tell(
+        Event::Remote(data) => on_remote(e, data),
+        Event::RemoteState(state) => tell(
             app,
             id,
             tab_id,
-            json!({ "type": "remote-state", "state": data }),
+            json!({ "type": "remote-state", "state": state }),
         ),
-        "remote-prompt" => on_remote_prompt(e, data),
-        "turn-start" => on_turn_start(e, data),
-        "session" => on_session(e, data),
-        "initialized" => on_initialized(e, data),
-        "tools" => on_tools(e, data),
-        "commands" => on_commands(e, data),
-        "text" => on_text(e, data),
-        "aside" => tell(app, id, tab_id, json!({ "type": "aside", "text": data })),
-        "thinking" => on_thinking(e),
-        "thinking-text" => on_thinking_text(e, data),
-        "usage" => tell(
+        Event::RemotePrompt(data) => on_remote_prompt(e, data),
+        Event::TurnStart(turn_id) => on_turn_start(e, turn_id),
+        Event::Session(sid) => on_session(e, &sid),
+        Event::Initialized(data) => on_initialized(e, data),
+        Event::Tools(data) => on_tools(e, data),
+        Event::Commands(data) => on_commands(e, data),
+        Event::Text(delta) => on_text(e, &delta),
+        Event::Aside(text) => tell(app, id, tab_id, json!({ "type": "aside", "text": text })),
+        Event::Thinking => on_thinking(e),
+        Event::ThinkingText(delta) => on_thinking_text(e, &delta),
+        Event::Usage(tokens) => tell(
             app,
             id,
             tab_id,
-            json!({ "type": "usage", "outputTokens": data["outputTokens"] }),
+            json!({ "type": "usage", "outputTokens": tokens }),
         ),
-        "status" => tell(app, id, tab_id, json!({ "type": "status", "text": data })),
-        "question" | "request-cancelled" | "plan" => {
-            let mut p = data;
-            p["type"] = json!(event);
+        Event::Status(text) => tell(app, id, tab_id, json!({ "type": "status", "text": text })),
+        Event::Question(mut p) | Event::RequestCancelled(mut p) | Event::Plan(mut p) => {
+            p["type"] = json!(name);
             tell(app, id, tab_id, p);
         }
-        "mode" => on_mode(e, data),
-        "tool" => on_tool(e, data),
-        "tool-output" => on_tool_output(e, data),
-        "tool-result" => on_tool_result(e, data),
-        "edit" => on_edit(e, data),
-        "agent" => on_agent(e, data),
-        "task" => on_task(e, data),
-        "compact" => on_compact(e, data),
-        "done" => on_done(e, data),
-        "fail" => on_fail(e, data),
-        _ => {}
+        Event::Mode(mode) => on_mode(e, &mode),
+        Event::Tool(data) => on_tool(e, data),
+        Event::ToolOutput(data) => on_tool_output(e, data),
+        Event::ToolResult(data) => on_tool_result(e, data),
+        Event::Edit(data) => on_edit(e, data),
+        Event::Agent(data) => on_agent(e, data),
+        Event::Task(data) => on_task(e, data),
+        Event::Compact(data) => on_compact(e, data),
+        Event::Done(data) => on_done(e, data),
+        Event::Fail(data) => on_fail(e, data),
+        Event::Exit => {}
     }
 }
 
@@ -151,11 +151,10 @@ fn on_remote_prompt(e: Ev, data: Value) {
     );
 }
 
-fn on_turn_start(e: Ev, data: Value) {
+fn on_turn_start(e: Ev, turn_id: String) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let turn_id = data.as_str().unwrap_or("").to_string();
     let kind = {
         let mut b = e.book();
         b.text_len = 0;
@@ -170,11 +169,10 @@ fn on_turn_start(e: Ev, data: Value) {
     );
 }
 
-fn on_session(e: Ev, data: Value) {
+fn on_session(e: Ev, sid: &str) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let sid = data.as_str().unwrap_or("");
     with(app, |st| {
         let tab = st.store.tab(id, tab_id).cloned().unwrap_or_default();
         st.store
@@ -268,11 +266,10 @@ fn on_commands(e: Ev, data: Value) {
     });
 }
 
-fn on_text(e: Ev, data: Value) {
+fn on_text(e: Ev, delta: &str) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let delta = data.as_str().unwrap_or("");
     let mut b = e.book();
     b.text_len += delta.encode_utf16().count();
     b.thinking = None; // (done thinking: it's talking)
@@ -304,11 +301,10 @@ fn on_thinking(e: Ev) {
     );
 }
 
-fn on_thinking_text(e: Ev, data: Value) {
+fn on_thinking_text(e: Ev, delta: &str) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let delta = data.as_str().unwrap_or("");
     let mut b = e.book();
     let Some(step) = b.thinking.clone() else {
         return;
@@ -329,11 +325,10 @@ fn on_thinking_text(e: Ev, data: Value) {
 }
 
 /// It went into plan mode by itself (or out of it): the tab keeps the mode it's in
-fn on_mode(e: Ev, data: Value) {
+fn on_mode(e: Ev, mode: &str) {
     let Ev {
         app, id, tab_id, ..
     } = e;
-    let mode = data.as_str().unwrap_or("default");
     with(app, |st| {
         st.store
             .update_tab(id, tab_id, patch(vec![("permissionMode", json!(mode))]))

@@ -2,12 +2,9 @@
 //! `claude -p` process that stays open and takes question after question over
 //! stream-json. Questions sent while it works wait their turn.
 //!
-//! What happens is reported to the session's handler as (event, data), the events and
-//! data claude.js emits: turn-start · session · initialized · text · aside · thinking ·
-//! tool · tool-output · tool-result · edit · agent · status · task · question · plan · mode ·
-//! compact · commands · tools · done · fail · exit. They're handed over on a thread of their own,
-//! so a handler may wait on the session (context_usage) without holding up its output.
+//! What happens is reported to the session's handler as an Event (event.rs).
 
+mod event;
 mod lines;
 pub mod locate;
 mod session;
@@ -15,6 +12,7 @@ mod steps;
 mod stream;
 pub mod transcripts;
 
+pub use event::Event;
 pub use steps::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -103,8 +101,8 @@ mod live_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let (tx, rx) = mpsc::channel::<(String, Value)>();
         let tx = Mutex::new(tx);
-        let handler: Handler = Arc::new(move |_, event, data| {
-            let _ = tx.locked().send((event.to_string(), data));
+        let handler: Handler = Arc::new(move |_, event: Event| {
+            let _ = tx.locked().send((event.name().to_string(), event.data()));
         });
         let opts = Opts {
             claude_path: claude,
@@ -160,8 +158,8 @@ mod live_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let (tx, rx) = mpsc::channel::<(String, Value)>();
         let tx = Mutex::new(tx);
-        let handler: Handler = Arc::new(move |_, event, data| {
-            let _ = tx.locked().send((event.to_string(), data));
+        let handler: Handler = Arc::new(move |_, event: Event| {
+            let _ = tx.locked().send((event.name().to_string(), event.data()));
         });
         let opts = Opts {
             claude_path: claude,
@@ -225,8 +223,8 @@ mod live_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let (tx, rx) = mpsc::channel::<(String, Value)>();
         let tx = Mutex::new(tx);
-        let handler: Handler = Arc::new(move |_, event, data| {
-            let _ = tx.locked().send((event.to_string(), data));
+        let handler: Handler = Arc::new(move |_, event: Event| {
+            let _ = tx.locked().send((event.name().to_string(), event.data()));
         });
         let remote = |rx: &mpsc::Receiver<(String, Value)>| loop {
             let (event, data) = rx
@@ -288,7 +286,7 @@ pub struct Opts {
     pub remote_session: Option<String>, // and the remote session a new process picks up again (so it stays the same one there)
 }
 
-pub type Handler = Arc<dyn Fn(&Arc<Session>, &str, Value) + Send + Sync>;
+pub type Handler = Arc<dyn Fn(&Arc<Session>, Event) + Send + Sync>;
 type Reply = Box<dyn FnOnce(Result<Value, Error>) + Send>;
 
 struct Turn {
@@ -333,7 +331,7 @@ struct Inner {
     last_uuid: Option<String>, // the turn's last message in the transcript (an edited question goes back to here)
     tokens_done: u64,          // output tokens of the turn's finished messages
     tokens_msg: u64,           // and of the one being written
-    events: Sender<(String, Value)>,
+    events: Sender<Event>,
 }
 
 pub struct Session {

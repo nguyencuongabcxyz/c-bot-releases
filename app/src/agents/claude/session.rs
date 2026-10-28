@@ -9,7 +9,7 @@ use crate::runtime::{Error, Locked};
 
 impl Session {
     pub fn new(opts: Opts, session_id: Option<String>, handler: Handler) -> Arc<Session> {
-        let (tx, rx) = mpsc::channel::<(String, Value)>();
+        let (tx, rx) = mpsc::channel::<Event>();
         let session = Arc::new_cyclic(|me| Session {
             me: me.clone(),
             inner: Mutex::new(Inner {
@@ -46,9 +46,9 @@ impl Session {
         // events are handed to the handler one after another, on this thread
         let me = Arc::downgrade(&session);
         thread::spawn(move || {
-            while let Ok((event, data)) = rx.recv() {
+            while let Ok(event) = rx.recv() {
                 let Some(session) = me.upgrade() else { break };
-                handler(&session, &event, data);
+                handler(&session, event);
             }
         });
         session
@@ -203,7 +203,7 @@ impl Session {
             json!({ "subtype": "initialize" }),
             Box::new(move |r| {
                 if let Ok(info) = r {
-                    let _ = events.send(("initialized".into(), info));
+                    let _ = events.send(Event::Initialized(info));
                 }
             }),
         );
@@ -233,7 +233,7 @@ impl Session {
             match r {
                 Ok(v) => {
                     i.opts.remote_session = v["bridge_session_id"].as_str().map(str::to_string);
-                    i.emit("remote", json!({ "on": true, "url": v["session_url"], "remoteSession": v["bridge_session_id"] }));
+                    i.emit(Event::Remote(json!({ "on": true, "url": v["session_url"], "remoteSession": v["bridge_session_id"] })));
                 }
                 // the old remote session is gone (they expire after a while): start a new one
                 Err(_) if i.opts.remote_session.is_some() => {
@@ -242,7 +242,7 @@ impl Session {
                 }
                 Err(e) => {
                     i.opts.remote = None;
-                    i.emit("remote", json!({ "on": false, "error": e }));
+                    i.emit(Event::Remote(json!({ "on": false, "error": e })));
                 }
             }
         }));
@@ -261,7 +261,7 @@ impl Session {
                     Box::new(|_| {}),
                 );
             }
-            i.emit("remote", json!({ "on": false }));
+            i.emit(Event::Remote(json!({ "on": false })));
         } else if i.proc.is_some() {
             self.enable_remote(&mut i);
         } else {
@@ -270,10 +270,9 @@ impl Session {
             }
             if i.proc.is_none() {
                 i.opts.remote = None;
-                i.emit(
-                    "remote",
+                i.emit(Event::Remote(
                     json!({ "on": false, "error": "Couldn't start Claude Code." }),
-                );
+                ));
             }
         }
     }
@@ -295,7 +294,7 @@ impl Session {
                 .unwrap_or_default();
             // helpers die with the process: say so, or their cards would spin forever
             for id in i.agent_running.drain().collect::<Vec<_>>() {
-                i.emit("agent", json!({ "op": "done", "id": id, "status": "stopped", "summary": "Stopped: Claude Code closed before this helper finished." }));
+                i.emit(Event::Agent(json!({ "op": "done", "id": id, "status": "stopped", "summary": "Stopped: Claude Code closed before this helper finished." })));
             }
             if i.turn.is_some() || !i.queue.is_empty() {
                 let msg = if i.closing {
@@ -312,7 +311,7 @@ impl Session {
                 let closing = i.closing;
                 i.fail_all(&msg, closing, missing);
             }
-            i.emit("exit", Value::Null);
+            i.emit(Event::Exit);
             i.controls.drain().map(|(_, r)| r).collect()
         };
         for r in replies {

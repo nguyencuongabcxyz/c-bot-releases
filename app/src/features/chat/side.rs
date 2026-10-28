@@ -13,7 +13,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 
-use crate::agents::claude::{self, Session, locate, transcripts};
+use crate::agents::claude::{self, Event, Session, locate, transcripts};
 use crate::features::chat::{self, Chat};
 use crate::robots::label_of;
 use crate::runtime::util::patch;
@@ -242,9 +242,8 @@ fn start(
         tab_id.to_string(),
         thread_id.clone(),
     );
-    let handler: claude::Handler = Arc::new(move |session, event, data| {
-        on_event(&app2, &id2, &tab2, &thread2, session, event, data)
-    });
+    let handler: claude::Handler =
+        Arc::new(move |session, event| on_event(&app2, &id2, &tab2, &thread2, session, event));
     let chat = Chat::bare(Session::new(opts, session_id, handler));
     with(app, |st| {
         st.chats
@@ -259,25 +258,30 @@ fn on_event(
     tab_id: &str,
     thread_id: &str,
     session: &Arc<Session>,
-    event: &str,
-    data: Value,
+    event: Event,
 ) {
     match event {
         // (its own conversation now: the next process carries that on)
-        "session" => {
-            let sid = data.as_str().unwrap_or("").to_string();
+        Event::Session(sid) => {
             edit_thread(app, id, tab_id, thread_id, |t| t["sessionId"] = json!(sid));
         }
-        "turn-start" => tell(
+        Event::TurnStart(turn_id) => tell(
             app,
             id,
             tab_id,
             thread_id,
             "start",
-            json!({ "turnId": data }),
+            json!({ "turnId": turn_id }),
         ),
-        "text" => tell(app, id, tab_id, thread_id, "text", json!({ "delta": data })),
-        "tool" => tell(
+        Event::Text(delta) => tell(
+            app,
+            id,
+            tab_id,
+            thread_id,
+            "text",
+            json!({ "delta": delta }),
+        ),
+        Event::Tool(data) => tell(
             app,
             id,
             tab_id,
@@ -285,7 +289,7 @@ fn on_event(
             "step",
             json!({ "name": data["name"], "detail": data["detail"] }),
         ),
-        "done" => {
+        Event::Done(data) => {
             turns(|t| t.remove(data["turnId"].as_str().unwrap_or("")));
             push(
                 app,
@@ -303,7 +307,7 @@ fn on_event(
                 json!({ "text": data["text"], "isError": data["isError"], "interrupted": data["interrupted"] }),
             );
         }
-        "fail" => {
+        Event::Fail(data) => {
             let turn_id = data["turnId"].as_str().unwrap_or("").to_string();
             let retry = turns(|t| match t.get_mut(&turn_id) {
                 Some((prompt, retried))

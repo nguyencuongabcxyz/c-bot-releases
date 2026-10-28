@@ -32,7 +32,7 @@ impl Session {
         if !sid.is_empty() && i.session_id.as_deref() != Some(sid) && i.turn.is_some() {
             i.session_id = Some(sid.to_string());
             i.opts.fork = false; // (branched: from now on it carries on its own conversation)
-            i.emit("session", json!(sid));
+            i.emit(Event::Session(sid.to_string()));
         }
         match ty {
             "command_lifecycle" if s(&msg, "state") == "started" => i.command_started(&msg, sid),
@@ -74,11 +74,11 @@ impl Session {
         } else {
             json!(sid)
         };
-        i.emit("done", json!({
+        i.emit(Event::Done(json!({
             "turnId": turn.id, "text": text, "asides": i.asides.asides, "isError": msg["is_error"].as_bool().unwrap_or(false) && !interrupted,
             "interrupted": interrupted, "costUsd": cost, "denials": denials, "sessionId": session_id, "uuid": i.last_uuid,
             "outputTokens": msg["usage"]["output_tokens"], "ms": msg["duration_ms"],
-        }));
+        })));
         // ours, waiting behind a message from Remote Control, is next
         if let Some(t) = i.displaced.take() {
             i.begin_turn(t.id, Some(t.uuid));
@@ -121,7 +121,9 @@ impl Inner {
             if self.turn.as_ref().is_some_and(|t| !t.started) {
                 self.displaced = self.turn.take();
             }
-            self.emit("remote-prompt", json!({ "uuid": uuid, "sessionId": sid }));
+            self.emit(Event::RemotePrompt(
+                json!({ "uuid": uuid, "sessionId": sid }),
+            ));
             if self.turn.is_none() {
                 self.begin_auto_turn();
             }
@@ -133,7 +135,7 @@ impl Inner {
         let id = s(msg, "request_id").to_string();
         if self.pending_questions.remove(&id).is_some() || self.pending_plans.remove(&id).is_some()
         {
-            self.emit("request-cancelled", json!({ "requestId": id }));
+            self.emit(Event::RequestCancelled(json!({ "requestId": id })));
         }
     }
 
@@ -147,7 +149,7 @@ impl Inner {
                 if let Some(n) = ev["usage"]["output_tokens"].as_u64() {
                     self.tokens_msg = n;
                     let total = self.tokens_done + n;
-                    self.emit("usage", json!({ "outputTokens": total }));
+                    self.emit(Event::Usage(total));
                 }
             }
             "message_stop" => {
@@ -157,7 +159,7 @@ impl Inner {
             "content_block_delta" if s(&ev["delta"], "type") == "thinking_delta" => {
                 let t = s(&ev["delta"], "thinking");
                 if !t.is_empty() {
-                    self.emit("thinking-text", json!(t));
+                    self.emit(Event::ThinkingText(t.to_string()));
                 }
             }
             "content_block_start" => {
@@ -166,7 +168,7 @@ impl Inner {
                     self.separate();
                 }
                 if s(block, "type") == "thinking" {
-                    self.emit("thinking", Value::Null);
+                    self.emit(Event::Thinking);
                 }
             }
             "content_block_delta" if s(&ev["delta"], "type") == "text_delta" => {
@@ -213,7 +215,7 @@ impl Inner {
             self.mcp_tool_ids.insert(id.to_string());
             ev["input"] = ev["args"].clone();
         }
-        self.emit("tool", ev);
+        self.emit(Event::Tool(ev));
     }
 
     /// What its tools gave back (sent to it as the user's message).
@@ -229,11 +231,11 @@ impl Inner {
         let id = s(block, "tool_use_id").to_string();
         let is_error = block["is_error"].as_bool().unwrap_or(false);
         // what the tool gave back, as Claude read it (the chat shows it when you click the step)
-        self.emit("tool-output", json!({ "id": id, "text": output_text(&block["content"]), "media": output_media(&block["content"]), "isError": is_error }));
+        self.emit(Event::ToolOutput(json!({ "id": id, "text": output_text(&block["content"]), "media": output_media(&block["content"]), "isError": is_error })));
         // a file it changed: show the diff, like Claude Code's terminal
         if !is_error && let Some(mut diff) = edit_diff(use_result) {
             diff["id"] = json!(id);
-            self.emit("edit", diff);
+            self.emit(Event::Edit(diff));
         }
         // an MCP tool's result, as the MCP server gave it (for its view)
         if self.mcp_tool_ids.remove(&id) {
@@ -247,13 +249,13 @@ impl Inner {
             if !structured.is_null() {
                 result["structuredContent"] = structured.clone();
             }
-            self.emit("tool-result", json!({ "id": id, "result": result }));
+            self.emit(Event::ToolResult(json!({ "id": id, "result": result })));
         }
         // a helper that ran in the foreground is done when its tool call returns
         if self.agent_tools.contains(&id) && !use_result["isAsync"].as_bool().unwrap_or(false) {
             self.agent_running.remove(&id);
             let status = if is_error { "failed" } else { "completed" };
-            self.emit("agent", json!({ "op": "done", "id": id, "status": status, "summary": result_text(&block["content"]) }));
+            self.emit(Event::Agent(json!({ "op": "done", "id": id, "status": status, "summary": result_text(&block["content"]) })));
         }
     }
 
@@ -264,7 +266,7 @@ impl Inner {
             self.agent_task(msg);
         }
         if sub == "bridge_state" && self.opts.remote.is_some() {
-            self.emit("remote-state", msg["state"].clone());
+            self.emit(Event::RemoteState(msg["state"].clone()));
         }
         // its permission mode changed by itself (it went into plan mode, a plan was approved)
         if sub == "status"
@@ -273,34 +275,36 @@ impl Inner {
                 .filter(|m| *m != self.opts.permission_mode)
         {
             self.opts.permission_mode = mode.to_string();
-            self.emit("mode", json!(mode));
+            self.emit(Event::Mode(mode.to_string()));
         }
         if sub == "task_summary" && !s(msg, "detail").is_empty() {
-            self.emit("status", msg["detail"].clone());
+            self.emit(Event::Status(msg["detail"].clone()));
         } else if sub == "init" {
             // the slash commands Claude Code offers in this folder (skills, custom commands)
             if let Some(cmds) = msg["slash_commands"].as_array() {
-                self.emit(
-                    "commands",
-                    Value::Array(cmds.iter().map(|n| json!({ "name": n })).collect()),
-                );
+                self.emit(Event::Commands(Value::Array(
+                    cmds.iter().map(|n| json!({ "name": n })).collect(),
+                )));
             }
             if msg["tools"].is_array() {
                 let chosen = self.opts.tools.is_some();
-                self.emit("tools", json!({ "version": msg["claude_code_version"], "tools": msg["tools"], "chosen": chosen }));
+                self.emit(Event::Tools(json!({ "version": msg["claude_code_version"], "tools": msg["tools"], "chosen": chosen })));
             }
         } else if sub == "commands_changed" {
             if let Some(cmds) = msg["commands"].as_array() {
-                self.emit("commands", Value::Array(cmds.iter().map(|c| json!({ "name": c["name"], "description": s(c, "description") })).collect()));
+                self.emit(Event::Commands(Value::Array(
+                    cmds.iter()
+                        .map(|c| json!({ "name": c["name"], "description": s(c, "description") }))
+                        .collect(),
+                )));
             }
         } else if sub == "status" && s(msg, "status") == "compacting" {
-            self.emit("compact", json!({ "phase": "start" }));
+            self.emit(Event::Compact(json!({ "phase": "start" })));
         } else if sub == "compact_boundary" {
             let meta = &msg["compact_metadata"];
-            self.emit(
-                "compact",
+            self.emit(Event::Compact(
                 json!({ "phase": "done", "pre": meta["pre_tokens"], "post": meta["post_tokens"] }),
-            );
+            ));
         }
     }
 }

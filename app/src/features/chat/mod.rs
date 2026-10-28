@@ -353,8 +353,8 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         tab_id.to_string(),
         book.clone(),
     );
-    let handler: claude::Handler = Arc::new(move |session, event, data| {
-        events::on_event(&app2, &id2, &tab2, &book2, session, event, data)
+    let handler: claude::Handler = Arc::new(move |session, event| {
+        events::on_event(&app2, &id2, &tab2, &book2, session, event)
     });
     let session = Session::new(opts, tab.session_id().map(str::to_string), handler);
     let chat = Arc::new(Chat { session, book });

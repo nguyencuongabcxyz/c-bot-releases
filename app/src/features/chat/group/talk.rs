@@ -146,7 +146,7 @@ impl Chat {
         };
         let (app2, id2) = (app.clone(), id.to_string());
         let handler: claude::Handler =
-            Arc::new(move |session, event, data| on_session(&app2, &id2, session, event, data));
+            Arc::new(move |session, event| on_session(&app2, &id2, session, event));
         Some(Session::new(opts, session_id, handler))
     }
 

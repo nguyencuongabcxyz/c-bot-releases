@@ -48,7 +48,7 @@ use serde_json::{Value, json};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::agents::claude::{Session, locate};
+use crate::agents::claude::{Event, Session, locate};
 use crate::agents::{claude, personalities};
 use crate::features::notes;
 use crate::platform::window::Rect;
@@ -473,7 +473,8 @@ fn hand(app: &AppHandle, id: &str, side: &str, up: bool) -> Option<(f64, f64)> {
 }
 
 /// The session's events, for the robot whose chat process it is (an old one's are ignored).
-fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: &str, data: Value) {
+fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: Event) {
+    let failed = matches!(event, Event::Fail(_));
     act(app, |g, env| {
         let Some(c) = g.chat.as_mut() else { return };
         let Some(me) = c.people.get_mut(id) else {
@@ -483,8 +484,7 @@ fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: &str, da
             return;
         }
         match event {
-            "text" => {
-                let delta = data.as_str().unwrap_or("").to_string();
+            Event::Text(delta) => {
                 let Some(t) = me.turn.as_mut() else { return };
                 t.text.push_str(&delta);
                 let Some(msg_id) = t.msg else { return };
@@ -497,7 +497,7 @@ fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: &str, da
                     ));
                 }
             }
-            "tool" => {
+            Event::Tool(data) => {
                 let Some(t) = me.turn.as_mut() else { return };
                 let detail = data["detail"]
                     .as_str()
@@ -512,12 +512,12 @@ fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: &str, da
                 }
                 env.changed = true;
             }
-            "aside" => {
+            Event::Aside(text) => {
                 if me.turn.is_some() {
-                    env.tell(id, json!({ "phase": "say", "text": format!("💭 {}", data.as_str().unwrap_or("")) }));
+                    env.tell(id, json!({ "phase": "say", "text": format!("💭 {text}") }));
                 }
             }
-            "done" | "fail" => {
+            Event::Done(data) | Event::Fail(data) => {
                 if me
                     .turn
                     .as_ref()
@@ -525,7 +525,7 @@ fn on_session(app: &AppHandle, id: &str, session: &Arc<Session>, event: &str, da
                 {
                     return;
                 }
-                let r = if event == "done" {
+                let r = if !failed {
                     data
                 } else {
                     let mut r = data.clone();
