@@ -1,83 +1,104 @@
-//! What Claude Code writes, line by line (stream-json): each kind of message read by a
-//! function of its own, and what it means passed on (stream.rs emits it).
+//! What Claude Code writes, line by line (stream-json, read into protocol.rs's types): each
+//! kind of message read by a function of its own, and what it means passed on (stream.rs
+//! emits it).
 
 use std::sync::MutexGuard;
 
+use super::protocol::{
+    self, Block, ControlResponse, Delta, Finished, Kind, Line, Message, StreamEvent, System,
+};
 use super::*;
 
 impl Session {
     pub(super) fn line(&self, line: &str) {
-        let Ok(msg) = serde_json::from_str::<Value>(line) else {
+        let Some(Line {
+            session_id: sid,
+            parent_tool_use_id: parent,
+            kind,
+        }) = protocol::parse(line)
+        else {
             return;
         };
         let mut i = self.lock();
-        if s(&msg, "type") == "control_response" {
-            return control_response(i, &msg["response"]);
-        }
-        // A helper agent's own steps and words: shown in its card, not voiced by the robot.
-        if !s(&msg, "parent_tool_use_id").is_empty() {
-            return i.agent_chatter(&msg);
-        }
-        let ty = match s(&msg, "type") {
-            "" if msg.get("total_cost_usd").is_some() => "result",
-            t => t,
+        let kind = match kind {
+            Kind::ControlResponse { response } => return control_response(i, response),
+            kind => kind,
         };
+        // A helper agent's own steps and words: shown in its card, not voiced by the robot.
+        if !parent.is_empty() {
+            if let Kind::Assistant { message, .. } = kind {
+                i.agent_chatter(&parent, message.content);
+            }
+            return;
+        }
         // Claude Code carries on by itself when a background helper finishes: a turn nobody asked for
-        if i.turn.is_none() && (ty == "assistant" || ty == "stream_event") {
+        if i.turn.is_none() && matches!(kind, Kind::Assistant { .. } | Kind::StreamEvent { .. }) {
             i.begin_auto_turn();
         }
         // (only once there's a conversation to go back to: Remote Control says its session id
         // before any message, and resuming that would find nothing)
-        let sid = s(&msg, "session_id");
-        if !sid.is_empty() && i.session_id.as_deref() != Some(sid) && i.turn.is_some() {
-            i.session_id = Some(sid.to_string());
+        if !sid.is_empty() && i.session_id.as_deref() != Some(sid.as_str()) && i.turn.is_some() {
+            i.session_id = Some(sid.clone());
             i.opts.fork = false; // (branched: from now on it carries on its own conversation)
-            i.emit(Event::Session(sid.to_string()));
+            i.emit(Event::Session(sid.clone()));
         }
-        match ty {
-            "command_lifecycle" if s(&msg, "state") == "started" => i.command_started(&msg, sid),
-            "control_request" => i.control_request(&msg),
-            "control_cancel_request" => i.request_cancelled(&msg),
-            "stream_event" => i.stream_event(&msg),
-            "assistant" => i.assistant(&msg),
-            "user" => i.tool_results(&msg),
-            "system" => i.system(&msg),
-            "result" => self.turn_done(i, &msg, sid),
-            _ => {}
+        match kind {
+            Kind::CommandLifecycle {
+                state,
+                command_uuid,
+            } if state == "started" => i.command_started(command_uuid, &sid),
+            Kind::ControlRequest {
+                request_id,
+                request,
+            } => i.control_request(request_id, request),
+            Kind::ControlCancelRequest { request_id } => i.request_cancelled(request_id),
+            Kind::StreamEvent {
+                event,
+                api_message_id,
+            } => i.stream_event(event, api_message_id),
+            Kind::Assistant { uuid, message } => i.assistant(uuid, message),
+            Kind::User {
+                message,
+                tool_use_result,
+            } => i.tool_results(message.content, &tool_use_result),
+            Kind::System(system) => i.system(system),
+            Kind::Result(finished) => self.turn_done(i, finished, &sid),
+            Kind::CommandLifecycle { .. } | Kind::ControlResponse { .. } | Kind::Other => {}
         }
     }
 
     /// The answer's end: the turn's done (its words, cost, what was denied), and the next
     /// question goes.
-    fn turn_done(&self, mut i: MutexGuard<'_, Inner>, msg: &Value, sid: &str) {
+    fn turn_done(&self, mut i: MutexGuard<'_, Inner>, f: Finished, sid: &str) {
         let Some(turn) = i.turn.take() else { return };
         let rest = i.asides.flush();
         // (put the turn back for a moment: the last of its text still counts)
         i.turn = Some(turn);
         i.emit_text(&rest);
         let turn = i.turn.take().unwrap();
-        let total = msg["total_cost_usd"].as_f64().unwrap_or(0.0);
+        let total = f.total_cost_usd.unwrap_or(0.0);
         let cost = (total - i.cost_so_far).max(0.0);
         i.cost_so_far = total;
-        let interrupted = turn.interrupted || s(msg, "terminal_reason").starts_with("abort");
+        let interrupted = turn.interrupted || f.terminal_reason.starts_with("abort");
         let text = match i.text.trim() {
-            "" => strip_asides(s(msg, "result")).trim().to_string(),
+            "" => strip_asides(&f.result).trim().to_string(),
             t => t.to_string(),
         };
         i.last_used = Instant::now();
-        let denials: Vec<Value> = msg["permission_denials"]
-            .as_array()
-            .map(|d| d.iter().map(|x| x["tool_name"].clone()).collect())
-            .unwrap_or_default();
+        let denials: Vec<Value> = f
+            .permission_denials
+            .into_iter()
+            .map(|d| d.tool_name)
+            .collect();
         let session_id = if sid.is_empty() {
             json!(i.session_id)
         } else {
             json!(sid)
         };
         i.emit(Event::Done(json!({
-            "turnId": turn.id, "text": text, "asides": i.asides.asides, "isError": msg["is_error"].as_bool().unwrap_or(false) && !interrupted,
+            "turnId": turn.id, "text": text, "asides": i.asides.asides, "isError": f.is_error && !interrupted,
             "interrupted": interrupted, "costUsd": cost, "denials": denials, "sessionId": session_id, "uuid": i.last_uuid,
-            "outputTokens": msg["usage"]["output_tokens"], "ms": msg["duration_ms"],
+            "outputTokens": f.usage["output_tokens"], "ms": f.duration_ms,
         })));
         // ours, waiting behind a message from Remote Control, is next
         if let Some(t) = i.displaced.take() {
@@ -92,26 +113,25 @@ impl Session {
 }
 
 /// The answer to a control request we sent (interrupt, model, effort…): to whoever waits on it.
-fn control_response(mut i: MutexGuard<'_, Inner>, r: &Value) {
-    let Some(reply) = i.controls.remove(s(r, "request_id")) else {
+fn control_response(mut i: MutexGuard<'_, Inner>, r: ControlResponse) {
+    let Some(reply) = i.controls.remove(&r.request_id) else {
         return;
     };
     drop(i);
-    if s(r, "subtype") == "success" {
-        reply(Ok(r.get("response").cloned().unwrap_or(json!({}))));
+    if r.subtype == "success" {
+        reply(Ok(r.response.unwrap_or(json!({}))));
     } else {
-        reply(Err(if s(r, "error").is_empty() {
+        reply(Err(if r.error.is_empty() {
             "control request failed".into()
         } else {
-            s(r, "error").into()
+            r.error.into()
         }));
     }
 }
 
 impl Inner {
     /// A message starts being answered: ours, or one typed on claude.ai/code or in the Claude app.
-    fn command_started(&mut self, msg: &Value, sid: &str) {
-        let uuid = s(msg, "command_uuid").to_string();
+    fn command_started(&mut self, uuid: String, sid: &str) {
         if self.own_uuids.remove(&uuid) {
             if let Some(t) = self.turn.as_mut().filter(|t| t.uuid == uuid) {
                 t.started = true;
@@ -131,8 +151,7 @@ impl Inner {
     }
 
     /// A question it asked is no longer wanted (the answer was stopped).
-    fn request_cancelled(&mut self, msg: &Value) {
-        let id = s(msg, "request_id").to_string();
+    fn request_cancelled(&mut self, id: String) {
         if self.pending_questions.remove(&id).is_some() || self.pending_plans.remove(&id).is_some()
         {
             self.emit(Event::RequestCancelled(json!({ "requestId": id })));
@@ -140,75 +159,69 @@ impl Inner {
     }
 
     /// The answer as it's written: its words and thinking streamed, and how much it has written.
-    fn stream_event(&mut self, msg: &Value) {
-        let ev = &msg["event"];
-        match s(ev, "type") {
+    fn stream_event(&mut self, event: StreamEvent, api_message_id: String) {
+        match event {
             // how much it has written: the output tokens of each message as it goes
-            "message_start" => self.tokens_msg = 0,
-            "message_delta" => {
-                if let Some(n) = ev["usage"]["output_tokens"].as_u64() {
+            StreamEvent::MessageStart {} => self.tokens_msg = 0,
+            StreamEvent::MessageDelta { usage } => {
+                if let Some(n) = usage.output_tokens {
                     self.tokens_msg = n;
                     let total = self.tokens_done + n;
                     self.emit(Event::Usage(total));
                 }
             }
-            "message_stop" => {
+            StreamEvent::MessageStop {} => {
                 self.tokens_done += self.tokens_msg;
                 self.tokens_msg = 0;
             }
-            "content_block_delta" if s(&ev["delta"], "type") == "thinking_delta" => {
-                let t = s(&ev["delta"], "thinking");
-                if !t.is_empty() {
-                    self.emit(Event::ThinkingText(t.to_string()));
-                }
-            }
-            "content_block_start" => {
-                let block = &ev["content_block"];
-                if s(block, "type") == "text" {
+            StreamEvent::ContentBlockStart { content_block } => {
+                if content_block.kind == "text" {
                     self.separate();
                 }
-                if s(block, "type") == "thinking" {
+                if content_block.kind == "thinking" {
                     self.emit(Event::Thinking);
                 }
             }
-            "content_block_delta" if s(&ev["delta"], "type") == "text_delta" => {
-                let mid = s(msg, "api_message_id");
-                if !mid.is_empty() {
-                    self.streamed.insert(mid.to_string());
+            StreamEvent::ContentBlockDelta { delta } => match delta {
+                Delta::Thinking { thinking } if !thinking.is_empty() => {
+                    self.emit(Event::ThinkingText(thinking));
                 }
-                let text = s(&ev["delta"], "text").to_string();
-                self.append_text(&text);
-            }
-            _ => {}
+                Delta::Text { text } => {
+                    if !api_message_id.is_empty() {
+                        self.streamed.insert(api_message_id);
+                    }
+                    self.append_text(&text);
+                }
+                _ => {}
+            },
+            StreamEvent::Other => {}
         }
     }
 
     /// One of its messages whole: the tools it calls, and its words if they weren't streamed.
-    fn assistant(&mut self, msg: &Value) {
-        if let Some(uuid) = msg["uuid"].as_str() {
-            self.last_uuid = Some(uuid.to_string());
+    fn assistant(&mut self, uuid: String, message: Message) {
+        if !uuid.is_empty() {
+            self.last_uuid = Some(uuid);
         }
-        let m = &msg["message"];
-        for block in m["content"].as_array().into_iter().flatten() {
-            match s(block, "type") {
-                "tool_use" => self.tool_use(block),
+        let Message { id, content } = message;
+        for block in content {
+            match block {
+                Block::ToolUse { id, name, input } => self.tool_use(&id, &name, input),
                 // the answer's text when partial messages weren't streamed
-                "text" if !self.streamed.contains(s(m, "id")) => {
+                Block::Text { text } if !self.streamed.contains(&id) => {
                     self.separate();
-                    self.append_text(s(block, "text"));
+                    self.append_text(&text);
                 }
                 _ => {}
             }
         }
     }
 
-    fn tool_use(&mut self, block: &Value) {
-        self.task_tool(block);
-        self.agent_start(block, None);
+    fn tool_use(&mut self, id: &str, name: &str, input: Value) {
+        let args = if input.is_null() { json!({}) } else { input };
+        self.task_tool(id, name, &args);
+        self.agent_start(id, name, &args, None);
         // MCP tools also pass their input on: some come with a view that draws from it
-        let name = s(block, "name");
-        let id = s(block, "id");
-        let args = block.get("input").cloned().unwrap_or(json!({}));
         let mut ev =
             json!({ "name": name, "detail": describe_tool(name, &args), "id": id, "args": args });
         if name.starts_with("mcp__") {
@@ -219,19 +232,23 @@ impl Inner {
     }
 
     /// What its tools gave back (sent to it as the user's message).
-    fn tool_results(&mut self, msg: &Value) {
-        let blocks = msg["message"]["content"].as_array().into_iter().flatten();
-        for block in blocks.filter(|b| s(b, "type") == "tool_result") {
-            self.tool_result(block, &msg["tool_use_result"]);
+    fn tool_results(&mut self, content: Vec<Block>, use_result: &Value) {
+        for block in content {
+            if let Block::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } = block
+            {
+                self.tool_result(tool_use_id, &content, is_error, use_result);
+            }
         }
     }
 
-    fn tool_result(&mut self, block: &Value, use_result: &Value) {
-        self.task_result(block);
-        let id = s(block, "tool_use_id").to_string();
-        let is_error = block["is_error"].as_bool().unwrap_or(false);
+    fn tool_result(&mut self, id: String, content: &Value, is_error: bool, use_result: &Value) {
+        self.task_result(&id, content);
         // what the tool gave back, as Claude read it (the chat shows it when you click the step)
-        self.emit(Event::ToolOutput(json!({ "id": id, "text": output_text(&block["content"]), "media": output_media(&block["content"]), "isError": is_error })));
+        self.emit(Event::ToolOutput(json!({ "id": id, "text": output_text(content), "media": output_media(content), "isError": is_error })));
         // a file it changed: show the diff, like Claude Code's terminal
         if !is_error && let Some(mut diff) = edit_diff(use_result) {
             diff["id"] = json!(id);
@@ -239,7 +256,7 @@ impl Inner {
         }
         // an MCP tool's result, as the MCP server gave it (for its view)
         if self.mcp_tool_ids.remove(&id) {
-            let content = match &block["content"] {
+            let content = match content {
                 Value::String(t) => json!([{ "type": "text", "text": t }]),
                 Value::Null => json!([]),
                 other => other.clone(),
@@ -255,56 +272,75 @@ impl Inner {
         if self.agent_tools.contains(&id) && !use_result["isAsync"].as_bool().unwrap_or(false) {
             self.agent_running.remove(&id);
             let status = if is_error { "failed" } else { "completed" };
-            self.emit(Event::Agent(json!({ "op": "done", "id": id, "status": status, "summary": result_text(&block["content"]) })));
+            self.emit(Event::Agent(json!({ "op": "done", "id": id, "status": status, "summary": result_text(content) })));
         }
     }
 
     /// What Claude Code says about itself: its tools and commands, its mode, helpers, compacting.
-    fn system(&mut self, msg: &Value) {
-        let sub = s(msg, "subtype");
-        if sub.starts_with("task_") {
-            self.agent_task(msg);
-        }
-        if sub == "bridge_state" && self.opts.remote.is_some() {
-            self.emit(Event::RemoteState(msg["state"].clone()));
-        }
-        // its permission mode changed by itself (it went into plan mode, a plan was approved)
-        if sub == "status"
-            && let Some(mode) = msg["permissionMode"]
-                .as_str()
-                .filter(|m| *m != self.opts.permission_mode)
-        {
-            self.opts.permission_mode = mode.to_string();
-            self.emit(Event::Mode(mode.to_string()));
-        }
-        if sub == "task_summary" && !s(msg, "detail").is_empty() {
-            self.emit(Event::Status(msg["detail"].clone()));
-        } else if sub == "init" {
-            // the slash commands Claude Code offers in this folder (skills, custom commands)
-            if let Some(cmds) = msg["slash_commands"].as_array() {
-                self.emit(Event::Commands(Value::Array(
-                    cmds.iter().map(|n| json!({ "name": n })).collect(),
-                )));
+    fn system(&mut self, system: System) {
+        match system {
+            System::Init {
+                tools,
+                slash_commands,
+                claude_code_version,
+            } => {
+                // the slash commands Claude Code offers in this folder (skills, custom commands)
+                if let Some(cmds) = slash_commands.as_array() {
+                    self.emit(Event::Commands(Value::Array(
+                        cmds.iter().map(|n| json!({ "name": n })).collect(),
+                    )));
+                }
+                if tools.is_array() {
+                    let chosen = self.opts.tools.is_some();
+                    self.emit(Event::Tools(
+                        json!({ "version": claude_code_version, "tools": tools, "chosen": chosen }),
+                    ));
+                }
             }
-            if msg["tools"].is_array() {
-                let chosen = self.opts.tools.is_some();
-                self.emit(Event::Tools(json!({ "version": msg["claude_code_version"], "tools": msg["tools"], "chosen": chosen })));
+            System::Status {
+                permission_mode,
+                status,
+            } => {
+                // its permission mode changed by itself (it went into plan mode, a plan was approved)
+                if let Some(mode) = permission_mode.filter(|m| *m != self.opts.permission_mode) {
+                    self.opts.permission_mode = mode.clone();
+                    self.emit(Event::Mode(mode));
+                }
+                if status == "compacting" {
+                    self.emit(Event::Compact(json!({ "phase": "start" })));
+                }
             }
-        } else if sub == "commands_changed" {
-            if let Some(cmds) = msg["commands"].as_array() {
-                self.emit(Event::Commands(Value::Array(
-                    cmds.iter()
-                        .map(|c| json!({ "name": c["name"], "description": s(c, "description") }))
-                        .collect(),
-                )));
+            System::BridgeState { state } => {
+                if self.opts.remote.is_some() {
+                    self.emit(Event::RemoteState(state));
+                }
             }
-        } else if sub == "status" && s(msg, "status") == "compacting" {
-            self.emit(Event::Compact(json!({ "phase": "start" })));
-        } else if sub == "compact_boundary" {
-            let meta = &msg["compact_metadata"];
-            self.emit(Event::Compact(
-                json!({ "phase": "done", "pre": meta["pre_tokens"], "post": meta["post_tokens"] }),
-            ));
+            System::CommandsChanged { commands } => {
+                if let Some(cmds) = commands.as_array() {
+                    self.emit(Event::Commands(Value::Array(
+                        cmds.iter()
+                            .map(|c| json!({ "name": c["name"], "description": s(c, "description") }))
+                            .collect(),
+                    )));
+                }
+            }
+            System::CompactBoundary { compact_metadata } => {
+                let meta = compact_metadata;
+                self.emit(Event::Compact(
+                    json!({ "phase": "done", "pre": meta["pre_tokens"], "post": meta["post_tokens"] }),
+                ));
+            }
+            System::TaskStarted(t) => self.helper_started(*t),
+            System::TaskProgress(t) => self.helper_progress(*t),
+            System::TaskUpdated(t) => self.helper_updated(*t),
+            System::TaskNotification(t) => self.helper_done(*t),
+            System::TaskSummary(t) => {
+                self.helper_of(&t);
+                if t.detail.as_str().is_some_and(|d| !d.is_empty()) {
+                    self.emit(Event::Status(t.detail));
+                }
+            }
+            System::Other => {}
         }
     }
 }

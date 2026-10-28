@@ -89,6 +89,7 @@ These rules are strict. New code follows them; code you touch is brought in line
 ## Talking to the pages
 
 - **Chat → robot page:** only `features/chat/page_event.rs` `PageEvent`. It mirrors `ChatEvent` in `gui/types/model.ts`, with `#[serde(tag = "type", rename_all = "kebab-case", rename_all_fields = "camelCase")]`. A new message means changing both sides in the same commit, plus the test in `page_event.rs`.
+- **Claude Code → us:** its stream-json lines are read into `agents/claude/protocol.rs` types (`Line`, `Kind`, `Block`, `StreamEvent`, `System`…), never with `msg["…"]` by hand. Reading stays forgiving, since the protocol changes between versions: missing or odd fields read as empty (the `text` / `flag` / `lenient` deserializers), unknown kinds as `Other`, and what goes on to the page as it is (a tool's input or result) stays `Value`. A new field or kind is added there, with a test.
 - **Session → handlers:** `agents::claude::Event`. Handlers `match` on it. The chat's `match` lists every variant (no `_ =>`), so a new variant has to be handled.
 - **Commands:**
   - `#[tauri::command(async)]` when the command opens a window, waits, or does I/O. Plain `#[tauri::command]` only for instant ones.

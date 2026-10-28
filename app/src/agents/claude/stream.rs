@@ -2,6 +2,7 @@
 //! the robot's page hears (words, steps and what they gave back, helpers, questions, the turn's
 //! end), and the permission prompts it sends over stdio answered.
 
+use super::protocol::{Block, ControlRequest, HelperTask};
 use super::*;
 
 impl Inner {
@@ -101,12 +102,12 @@ impl Inner {
         }
     }
 
-    // The to-do card follows Claude Code's task tools (and the older TodoWrite).
-    pub(super) fn task_tool(&mut self, block: &Value) {
-        let input = block.get("input").cloned().unwrap_or(json!({}));
-        match s(block, "name") {
+    // The to-do card follows Claude Code's to-do tools: TodoWrite (the whole list each time),
+    // or the Task* ones (one task at a time) in the versions that have them.
+    pub(super) fn task_tool(&mut self, id: &str, name: &str, input: &Value) {
+        match name {
             "TaskCreate" => {
-                self.task_inputs.insert(s(block, "id").to_string(), input);
+                self.task_inputs.insert(id.to_string(), input.clone());
             }
             "TaskUpdate" if !input["taskId"].is_null() => {
                 let id = input["taskId"]
@@ -125,11 +126,12 @@ impl Inner {
         }
     }
 
-    pub(super) fn task_result(&mut self, block: &Value) {
-        let Some(input) = self.task_inputs.remove(s(block, "tool_use_id")) else {
+    /// TaskCreate's result says the task's number: the card gets it.
+    pub(super) fn task_result(&mut self, tool_use_id: &str, content: &Value) {
+        let Some(input) = self.task_inputs.remove(tool_use_id) else {
             return;
         };
-        let text = result_text(&block["content"]);
+        let text = result_text(content);
         let id = text
             .find('#')
             .map(|i| {
@@ -144,15 +146,19 @@ impl Inner {
         }
     }
 
-    pub(super) fn agent_start(&mut self, block: &Value, parent: Option<&str>) {
-        let name = s(block, "name");
+    /// An Agent (or Task) tool call: a helper agent starts (parent: the helper that sent it).
+    pub(super) fn agent_start(
+        &mut self,
+        id: &str,
+        name: &str,
+        input: &Value,
+        parent: Option<&str>,
+    ) {
         if name != "Agent" && name != "Task" {
             return;
         }
-        let input = &block["input"];
-        let id = s(block, "id").to_string();
-        self.agent_tools.insert(id.clone());
-        self.agent_running.insert(id.clone());
+        self.agent_tools.insert(id.to_string());
+        self.agent_running.insert(id.to_string());
         let description = if s(input, "description").is_empty() {
             "Helper"
         } else {
@@ -165,24 +171,16 @@ impl Inner {
     }
 
     // A helper agent's own steps and words: shown in its card, not voiced by the robot.
-    pub(super) fn agent_chatter(&mut self, msg: &Value) {
-        let id = s(msg, "parent_tool_use_id").to_string();
-        if s(msg, "type") != "assistant" {
-            return;
-        }
-        for block in msg["message"]["content"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-        {
-            match s(&block, "type") {
-                "tool_use" => {
-                    self.agent_start(&block, Some(&id)); // a helper sending its own helper
-                    self.emit(Event::Agent(json!({ "op": "step", "id": id, "tool": block["name"], "detail": describe_tool(s(&block, "name"), &block["input"]) })));
+    pub(super) fn agent_chatter(&mut self, parent: &str, content: Vec<Block>) {
+        for block in content {
+            match block {
+                Block::ToolUse { id, name, input } => {
+                    self.agent_start(&id, &name, &input, Some(parent)); // a helper sending its own helper
+                    self.emit(Event::Agent(json!({ "op": "step", "id": parent, "tool": name, "detail": describe_tool(&name, &input) })));
                 }
-                "text" if !s(&block, "text").trim().is_empty() => {
+                Block::Text { text } if !text.trim().is_empty() => {
                     self.emit(Event::Agent(
-                        json!({ "op": "text", "id": id, "text": block["text"] }),
+                        json!({ "op": "text", "id": parent, "text": text }),
                     ));
                 }
                 _ => {}
@@ -191,76 +189,77 @@ impl Inner {
     }
 
     // Claude Code's task events for helpers: started, progress, finished
-    pub(super) fn agent_task(&mut self, msg: &Value) {
-        let task_id = s(msg, "task_id").to_string();
-        let id = if !s(msg, "tool_use_id").is_empty() {
-            s(msg, "tool_use_id").to_string()
-        } else if let Some(id) = self.agent_tasks.get(&task_id) {
-            id.clone()
+
+    /// The helper (its Agent tool call's id) a task event is about, if it's one we know; it
+    /// keeps the conversation alive.
+    pub(super) fn helper_of(&mut self, t: &HelperTask) -> Option<String> {
+        let id = if !t.tool_use_id.is_empty() {
+            t.tool_use_id.clone()
         } else {
-            return;
+            self.agent_tasks.get(&t.task_id)?.clone()
         };
-        if !task_id.is_empty() {
-            self.agent_tasks.insert(task_id, id.clone());
+        if !t.task_id.is_empty() {
+            self.agent_tasks.insert(t.task_id.clone(), id.clone());
         }
-        let u = &msg["usage"];
-        let usage = |mut v: Value| {
-            if u.is_object() {
-                v["tokens"] = u["total_tokens"].clone();
-                v["tools"] = u["tool_uses"].clone();
-                v["ms"] = u["duration_ms"].clone();
-            }
-            v
-        };
         self.last_used = Instant::now(); // a helper at work keeps the conversation alive
-        match s(msg, "subtype") {
-            "task_started" => {
-                self.agent_tools.insert(id.clone());
-                self.agent_running.insert(id.clone());
-                self.emit(Event::Agent(json!({ "op": "start", "id": id, "description": msg["description"], "kind": s(msg, "subagent_type"), "prompt": s(msg, "prompt"), "background": msg["is_backgrounded"].as_bool().unwrap_or(false) })));
-            }
-            "task_progress" => self.emit(Event::Agent(usage(
-                json!({ "op": "progress", "id": id, "activity": s(msg, "description") }),
-            ))),
-            "task_updated" if !msg["patch"]["status"].is_null() => self.emit(Event::Agent(
-                json!({ "op": "status", "id": id, "status": msg["patch"]["status"] }),
-            )),
-            "task_notification" => {
-                self.agent_running.remove(&id);
-                let status = if s(msg, "status").is_empty() {
-                    "completed"
-                } else {
-                    s(msg, "status")
-                };
-                self.emit(Event::Agent(usage(json!({ "op": "done", "id": id, "status": status, "summary": s(msg, "summary"), "outputFile": s(msg, "output_file") }))));
-            }
-            _ => {}
+        Some(id)
+    }
+
+    pub(super) fn helper_started(&mut self, t: HelperTask) {
+        let Some(id) = self.helper_of(&t) else { return };
+        self.agent_tools.insert(id.clone());
+        self.agent_running.insert(id.clone());
+        self.emit(Event::Agent(json!({ "op": "start", "id": id, "description": t.description, "kind": t.subagent_type, "prompt": t.prompt, "background": t.is_backgrounded })));
+    }
+
+    pub(super) fn helper_progress(&mut self, t: HelperTask) {
+        let Some(id) = self.helper_of(&t) else { return };
+        let activity = t.description.as_str().unwrap_or("").to_string();
+        self.emit(Event::Agent(with_usage(
+            &t,
+            json!({ "op": "progress", "id": id, "activity": activity }),
+        )));
+    }
+
+    pub(super) fn helper_updated(&mut self, t: HelperTask) {
+        let Some(id) = self.helper_of(&t) else { return };
+        if !t.patch["status"].is_null() {
+            self.emit(Event::Agent(
+                json!({ "op": "status", "id": id, "status": t.patch["status"] }),
+            ));
         }
+    }
+
+    pub(super) fn helper_done(&mut self, t: HelperTask) {
+        let Some(id) = self.helper_of(&t) else { return };
+        self.agent_running.remove(&id);
+        let status = if t.status.is_empty() {
+            "completed"
+        } else {
+            &t.status
+        };
+        self.emit(Event::Agent(with_usage(&t, json!({ "op": "done", "id": id, "status": status, "summary": t.summary, "outputFile": t.output_file }))));
     }
 
     // Claude Code asks before using a tool its permission mode doesn't cover. Questions
     // for the user are passed on; everything else is refused, as in plain print mode.
-    pub(super) fn control_request(&mut self, msg: &Value) {
-        let req = &msg["request"];
-        let request_id = s(msg, "request_id").to_string();
-        if s(req, "subtype") != "can_use_tool" {
-            let error = format!("Unsupported request: {}", s(req, "subtype"));
+    pub(super) fn control_request(&mut self, request_id: String, req: ControlRequest) {
+        if req.subtype != "can_use_tool" {
+            let error = format!("Unsupported request: {}", req.subtype);
             self.send(&json!({ "type": "control_response", "response": { "subtype": "error", "request_id": request_id, "error": error } }));
             return;
         }
-        if s(req, "tool_name") == "AskUserQuestion" && req["input"]["questions"].is_array() {
-            self.pending_questions
-                .insert(request_id.clone(), req["input"].clone());
+        if req.tool_name == "AskUserQuestion" && req.input["questions"].is_array() {
             self.emit(Event::Question(
-                json!({ "requestId": request_id, "questions": req["input"]["questions"] }),
+                json!({ "requestId": request_id, "questions": req.input["questions"] }),
             ));
+            self.pending_questions.insert(request_id, req.input);
             return;
         }
         // a plan, finished: it waits for your go-ahead (or your notes) before anything changes
-        if s(req, "tool_name") == "ExitPlanMode" {
-            self.pending_plans
-                .insert(request_id.clone(), req["input"].clone());
-            self.emit(Event::Plan(json!({ "requestId": request_id, "plan": s(&req["input"], "plan"), "file": s(&req["input"], "planFilePath") })));
+        if req.tool_name == "ExitPlanMode" {
+            self.emit(Event::Plan(json!({ "requestId": request_id, "plan": s(&req.input, "plan"), "file": s(&req.input, "planFilePath") })));
+            self.pending_plans.insert(request_id, req.input);
             return;
         }
         let mode = if self.opts.permission_mode.is_empty() {
@@ -270,11 +269,22 @@ impl Inner {
         };
         let message = format!(
             "{} needs permission this robot doesn't have (mode: {mode}).",
-            s(req, "tool_name")
+            req.tool_name
         );
         self.reply(
             &request_id,
             json!({ "behavior": "deny", "message": message }),
         );
     }
+}
+
+/// A helper's usage so far, added to what's said about it: tokens, tool calls, time.
+fn with_usage(t: &HelperTask, mut v: Value) -> Value {
+    let u = &t.usage;
+    if u.is_object() {
+        v["tokens"] = u["total_tokens"].clone();
+        v["tools"] = u["tool_uses"].clone();
+        v["ms"] = u["duration_ms"].clone();
+    }
+    v
 }

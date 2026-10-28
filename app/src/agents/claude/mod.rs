@@ -7,6 +7,7 @@
 mod event;
 mod lines;
 pub mod locate;
+mod protocol;
 mod session;
 mod steps;
 mod stream;
