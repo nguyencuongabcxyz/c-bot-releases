@@ -10,10 +10,11 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_EXSTYLE, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect,
-    GetWindowTextW, GetWindowThreadProcessId, HWND_TOPMOST, IsWindow, IsWindowVisible, SW_HIDE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
-    SetForegroundWindow, SetWindowPos, ShowWindow, WS_EX_TOPMOST,
+    GWL_EXSTYLE, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowLongPtrW,
+    GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HWND_TOPMOST, IsWindow,
+    IsWindowVisible, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SWP_NOZORDER, SetForegroundWindow, SetWindowPos, ShowWindow, WS_EX_TOPMOST,
 };
 
 pub use crate::platform::common::types::Monitor;
@@ -51,6 +52,19 @@ pub fn monitor_near(x: i32, y: i32) -> Monitor {
 
 pub fn primary_monitor() -> Monitor {
     monitor(MONITOR_DEFAULTTOPRIMARY, 0, 0)
+}
+
+/// All the screens together (the virtual screen).
+pub fn all_screens() -> Rect {
+    // SAFETY: plain metrics.
+    unsafe {
+        Rect {
+            x: GetSystemMetrics(SM_XVIRTUALSCREEN),
+            y: GetSystemMetrics(SM_YVIRTUALSCREEN),
+            w: GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            h: GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        }
+    }
 }
 
 pub fn cursor() -> (i32, i32) {

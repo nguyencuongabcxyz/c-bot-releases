@@ -5,9 +5,11 @@
 //!   words.rs     list_words, save_words: the user's English words
 //!   notes.rs     list_notes, add_note: the user's notebook
 //!   terminal.rs  terminal_read, terminal_type, terminal_run: the shells in the chat's drawer
+//!   screen.rs    screenshot: the screen as it is now, as a picture to look at
 
 pub mod notes;
 pub mod robots;
+pub mod screen;
 pub mod terminal;
 pub mod words;
 
@@ -37,6 +39,7 @@ pub fn list() -> Value {
         words::list(),
         notes::list(),
         terminal::list(),
+        screen::list(),
     ]
     .into_iter()
     .flat_map(|v| v.as_array().cloned().unwrap_or_default())
@@ -57,6 +60,7 @@ pub fn allowed() -> Vec<String> {
         "add_note",
         "terminal_read",
         "terminal_type",
+        "screenshot",
     ];
     names.iter().map(|n| format!("{PREFIX}{n}")).collect()
 }
@@ -76,6 +80,7 @@ pub fn call(app: &AppHandle, from: &str, tab: &str, tool: &str, args: &Value, co
         "terminal_read" | "terminal_type" | "terminal_run" => {
             terminal::call(app, from, tab, tool, args)
         }
+        "screenshot" => screen::call(app, args),
         _ => err(format!("No tool {tool}.")),
     }
 }

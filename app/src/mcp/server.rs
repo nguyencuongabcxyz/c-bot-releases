@@ -1,5 +1,5 @@
 //! C-Bot's MCP server: what gives a robot's Claude Code C-Bot's tools (tools/: the other
-//! robots, the user's words and notes, the shells in its chat). Claude Code starts it for each
+//! robots, the user's words and notes, the shells in its chat, the screen). Claude Code starts it for each
 //! conversation over stdio, as `c-bot.exe --robots-mcp <robot id> <port> <chat tab id>`
 //! (link.rs writes the --mcp-config that says so). There's no Node here, so the app's own exe
 //! serves it, from the very top of main(), before the Tauri builder (whose single-instance
@@ -80,7 +80,7 @@ pub fn step(msg: &Value) -> Step {
     }
 }
 
-/// A call's answer ({ text, isError } from the app) as the tool's result.
+/// A call's answer ({ text, image, isError } from the app) as the tool's result.
 pub fn call_result(id: &Value, r: &Value) -> Value {
     let text = match &r["text"] {
         Value::String(s) => s.clone(),
@@ -88,7 +88,12 @@ pub fn call_result(id: &Value, r: &Value) -> Value {
         other => other.to_string(),
     };
     let is_error = r["isError"].as_bool().unwrap_or(false);
-    json!({ "jsonrpc": "2.0", "id": id, "result": { "content": [{ "type": "text", "text": text }], "isError": is_error } })
+    let mut content = vec![json!({ "type": "text", "text": text })];
+    if let (Some(data), Some(mime)) = (r["image"]["data"].as_str(), r["image"]["mimeType"].as_str())
+    {
+        content.push(json!({ "type": "image", "data": data, "mimeType": mime }));
+    }
+    json!({ "jsonrpc": "2.0", "id": id, "result": { "content": content, "isError": is_error } })
 }
 
 /// The key a JSON-RPC id is kept under (numbers and strings alike).
@@ -231,7 +236,8 @@ mod tests {
                 "add_note",
                 "terminal_read",
                 "terminal_type",
-                "terminal_run"
+                "terminal_run",
+                "screenshot"
             ]
         );
         let read_only: Vec<&str> = tools
@@ -239,7 +245,7 @@ mod tests {
             .filter(|t| t["annotations"]["readOnlyHint"] == true)
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(read_only, names[..8]);
+        assert_eq!(read_only, [&names[..8], &names[10..]].concat());
     }
 
     #[test]
@@ -263,6 +269,23 @@ mod tests {
             &json!({ "text": "Not allowed.", "isError": true }),
         );
         assert_eq!(r["result"]["isError"], true);
+        assert_eq!(r["result"]["content"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_screenshot_comes_back_as_a_picture_after_its_text() {
+        let r = call_result(
+            &json!(8),
+            &json!({ "text": "The screen.", "image": { "data": "AAAA", "mimeType": "image/jpeg" } }),
+        );
+        assert_eq!(
+            r["result"]["content"][0],
+            json!({ "type": "text", "text": "The screen." })
+        );
+        assert_eq!(
+            r["result"]["content"][1],
+            json!({ "type": "image", "data": "AAAA", "mimeType": "image/jpeg" })
+        );
     }
 
     #[test]

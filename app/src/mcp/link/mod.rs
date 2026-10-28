@@ -63,7 +63,9 @@ pub const TASK_TIMEOUT_MS: u64 = 45 * 60 * 1000;
 const DESK_NOTE: &str = concat!(
     "The user keeps a list of English words they're learning and a notebook of notes in C-Bot. ",
     "When they ask what words they've saved (or to review or quiz them), use list_words; when they ask you to save or remember a word, use save_words. ",
-    "When they ask about their notes or to-dos, use list_notes; when they ask you to note something down, use add_note."
+    "When they ask about their notes or to-dos, use list_notes; when they ask you to note something down, use add_note.
+",
+    "When they ask what's on their screen, or to look at, check or help with something they're looking at (an error dialog, a page, an app), take a screenshot with the screenshot tool and look at it yourself instead of asking them to describe it."
 );
 
 #[derive(Clone)]
@@ -396,6 +398,7 @@ mod tests {
                 "mcp__cbot__add_note",
                 "mcp__cbot__terminal_read",
                 "mcp__cbot__terminal_type",
+                "mcp__cbot__screenshot",
             ]
         );
     }
