@@ -264,8 +264,7 @@ pub struct AskArgs {
     #[serde(default)]
     attachments: Vec<String>,
     turn_id: Option<String>,
-    #[serde(default)]
-    kind: chat::AskKind, // (the page asks a chat or a bonk; compacting is robot_compact)
+    kind: Option<chat::AskKind>, // (the page asks a chat or a bonk; compacting is robot_compact)
     tag: Option<String>,
 }
 
@@ -273,7 +272,7 @@ pub struct AskArgs {
 pub fn robot_ask(app: AppHandle, window: WebviewWindow, tab_id: String, ask: AskArgs) -> Answer {
     let attachments: Vec<Value> = ask.attachments.into_iter().map(Value::from).collect();
     let kind = match ask.kind {
-        chat::AskKind::Bonk => chat::AskKind::Bonk,
+        Some(chat::AskKind::Bonk) => chat::AskKind::Bonk,
         _ => chat::AskKind::Chat,
     };
     let turn_id = ask.turn_id.filter(|t| !t.is_empty());

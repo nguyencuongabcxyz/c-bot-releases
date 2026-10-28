@@ -47,13 +47,13 @@ pub(in crate::mcp) fn ask(
 ) -> Value {
     let asked = match read_ask(app, from, args, is_task) {
         Ok(a) => a,
-        Err(e) => return err(e),
+        Err(e) => return err(e.to_string()),
     };
     let (tx, rx) = mpsc::channel();
     let started = link(app, |l| l.open(from, &asked, args, is_task, conn, tx));
     let (req_id, exchange, first, task) = match started {
         Ok(s) => s,
-        Err(e) => return err(e),
+        Err(e) => return err(e.to_string()),
     };
     if let Some(t) = &task {
         task_changed(app, t);
@@ -86,7 +86,7 @@ pub(super) fn read_ask(
     from: &str,
     args: &Value,
     is_task: bool,
-) -> Result<Asked, String> {
+) -> Result<Asked, Error> {
     let everyone: Vec<(String, String, String)> = with(app, |st| {
         st.store
             .list()
@@ -142,12 +142,13 @@ pub(super) fn read_ask(
         return Err(format!(
             "There's no robot called \"{}\". {there}",
             text(&args["robot"])
-        ));
+        )
+        .into());
     };
     if !visible(app, &to) {
         return Err(format!(
             "{to_name} is put away (not on the desktop), so it can't answer. The user can bring it out from the tray."
-        ));
+        ).into());
     }
     let (from_name, from_folder) = everyone
         .iter()
@@ -178,7 +179,7 @@ impl Link {
         is_task: bool,
         conn: u64,
         reply: Sender<Value>,
-    ) -> Result<Opened, String> {
+    ) -> Result<Opened, Error> {
         let (to, to_name) = (&asked.to, &asked.to_name);
         let now = now_ms();
         // who's waiting on this robot (it's answering them, maybe for others further up)
@@ -191,19 +192,19 @@ impl Link {
         if upstream.contains(to) {
             return Err(format!(
                 "{to_name} is waiting on your answer (it asked you this), so you can't ask it: put what you need to know in your reply to it instead."
-            ));
+            ).into());
         }
         if upstream.len() + 2 > CHAIN_MAX {
             return Err(format!(
                 "That's {CHAIN_MAX} robots in one chain already: answer with what you know instead of asking further."
-            ));
+            ).into());
         }
         let times = self.asked.entry(from.to_string()).or_default();
         times.retain(|t| now - t < ASKS_WINDOW_MS);
         if times.len() >= ASKS_MAX {
             return Err(format!(
                 "That's {ASKS_MAX} messages in a few minutes: stop asking, and answer the user with what you have."
-            ));
+            ).into());
         }
         times.push(now);
 

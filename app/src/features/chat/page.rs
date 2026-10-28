@@ -241,7 +241,7 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
 
 /// Can the tab be asked: it's there, not open in the terminal, Claude Code is installed, the
 /// robot's folder is there. The robot, if so; else what's wrong, for the chat.
-fn ready(app: &AppHandle, id: &str, tab_id: &str) -> Result<Value, String> {
+fn ready(app: &AppHandle, id: &str, tab_id: &str) -> Result<Value, Error> {
     let Some((c, settings)) = with(app, |st| {
         st.store.tab(id, tab_id)?;
         Some((st.store.get(id)?.clone(), st.store.settings().clone()))
@@ -262,7 +262,8 @@ fn ready(app: &AppHandle, id: &str, tab_id: &str) -> Result<Value, String> {
         let shown = if folder.is_empty() { "(none)" } else { folder };
         return Err(format!(
             "My folder is missing: {shown}. Point me at a new one in the Robot Workshop."
-        ));
+        )
+        .into());
     }
     Ok(c)
 }
