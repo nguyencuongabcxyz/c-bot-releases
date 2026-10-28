@@ -127,23 +127,27 @@ impl Server {
             self.open.locked().insert(key_of(id), clone);
         }
         let request = json!({ "token": self.token, "from": self.robot, "tab": self.tab, "tool": tool, "args": args });
-        let answer = (|| {
-            if writeln!(sock, "{request}")
-                .and_then(|_| sock.flush())
-                .is_err()
-            {
-                return fail("C-Bot closed the line before answering.".into());
-            }
-            let mut line = String::new();
-            match BufReader::new(&sock).read_line(&mut line) {
-                Ok(n) if n > 0 && line.ends_with('\n') => serde_json::from_str(line.trim())
-                    .unwrap_or_else(|_| fail("C-Bot sent back something unreadable.".into())),
-                _ => fail("C-Bot closed the line before answering.".into()),
-            }
-        })();
+        let answer = exchange(&mut sock, &request);
         self.open.locked().remove(&key_of(id));
         let _ = sock.shutdown(Shutdown::Both);
         answer
+    }
+}
+
+/// A request to the app over its socket, and its answer: { text, isError }.
+pub(super) fn exchange(sock: &mut TcpStream, request: &Value) -> Value {
+    let fail = |text: &str| json!({ "text": text, "isError": true });
+    if writeln!(sock, "{request}")
+        .and_then(|_| sock.flush())
+        .is_err()
+    {
+        return fail("C-Bot closed the line before answering.");
+    }
+    let mut line = String::new();
+    match BufReader::new(&*sock).read_line(&mut line) {
+        Ok(n) if n > 0 && line.ends_with('\n') => serde_json::from_str(line.trim())
+            .unwrap_or_else(|_| fail("C-Bot sent back something unreadable.")),
+        _ => fail("C-Bot closed the line before answering."),
     }
 }
 
@@ -237,7 +241,9 @@ mod tests {
                 "terminal_read",
                 "terminal_type",
                 "terminal_run",
-                "screenshot"
+                "screenshot",
+                "list_tabs",
+                "wait_for_tab"
             ]
         );
         let read_only: Vec<&str> = tools

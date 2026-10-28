@@ -30,6 +30,10 @@ fn main() {
     if let Some(code) = mcp::server::run_if_asked() {
         std::process::exit(code);
     }
+    // the same, asked by Claude Code's hook before it changes a file (mcp/guard.rs)
+    if let Some(code) = mcp::guard::run_if_asked() {
+        std::process::exit(code);
+    }
     let mut builder = tauri::Builder::default();
     // a second launch opens the Workshop of the running C-Bot (main.js second-instance); a
     // test copy on data of its own (CBOT_DATA_DIR) runs beside the installed one instead

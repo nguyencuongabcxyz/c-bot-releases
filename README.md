@@ -39,6 +39,7 @@ Click a robot to wake it and open its chat. Under the hood it *is* your own Clau
 - **Tabs brief each other:** type `@#` and pick another tab to bring what it knows into this one. A branch of that tab writes a short brief while you type: the decisions, the files and what's still open, or just the answer if you asked something. The tab itself is never interrupted. The brief goes with your message as a chip you can open.
 
   <img src="docs/screenshots/tab-brief.png" alt="A message that brings in a brief from another tab" width="440">
+- **Tabs mind each other:** a robot's tabs can work in its folder at the same time without tripping over each other. A tab that starts work hears which others are busy, and on which files. It can check on them (`list_tabs`) or wait for one to finish and hear what it did (`wait_for_tab`). If it tries to change a file another tab is changing right now, the edit is stopped and it's told to wait for that tab, then read the file again.
 - **Steps, folded:** what it did folds under one line (*"Read 2 files, ran 1 command · 4 steps"*) that says what it's on while it works. Open a step to see the command or file and what came back, and its thinking too.
 - **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file; click a changed file to see its **Changes**, every diff in turn.
 - **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), and 👁 temporary chats that keep nothing.
@@ -179,14 +180,16 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       over a screen; island.rs the island at the screen's edge; walkers/,
                       social/, maid.rs robots away from their desks; topmost.rs, screens.rs
     mcp/              what Claude itself calls: server.rs C-Bot's MCP server; tools/ its tools
-                      (robots, words, notes, terminal, screen: schema and handler together);
-                      link.rs the app's end of it and robots asking each other; apps.rs MCP Apps
+                      (robots, words, notes, terminal, screen, tabs: schema and handler
+                      together); link.rs the app's end of it and robots asking each other;
+                      guard.rs the hook that stops two tabs changing one file; apps.rs MCP Apps
     workbench/        what you use in the chat: files.rs, shell.rs, terminal.rs (full Claude
                       Code in a terminal), voice.rs, paste.rs; capture.rs grabs selections;
                       snip, quick, palette
     features/         what the robots do for you: chat/ a robot's tabs (page.rs what its page
                       asks; side.rs side questions; brief.rs briefs from one tab for another;
-                      temporary.rs; awake.rs the PC kept awake for Remote Control) and
+                      tabs.rs what each tab is up to, for the others; temporary.rs; awake.rs
+                      the PC kept awake for Remote Control) and
                       group/ the group chat and meeting room; vocab/ English words; notes/
                       notes and reminders
     ui/               the app's own windows and menus: views.rs, place.rs, tray.rs, workshop.rs

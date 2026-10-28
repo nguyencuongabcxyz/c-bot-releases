@@ -198,6 +198,9 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
     let turn_id = turn_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let mut fed = with_files(prompt, attachments, c.folder());
     fed.prompt = brief::with_briefs(&fed.prompt, briefs);
+    if kind == AskKind::Chat {
+        fed.prompt += &tabs::meanwhile(app, id, tab_id); // (other tabs at work in the folder)
+    }
     with(app, |st| {
         if kind == AskKind::Bonk {
             st.store.push_history(

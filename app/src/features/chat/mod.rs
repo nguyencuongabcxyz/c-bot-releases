@@ -11,6 +11,7 @@ pub mod group;
 mod page;
 mod page_event;
 pub mod side;
+pub mod tabs;
 mod temporary;
 
 pub use page::*;
@@ -77,6 +78,7 @@ struct Book {
     last_compact: Option<agents::Compact>,
     thinking: Option<String>, // the step its thinking is going into, while it thinks
     thoughts: usize,          // (to name them)
+    now: tabs::Now,           // what the turn is on, for the other tabs (tabs.rs)
 }
 
 pub struct Chat {
@@ -317,6 +319,10 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     }
     // the other robots, to ask (mcp/link.rs): its tools, usable without asking, and time to wait for an answer
     let mcp_config = link::mcp_config(app, id, tab_id);
+    // and the edit guard, so it doesn't change a file another tab is changing (mcp/guard.rs)
+    let guard = mcp_config
+        .as_deref()
+        .and_then(|cfg| link::guard_settings(app, id, tab_id, cfg));
     let opts = claude::Opts {
         claude_path: locate::find(settings["claudePath"].as_str().unwrap_or(""))?,
         cwd: c.folder().into(),
@@ -340,7 +346,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
             vec![]
         },
         mcp_config: mcp_config.unwrap_or_default(),
-        extra_args: vec![],
+        extra_args: guard.map_or(vec![], |f| vec!["--settings".into(), f]),
         resume_at,
         fork: false,
         remote: (tab["remote"] == true).then(|| remote_name(&c)),

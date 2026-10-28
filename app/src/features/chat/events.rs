@@ -162,6 +162,7 @@ fn on_turn_start(e: Ev, turn_id: String) {
         let mut b = e.book();
         b.text_len = 0;
         b.media_left = KEEP_MEDIA;
+        b.now = tabs::Now::asked(b.turns.get(&turn_id).map_or("", |t| t.prompt.as_str()));
         b.turns.get(&turn_id).map(|t| t.kind)
     };
     tell(app, id, tab_id, PageEvent::TurnStart { turn_id, kind });
@@ -356,6 +357,7 @@ fn on_tool(e: Ev, t: Tool) {
     };
     tell(app, id, tab_id, PageEvent::Tool(shown));
     let mut b = e.book();
+    b.now.saw(&t.name, &t.detail, &t.args);
     if b.calls.len() < KEEP_CALLS {
         let at = b.text_len;
         b.calls.push(json!({ "id": t.id, "name": t.name, "detail": t.detail, "args": clip(&t.args, &KEEP, 0), "at": at }));

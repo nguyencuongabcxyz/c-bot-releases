@@ -68,6 +68,13 @@ const DESK_NOTE: &str = concat!(
     "When they ask what's on their screen, or to look at, check or help with something they're looking at (an error dialog, a page, an app), take a screenshot with the screenshot tool and look at it yourself instead of asking them to describe it."
 );
 
+/// What every robot's Claude should know about its other tabs (mcp/tools/tabs.rs).
+const TABS_NOTE: &str = concat!(
+    "The user may have other conversations with you (other chat tabs) working in this same folder at the same time. ",
+    "list_tabs shows what each one is doing and the files it's changing; wait_for_tab waits till one is done and tells you what it did. ",
+    "If you're told another tab is changing a file you need, don't change it at the same time: wait for that tab, or do the rest first, then read the file again before changing it."
+);
+
 #[derive(Clone)]
 struct Task {
     id: String,
@@ -222,11 +229,11 @@ fn note_for(others: &[(String, String, String)]) -> String {
 
 // ---------------------------------------------------------------- for the others
 
-/// What this robot's Claude should know about the others, and the user's words and notes
-/// (added to its system prompt).
+/// What this robot's Claude should know about the others, the user's words and notes, and its
+/// own other tabs (added to its system prompt).
 pub fn note(app: &AppHandle, id: &str) -> Option<String> {
     let others = note_for(&others(app, id));
-    let desk = format!("{DESK_NOTE}\n{}", shell::NOTE);
+    let desk = format!("{DESK_NOTE}\n{}\n{TABS_NOTE}", shell::NOTE);
     Some(if others.is_empty() {
         desk
     } else {
@@ -270,9 +277,35 @@ pub fn mcp_config(app: &AppHandle, id: &str, tab: &str) -> Option<String> {
     Some(file.to_string_lossy().into_owned())
 }
 
-/// A conversation closed: its config goes.
+/// The --settings file giving this conversation's Claude Code the edit guard (mcp/guard.rs): a
+/// hook run before it changes a file, asking whether another tab is changing it right now.
+pub fn guard_settings(app: &AppHandle, id: &str, tab: &str, mcp_config: &str) -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let file = config_file(app, id, tab).with_extension("hooks.json");
+    // (forward slashes and quotes: whichever shell runs it)
+    let path = |p: &str| p.replace('\\', "/");
+    let command = format!(
+        "\"{}\" {} \"{}\"",
+        path(&exe.to_string_lossy()),
+        crate::mcp::guard::FLAG,
+        path(mcp_config)
+    );
+    let settings = json!({ "hooks": { "PreToolUse": [{
+        "matcher": crate::mcp::guard::MATCHER,
+        "hooks": [{ "type": "command", "command": command, "timeout": 15 }],
+    }] } });
+    if let Err(e) = std::fs::write(&file, settings.to_string()) {
+        log::warn!("cannot set up the edit guard: {e}");
+        return None;
+    }
+    Some(file.to_string_lossy().into_owned())
+}
+
+/// A conversation closed: its config goes (and its guard's).
 pub fn forget_tab(app: &AppHandle, id: &str, tab: &str) {
-    let _ = std::fs::remove_file(config_file(app, id, tab));
+    let file = config_file(app, id, tab);
+    let _ = std::fs::remove_file(file.with_extension("hooks.json"));
+    let _ = std::fs::remove_file(file);
 }
 
 /// The tasks robot id handed off or was handed, as its desk shows them.
@@ -399,6 +432,8 @@ mod tests {
                 "mcp__cbot__terminal_read",
                 "mcp__cbot__terminal_type",
                 "mcp__cbot__screenshot",
+                "mcp__cbot__list_tabs",
+                "mcp__cbot__wait_for_tab",
             ]
         );
     }

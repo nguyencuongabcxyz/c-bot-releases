@@ -296,6 +296,9 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     mcp__cbot__ask_robot: ['🤖', 'Asking', 'agent'],
     mcp__cbot__list_robots: ['🤖', 'Looking for the other robots', 'agent'],
     mcp__cbot__hand_off_task: ['📋', 'Handing off', 'agent'],
+    // its other tabs, at work in the same folder
+    mcp__cbot__list_tabs: ['🗂️', 'Checking my other tabs', 'agent'],
+    mcp__cbot__wait_for_tab: ['⏳', 'Waiting for', 'agent'],
     // your words and notebook
     mcp__cbot__list_words: ['📚', 'Checking your words', 'read'],
     mcp__cbot__save_words: ['📚', 'Saving the words', 'edit'],

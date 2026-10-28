@@ -6,10 +6,12 @@
 //!   notes.rs     list_notes, add_note: the user's notebook
 //!   terminal.rs  terminal_read, terminal_type, terminal_run: the shells in the chat's drawer
 //!   screen.rs    screenshot: the screen as it is now, as a picture to look at
+//!   tabs.rs      list_tabs, wait_for_tab: the robot's other conversations (and the edit guard)
 
 pub mod notes;
 pub mod robots;
 pub mod screen;
+pub mod tabs;
 pub mod terminal;
 pub mod words;
 
@@ -40,6 +42,7 @@ pub fn list() -> Value {
         notes::list(),
         terminal::list(),
         screen::list(),
+        tabs::list(),
     ]
     .into_iter()
     .flat_map(|v| v.as_array().cloned().unwrap_or_default())
@@ -61,6 +64,8 @@ pub fn allowed() -> Vec<String> {
         "terminal_read",
         "terminal_type",
         "screenshot",
+        "list_tabs",
+        "wait_for_tab",
     ];
     names.iter().map(|n| format!("{PREFIX}{n}")).collect()
 }
@@ -81,6 +86,7 @@ pub fn call(app: &AppHandle, from: &str, tab: &str, tool: &str, args: &Value, co
             terminal::call(app, from, tab, tool, args)
         }
         "screenshot" => screen::call(app, args),
+        "list_tabs" | "wait_for_tab" | tabs::GUARD => tabs::call(app, from, tab, tool, args),
         _ => err(format!("No tool {tool}.")),
     }
 }
