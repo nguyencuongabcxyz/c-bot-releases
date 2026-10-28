@@ -66,22 +66,7 @@ pub fn describe_tool(name: &str, input: &Value) -> String {
             48,
         ),
         "TaskCreate" => short(s(input, "subject"), 48),
-        "TaskUpdate" => {
-            let id = input
-                .get("taskId")
-                .map(|v| {
-                    v.as_str()
-                        .map(str::to_string)
-                        .unwrap_or_else(|| v.to_string())
-                })
-                .unwrap_or_default();
-            let status = s(input, "status");
-            if status.is_empty() {
-                format!("#{id}")
-            } else {
-                format!("#{id} → {}", status.replacen('_', " ", 1))
-            }
-        }
+        "TaskUpdate" => task_update(input),
         "Skill" => skill_label(if s(input, "skill").is_empty() {
             s(input, "name")
         } else {
@@ -94,23 +79,44 @@ pub fn describe_tool(name: &str, input: &Value) -> String {
             format!("{}: {}", s(input, "robot"), short(s(input, "title"), 48))
         }
         "mcp__cbot__list_words" => short(s(input, "query"), 32),
-        "mcp__cbot__save_words" => {
-            let words: Vec<String> = input
-                .get("words")
-                .and_then(Value::as_array)
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|w| w.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            short(&words.join(", "), 48)
-        }
+        "mcp__cbot__save_words" => saved_words(input),
         "mcp__cbot__add_note" => short(s(input, "text"), 48),
         "mcp__cbot__wait_for_tab" => format!("“{}”", short(s(input, "tab"), 48)),
         "mcp__cbot__terminal_type" | "mcp__cbot__terminal_run" => short(s(input, "command"), 48),
         _ => String::new(),
     }
+}
+
+/// "#3 → in progress"
+fn task_update(input: &Value) -> String {
+    let id = input
+        .get("taskId")
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| v.to_string())
+        })
+        .unwrap_or_default();
+    let status = s(input, "status");
+    if status.is_empty() {
+        format!("#{id}")
+    } else {
+        format!("#{id} → {}", status.replacen('_', " ", 1))
+    }
+}
+
+/// "meticulous, diligent"
+fn saved_words(input: &Value) -> String {
+    let words: Vec<String> = input
+        .get("words")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|w| w.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    short(&words.join(", "), 48)
 }
 
 // ---------------------------------------------------------------- asides
@@ -200,8 +206,9 @@ pub(super) fn partial_suffix(s: &str, tag: &str) -> usize {
 }
 
 pub fn strip_asides(s: &str) -> String {
-    static RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(^|\n)[ \t]*<aside>(?s:.*?)</aside>[ \t]*(?:\n|$)").unwrap());
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(^|\n)[ \t]*<aside>(?s:.*?)</aside>[ \t]*(?:\n|$)").expect("a valid regex")
+    });
     let re = &*RE;
     re.replace_all(s, "$1").into_owned()
 }
@@ -387,15 +394,7 @@ pub(super) fn edit_diff(r: &Value) -> Option<Diff> {
         && created
         && let Some(content) = r.get("content").and_then(Value::as_str)
     {
-        let body = content
-            .strip_suffix("\r\n")
-            .or_else(|| content.strip_suffix('\n'))
-            .unwrap_or(content);
-        let lines: Vec<Value> = body
-            .split('\n')
-            .map(|l| json!(format!("+{}", l.strip_suffix('\r').unwrap_or(l))))
-            .collect();
-        hunks = vec![json!({ "oldStart": 0, "newStart": 1, "lines": lines })];
+        hunks = vec![whole_file(content)];
     }
     if hunks.is_empty() {
         return None;
@@ -403,18 +402,7 @@ pub(super) fn edit_diff(r: &Value) -> Option<Diff> {
     let (mut budget, mut added, mut removed, mut truncated) = (MAX_LINES, 0, 0, false);
     let mut out = vec![];
     for h in &hunks {
-        let lines: Vec<String> = h["lines"]
-            .as_array()
-            .map(|l| {
-                l.iter()
-                    .map(|x| {
-                        x.as_str()
-                            .map(str::to_string)
-                            .unwrap_or_else(|| x.to_string())
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let lines = hunk_lines(h);
         for l in &lines {
             if l.starts_with('+') {
                 added += 1;
@@ -456,4 +444,88 @@ pub(super) fn edit_diff(r: &Value) -> Option<Diff> {
         hunks: out,
         truncated,
     })
+}
+
+/// A new file as one hunk, every line added.
+fn whole_file(content: &str) -> Value {
+    let body = content
+        .strip_suffix("\r\n")
+        .or_else(|| content.strip_suffix('\n'))
+        .unwrap_or(content);
+    let lines: Vec<Value> = body
+        .split('\n')
+        .map(|l| json!(format!("+{}", l.strip_suffix('\r').unwrap_or(l))))
+        .collect();
+    json!({ "oldStart": 0, "newStart": 1, "lines": lines })
+}
+
+fn hunk_lines(h: &Value) -> Vec<String> {
+    h["lines"]
+        .as_array()
+        .map(|l| {
+            l.iter()
+                .map(|x| {
+                    x.as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| x.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod step_tests {
+    use super::*;
+
+    #[test]
+    fn steps_are_told_in_a_few_words() {
+        let d = describe_tool;
+        assert_eq!(
+            d("Read", &json!({ "file_path": "C:\\a\\main.rs" })),
+            "main.rs"
+        );
+        assert_eq!(
+            d("WebFetch", &json!({ "url": "https://example.com/a/b" })),
+            "example.com"
+        );
+        assert_eq!(
+            d(
+                "TaskUpdate",
+                &json!({ "taskId": "3", "status": "in_progress" })
+            ),
+            "#3 → in progress"
+        );
+        assert_eq!(d("TaskUpdate", &json!({ "taskId": 4 })), "#4");
+        assert_eq!(
+            d(
+                "mcp__cbot__save_words",
+                &json!({ "words": ["meticulous", 1, "diligent"] })
+            ),
+            "meticulous, diligent"
+        );
+        assert_eq!(d("Unknown", &json!({})), "");
+    }
+
+    #[test]
+    fn a_new_file_is_one_hunk_of_added_lines() {
+        let d =
+            edit_diff(&json!({ "filePath": "a.txt", "type": "create", "content": "one\r\ntwo\n" }))
+                .unwrap();
+        assert!(d.created);
+        assert_eq!((d.added, d.removed, d.truncated), (2, 0, false));
+        assert_eq!((d.hunks[0].old_start, d.hunks[0].new_start), (0, 1));
+        assert_eq!(d.hunks[0].lines, ["+one", "+two"]);
+    }
+
+    #[test]
+    fn an_edit_keeps_its_hunks_and_counts_its_lines() {
+        let patch =
+            json!([{ "oldStart": 3, "newStart": 3, "lines": [" keep", "-old", "+new", "+more"] }]);
+        let d = edit_diff(&json!({ "filePath": "a.txt", "structuredPatch": patch })).unwrap();
+        assert!(!d.created);
+        assert_eq!((d.added, d.removed, d.truncated), (2, 1, false));
+        assert_eq!(d.hunks[0].lines, [" keep", "-old", "+new", "+more"]);
+        assert!(edit_diff(&json!({ "filePath": "a.txt" })).is_none());
+    }
 }

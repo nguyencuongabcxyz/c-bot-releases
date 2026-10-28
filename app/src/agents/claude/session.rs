@@ -112,7 +112,10 @@ impl Session {
         i.generation += 1;
         let generation = i.generation;
         let stderr = Arc::new(Mutex::new(String::new()));
-        let (stdout, err_pipe) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
+        let (stdout, err_pipe) = (
+            child.stdout.take().expect("stdout is piped"),
+            child.stderr.take().expect("stderr is piped"),
+        );
         let killer = Killer::new(child.id());
         i.proc = Some(Proc {
             generation,
@@ -312,7 +315,9 @@ impl Session {
         if i.proc.is_none() {
             return;
         }
-        let (id, prompt) = i.queue.pop_front().unwrap();
+        let Some((id, prompt)) = i.queue.pop_front() else {
+            return;
+        };
         let uuid = uuid::Uuid::new_v4().to_string();
         i.own_uuids.insert(uuid.clone());
         i.begin_turn(id, Some(uuid.clone()));
@@ -356,10 +361,14 @@ impl Session {
     /// Answer this waiting question right away: stop the current answer and jump the queue.
     pub fn send_now(&self, turn_id: &str) -> bool {
         let mut i = self.lock();
-        let Some(pos) = i.queue.iter().position(|(id, _)| id == turn_id) else {
+        let Some(t) = i
+            .queue
+            .iter()
+            .position(|(id, _)| id == turn_id)
+            .and_then(|pos| i.queue.remove(pos))
+        else {
             return false;
         };
-        let t = i.queue.remove(pos).unwrap();
         i.queue.push_front(t);
         if i.proc.is_some()
             && let Some(t) = i.turn.as_mut()

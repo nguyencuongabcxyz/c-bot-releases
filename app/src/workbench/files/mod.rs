@@ -209,7 +209,7 @@ pub fn search(folder: &str, query: &str, limit: usize) -> Value {
 /// The files a message @-mentions (that exist), as absolute paths. "@a/b.ts" and "@\"with space.md\"".
 pub fn mentioned(folder: &str, text: &str) -> Vec<String> {
     static RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?:^|\s)@(?:"([^"]+)"|([^\s"]+))"#).unwrap());
+        LazyLock::new(|| Regex::new(r#"(?:^|\s)@(?:"([^"]+)"|([^\s"]+))"#).expect("a valid regex"));
     let re = &*RE;
     let mut out: Vec<String> = vec![];
     for c in re.captures_iter(text) {

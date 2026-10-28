@@ -114,26 +114,7 @@ fn flight(
         h: bh,
     };
     let (loaded, wait) = mpsc::channel();
-    let built = views::builder(app, &label, "plane", &[])
-        .title("Paper plane")
-        .transparent(true)
-        .decorations(false)
-        .shadow(false)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .skip_taskbar(true)
-        .always_on_top(true)
-        .focused(false)
-        .focusable(false)
-        .inner_size(BOX.0, BOX.1)
-        .on_page_load(move |_, p| {
-            if let PageLoadEvent::Finished = p.event() {
-                let _ = loaded.send(());
-            }
-        })
-        .build();
-    let window = match built {
+    let window = match build(app, &label, loaded) {
         Ok(w) => w,
         Err(err) => {
             // no plane, but the message still gets there
@@ -190,6 +171,33 @@ fn flight(
         thread::sleep(Duration::from_millis(120));
     }
     let _ = window.close();
+}
+
+/// The plane's window; `loaded` hears when its page is there.
+fn build(
+    app: &AppHandle,
+    label: &str,
+    loaded: mpsc::Sender<()>,
+) -> tauri::Result<tauri::WebviewWindow> {
+    views::builder(app, label, "plane", &[])
+        .title("Paper plane")
+        .transparent(true)
+        .decorations(false)
+        .shadow(false)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .skip_taskbar(true)
+        .always_on_top(true)
+        .focused(false)
+        .focusable(false)
+        .inner_size(BOX.0, BOX.1)
+        .on_page_load(move |_, p| {
+            if let PageLoadEvent::Finished = p.event() {
+                let _ = loaded.send(());
+            }
+        })
+        .build()
 }
 
 pub fn setup(_app: &AppHandle) {}

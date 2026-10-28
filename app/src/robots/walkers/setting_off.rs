@@ -33,63 +33,15 @@ pub(super) fn prepare(
     let (bw, bh) = ((css.0 * s).round() as i32, (css.1 * s).round() as i32);
     let (x, y) = (feet.0 - bw as f64 / 2.0, feet.1 - bh as f64 * FEET);
     let label = label_of(id);
-    if app.get_webview_window(&label).is_some() {
-        return false; // (the last one's still closing)
-    }
-    let name = with(app, |st| {
-        st.store
-            .get(id)
-            .and_then(|c| c["name"].as_str().map(str::to_string))
-    })
-    .unwrap_or_else(|| "C-Bot".into());
-    let built = views::builder(app, &label, "walker", &[("id", id)])
-        .title(format!("{name} (out for a walk)"))
-        .transparent(true)
-        .decorations(false)
-        .shadow(false)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .skip_taskbar(true)
-        .always_on_top(true)
-        .focused(false)
-        .focusable(false) // (a click on it never takes the focus from the app you're in)
-        .inner_size(css.0, css.1)
-        .build();
-    let window = match built {
-        Ok(w) => w,
-        Err(err) => {
-            log::warn!("couldn't open {label}: {err}");
-            return false;
-        }
+    let bounds = Rect {
+        x: x.round() as i32,
+        y: y.round() as i32,
+        w: bw,
+        h: bh,
     };
-    let hwnd = match window.hwnd() {
-        Ok(h) => h.0 as isize,
-        Err(_) => {
-            let _ = window.close();
-            return false;
-        }
+    let Some(hwnd) = open_window(app, id, &label, css, bounds) else {
+        return false;
     };
-    veil(app, hwnd, true);
-    window::set_bounds(
-        hwnd,
-        Rect {
-            x: x.round() as i32,
-            y: y.round() as i32,
-            w: bw,
-            h: bh,
-        },
-    );
-    let (app2, id2) = (app.clone(), id.to_string());
-    window.on_window_event(move |e| {
-        if let tauri::WindowEvent::Destroyed = e {
-            ws(&app2, |m| {
-                if m.get(&id2).is_some_and(|w| w.hwnd == hwnd) {
-                    m.remove(&id2);
-                }
-            });
-        }
-    });
     let gait = if asleep { "sleepwalk" } else { "walk" };
     let w = Walker {
         hwnd,
@@ -125,6 +77,66 @@ pub(super) fn prepare(
     ws(app, |m| m.insert(id.to_string(), w));
     tray::refresh(app);
     true
+}
+
+/// The walker's window, made hidden (veiled) and put at `bounds`; its hwnd.
+fn open_window(
+    app: &AppHandle,
+    id: &str,
+    label: &str,
+    css: (f64, f64),
+    bounds: Rect,
+) -> Option<isize> {
+    if app.get_webview_window(label).is_some() {
+        return None; // (the last one's still closing)
+    }
+    let name = with(app, |st| {
+        st.store
+            .get(id)
+            .and_then(|c| c["name"].as_str().map(str::to_string))
+    })
+    .unwrap_or_else(|| "C-Bot".into());
+    let built = views::builder(app, label, "walker", &[("id", id)])
+        .title(format!("{name} (out for a walk)"))
+        .transparent(true)
+        .decorations(false)
+        .shadow(false)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .skip_taskbar(true)
+        .always_on_top(true)
+        .focused(false)
+        .focusable(false) // (a click on it never takes the focus from the app you're in)
+        .inner_size(css.0, css.1)
+        .build();
+    let window = match built {
+        Ok(w) => w,
+        Err(err) => {
+            log::warn!("couldn't open {label}: {err}");
+            return None;
+        }
+    };
+    let hwnd = match window.hwnd() {
+        Ok(h) => h.0 as isize,
+        Err(_) => {
+            let _ = window.close();
+            return None;
+        }
+    };
+    veil(app, hwnd, true);
+    window::set_bounds(hwnd, bounds);
+    let (app2, id2) = (app.clone(), id.to_string());
+    window.on_window_event(move |e| {
+        if let tauri::WindowEvent::Destroyed = e {
+            ws(&app2, |m| {
+                if m.get(&id2).is_some_and(|w| w.hwnd == hwnd) {
+                    m.remove(&id2);
+                }
+            });
+        }
+    });
+    Some(hwnd)
 }
 
 /// Stood up and turned at the desk, feet on `feet` (desk-window CSS px): put the walker's

@@ -49,7 +49,7 @@ pub fn system_prompt_for(c: &Value) -> String {
     let p = all()
         .get(c.personality())
         .or_else(|| all().get("cheerful"))
-        .unwrap();
+        .expect("shared/personalities.json has cheerful");
     [
         format!(
             "You are \"{}\", a small cartoon robot that lives on the user's desktop and looks after the folder {}.",

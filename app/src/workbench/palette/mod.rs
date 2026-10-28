@@ -119,8 +119,9 @@ fn place(app: &AppHandle) {
 
 /// A selection's leading and trailing quotes, brackets and punctuation (main.js EDGES).
 fn edges() -> &'static Regex {
-    static RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"^[\s"'“”‘’(\[{]+|[\s"'“”‘’)\]}.,;:!?]+$"#).unwrap());
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"^[\s"'“”‘’(\[{]+|[\s"'“”‘’)\]}.,;:!?]+$"#).expect("a valid regex")
+    });
     &RE
 }
 

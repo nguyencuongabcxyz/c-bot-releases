@@ -11,6 +11,7 @@ use crate::robots::{ipc, island, revive, social, stage, walkers};
 use crate::ui::{tray, workshop};
 use crate::workbench::{palette, paste, quick, shell, snip, terminal, voice};
 
+#[expect(clippy::too_many_lines, reason = "a flat list of commands")]
 pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         // a robot's own window, its tabs and its chat

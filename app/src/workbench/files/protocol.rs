@@ -84,7 +84,7 @@ pub(super) fn not_found() -> tauri::http::Response<Vec<u8>> {
     tauri::http::Response::builder()
         .status(404)
         .body(b"Not found".to_vec())
-        .unwrap()
+        .expect("fixed headers")
 }
 
 /// cbot-file: a picture (img/?path=…), or a PDF, song or video (view/?path=…).
@@ -134,7 +134,7 @@ pub(super) fn serve_image(
             "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:",
         );
     }
-    res.body(bytes).unwrap()
+    res.body(bytes).expect("fixed headers")
 }
 
 pub(super) const MEDIA_CHUNK: u64 = 4 * 1024 * 1024;
@@ -192,19 +192,19 @@ pub(super) fn serve_view(
             return tauri::http::Response::builder()
                 .status(413)
                 .body(Vec::new())
-                .unwrap();
+                .expect("fixed headers");
         }
         let Ok(bytes) = std::fs::read(&p) else {
             return not_found();
         };
-        return res().body(bytes).unwrap();
+        return res().body(bytes).expect("fixed headers");
     };
     let Some((start, end)) = byte_range(range, len) else {
         return res()
             .status(416)
             .header("Content-Range", format!("bytes */{len}"))
             .body(Vec::new())
-            .unwrap();
+            .expect("fixed headers");
     };
     let end = end.min(start + MEDIA_CHUNK - 1);
     let mut piece = vec![0; (end - start + 1) as usize];
@@ -219,5 +219,5 @@ pub(super) fn serve_view(
         .status(206)
         .header("Content-Range", format!("bytes {start}-{end}/{len}"))
         .body(piece)
-        .unwrap()
+        .expect("fixed headers")
 }

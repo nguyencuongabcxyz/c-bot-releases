@@ -61,42 +61,7 @@ fn code_of(key: &str) -> Option<(Code, bool)> {
         if c.is_ascii_digit() {
             return Some((digits[(c as u8 - b'0') as usize], false));
         }
-        // punctuation, and what it is with Shift on a US keyboard (Electron's reading)
-        return Some(match c {
-            '`' => (Backquote, false),
-            '~' => (Backquote, true),
-            '-' => (Minus, false),
-            '_' => (Minus, true),
-            '=' => (Equal, false),
-            '+' => (Equal, true),
-            '[' => (BracketLeft, false),
-            '{' => (BracketLeft, true),
-            ']' => (BracketRight, false),
-            '}' => (BracketRight, true),
-            '\\' => (Backslash, false),
-            '|' => (Backslash, true),
-            ';' => (Semicolon, false),
-            ':' => (Semicolon, true),
-            '\'' => (Quote, false),
-            '"' => (Quote, true),
-            ',' => (Comma, false),
-            '<' => (Comma, true),
-            '.' => (Period, false),
-            '>' => (Period, true),
-            '/' => (Slash, false),
-            '?' => (Slash, true),
-            '!' => (Digit1, true),
-            '@' => (Digit2, true),
-            '#' => (Digit3, true),
-            '$' => (Digit4, true),
-            '%' => (Digit5, true),
-            '^' => (Digit6, true),
-            '&' => (Digit7, true),
-            '*' => (Digit8, true),
-            '(' => (Digit9, true),
-            ')' => (Digit0, true),
-            _ => return None,
-        });
+        return punctuation(c);
     }
     if let Some(n) = k.strip_prefix('f').and_then(|n| n.parse::<usize>().ok()) {
         return fkeys.get(n.checked_sub(1)?).map(|&c| (c, false));
@@ -104,46 +69,89 @@ fn code_of(key: &str) -> Option<(Code, bool)> {
     if let Some(n) = k.strip_prefix("num").and_then(|n| n.parse::<usize>().ok()) {
         return numpad.get(n).map(|&c| (c, false));
     }
-    Some((
-        match k.as_str() {
-            // (Electron's "Plus" is the =/+ key)
-            "plus" => Equal,
-            "space" => Space,
-            "tab" => Tab,
-            "capslock" => CapsLock,
-            "numlock" => NumLock,
-            "scrolllock" => ScrollLock,
-            "backspace" => Backspace,
-            "delete" | "del" => Delete,
-            "insert" | "ins" => Insert,
-            "return" | "enter" => Enter,
-            "up" | "arrowup" => ArrowUp,
-            "down" | "arrowdown" => ArrowDown,
-            "left" | "arrowleft" => ArrowLeft,
-            "right" | "arrowright" => ArrowRight,
-            "home" => Home,
-            "end" => End,
-            "pageup" => PageUp,
-            "pagedown" => PageDown,
-            "escape" | "esc" => Escape,
-            "pause" => Pause,
-            "printscreen" => PrintScreen,
-            "volumeup" => AudioVolumeUp,
-            "volumedown" => AudioVolumeDown,
-            "volumemute" => AudioVolumeMute,
-            "medianexttrack" => MediaTrackNext,
-            "mediaprevioustrack" => MediaTrackPrevious,
-            "mediastop" => MediaStop,
-            "mediaplaypause" => MediaPlayPause,
-            "numdec" => NumpadDecimal,
-            "numadd" => NumpadAdd,
-            "numsub" => NumpadSubtract,
-            "nummult" => NumpadMultiply,
-            "numdiv" => NumpadDivide,
-            _ => return None,
-        },
-        false,
-    ))
+    named_key(&k).map(|c| (c, false))
+}
+
+/// Punctuation, and what it is with Shift on a US keyboard (Electron's reading).
+fn punctuation(c: char) -> Option<(Code, bool)> {
+    use Code::*;
+    Some(match c {
+        '`' => (Backquote, false),
+        '~' => (Backquote, true),
+        '-' => (Minus, false),
+        '_' => (Minus, true),
+        '=' => (Equal, false),
+        '+' => (Equal, true),
+        '[' => (BracketLeft, false),
+        '{' => (BracketLeft, true),
+        ']' => (BracketRight, false),
+        '}' => (BracketRight, true),
+        '\\' => (Backslash, false),
+        '|' => (Backslash, true),
+        ';' => (Semicolon, false),
+        ':' => (Semicolon, true),
+        '\'' => (Quote, false),
+        '"' => (Quote, true),
+        ',' => (Comma, false),
+        '<' => (Comma, true),
+        '.' => (Period, false),
+        '>' => (Period, true),
+        '/' => (Slash, false),
+        '?' => (Slash, true),
+        '!' => (Digit1, true),
+        '@' => (Digit2, true),
+        '#' => (Digit3, true),
+        '$' => (Digit4, true),
+        '%' => (Digit5, true),
+        '^' => (Digit6, true),
+        '&' => (Digit7, true),
+        '*' => (Digit8, true),
+        '(' => (Digit9, true),
+        ')' => (Digit0, true),
+        _ => return None,
+    })
+}
+
+/// A key by its name ("Space", "PageUp", "VolumeMute"…), lowercased.
+fn named_key(k: &str) -> Option<Code> {
+    use Code::*;
+    Some(match k {
+        // (Electron's "Plus" is the =/+ key)
+        "plus" => Equal,
+        "space" => Space,
+        "tab" => Tab,
+        "capslock" => CapsLock,
+        "numlock" => NumLock,
+        "scrolllock" => ScrollLock,
+        "backspace" => Backspace,
+        "delete" | "del" => Delete,
+        "insert" | "ins" => Insert,
+        "return" | "enter" => Enter,
+        "up" | "arrowup" => ArrowUp,
+        "down" | "arrowdown" => ArrowDown,
+        "left" | "arrowleft" => ArrowLeft,
+        "right" | "arrowright" => ArrowRight,
+        "home" => Home,
+        "end" => End,
+        "pageup" => PageUp,
+        "pagedown" => PageDown,
+        "escape" | "esc" => Escape,
+        "pause" => Pause,
+        "printscreen" => PrintScreen,
+        "volumeup" => AudioVolumeUp,
+        "volumedown" => AudioVolumeDown,
+        "volumemute" => AudioVolumeMute,
+        "medianexttrack" => MediaTrackNext,
+        "mediaprevioustrack" => MediaTrackPrevious,
+        "mediastop" => MediaStop,
+        "mediaplaypause" => MediaPlayPause,
+        "numdec" => NumpadDecimal,
+        "numadd" => NumpadAdd,
+        "numsub" => NumpadSubtract,
+        "nummult" => NumpadMultiply,
+        "numdiv" => NumpadDivide,
+        _ => return None,
+    })
 }
 
 /// An Electron accelerator ("Ctrl+Alt+W", "CommandOrControl+Shift+Space", "Alt+Plus") as

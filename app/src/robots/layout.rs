@@ -60,22 +60,15 @@ pub(super) fn layout_for(
     let css = |v: i32| (v as f64 / s).round();
     let bounds_msg =
         |b: Rect| json!({ "x": css(b.x), "y": css(b.y), "width": css(b.w), "height": css(b.h) });
+    let own_box = Rect {
+        x: anchor.0,
+        y: anchor.1,
+        w: dw,
+        h: dh,
+    };
     if peek && !expanded && !tucked {
         // Sent away to the island: asleep-sized at its desk, its window veiled (apply_layout)
-        let bounds = Rect {
-            x: anchor.0,
-            y: anchor.1,
-            w: dw,
-            h: dh,
-        };
-        let msg = json!({ "bounds": bounds_msg(bounds), "robotX": 0, "robotY": 0, "placement": "hidden" });
-        return Layout {
-            bounds,
-            placement: "hidden",
-            panel_w: 0.0,
-            max_chat_w: CHAT_W,
-            msg: msg.as_object().unwrap().clone(),
-        };
+        return robot_only(own_box, "hidden", bounds_msg);
     }
     if !expanded && tucked {
         // The chat put away keeps the window the size and place it has with the chat open
@@ -93,21 +86,7 @@ pub(super) fn layout_for(
         return open;
     }
     if !expanded {
-        let bounds = Rect {
-            x: anchor.0,
-            y: anchor.1,
-            w: dw,
-            h: dh,
-        };
-        let msg =
-            json!({ "bounds": bounds_msg(bounds), "robotX": 0, "robotY": 0, "placement": "none" });
-        return Layout {
-            bounds,
-            placement: "none",
-            panel_w: 0.0,
-            max_chat_w: CHAT_W,
-            msg: msg.as_object().unwrap().clone(),
-        };
+        return robot_only(own_box, "none", bounds_msg);
     }
     let wa = m.work;
     let room_left = (anchor.0 - wa.x) as f64;
@@ -142,19 +121,22 @@ pub(super) fn layout_for(
     let (robot_x, robot_y) = (css(anchor.0 - x), css(anchor.1 - wa.y));
     let (width, rw) = (css(bounds.w), dims.0);
     // where the panel goes inside the window (its shadow and tail need a few px)
-    let panel = if placement == "left" {
-        json!({ "x": 8, "w": (robot_x - 14.0).max(200.0) })
+    let (panel_x, panel_w) = if placement == "left" {
+        (json!(8), (robot_x - 14.0).max(200.0))
     } else {
-        json!({ "x": robot_x + rw + 6.0, "w": (width - robot_x - rw - 14.0).max(200.0) })
+        (
+            json!(robot_x + rw + 6.0),
+            (width - robot_x - rw - 14.0).max(200.0),
+        )
     };
     let max_chat_w = CHAT_MIN.max((room / s).round());
-    let msg = json!({ "bounds": bounds_msg(bounds), "robotX": robot_x, "robotY": robot_y, "placement": placement, "panel": panel, "maxChatW": max_chat_w });
+    let msg = json!({ "bounds": bounds_msg(bounds), "robotX": robot_x, "robotY": robot_y, "placement": placement, "panel": { "x": panel_x, "w": panel_w }, "maxChatW": max_chat_w });
     Layout {
         bounds,
         placement,
-        panel_w: panel["w"].as_f64().unwrap(),
+        panel_w,
         max_chat_w,
-        msg: msg.as_object().unwrap().clone(),
+        msg: object(msg),
     }
 }
 
@@ -177,7 +159,27 @@ pub(super) fn stage_layout(t: &StageTile) -> Layout {
         placement: "stage",
         panel_w,
         max_chat_w: w,
-        msg: msg.as_object().unwrap().clone(),
+        msg: object(msg),
+    }
+}
+
+/// Just the robot, no chat: the window is its box.
+fn robot_only(bounds: Rect, placement: &'static str, bounds_msg: impl Fn(Rect) -> Value) -> Layout {
+    let msg =
+        json!({ "bounds": bounds_msg(bounds), "robotX": 0, "robotY": 0, "placement": placement });
+    Layout {
+        bounds,
+        placement,
+        panel_w: 0.0,
+        max_chat_w: CHAT_W,
+        msg: object(msg),
+    }
+}
+
+fn object(msg: Value) -> Map<String, Value> {
+    match msg {
+        Value::Object(o) => o,
+        _ => unreachable!("built with json!({{…}})"),
     }
 }
 

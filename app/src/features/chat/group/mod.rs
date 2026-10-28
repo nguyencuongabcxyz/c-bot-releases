@@ -87,17 +87,20 @@ const THROW_AT_MS: u64 = 900; // into its throw that the plane leaves its hand (
 const ROOM_GAP: f64 = 10.0;
 
 fn pass_re() -> &'static Regex {
-    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<pass\s*/?>").unwrap());
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)<pass\s*/?>").expect("a valid regex"));
     &RE
 }
 
 fn agree_re() -> &'static Regex {
-    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)</?agree\s*/?>").unwrap());
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)</?agree\s*/?>").expect("a valid regex"));
     &RE
 }
 
 fn mention_re() -> &'static Regex {
-    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"@([\p{L}\p{N}_-]+)").unwrap());
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"@([\p{L}\p{N}_-]+)").expect("a valid regex"));
     &RE
 }
 
@@ -510,54 +513,13 @@ fn start(g: &mut Group, env: &mut Env, p: &Value) -> Value {
         .unwrap_or_else(|| members[0].clone());
     members.retain(|m| *m != host_id);
     members.insert(0, host_id.clone());
-    let pick = |v: &Value, list: &[u64], def: u64| {
-        number(v)
-            .filter(|n| list.iter().any(|x| *x as f64 == *n))
-            .map_or(def, |n| n as u64)
-    };
-    let max_messages = pick(&p["messages"], &MESSAGES, 20);
-    let cap = number(&p["cap"])
-        .filter(|n| CAPS.contains(n))
-        .unwrap_or(1.0);
-    let mut c = Chat {
-        mode: if p["style"] == "turns" {
-            Style::Turns
-        } else {
-            Style::Free
-        },
-        topic,
-        host_id,
-        members: members.clone(),
-        max_rounds: pick(&p["rounds"], &ROUNDS, 3),
-        max_messages,
-        step: max_messages,
-        cap,
-        fast: p["brain"] == "fast",
-        room: p["meeting"] != false,
-        round: 1,
-        spoke: HashSet::new(),
-        agreed: vec![],
-        out: HashSet::new(),
-        fails: HashMap::new(),
-        next_up: vec![],
-        cost: 0.0,
-        status: "running",
-        speaker: None,
-        last_speaker: None,
-        wrapping: false,
-        ended: String::new(),
-        log: vec![],
-        people: HashMap::new(),
-        summary: None,
-        room_open: false,
-        room_info: None,
-    };
+    let mut c = new_chat(p, topic, host_id, members.clone());
     let names: Vec<String> = members.iter().map(|id| name(app, id)).collect();
     let hello = if c.free() {
         format!(
             "{} are in the chat: up to {} messages, ${:.2} at most.",
             names.join(", "),
-            max_messages,
+            c.max_messages,
             c.cap
         )
     } else {
@@ -590,6 +552,52 @@ fn start(g: &mut Group, env: &mut Env, p: &Value) -> Value {
     env.changed = true;
     env.later(if walking { 2500 } else { 600 }, |c, env| c.next(env));
     json!({ "ok": true })
+}
+
+/// A chat as the page set it up (its style, length, budget, brain), not started yet.
+fn new_chat(p: &Value, topic: String, host_id: String, members: Vec<String>) -> Chat {
+    let pick = |v: &Value, list: &[u64], def: u64| {
+        number(v)
+            .filter(|n| list.iter().any(|x| *x as f64 == *n))
+            .map_or(def, |n| n as u64)
+    };
+    let max_messages = pick(&p["messages"], &MESSAGES, 20);
+    let cap = number(&p["cap"])
+        .filter(|n| CAPS.contains(n))
+        .unwrap_or(1.0);
+    Chat {
+        mode: if p["style"] == "turns" {
+            Style::Turns
+        } else {
+            Style::Free
+        },
+        topic,
+        host_id,
+        members,
+        max_rounds: pick(&p["rounds"], &ROUNDS, 3),
+        max_messages,
+        step: max_messages,
+        cap,
+        fast: p["brain"] == "fast",
+        room: p["meeting"] != false,
+        round: 1,
+        spoke: HashSet::new(),
+        agreed: vec![],
+        out: HashSet::new(),
+        fails: HashMap::new(),
+        next_up: vec![],
+        cost: 0.0,
+        status: "running",
+        speaker: None,
+        last_speaker: None,
+        wrapping: false,
+        ended: String::new(),
+        log: vec![],
+        people: HashMap::new(),
+        summary: None,
+        room_open: false,
+        room_info: None,
+    }
 }
 
 #[cfg(test)]
@@ -661,15 +669,15 @@ mod tests {
         assert_eq!(quote(&"x".repeat(3005)).chars().count(), 3001);
     }
 
+    const WA: Rect = Rect {
+        x: 0,
+        y: 0,
+        w: 1920,
+        h: 1040,
+    };
+
     #[test]
-    fn the_room_goes_left_then_right_then_above() {
-        let wa = Rect {
-            x: 0,
-            y: 0,
-            w: 1920,
-            h: 1040,
-        };
-        // room on the left: beside it, bottoms lined up
+    fn the_room_goes_left_with_bottoms_lined_up() {
         let r = room_bounds(
             Rect {
                 x: 730,
@@ -678,7 +686,7 @@ mod tests {
                 h: 640,
             },
             3,
-            wa,
+            WA,
             1.0,
         );
         assert_eq!(
@@ -690,7 +698,10 @@ mod tests {
                 h: 340
             }
         );
-        // none on the left: the right
+    }
+
+    #[test]
+    fn the_room_goes_right_when_theres_none_on_the_left() {
         let r = room_bounds(
             Rect {
                 x: 100,
@@ -699,7 +710,7 @@ mod tests {
                 h: 640,
             },
             5,
-            wa,
+            WA,
             1.0,
         );
         assert_eq!(
@@ -711,7 +722,10 @@ mod tests {
                 h: 380
             }
         );
-        // nor there: above it (kept on the screen)
+    }
+
+    #[test]
+    fn the_room_goes_above_when_neither_side_has_room() {
         let narrow = Rect {
             x: 0,
             y: 0,
@@ -738,7 +752,10 @@ mod tests {
                 h: 340
             }
         );
-        // on a 150% screen it's bigger in physical px
+    }
+
+    #[test]
+    fn the_room_is_bigger_in_physical_px_on_a_150_percent_screen() {
         assert_eq!(
             room_bounds(
                 Rect {
@@ -748,7 +765,7 @@ mod tests {
                     h: 960
                 },
                 3,
-                wa,
+                WA,
                 1.5
             )
             .w,

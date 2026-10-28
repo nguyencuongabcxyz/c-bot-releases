@@ -282,7 +282,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn they_read_as_the_page_knows_them() {
+    fn helpers_read_as_the_page_knows_them() {
         let agent = AgentEvent::Done {
             id: "a".into(),
             status: "completed".into(),
@@ -310,6 +310,10 @@ mod tests {
             json!(start),
             json!({ "op": "start", "id": "a", "description": "Look", "kind": "", "prompt": "p", "background": false })
         );
+    }
+
+    #[test]
+    fn tasks_read_as_the_page_knows_them() {
         let change = TaskChange::Update {
             id: "1".into(),
             status: Some("completed".into()),
@@ -332,6 +336,10 @@ mod tests {
             json!(list),
             json!({ "op": "replace", "tasks": [{ "id": "1", "subject": "Write", "activeForm": "Writing", "status": "pending" }] })
         );
+    }
+
+    #[test]
+    fn diffs_and_turn_ends_read_as_the_page_knows_them() {
         let diff = Diff {
             file: "a.txt".into(),
             created: true,

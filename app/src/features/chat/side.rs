@@ -13,8 +13,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 
-use crate::agents::Event;
 use crate::agents::claude::{self, Session, locate, transcripts};
+use crate::agents::{Event, Fail};
 use crate::features::chat::{self, Chat};
 use crate::robots::label_of;
 use crate::runtime::util::patch;
@@ -327,45 +327,56 @@ fn on_event(
                 json!({ "text": d.text, "isError": d.is_error, "interrupted": d.interrupted }),
             );
         }
-        Event::Fail(f) => {
-            let turn_id = f.turn_id.clone();
-            let retry = turns(|t| match t.get_mut(&turn_id) {
-                Some((prompt, retried))
-                    if f.session_missing && session.session_id().is_some() && !*retried =>
-                {
-                    *retried = true;
-                    Some(prompt.clone())
-                }
-                _ => {
-                    t.remove(&turn_id);
-                    None
-                }
-            });
-            if let Some(prompt) = retry {
-                // the conversation it carries on is gone (its folder moved): quietly start fresh
-                session.forget_session();
-                edit_thread(app, id, tab_id, thread_id, |t| t["sessionId"] = Value::Null);
-                session.ask(prompt, turn_id);
-                return;
-            }
-            let cancelled = f.cancelled;
-            let entry = if cancelled {
-                json!({ "role": "assistant", "text": "", "interrupted": true })
-            } else {
-                json!({ "role": "assistant", "text": f.message, "isError": true })
-            };
-            push(app, id, tab_id, thread_id, entry);
-            tell(
-                app,
-                id,
-                tab_id,
-                thread_id,
-                "fail",
-                json!({ "message": f.message, "cancelled": cancelled }),
-            );
-        }
+        Event::Fail(f) => failed(app, id, tab_id, thread_id, session, &f),
         _ => {}
     }
+}
+
+/// The answer failed: tried once more on a fresh conversation if the old one is gone,
+/// else the thread says so.
+fn failed(
+    app: &AppHandle,
+    id: &str,
+    tab_id: &str,
+    thread_id: &str,
+    session: &Arc<Session>,
+    f: &Fail,
+) {
+    let turn_id = f.turn_id.clone();
+    let retry = turns(|t| match t.get_mut(&turn_id) {
+        Some((prompt, retried))
+            if f.session_missing && session.session_id().is_some() && !*retried =>
+        {
+            *retried = true;
+            Some(prompt.clone())
+        }
+        _ => {
+            t.remove(&turn_id);
+            None
+        }
+    });
+    if let Some(prompt) = retry {
+        // the conversation it carries on is gone (its folder moved): quietly start fresh
+        session.forget_session();
+        edit_thread(app, id, tab_id, thread_id, |t| t["sessionId"] = Value::Null);
+        session.ask(prompt, turn_id);
+        return;
+    }
+    let cancelled = f.cancelled;
+    let entry = if cancelled {
+        json!({ "role": "assistant", "text": "", "interrupted": true })
+    } else {
+        json!({ "role": "assistant", "text": f.message, "isError": true })
+    };
+    push(app, id, tab_id, thread_id, entry);
+    tell(
+        app,
+        id,
+        tab_id,
+        thread_id,
+        "fail",
+        json!({ "message": f.message, "cancelled": cancelled }),
+    );
 }
 
 /// Stop the thread's answer.

@@ -37,7 +37,9 @@ fn today() -> String {
 
 fn new_tab(fields: Map<String, Value>) -> Value {
     let mut tab = json!({ "id": uuid::Uuid::new_v4().to_string(), "title": "", "sessionId": null, "history": [], "createdAt": now_ms() });
-    tab.as_object_mut().unwrap().extend(fields);
+    tab.as_object_mut()
+        .expect("built as an object")
+        .extend(fields);
     tab
 }
 
@@ -68,8 +70,7 @@ pub fn title_for(tab: &Value) -> String {
 }
 
 /// Robots used to have a single conversation; it becomes their first tab.
-fn migrate(c: &mut Value) {
-    let o = c.as_object_mut().unwrap();
+fn migrate(o: &mut Map<String, Value>) {
     if !o
         .get("tabs")
         .and_then(Value::as_array)
@@ -94,7 +95,7 @@ fn migrate(c: &mut Value) {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let tabs = o["tabs"].as_array().unwrap();
+    let tabs = o["tabs"].as_array().expect("a robot has tabs by now");
     if !tabs.iter().any(|t| str_of(t, "id") == active) {
         let first = tabs[0]["id"].clone();
         o.insert("activeTab".into(), first);
@@ -195,19 +196,32 @@ impl Store {
         };
         let raw = store.load();
         if let Some(raw) = &raw {
-            let mut settings = store.data["settings"].as_object().unwrap().clone();
+            let mut settings = store.settings_map().clone();
             if let Some(s) = raw.get("settings").and_then(Value::as_object) {
                 settings.extend(s.clone());
             }
-            let mut data = raw.as_object().unwrap().clone();
+            let mut data = raw.as_object().expect("read_json checked it").clone();
             data.insert("settings".into(), Value::Object(settings));
             store.data = Value::Object(data);
         }
-        for c in store.characters_mut() {
+        // (a hand-edited file may hold something else in the list: it'd take the app down)
+        let before = store.list().len();
+        store.characters_mut().retain(Value::is_object);
+        if store.list().len() != before {
+            log::warn!(
+                "dropped {} robots that weren't objects",
+                before - store.list().len()
+            );
+        }
+        for c in store
+            .characters_mut()
+            .iter_mut()
+            .filter_map(Value::as_object_mut)
+        {
             migrate(c);
         }
         // robot sounds: 'essential' | 'all' | 'off' (it was a mute checkbox: muted is off, else essential)
-        let settings = store.data["settings"].as_object_mut().unwrap();
+        let settings = store.settings_map();
         if !matches!(
             settings.get("sounds").and_then(Value::as_str),
             Some("essential" | "all" | "off")
@@ -319,8 +333,8 @@ impl Store {
 
     pub fn flush(&mut self) {
         self.due = None;
-        let result = fs::create_dir_all(self.file.parent().unwrap())
-            .and_then(|_| write_safely(&self.file, &self.text()));
+        let dir = self.file.parent().expect("c-bot.json is in a folder");
+        let result = fs::create_dir_all(dir).and_then(|_| write_safely(&self.file, &self.text()));
         if let Err(err) = result {
             log::error!("save failed: {err}");
         }
@@ -333,8 +347,16 @@ impl Store {
         &self.data["settings"]
     }
 
+    // (open() makes settings an object and read_json checks characters is a list; nothing
+    // replaces either after)
+    fn settings_map(&mut self) -> &mut Map<String, Value> {
+        self.data["settings"]
+            .as_object_mut()
+            .expect("settings is an object")
+    }
+
     pub fn update_settings(&mut self, patch: Map<String, Value>) -> Value {
-        self.data["settings"].as_object_mut().unwrap().extend(patch);
+        self.settings_map().extend(patch);
         self.save();
         self.settings().clone()
     }
@@ -342,11 +364,15 @@ impl Store {
     // ---------------------------------------------------------------- robots
 
     pub fn list(&self) -> &Vec<Value> {
-        self.data["characters"].as_array().unwrap()
+        self.data["characters"]
+            .as_array()
+            .expect("characters is a list")
     }
 
     fn characters_mut(&mut self) -> &mut Vec<Value> {
-        self.data["characters"].as_array_mut().unwrap()
+        self.data["characters"]
+            .as_array_mut()
+            .expect("characters is a list")
     }
 
     pub fn get(&self, id: &str) -> Option<&Value> {
@@ -386,7 +412,9 @@ impl Store {
             "permissionMode": "default", "model": "", "tabs": [first.clone()], "activeTab": first["id"], "visible": true,
             "position": null, "stats": { "questions": 0, "pokes": 0, "costUsd": 0 }, "createdAt": now_ms(),
         });
-        c.as_object_mut().unwrap().extend(fields);
+        c.as_object_mut()
+            .expect("built as an object")
+            .extend(fields);
         self.characters_mut().push(c.clone());
         self.save();
         c
@@ -425,7 +453,9 @@ impl Store {
 
     pub fn remove_tab(&mut self, id: &str, tab_id: &str) {
         let Some(c) = self.get_mut(id) else { return };
-        let tabs = c.get_mut("tabs").and_then(Value::as_array_mut).unwrap();
+        let Some(tabs) = c.get_mut("tabs").and_then(Value::as_array_mut) else {
+            return;
+        };
         let Some(i) = tabs.iter().position(|t| str_of(t, "id") == tab_id) else {
             return;
         };
@@ -645,5 +675,18 @@ mod tests {
             "the old app's files are left as they were"
         );
         let _ = (fs::remove_dir_all(old), fs::remove_dir_all(new));
+    }
+
+    #[test]
+    fn something_else_in_the_robot_list_is_dropped() {
+        let dir = scratch("not-a-robot");
+        fs::write(
+            dir.join("c-bot.json"),
+            r#"{ "characters": [null, { "id": "bo", "name": "Bo" }, "x"], "settings": {} }"#,
+        )
+        .unwrap();
+        let store = Store::open(&dir, None);
+        assert_eq!(names(&store), ["Bo"]);
+        let _ = fs::remove_dir_all(dir);
     }
 }

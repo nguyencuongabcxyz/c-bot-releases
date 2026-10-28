@@ -21,7 +21,7 @@ pub struct KeepAwake {
     _reason: Vec<u16>, // (Windows keeps pointing at it)
 }
 
-// (the handle is only used from the thread that holds it, one call at a time)
+// SAFETY: the handle is only used from the thread that holds it, one call at a time.
 unsafe impl Send for KeepAwake {}
 
 impl KeepAwake {

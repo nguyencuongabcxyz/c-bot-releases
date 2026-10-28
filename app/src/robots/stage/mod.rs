@@ -614,6 +614,67 @@ mod tests {
     }
 
     #[test]
+    fn the_spotlight_takes_the_screen_and_the_others_a_strip() {
+        let screen = Rect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let (rows, groups) = arrange(&ids(3), 1920.0, 1000.0);
+        let st = Stage {
+            picked: vec![],
+            on: true,
+            screen,
+            scale: 1.0,
+            rows,
+            groups,
+            spot: Some("r1".into()),
+            off: HashSet::new(),
+            drag: None,
+            swap: None,
+            placed: HashMap::new(),
+            bar: None,
+            making: false,
+            sent: None,
+        };
+        let placed: Vec<(String, Rect, Value)> = st
+            .placements()
+            .into_iter()
+            .map(|p| (p.id, p.rect, p.info))
+            .collect();
+        let (a, sw) = (st.area(), st.px(STRIP_W).min(1920 / 3));
+        let halves = split_px(a.h, &[1.0, 1.0]);
+        let strip = |y, h| Rect {
+            x: 1920 - sw,
+            y,
+            w: sw,
+            h,
+        };
+        assert_eq!(
+            placed,
+            [
+                (
+                    "r1".to_string(),
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        w: 1920 - sw,
+                        h: a.h
+                    },
+                    json!({ "spot": true })
+                ),
+                ("r0".into(), strip(0, halves[0]), json!({ "strip": true })),
+                (
+                    "r2".into(),
+                    strip(halves[0], halves[1]),
+                    json!({ "strip": true })
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn splits_round_trip() {
         for s in [Split::Outer(2), Split::Inner(1, 3)] {
             assert!(Split::parse(&s.name()) == Some(s));

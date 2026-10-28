@@ -6,7 +6,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -204,38 +204,7 @@ pub fn result_of(line: &str) -> Option<Result<Value, String>> {
 /// Ask Claude Code's quick model one question and get its structured answer. content: the
 /// user message (a string, or content blocks such as an image).
 fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result<Value, String> {
-    let args = [
-        "-p",
-        "--model",
-        "haiku",
-        "--input-format",
-        "stream-json",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--json-schema",
-        &schema.to_string(),
-        "--system-prompt",
-        system,
-        "--tools",
-        "",
-        "--no-session-persistence",
-        "--strict-mcp-config",
-        "--disable-slash-commands",
-        "--setting-sources",
-        "",
-    ];
-    let mut child = Command::new(exe)
-        .args(args)
-        .current_dir(std::env::temp_dir())
-        .env_clear()
-        .envs(clean_env())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .no_window()
-        .spawn()
-        .map_err(|e| format!("Couldn't start Claude Code: {e}"))?;
+    let mut child = start_haiku(exe, schema, system)?;
     let killer = Killer::new(child.id());
     let mut stdin = child.stdin.take();
     let message = json!({ "type": "user", "message": { "role": "user", "content": content } });
@@ -285,6 +254,43 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
     };
     drop(stdin); // it's answered: let it go (it shuts down by itself)
     answer
+}
+
+/// `claude -p` on the quick model with nothing but the question: no tools, no settings, no
+/// session kept.
+fn start_haiku(exe: &Path, schema: &Value, system: &str) -> Result<Child, String> {
+    let args = [
+        "-p",
+        "--model",
+        "haiku",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--json-schema",
+        &schema.to_string(),
+        "--system-prompt",
+        system,
+        "--tools",
+        "",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--setting-sources",
+        "",
+    ];
+    Command::new(exe)
+        .args(args)
+        .current_dir(std::env::temp_dir())
+        .env_clear()
+        .envs(clean_env())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .no_window()
+        .spawn()
+        .map_err(|e| format!("Couldn't start Claude Code: {e}"))
 }
 
 fn claude_exe(claude_path: &str) -> Result<std::path::PathBuf, String> {

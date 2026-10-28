@@ -28,6 +28,7 @@ pub trait Locked<T> {
 }
 
 impl<T> Locked<T> for Mutex<T> {
+    #[expect(clippy::disallowed_methods, reason = "the one place that locks")]
     fn locked(&self) -> MutexGuard<'_, T> {
         self.lock().unwrap_or_else(PoisonError::into_inner)
     }

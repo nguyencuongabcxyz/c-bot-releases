@@ -67,8 +67,9 @@ fn read_slice(file: &Path, size: u64) -> String {
 }
 
 fn without_reminders(s: &str) -> String {
-    static RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?s)<system-reminder>.*?</system-reminder>").unwrap());
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?s)<system-reminder>.*?</system-reminder>").expect("a valid regex")
+    });
     RE.replace_all(s, "").into_owned()
 }
 
@@ -79,7 +80,7 @@ fn without_reminders(s: &str) -> String {
 /// show instead, Some("") to show nothing, or None when it's the user's own words.
 pub fn automatic_note(entry: &Value, raw: &str) -> Option<String> {
     static SUMMARY: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?s)<summary>(.*?)</summary>").unwrap());
+        LazyLock::new(|| Regex::new(r"(?s)<summary>(.*?)</summary>").expect("a valid regex"));
     let kind = entry["origin"]["kind"].as_str().unwrap_or("");
     let text = without_reminders(raw); // look past hidden reminders
     let lead = text.trim_start();
@@ -118,10 +119,10 @@ fn clean_user_text(text: &str) -> String {
         Regex::new(
             r"(?s)<command-name>\s*([^<]+)</command-name>(?:<command-args>(.*?)</command-args>)?",
         )
-        .unwrap()
+        .expect("a valid regex")
     });
     static PASTED: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?s)<pasted_content[^>]*>.*?</pasted_content[^>]*>").unwrap()
+        Regex::new(r"(?s)<pasted_content[^>]*>.*?</pasted_content[^>]*>").expect("a valid regex")
     });
     if text.is_empty() || text.trim_start().starts_with("<task-notification>") {
         return String::new();
@@ -299,7 +300,7 @@ impl Reader {
     /// A tool's result: what you said to a plan, or your answers to its questions (others aren't shown).
     fn tool_result(&mut self, b: &Value) {
         static ANSWER: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r#""([^"]+)"="([^"]*)""#).unwrap());
+            LazyLock::new(|| Regex::new(r#""([^"]+)"="([^"]*)""#).expect("a valid regex"));
         let result = match &b["content"] {
             Value::String(t) => t.clone(),
             Value::Array(a) => a.iter().map(|x| x["text"].as_str().unwrap_or("")).collect(),
@@ -369,7 +370,7 @@ impl Reader {
         };
         self.messages[idx]["tools"]
             .as_array_mut()
-            .unwrap()
+            .expect("an answer starts with its tools")
             .push(json!(label));
         let id = b["id"].as_str().unwrap_or("").to_string();
         if name == "AskUserQuestion" && b["input"]["questions"].is_array() {
@@ -407,11 +408,14 @@ impl Reader {
 /// own lines, kept apart from the answer.
 fn add_text(m: &mut Value, raw: &str) {
     static ASIDE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(^|\n)[ \t]*<aside>((?s:.*?))</aside>[ \t]*(?:\n|$)").unwrap()
+        Regex::new(r"(^|\n)[ \t]*<aside>((?s:.*?))</aside>[ \t]*(?:\n|$)").expect("a valid regex")
     });
     for c in ASIDE.captures_iter(raw) {
         let a = c[2].split_whitespace().collect::<Vec<_>>().join(" ");
-        m["asides"].as_array_mut().unwrap().push(json!(a));
+        m["asides"]
+            .as_array_mut()
+            .expect("an answer starts with its asides")
+            .push(json!(a));
     }
     let text = ASIDE.replace_all(raw, "$1").trim().to_string();
     if !text.is_empty() {

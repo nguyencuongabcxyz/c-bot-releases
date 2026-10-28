@@ -84,33 +84,7 @@ pub(super) fn find_meaning(app: &AppHandle, id: String, robot: Option<String>, q
         };
         match lookup::lookup(&txt, &context, &claude_path, on_core) {
             Ok(found) => {
-                let outcome = words(&app, |w| {
-                    if w.vocab.get(&id).is_none() {
-                        return Found::Gone;
-                    }
-                    let twin = w
-                        .vocab
-                        .find(found["word"].as_str().unwrap_or(""))
-                        .filter(|t| t["id"] != id.as_str() && t["status"] == "ready")
-                        .cloned();
-                    if let Some(twin) = twin {
-                        w.vocab.remove(&id);
-                        return Found::Twin(twin);
-                    }
-                    let mut fields = found.as_object().cloned().unwrap_or_default();
-                    fields.insert("status".into(), json!("ready"));
-                    let extras_failed = !fields.contains_key("synonyms");
-                    w.vocab.update(&id, fields);
-                    // (dropped, as the Electron app's undefined: an old usage box, and old
-                    // synonyms when this time's extras failed)
-                    let gone: &[&str] = if extras_failed {
-                        &["usage", "synonyms"]
-                    } else {
-                        &["usage"]
-                    };
-                    w.vocab.unset(&id, gone).map_or(Found::Gone, Found::Ready)
-                });
-                match outcome {
+                match words(&app, |w| file_found(w, &id, &found)) {
                     None | Some(Found::Gone) => return,
                     Some(Found::Twin(twin)) => {
                         if !quiet {
@@ -146,6 +120,35 @@ pub(super) fn find_meaning(app: &AppHandle, id: String, robot: Option<String>, q
         }
         count_changed(&app);
     });
+}
+
+/// What the lookup found, into the word: or the word dropped for the one you already have
+/// ("ran" is "run"), or nothing if it was undone while it looked.
+fn file_found(w: &mut Words, id: &str, found: &Value) -> Found {
+    if w.vocab.get(id).is_none() {
+        return Found::Gone;
+    }
+    let twin = w
+        .vocab
+        .find(found["word"].as_str().unwrap_or(""))
+        .filter(|t| t["id"] != id && t["status"] == "ready")
+        .cloned();
+    if let Some(twin) = twin {
+        w.vocab.remove(id);
+        return Found::Twin(twin);
+    }
+    let mut fields = found.as_object().cloned().unwrap_or_default();
+    fields.insert("status".into(), json!("ready"));
+    let extras_failed = !fields.contains_key("synonyms");
+    w.vocab.update(id, fields);
+    // (dropped, as the Electron app's undefined: an old usage box, and old
+    // synonyms when this time's extras failed)
+    let gone: &[&str] = if extras_failed {
+        &["usage", "synonyms"]
+    } else {
+        &["usage"]
+    };
+    w.vocab.unset(id, gone).map_or(Found::Gone, Found::Ready)
 }
 
 /// Drag a box round a word on screen, for this robot. False if the box couldn't start.
@@ -277,65 +280,11 @@ pub(super) fn on_card(app: &AppHandle, action: &str, payload: &Value) -> Value {
             }
             json!(true)
         }
-        "know" => {
-            let w = words(app, |w| w.vocab.know_it(&id, t)).flatten();
-            if let Some(w) = &w {
-                tell(
-                    app,
-                    robot.as_deref(),
-                    json!({ "phase": "knowit", "word": w }),
-                );
-            }
-            count_changed(app);
-            card::close_after(app, 900);
-            w.map_or(Value::Null, |w| json!({ "review": w["review"] }))
-        }
+        "know" => know_from_card(app, &id, robot.as_deref(), t),
         // the quiz card: ✓ Knew it / ✗ Forgot / ⏰ Later, or left unanswered
-        "quiz" => {
-            if words(app, |w| {
-                w.quizzing.as_ref().is_some_and(|q| q.word_id == id)
-            }) != Some(true)
-            {
-                return Value::Null;
-            }
-            let how = payload
-                .as_str()
-                .filter(|h| ["knew", "forgot", "later", "ignored"].contains(h))
-                .unwrap_or("ignored");
-            let done = end_quiz(app, how);
-            match how {
-                "ignored" => card::close_after(app, 0),
-                "later" => card::close_after(app, 900),
-                _ => {}
-            }
-            done.map_or(Value::Null, |w| json!({ "review": w["review"] }))
-        }
+        "quiz" => answer_quiz(app, &id, payload),
         // ＋ by a synonym, an antonym or a family word: saved as a word of its own
-        "add" => {
-            let new: String = trim_edges(&text(payload)).trim().chars().take(60).collect();
-            let with = shown.word["word"]
-                .as_str()
-                .filter(|w| !w.is_empty())
-                .or(shown.word["text"].as_str())
-                .unwrap_or("")
-                .to_string();
-            let added = words(app, |w| {
-                if new.is_empty() || w.vocab.find(&new).is_some() {
-                    return None;
-                }
-                Some(w.vocab.add(&new, "", &format!("with “{with}”"), t))
-            });
-            let Some(Some(added)) = added else {
-                return json!(false);
-            };
-            find_meaning(
-                app,
-                added["id"].as_str().unwrap_or("").to_string(),
-                robot,
-                true,
-            );
-            json!(true)
-        }
+        "add" => add_from_card(app, &shown.word, payload, robot, t),
         "undo" => {
             words(app, |w| w.vocab.remove(&id));
             tell(
@@ -369,4 +318,66 @@ pub(super) fn on_card(app: &AppHandle, action: &str, payload: &Value) -> Value {
         }
         _ => Value::Null,
     }
+}
+
+fn know_from_card(app: &AppHandle, id: &str, robot: Option<&str>, t: i64) -> Value {
+    let w = words(app, |w| w.vocab.know_it(id, t)).flatten();
+    if let Some(w) = &w {
+        tell(app, robot, json!({ "phase": "knowit", "word": w }));
+    }
+    count_changed(app);
+    card::close_after(app, 900);
+    w.map_or(Value::Null, |w| json!({ "review": w["review"] }))
+}
+
+fn answer_quiz(app: &AppHandle, id: &str, payload: &Value) -> Value {
+    if words(app, |w| {
+        w.quizzing.as_ref().is_some_and(|q| q.word_id == id)
+    }) != Some(true)
+    {
+        return Value::Null;
+    }
+    let how = payload
+        .as_str()
+        .filter(|h| ["knew", "forgot", "later", "ignored"].contains(h))
+        .unwrap_or("ignored");
+    let done = end_quiz(app, how);
+    match how {
+        "ignored" => card::close_after(app, 0),
+        "later" => card::close_after(app, 900),
+        _ => {}
+    }
+    done.map_or(Value::Null, |w| json!({ "review": w["review"] }))
+}
+
+fn add_from_card(
+    app: &AppHandle,
+    shown: &Value,
+    payload: &Value,
+    robot: Option<String>,
+    t: i64,
+) -> Value {
+    let new: String = trim_edges(&text(payload)).trim().chars().take(60).collect();
+    let with = shown["word"]
+        .as_str()
+        .filter(|w| !w.is_empty())
+        .or(shown["text"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let added = words(app, |w| {
+        if new.is_empty() || w.vocab.find(&new).is_some() {
+            return None;
+        }
+        Some(w.vocab.add(&new, "", &format!("with “{with}”"), t))
+    });
+    let Some(Some(added)) = added else {
+        return json!(false);
+    };
+    find_meaning(
+        app,
+        added["id"].as_str().unwrap_or("").to_string(),
+        robot,
+        true,
+    );
+    json!(true)
 }

@@ -309,42 +309,12 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         st.terminals.insert(id.to_string(), tab_id.to_string())
     });
     open_state(app, |o| o.running.insert(id.to_string(), running.clone()));
-    // the robot acts out what Claude does there
-    let mut mirror = Mirror::new(
+    let mirror = Mirror::new(
         transcripts::project_dir(&folder),
         Some(session_id).filter(|s| !s.is_empty()),
         since,
     );
-    let (app2, id2, tab2) = (app.clone(), id.to_string(), tab_id.to_string());
-    thread::spawn(move || {
-        while running.load(Ordering::Relaxed) {
-            thread::sleep(POLL);
-            for seen in mirror.poll() {
-                let say = |kind: &str, extra: Value| {
-                    let mut p = json!({ "type": "mirror", "kind": kind });
-                    for (k, v) in extra.as_object().into_iter().flatten() {
-                        p[k] = v.clone();
-                    }
-                    tell(&app2, &id2, &tab2, p);
-                };
-                match seen {
-                    Seen::Session(sid) => with(&app2, |st| {
-                        st.store
-                            .update_tab(&id2, &tab2, patch(vec![("sessionId", json!(sid))]));
-                        st.store.remember_session(&id2, &sid);
-                    }),
-                    Seen::Prompt => say("prompt", json!({})),
-                    Seen::Tool { name, input } => say(
-                        "tool",
-                        json!({ "name": name, "detail": claude::describe_tool(&name, &input) }),
-                    ),
-                    Seen::Question => say("question", json!({})),
-                    Seen::Text => say("text", json!({})),
-                    Seen::Idle => say("idle", json!({})),
-                }
-            }
-        }
-    });
+    act_out(app, id, tab_id, mirror, running);
     // the launcher lives as long as the terminal window: its end is the terminal closing
     let (app3, id3) = (app.clone(), id.to_string());
     thread::spawn(move || {
@@ -359,6 +329,40 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
     );
     workshop::notify(app);
     json!({ "ok": true })
+}
+
+/// The robot acts out what Claude does in the terminal, while it's open.
+fn act_out(app: &AppHandle, id: &str, tab_id: &str, mut mirror: Mirror, running: Arc<AtomicBool>) {
+    let (app, id, tab) = (app.clone(), id.to_string(), tab_id.to_string());
+    thread::spawn(move || {
+        while running.load(Ordering::Relaxed) {
+            thread::sleep(POLL);
+            for seen in mirror.poll() {
+                let say = |kind: &str, extra: Value| {
+                    let mut p = json!({ "type": "mirror", "kind": kind });
+                    for (k, v) in extra.as_object().into_iter().flatten() {
+                        p[k] = v.clone();
+                    }
+                    tell(&app, &id, &tab, p);
+                };
+                match seen {
+                    Seen::Session(sid) => with(&app, |st| {
+                        st.store
+                            .update_tab(&id, &tab, patch(vec![("sessionId", json!(sid))]));
+                        st.store.remember_session(&id, &sid);
+                    }),
+                    Seen::Prompt => say("prompt", json!({})),
+                    Seen::Tool { name, input } => say(
+                        "tool",
+                        json!({ "name": name, "detail": claude::describe_tool(&name, &input) }),
+                    ),
+                    Seen::Question => say("question", json!({})),
+                    Seen::Text => say("text", json!({})),
+                    Seen::Idle => say("idle", json!({})),
+                }
+            }
+        }
+    });
 }
 
 /// The terminal closed: pick the conversation back up so the tab shows what happened there.

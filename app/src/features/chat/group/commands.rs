@@ -73,21 +73,7 @@ pub(super) fn act_on(app: &AppHandle, action: &str, p: &Value) -> Value {
             json!(t.is_some_and(|t| clipboard::set_text(&t)))
         }
         "copy-all" => {
-            let t = act(app, |g, _| {
-                let c = g.chat.as_ref()?;
-                let mut lines = vec![format!("Group chat: {}", c.topic), String::new()];
-                for m in c.log.iter().filter(|m| {
-                    !m["text"].as_str().unwrap_or("").is_empty() && m["who"] != "system"
-                }) {
-                    let who = if m["who"] == "summary" {
-                        format!("Summary ({})", text(&m["name"]))
-                    } else {
-                        text(&m["name"])
-                    };
-                    lines.push(format!("{who}: {}", text(&m["text"])));
-                }
-                Some(lines.join("\n\n"))
-            });
+            let t = act(app, |g, _| g.chat.as_ref().map(transcript));
             json!(t.is_some_and(|t| clipboard::set_text(&t)))
         }
         "save-note" => {
@@ -118,6 +104,24 @@ pub(super) fn act_on(app: &AppHandle, action: &str, p: &Value) -> Value {
         }
         _ => Value::Null,
     }
+}
+
+/// The whole chat as text: who said what, the summary too.
+fn transcript(c: &Chat) -> String {
+    let mut lines = vec![format!("Group chat: {}", c.topic), String::new()];
+    for m in c
+        .log
+        .iter()
+        .filter(|m| !m["text"].as_str().unwrap_or("").is_empty() && m["who"] != "system")
+    {
+        let who = if m["who"] == "summary" {
+            format!("Summary ({})", text(&m["name"]))
+        } else {
+            text(&m["name"])
+        };
+        lines.push(format!("{who}: {}", text(&m["text"])));
+    }
+    lines.join("\n\n")
 }
 
 pub fn setup(app: &AppHandle) {

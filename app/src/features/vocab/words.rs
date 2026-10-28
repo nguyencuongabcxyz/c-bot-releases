@@ -52,7 +52,8 @@ fn local_date(ms: i64) -> NaiveDate {
 /// How a word or phrase is compared: lower case, letters, digits, apostrophes, spaces and
 /// hyphens only, single-spaced.
 pub fn norm(w: &str) -> String {
-    static ODD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^\p{L}\p{N}' -]").unwrap());
+    static ODD: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"[^\p{L}\p{N}' -]").expect("a valid regex"));
     let odd = &*ODD;
     let kept = odd.replace_all(&w.to_lowercase(), "").into_owned();
     kept.split_whitespace().collect::<Vec<_>>().join(" ")

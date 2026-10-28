@@ -1,0 +1,6 @@
+too-many-lines-threshold = 100
+allow-unwrap-in-tests = true
+allow-print-in-tests = true
+disallowed-methods = [
+  { path = "std::sync::Mutex::lock", reason = "lock with .locked() (runtime::Locked)" },
+]

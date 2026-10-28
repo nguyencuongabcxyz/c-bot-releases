@@ -153,6 +153,7 @@ pub(super) fn exchange(sock: &mut TcpStream, request: &Value) -> Value {
 
 /// `c-bot.exe --robots-mcp <robot id> <port> [<chat tab id>]`: serve the tools on stdin/stdout until
 /// Claude Code closes stdin. Returns the exit code, or None when it's an ordinary launch.
+#[expect(clippy::print_stderr, reason = "a CLI's usage line")]
 pub fn run_if_asked() -> Option<i32> {
     let args: Vec<String> = std::env::args().collect();
     let at = args.iter().position(|a| a == FLAG)?;

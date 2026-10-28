@@ -98,9 +98,9 @@ pub fn slice16(s: &str, n: usize) -> &str {
 pub fn looks_vietnamese(text: &str) -> bool {
     static RE: LazyLock<(Regex, Regex)> = LazyLock::new(|| {
         (
-            Regex::new(r"\p{L}").unwrap(),
+            Regex::new(r"\p{L}").expect("a valid regex"),
             Regex::new("(?i)[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹáàãéèíìóòõúùýđ]")
-                .unwrap(),
+                .expect("a valid regex"),
         )
     });
     let (letters, vi) = &*RE;
@@ -182,10 +182,10 @@ fn unquote(s: &str) -> String {
 pub fn split_refine(reply: &str) -> (String, Vec<Value>) {
     static RE: LazyLock<(Regex, Regex, Regex, Regex)> = LazyLock::new(|| {
         (
-            Regex::new(r"^\s*[-*•\d.)]+\s*").unwrap(),
-            Regex::new(r"(?i)^none\.?$").unwrap(),
-            Regex::new(r"\s+\|\s+").unwrap(),
-            Regex::new(r"\s*(?:→|->)\s*").unwrap(),
+            Regex::new(r"^\s*[-*•\d.)]+\s*").expect("a valid regex"),
+            Regex::new(r"(?i)^none\.?$").expect("a valid regex"),
+            Regex::new(r"\s+\|\s+").expect("a valid regex"),
+            Regex::new(r"\s*(?:→|->)\s*").expect("a valid regex"),
         )
     });
     let (bullet, none, bar, arrow) = &*RE;

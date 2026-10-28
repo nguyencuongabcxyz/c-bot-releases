@@ -30,6 +30,8 @@ fn rect(r: RECT) -> Rect {
 }
 
 fn monitor(flags: u32, x: i32, y: i32) -> Monitor {
+    // SAFETY: MonitorFromPoint always gives a monitor (the flags pick one); info and the dpi
+    // are ours to fill, info's size set first.
     unsafe {
         let hmon = MonitorFromPoint(POINT { x, y }, flags);
         let mut info: MONITORINFO = std::mem::zeroed();
@@ -69,22 +71,31 @@ pub fn all_screens() -> Rect {
 
 pub fn cursor() -> (i32, i32) {
     let mut p = POINT { x: 0, y: 0 };
+    // SAFETY: only writes the position into p.
     unsafe { GetCursorPos(&mut p) };
     (p.x, p.y)
 }
 
 pub fn window_rect(hwnd: isize) -> Rect {
-    let mut r: RECT = unsafe { std::mem::zeroed() };
+    let mut r = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: only writes the window's rect into r (a stale handle just fails).
     unsafe { GetWindowRect(hwnd as HWND, &mut r) };
     rect(r)
 }
 
 pub fn is_visible(hwnd: isize) -> bool {
+    // SAFETY: a plain call on a window handle.
     unsafe { IsWindowVisible(hwnd as HWND) != 0 }
 }
 
 /// The window's scale (its screen's, once Windows has moved it there).
 pub fn scale_of(hwnd: isize) -> f64 {
+    // SAFETY: a plain call on a window handle (a stale one gives 0).
     match unsafe { GetDpiForWindow(hwnd as HWND) } {
         0 => 1.0,
         dpi => dpi as f64 / 96.0,
@@ -94,6 +105,7 @@ pub fn scale_of(hwnd: isize) -> f64 {
 /// Place and size it in one go (two calls would show a frame in between), without
 /// bringing it forward.
 pub fn set_bounds(hwnd: isize, r: Rect) {
+    // SAFETY: a plain call on a window handle.
     unsafe {
         SetWindowPos(
             hwnd as HWND,
@@ -108,6 +120,7 @@ pub fn set_bounds(hwnd: isize, r: Rect) {
 }
 
 pub fn set_position(hwnd: isize, x: i32, y: i32) {
+    // SAFETY: a plain call on a window handle.
     unsafe {
         SetWindowPos(
             hwnd as HWND,
@@ -186,7 +199,12 @@ pub fn set_veiled(hwnd: isize, veiled: bool) {
 
 /// Is it veiled (any window region at all)?
 pub fn is_veiled(hwnd: isize) -> bool {
-    let mut r: RECT = unsafe { std::mem::zeroed() };
+    let mut r = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
     // SAFETY: only reads the window's region box into r.
     unsafe { GetWindowRgnBox(hwnd as HWND, &mut r) != RGN_ERROR }
 }

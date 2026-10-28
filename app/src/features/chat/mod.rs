@@ -210,7 +210,7 @@ impl Book {
                     continue;
                 }
                 size = size.saturating_sub(size_of(&c[k]));
-                c.as_object_mut().unwrap().remove(k);
+                c.as_object_mut().expect("it has the key").remove(k);
                 c["trimmed"] = json!(true);
             }
         }

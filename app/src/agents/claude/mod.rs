@@ -45,7 +45,7 @@ fn host_session_var() -> &'static Regex {
             "|TERMINAL_MCP_TOOLS|REPORT_FINDINGS|EAGER_FLUSH|DISABLE_TERMINAL_TITLE|DISABLE_CRON|STARTUP_FAILURE_RESULTS|SIMPLE",
             "|OAUTH_SCOPES|ACCOUNT_UUID|ORGANIZATION_UUID|USER_EMAIL|MESSAGING_\\w*|EMIT_\\w*|SDK_\\w*|ENABLE_SDK_\\w*|ENABLE_ASK_USER_QUESTION_TOOL))$",
         ))
-        .unwrap()
+        .expect("a valid regex")
     });
     &RE
 }

@@ -129,7 +129,7 @@ pub(super) fn day_summary(list: &[Value], open: &[Value], start: i64) -> Option<
     let line = |n: &&Value| {
         // (on one line: each run of line breaks a space)
         static BREAKS: std::sync::LazyLock<regex::Regex> =
-            std::sync::LazyLock::new(|| regex::Regex::new(r"\n+").unwrap());
+            std::sync::LazyLock::new(|| regex::Regex::new(r"\n+").expect("a valid regex"));
         let breaks = &*BREAKS;
         let flat = breaks.replace_all(&text(&n["text"]), " ").into_owned();
         format!(
@@ -224,26 +224,7 @@ pub(super) fn act(app: &AppHandle, action: &str, p: &Value) -> Value {
     let ctx = notebook::ctx(app);
     let id = text(&p["id"]);
     match action {
-        "add" => {
-            let source = text(&p["source"]);
-            let Some(Some(note)) = notes(app, |n| {
-                n.add(
-                    &text(&p["text"]),
-                    p["important"].as_bool().unwrap_or(false),
-                    &source,
-                    now(),
-                )
-            }) else {
-                return Value::Null;
-            };
-            after_change(app);
-            tell(
-                app,
-                ctx.robot_id.as_deref(),
-                json!({ "phase": "added", "note": note }),
-            );
-            note
-        }
+        "add" => add_from_notebook(app, &ctx, p),
         "edit" => {
             let note = notes(app, |n| {
                 n.update(
@@ -255,26 +236,7 @@ pub(super) fn act(app: &AppHandle, action: &str, p: &Value) -> Value {
             after_change(app);
             note.unwrap_or(Value::Null)
         }
-        "done" => {
-            let done = p["done"].as_bool().unwrap_or(false);
-            let Some((Some(note), changed, left)) = notes(app, |n| {
-                let (note, changed) = n.set_done(&id, done, now());
-                (note, changed, n.open().len())
-            }) else {
-                return Value::Null;
-            };
-            if changed {
-                after_change(app);
-            }
-            if done {
-                tell(
-                    app,
-                    ctx.robot_id.as_deref(),
-                    json!({ "phase": "done", "note": note, "left": left }),
-                );
-            }
-            note
-        }
+        "done" => mark_done(app, &ctx, &id, p["done"].as_bool().unwrap_or(false)),
         "delete" => {
             let gone = notes(app, |n| n.remove(&id)).flatten();
             notebook::set_undo(app, gone.clone());
@@ -305,34 +267,7 @@ pub(super) fn act(app: &AppHandle, action: &str, p: &Value) -> Value {
             }
             json!(note.is_some())
         }
-        "copy-all" => {
-            let (open, done) = notes(app, |n| {
-                (
-                    n.open(),
-                    n.list()
-                        .into_iter()
-                        .filter(|x| x["doneAt"].as_i64().is_some_and(|d| d != 0))
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .unwrap_or_default();
-            let line = |n: &Value| {
-                let done = n["doneAt"].as_i64().is_some_and(|d| d != 0);
-                let important = if n["important"].as_bool().unwrap_or(false) {
-                    "(!) "
-                } else {
-                    ""
-                };
-                format!(
-                    "{} {important}{}",
-                    if done { "[x]" } else { "[ ]" },
-                    text(&n["text"]).replace('\n', " ")
-                )
-            };
-            let all: Vec<String> = open.iter().chain(done.iter()).map(line).collect();
-            clipboard::set_text(&all.join("\n"));
-            json!(all.len())
-        }
+        "copy-all" => copy_all(app),
         "close" => {
             notebook::close(app);
             Value::Null
@@ -340,4 +275,75 @@ pub(super) fn act(app: &AppHandle, action: &str, p: &Value) -> Value {
         // the rest is up to the robot, Claude and the reminder clock
         _ => on_action(app, action, &ctx, p),
     }
+}
+
+fn add_from_notebook(app: &AppHandle, ctx: &Ctx, p: &Value) -> Value {
+    let source = text(&p["source"]);
+    let Some(Some(note)) = notes(app, |n| {
+        n.add(
+            &text(&p["text"]),
+            p["important"].as_bool().unwrap_or(false),
+            &source,
+            now(),
+        )
+    }) else {
+        return Value::Null;
+    };
+    after_change(app);
+    tell(
+        app,
+        ctx.robot_id.as_deref(),
+        json!({ "phase": "added", "note": note }),
+    );
+    note
+}
+
+fn mark_done(app: &AppHandle, ctx: &Ctx, id: &str, done: bool) -> Value {
+    let Some((Some(note), changed, left)) = notes(app, |n| {
+        let (note, changed) = n.set_done(id, done, now());
+        (note, changed, n.open().len())
+    }) else {
+        return Value::Null;
+    };
+    if changed {
+        after_change(app);
+    }
+    if done {
+        tell(
+            app,
+            ctx.robot_id.as_deref(),
+            json!({ "phase": "done", "note": note, "left": left }),
+        );
+    }
+    note
+}
+
+/// Every note onto the clipboard as a checklist, the open ones first.
+fn copy_all(app: &AppHandle) -> Value {
+    let (open, done) = notes(app, |n| {
+        (
+            n.open(),
+            n.list()
+                .into_iter()
+                .filter(|x| x["doneAt"].as_i64().is_some_and(|d| d != 0))
+                .collect::<Vec<_>>(),
+        )
+    })
+    .unwrap_or_default();
+    let line = |n: &Value| {
+        let done = n["doneAt"].as_i64().is_some_and(|d| d != 0);
+        let important = if n["important"].as_bool().unwrap_or(false) {
+            "(!) "
+        } else {
+            ""
+        };
+        format!(
+            "{} {important}{}",
+            if done { "[x]" } else { "[ ]" },
+            text(&n["text"]).replace('\n', " ")
+        )
+    };
+    let all: Vec<String> = open.iter().chain(done.iter()).map(line).collect();
+    clipboard::set_text(&all.join("\n"));
+    json!(all.len())
 }

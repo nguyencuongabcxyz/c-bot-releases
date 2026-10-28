@@ -164,40 +164,14 @@ impl Stage {
     pub(super) fn placements(&self) -> Vec<Placed> {
         let a = self.area();
         let cast = self.cast();
-        let mut out = vec![];
         if let Some(spot) = self
             .spot
             .as_ref()
             .filter(|s| cast.len() > 1 && cast.contains(s))
         {
-            let sw = self.px(STRIP_W).min(a.w / 3);
-            out.push(Placed {
-                id: spot.clone(),
-                rect: Rect {
-                    x: a.x,
-                    y: a.y,
-                    w: a.w - sw,
-                    h: a.h,
-                },
-                info: json!({ "spot": true }),
-            });
-            let others: Vec<&String> = cast.iter().filter(|c| *c != spot).collect();
-            let mut y = a.y;
-            for (id, h) in others.iter().zip(split_px(a.h, &vec![1.0; others.len()])) {
-                out.push(Placed {
-                    id: (*id).clone(),
-                    rect: Rect {
-                        x: a.right() - sw,
-                        y,
-                        w: sw,
-                        h,
-                    },
-                    info: json!({ "strip": true }),
-                });
-                y += h;
-            }
-            return out;
+            return self.spotlit(a, &cast, spot);
         }
+        let mut out = vec![];
         let (outer, inner) = if self.rows { (a.h, a.w) } else { (a.w, a.h) };
         let ng = self.groups.len();
         let mut o = 0;
@@ -249,6 +223,37 @@ impl Stage {
                 i += tsz;
             }
             o += gsz;
+        }
+        out
+    }
+
+    /// One robot in the spotlight, the others in a strip down its right.
+    fn spotlit(&self, a: Rect, cast: &[String], spot: &String) -> Vec<Placed> {
+        let sw = self.px(STRIP_W).min(a.w / 3);
+        let mut out = vec![Placed {
+            id: spot.clone(),
+            rect: Rect {
+                x: a.x,
+                y: a.y,
+                w: a.w - sw,
+                h: a.h,
+            },
+            info: json!({ "spot": true }),
+        }];
+        let others: Vec<&String> = cast.iter().filter(|c| *c != spot).collect();
+        let mut y = a.y;
+        for (id, h) in others.iter().zip(split_px(a.h, &vec![1.0; others.len()])) {
+            out.push(Placed {
+                id: (*id).clone(),
+                rect: Rect {
+                    x: a.right() - sw,
+                    y,
+                    w: sw,
+                    h,
+                },
+                info: json!({ "strip": true }),
+            });
+            y += h;
         }
         out
     }

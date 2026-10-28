@@ -70,12 +70,12 @@ impl Session {
     /// The answer's end: the turn's done (its words, cost, what was denied), and the next
     /// question goes.
     fn turn_done(&self, mut i: MutexGuard<'_, Inner>, f: Finished, sid: &str) {
-        let Some(turn) = i.turn.take() else { return };
+        if i.turn.is_none() {
+            return;
+        }
         let rest = i.asides.flush();
-        // (put the turn back for a moment: the last of its text still counts)
-        i.turn = Some(turn);
-        i.emit_text(&rest);
-        let turn = i.turn.take().unwrap();
+        i.emit_text(&rest); // (while the turn is still on: the last of its text counts)
+        let Some(turn) = i.turn.take() else { return };
         let total = f.total_cost_usd.unwrap_or(0.0);
         let cost = (total - i.cost_so_far).max(0.0);
         i.cost_so_far = total;
@@ -312,34 +312,7 @@ impl Inner {
                 tools,
                 slash_commands,
                 claude_code_version,
-            } => {
-                // the slash commands Claude Code offers in this folder (skills, custom commands)
-                if let Some(cmds) = slash_commands.as_array() {
-                    self.emit(Event::Commands(
-                        cmds.iter()
-                            .filter_map(Value::as_str)
-                            .map(|n| SlashCommand {
-                                name: n.to_string(),
-                                description: String::new(),
-                            })
-                            .collect(),
-                    ));
-                }
-                if tools.is_array() {
-                    let chosen = self.opts.tools.is_some();
-                    self.emit(Event::Tools(Tools {
-                        version: claude_code_version.as_str().unwrap_or("").to_string(),
-                        tools: tools
-                            .as_array()
-                            .into_iter()
-                            .flatten()
-                            .filter_map(Value::as_str)
-                            .map(str::to_string)
-                            .collect(),
-                        chosen,
-                    }));
-                }
-            }
+            } => self.system_init(&tools, &slash_commands, &claude_code_version),
             System::Status {
                 permission_mode,
                 status,
@@ -393,6 +366,36 @@ impl Inner {
                 }
             }
             System::Other => {}
+        }
+    }
+
+    /// Its start: the slash commands it offers in this folder (skills, custom commands) and
+    /// its tools.
+    fn system_init(&mut self, tools: &Value, slash_commands: &Value, version: &Value) {
+        if let Some(cmds) = slash_commands.as_array() {
+            self.emit(Event::Commands(
+                cmds.iter()
+                    .filter_map(Value::as_str)
+                    .map(|n| SlashCommand {
+                        name: n.to_string(),
+                        description: String::new(),
+                    })
+                    .collect(),
+            ));
+        }
+        if tools.is_array() {
+            let chosen = self.opts.tools.is_some();
+            self.emit(Event::Tools(Tools {
+                version: version.as_str().unwrap_or("").to_string(),
+                tools: tools
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect(),
+                chosen,
+            }));
         }
     }
 }

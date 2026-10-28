@@ -229,7 +229,7 @@ fn start(
     if let Some(pid) = child.process_id() {
         job.take(pid);
     }
-    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let killer = child.clone_killer();
 
@@ -249,29 +249,7 @@ fn start(
         s.seq
     });
     let label = label_of(id);
-
-    // what it prints, as it prints it (until its console is closed)
-    let (app2, label2) = (app.clone(), label.clone());
-    thread::spawn(move || {
-        let mut buf = vec![0u8; READ_BUF];
-        let mut pending = Vec::new();
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    pending.extend_from_slice(&buf[..n]);
-                    let data = take_text(&mut pending);
-                    if !data.is_empty() {
-                        let _ = app2.emit_to(
-                            &label2,
-                            "robot:shell",
-                            json!({ "sid": sid, "kind": "data", "data": data }),
-                        );
-                    }
-                }
-            }
-        }
-    });
+    relay(app, label.clone(), sid, reader);
     // it ending by itself (exit): the page hears, and its console goes
     let app2 = app.clone();
     thread::spawn(move || {
@@ -285,6 +263,31 @@ fn start(
         drop(gone); // (outside the lock: closing the console can take a moment)
     });
     Ok((sid, name))
+}
+
+/// What it prints, to its page as it prints it (until its console is closed).
+fn relay(app: &AppHandle, label: String, sid: u64, mut reader: Box<dyn Read + Send>) {
+    let app = app.clone();
+    thread::spawn(move || {
+        let mut buf = vec![0u8; READ_BUF];
+        let mut pending = Vec::new();
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    pending.extend_from_slice(&buf[..n]);
+                    let data = take_text(&mut pending);
+                    if !data.is_empty() {
+                        let _ = app.emit_to(
+                            &label,
+                            "robot:shell",
+                            json!({ "sid": sid, "kind": "data", "data": data }),
+                        );
+                    }
+                }
+            }
+        }
+    });
 }
 
 /// These end, and all they started (their consoles and jobs close as they go).

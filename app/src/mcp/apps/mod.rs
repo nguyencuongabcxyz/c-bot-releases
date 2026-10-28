@@ -65,7 +65,8 @@ fn safe_name(name: &str) -> String {
 
 /// "mcp__claude_ai_Excalidraw__create_view" -> ("claude_ai_Excalidraw", "create_view")
 pub fn parse_tool_name(name: &str) -> Option<(String, String)> {
-    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^mcp__(.+?)__(.+)$").unwrap());
+    static RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^mcp__(.+?)__(.+)$").expect("a valid regex"));
     let re = &*RE;
     let m = re.captures(name)?;
     Some((m[1].to_string(), m[2].to_string()))
@@ -224,7 +225,7 @@ fn page_key(server: &str, uri: &str) -> String {
 /// The page's Content-Security-Policy, from the domains the app declares (MCP Apps rules).
 fn csp_for(meta: &Value) -> String {
     static DOMAIN: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^https://[\w.-]+(:\d+)?$").unwrap());
+        LazyLock::new(|| Regex::new(r"^https://[\w.-]+(:\d+)?$").expect("a valid regex"));
     let domain = &*DOMAIN;
     let csp = &meta["csp"];
     let list = |k: &str| {

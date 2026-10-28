@@ -36,6 +36,16 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         app.package_info().version,
         dir.display()
     );
+    let (visible, order) = open_state(app, dir);
+    let handle = app.handle().clone();
+    setup_parts(&handle)?;
+    bring_out(handle, &visible, &order);
+    Ok(())
+}
+
+/// The app's state, from c-bot.json; returns the robots out on the desk and every robot,
+/// in order.
+fn open_state(app: &App, dir: PathBuf) -> (Vec<String>, Vec<String>) {
     let store = Store::open(&dir, electron_data_dir());
     if let Some(r) = &store.recovered {
         log::warn!(
@@ -66,41 +76,47 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .filter_map(|c| c["id"].as_str().map(str::to_string))
         .collect();
-    let no_robots = order.is_empty();
     app.manage(Mutex::new(st));
+    (visible, order)
+}
 
-    let handle = app.handle().clone();
-    chat::sweep_temporary(&handle); // (temporary chats left open when it last quit)
-    hub::setup(&handle);
-    revive::setup(&handle); // (before the robots: it watches each as it opens)
-    tray::setup(&handle)?;
+/// Each part, in the order they need each other.
+fn setup_parts(handle: &AppHandle) -> tauri::Result<()> {
+    chat::sweep_temporary(handle); // (temporary chats left open when it last quit)
+    hub::setup(handle);
+    revive::setup(handle); // (before the robots: it watches each as it opens)
+    tray::setup(handle)?;
     // the feature modules (each keeps its own state, binds its own hotkeys)
-    capture::setup(&handle);
-    paste::setup(&handle);
-    snip::setup(&handle);
-    walkers::setup(&handle);
-    planes::setup(&handle);
-    social::setup(&handle);
-    maid::setup(&handle);
-    vocab::setup(&handle);
-    notes::setup(&handle);
-    quick::setup(&handle);
-    palette::setup(&handle);
-    link::setup(&handle);
-    apps::setup(&handle);
-    chat::group::setup(&handle);
-    terminal::setup(&handle);
-    shell::setup(&handle);
-    updater::setup(&handle);
-    workshop::setup(&handle);
+    capture::setup(handle);
+    paste::setup(handle);
+    snip::setup(handle);
+    walkers::setup(handle);
+    planes::setup(handle);
+    social::setup(handle);
+    maid::setup(handle);
+    vocab::setup(handle);
+    notes::setup(handle);
+    quick::setup(handle);
+    palette::setup(handle);
+    link::setup(handle);
+    apps::setup(handle);
+    chat::group::setup(handle);
+    terminal::setup(handle);
+    shell::setup(handle);
+    updater::setup(handle);
+    workshop::setup(handle);
+    Ok(())
+}
 
-    for id in &visible {
+/// The robots out on the desk, and what runs once they are.
+fn bring_out(handle: AppHandle, visible: &[String], order: &[String]) {
+    for id in visible {
         let index = order.iter().position(|o| o == id).unwrap_or(0);
         if let Err(err) = robots::open(&handle, id, index) {
             log::warn!("couldn't open {id}: {err}");
         }
     }
-    if no_robots {
+    if order.is_empty() {
         workshop::open(&handle, Some("new"));
     }
     stage::setup(&handle);
@@ -121,7 +137,6 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             with(&handle, |st| st.store.tick());
         }
     });
-    Ok(())
 }
 
 pub fn on_event(app: &AppHandle, event: RunEvent) {
