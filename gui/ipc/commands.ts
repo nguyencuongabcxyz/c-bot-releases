@@ -2,7 +2,7 @@
 // its Rust function (robotAsk is robot_ask); the arguments go over by name (tabId arrives as
 // tab_id). The ones under "told" don't wait for an answer.
 import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
-import type { AppPage, AppView, AppViewCall, Box, Character, ClaudeCommand, ContextUse, FileChip, FileInfo, FileView, LinkTask, ModelChoice, Note, NotesReminder, OkOr, PermissionMode, Point, QAItem, SessionRow, Settings, Transcript } from '@/types/model';
+import type { AppPage, AppView, AppViewCall, Box, Brief, Character, ClaudeCommand, ContextUse, FileChip, FileInfo, FileView, LinkTask, ModelChoice, Note, NotesReminder, OkOr, PermissionMode, Point, QAItem, SessionRow, Settings, Transcript } from '@/types/model';
 import type * as P from '@/types/pages';
 import type { RobotInit, AskResult, IslandEdge, IslandNews, IslandReport, IslandRobot, PaletteView, SocialReport, StageState } from '@/types/ipc';
 
@@ -13,9 +13,11 @@ function tell(cmd: string, args?: InvokeArgs): void {
 
 // ---- a robot window
 export const robotInit = () => invoke<RobotInit>('robot_init');
-// (tag: a line kept above the message: sent to everyone on the stage)
-export const robotAsk = (tabId: string, prompt: string, attachments: string[], turnId?: string, kind?: 'chat' | 'bonk', tag?: string) =>
-  invoke<AskResult>('robot_ask', { tabId, ask: { prompt, attachments, turnId, kind, tag } });
+// (tag: a line kept above the message: sent to everyone on the stage; briefs: from tabs it mentions with @#)
+export const robotAsk = (tabId: string, prompt: string, attachments: string[], turnId?: string, kind?: 'chat' | 'bonk', tag?: string, briefs?: Brief[]) =>
+  invoke<AskResult>('robot_ask', { tabId, ask: { prompt, attachments, turnId, kind, tag, briefs } });
+// (a brief from another tab for the one you're writing in: waits till it's written)
+export const robotTabBrief = (fromTabId: string, toTabId: string, draft: string) => invoke<string>('robot_tab_brief', { args: { fromTabId, toTabId, draft } });
 export const robotCompact = (tabId: string, turnId: string) => invoke<AskResult>('robot_compact', { tabId, turnId });
 export const robotRemote = (tabId: string, on: boolean) => invoke<OkOr<{}>>('robot_remote', { tabId, on });
 export const robotCancel = (tabId: string) => invoke<string[]>('robot_cancel', { tabId });

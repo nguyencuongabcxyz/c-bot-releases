@@ -579,6 +579,20 @@ button.tv-doc:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--
 .file-chip button:hover { color: var(--danger); }
 .msg.user .files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; min-width: 0; max-width: 100%; }
 .msg.user .file-chip { background: var(--bg); padding-right: 8px; }
+/* briefs from other tabs (@#tab): a chip each; the one clicked opens underneath */
+.brief-chip { cursor: pointer; border-color: color-mix(in srgb, var(--accent) 40%, var(--line-2)); }
+.brief-chip > .ic { color: var(--accent-ink); }
+.brief-chip.on { box-shadow: 0 0 0 1px var(--accent); }
+.brief-chip.pending { cursor: progress; animation: pop-in 0.25s ease-out, brief-wait 1.2s ease-in-out infinite alternate; }
+@keyframes brief-wait { to { opacity: 0.5; } }
+.brief-body {
+  flex-basis: 100%; max-height: 200px; overflow: auto; box-sizing: border-box; padding: 6px 10px; border-radius: 8px;
+  background: var(--bg-2); border: 1px solid var(--line-2); font-size: 12px; line-height: 1.45; user-select: text;
+  white-space: normal; /* (not the message's pre-wrap) */
+}
+.brief-body[hidden] { display: none; }
+.brief-body > :first-child { margin-top: 0; }
+.brief-body > :last-child { margin-bottom: 0; }
 #drop-hint {
   position: absolute; inset: 56px 12px 70px; display: none; align-items: center; justify-content: center;
   border: 2px dashed var(--accent); border-radius: 12px; font: 600 15px var(--font-ui);

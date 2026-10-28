@@ -44,6 +44,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ipc::robot_side_ask,
         ipc::robot_side_cancel,
         ipc::robot_side_remove,
+        ipc::robot_tab_brief,
         ipc::robot_side_width,
         ipc::robot_pick_files,
         ipc::robot_chat_height,

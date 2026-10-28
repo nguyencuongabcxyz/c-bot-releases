@@ -76,6 +76,9 @@ export type Kit = Partial<Record<'head' | 'face' | 'top' | 'body' | 'arms' | 'ba
 
 export type FileChip = { name: string; isDir: boolean; isImage: boolean };
 
+/** What another tab wrote for a message that mentioned it with @# (features/chat/brief.rs). */
+export type Brief = { title: string; text: string };
+
 /** A file change Claude made, as unified-diff hunks (main claude.js editDiff). */
 export type Diff = {
   id?: string;
@@ -122,7 +125,7 @@ export type AppViewCall = AppView & { id: string; input: unknown; result?: unkno
 export type AppPage = { url: string; prefersBorder: boolean; permissions: Record<string, unknown> };
 
 export type HistoryEntry =
-  | { role: 'user'; text: string; files?: FileChip[]; at: number; tag?: string }
+  | { role: 'user'; text: string; files?: FileChip[]; at: number; tag?: string; briefs?: Brief[] }
   | {
       role: 'assistant';
       text: string;

@@ -179,6 +179,7 @@ pub struct Ask<'a> {
     pub turn_id: Option<String>,  // (none: a new one)
     pub kind: AskKind,
     pub tag: Option<&'a str>, // a line kept above your message (sent to everyone on the stage: who got it)
+    pub briefs: &'a [brief::Brief], // what other tabs wrote for it (mentioned with @#)
 }
 
 pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
@@ -188,13 +189,15 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
         turn_id,
         kind,
         tag,
+        briefs,
     } = ask;
     let c = match ready(app, id, tab_id) {
         Ok(c) => c,
         Err(error) => return json!({ "ok": false, "error": error }),
     };
     let turn_id = turn_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let fed = with_files(prompt, attachments, c.folder());
+    let mut fed = with_files(prompt, attachments, c.folder());
+    fed.prompt = brief::with_briefs(&fed.prompt, briefs);
     with(app, |st| {
         if kind == AskKind::Bonk {
             st.store.push_history(
@@ -212,6 +215,9 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
             let mut entry = json!({ "role": "user", "text": prompt, "files": files });
             if let Some(tag) = tag.filter(|t| !t.is_empty()) {
                 entry["tag"] = json!(tag.chars().take(200).collect::<String>());
+            }
+            if !briefs.is_empty() {
+                entry["briefs"] = json!(brief::kept(briefs));
             }
             st.store.push_history(id, tab_id, entry);
             let mut stats = c["stats"].as_object().cloned().unwrap_or_default();

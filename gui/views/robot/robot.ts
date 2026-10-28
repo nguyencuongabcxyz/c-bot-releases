@@ -25,6 +25,7 @@ import type { McpAppHostHandle } from '@/mcp/appHost';
 import type {
   AppCall,
   AppViewCall,
+  Brief,
   ChatEvent,
   ClaudeCommand,
   ContextUse,
@@ -65,7 +66,7 @@ import * as ipc from '@/ipc';
 // ---- what the window keeps track of, beside what main tells it (../types/model.ts)
 
 /** A question as it was asked: its words and the files that went with it (asked again when bonked). */
-type Ask = { question: string; paths: string[] };
+type Ask = { question: string; paths: string[]; briefs?: Brief[] };
 
 /** A piece of the answer being streamed (see partFor): words (its slice of the answer's text),
  *  a row of step chips, or what the steps made. */
@@ -99,9 +100,13 @@ type BotOpts = {
 /** An MCP tool's view in the chat, with the call it shows (handed to the big window). */
 type AppHost = McpAppHostHandle & { call: AppViewCall };
 
-/** A line in the composer's pop-up list: a command (/…), or a file to mention (@…). */
+/** A line in the composer's pop-up list: a command (/…), or a file or another tab to mention (@…). */
 type PaletteCommand = { kind: 'local' | 'claude'; name: string; description: string; args?: string };
 type PaletteFile = { kind: 'file'; rel: string; dir: boolean };
+type PaletteTab = { kind: 'tab'; id: string; title: string }; // (another conversation: @#, for a brief from it)
+
+/** A brief for the next message, from another tab it mentions with @# (text: null while it's written). */
+type ComposerBrief = { tabId: string; title: string; text: string | null; wait: Promise<void> };
 
 /** A message typed while it was still answering, waiting its turn. */
 type Queued = { turnId: string; el: HTMLElement; ask: Ask };
@@ -203,6 +208,7 @@ type RobotState = {
   lastCursor: { dx: number; dy: number };
   lastActivity: number;
   attachments: FileInfo[];
+  briefs: ComposerBrief[];
   // (and as it goes)
   scale?: number;
   mirroring?: boolean;
@@ -336,6 +342,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     lastCursor: { dx: 0, dy: 0 },
     lastActivity: Date.now(),
     attachments: [], // (the files fed to it: see feeding files)
+    briefs: [], // (from other tabs: see @-mentions)
   };
 
   const pick = <T>(arr: readonly T[]) => arr[Math.floor(Math.random() * arr.length)];
@@ -623,7 +630,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
       if (h.role === 'qa') addQaSummary(h.items, tab);
       else if (h.role === 'plan') tab.log.appendChild(planSummary(md, h));
       else if (h.role === 'note') addNote(h.text, '', tab);
-      else if (h.role === 'user') addUser(h.text, h.files, tab, h.tag);
+      else if (h.role === 'user') addUser(h.text, h.files, tab, h.tag, h.briefs);
       else sides.attach(addBot(h.interrupted ? `${h.text || ''}\n\n_…(stopped)_` : h.text, { error: h.isError, denials: h.denials, tools: h.tools, asides: h.asides, edits: h.edits, apps: h.apps, images: h.images, tab }), h.at, tab);
     }
   }
@@ -830,9 +837,9 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     return img;
   };
 
-  // text with its @mentions picked out
+  // text with its @mentions (files, and other tabs: @#) picked out
   function withMentions(el: HTMLElement, text: string) {
-    const re = /(^|\s)(@(?:"[^"\n]+"|[^\s"]+))/g;
+    const re = /(^|\s)(@#?(?:"[^"\n]+"|[^\s"]+))/g;
     let last = 0;
     for (const m of text.matchAll(re)) {
       const start = m.index + m[1].length;
@@ -847,7 +854,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
   }
 
   // (files: the ones fed to it, or as kept with the history: no path or thumbnail)
-  function addUser(text: string, files: (FileChip & { path?: string; thumb?: string })[] = [], tab: ChatTab = active()!, tag = '') {
+  function addUser(text: string, files: (FileChip & { path?: string; thumb?: string })[] = [], tab: ChatTab = active()!, tag = '', briefs: Brief[] = []) {
     const el = document.createElement('div');
     el.className = 'msg user';
     withMentions(el, text);
@@ -871,6 +878,12 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
         chip.appendChild(document.createElement('span')).textContent = f.name;
         row.appendChild(chip);
       }
+      el.appendChild(row);
+    }
+    if (briefs?.length) {
+      const row = document.createElement('div');
+      row.className = 'files';
+      briefChips(row, briefs);
       el.appendChild(row);
     }
     msgActions(el, 'user', tab);
@@ -1448,8 +1461,18 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     setStatus(t?.statusText || '');
   }
 
+  let briefWait = false;
   async function submit({ again = false, tag = '' } = {}) {
     const tab = active()!;
+    // briefs still being written (@#tab): the message waits for them
+    if (state.briefs.some((b) => b.text === null)) {
+      if (briefWait) return;
+      briefWait = true;
+      showPop('📎 Waiting for the brief…', 2000);
+      await Promise.all(state.briefs.map((b) => b.wait));
+      briefWait = false;
+      if (active() !== tab) return;
+    }
     const text = input.value.trim();
     // an edited question: the old one (and its answer) goes first, then this is asked in its place
     if (editing && editing.tab === tab && !tab.busy && !again) {
@@ -1482,12 +1505,13 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
 
     const files = state.attachments;
     state.attachments = [];
+    const briefs = takeBriefs(tab);
     renderAttachments();
     const question = text || (files.length === 1 ? 'Take a look at this.' : 'Take a look at these.');
     tab.vocabWord = askedWord(text); // "what does X mean?": offer to save X under the answer
     tab.log.querySelectorAll('.greet').forEach((el) => el.remove());
     clearFinishedHelpers(tab);
-    addUser(question, files, tab, tag).classList.add('enter');
+    addUser(question, files, tab, tag, briefs).classList.add('enter');
     sentOf(tab).push(question);
     tab.rewinding = false;
     recallAt = -1;
@@ -1500,10 +1524,10 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     const turnId = uid();
     startReply(tab);
     tab.current.turnId = turnId;
-    tab.current.ask = { question, paths: files.map((f) => f.path) };
+    tab.current.ask = { question, paths: files.map((f) => f.path), briefs };
     setBusy(tab, true);
 
-    const res = await ipc.robotAsk(tab.id, question, files.map((f) => f.path), turnId, undefined, tag || undefined);
+    const res = await ipc.robotAsk(tab.id, question, files.map((f) => f.path), turnId, undefined, tag || undefined, briefs);
     if (!res.ok) onEvent({ type: 'fail', tabId: tab.id, turnId, message: res.error });
   }
 
@@ -1513,13 +1537,14 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
   async function queueQuestion(tab: ChatTab, text: string, tag = '') {
     const files = state.attachments;
     state.attachments = [];
+    const briefs = takeBriefs(tab);
     renderAttachments();
     input.value = '';
     autosize();
     hidePalette();
     const question = text || 'Take a look at this.';
     const turnId = uid();
-    const el = addUser(question, files, tab, tag);
+    const el = addUser(question, files, tab, tag, briefs);
     sentOf(tab).push(question);
     recallAt = -1;
     el.classList.add('queued', 'enter');
@@ -1532,12 +1557,12 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
       if (await ipc.robotUnqueue(tab.id, turnId)) dropQueued(tab, turnId, 'not sent');
     });
     el.appendChild(bar);
-    tab.queue.push({ turnId, el, ask: { question, paths: files.map((f) => f.path) } });
+    tab.queue.push({ turnId, el, ask: { question, paths: files.map((f) => f.path), briefs } });
     Sfx.key.send();
     flash('hop', 600);
     express('happy', 'o', 900);
     showPop(pick(['📨 Noted! Next up.', 'Got it, right after this!', 'Queued! ✍️']), 1800);
-    const res = await ipc.robotAsk(tab.id, question, files.map((f) => f.path), turnId, undefined, tag || undefined);
+    const res = await ipc.robotAsk(tab.id, question, files.map((f) => f.path), turnId, undefined, tag || undefined, briefs);
     if (!res.ok) {
       dropQueued(tab, turnId, 'not sent');
       addNote(`📨 ${res.error}`, '', tab);
@@ -2988,7 +3013,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
 
   function renderAttachments() {
     attachRow.innerHTML = '';
-    attachRow.hidden = !state.attachments.length;
+    attachRow.hidden = !state.attachments.length && !state.briefs.length;
     for (const f of state.attachments) {
       const chip = document.createElement('span');
       chip.className = 'file-chip';
@@ -3006,6 +3031,11 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
       });
       attachRow.appendChild(chip);
     }
+    briefChips(attachRow, state.briefs, (b) => {
+      state.briefs = state.briefs.filter((x) => x !== b);
+      renderAttachments();
+      input.focus();
+    });
     renderScreenAsks();
   }
 
@@ -3257,7 +3287,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     }
     showPop(pick(persona().bonked || ['OW!']), 2000);
     // queue the hurried rerun, then let it jump the queue (this interrupts the current answer)
-    const res = await ipc.robotAsk(tab.id, asked.question + HURRY, asked.paths, turnId, 'bonk');
+    const res = await ipc.robotAsk(tab.id, asked.question + HURRY, asked.paths, turnId, 'bonk', undefined, asked.briefs);
     if (!res.ok) {
       tab.bonk = null;
       addNote(`🔨 ${res.error}`, '', tab);
@@ -3716,7 +3746,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
           setTimeout(() => btn.classList.remove('done'), 1400);
           showPop('Copied! 📋', 1200);
         }, () => {}),
-    });
+    }, { changes, start });
     Icon.fill(bodyEl);
     bodyEl.scrollTop = 0;
   }
@@ -3751,7 +3781,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
       li.querySelector<HTMLElement>('.st')!.title = stepLabel(s);
       li.querySelector('.sw')!.textContent = `+${Math.max(0, Math.round((s.at - a.started) / 1000))}s`;
       steps.appendChild(li);
-    }, { changes, start });
+    });
     const report = a.report || a.summary || '';
     if (a.text && a.text.trim() !== report.trim()) {
       bodyEl.querySelector<HTMLElement>('.hv-said')!.hidden = false;
@@ -4289,7 +4319,7 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
     { name: 'help', description: 'What I can do' },
   ];
   const paletteEl = $('#palette');
-  let paletteItems: PaletteCommand[] | PaletteFile[] = [];
+  let paletteItems: (PaletteCommand | PaletteFile | PaletteTab)[] = [];
   let paletteIndex = 0;
 
   function helpText() {
@@ -4417,12 +4447,13 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
       .filter((c) => !taken.has(c.name) && c.name.toLowerCase().includes(q))
       .slice(0, 40)
       .map((c): PaletteCommand => ({ ...c, kind: 'claude' }));
-    paletteItems = [...local, ...claude];
+    const commands = [...local, ...claude];
+    paletteItems = commands;
     if (!paletteItems.length) return hidePalette();
     paletteIndex = Math.min(paletteIndex, paletteItems.length - 1);
     paletteEl.innerHTML = '';
     let group: string | null = null;
-    paletteItems.forEach((item, i) => {
+    commands.forEach((item, i) => {
       if (item.kind !== group) {
         group = item.kind;
         const g = document.createElement('div');
@@ -4463,40 +4494,151 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
   let mentionStart = 0;
   async function updateMentions(query: string, start: number) {
     const seq = ++mentionSeq;
-    const items = await ipc.robotFiles(query);
+    const tabsOnly = query.startsWith('#'); // (@#: just the other tabs)
+    const items = tabsOnly ? [] : await ipc.robotFiles(query);
     if (seq !== mentionSeq) return; // typed on since
     mentionStart = start;
-    paletteItems = items.map((e): PaletteFile => ({ ...e, kind: 'file' }));
+    const others = otherTabs(query.replace(/^#/, ''));
+    const files = items.map((e): PaletteFile => ({ ...e, kind: 'file' }));
+    paletteItems = [...others, ...files];
+    if (tabsOnly && !others.length) return hidePalette();
     paletteIndex = Math.min(paletteIndex, Math.max(0, paletteItems.length - 1));
     paletteEl.innerHTML = '';
-    const g = document.createElement('div');
-    g.className = 'p-group';
-    Icon.text(g, `📁 ${folderName()}`);
-    paletteEl.appendChild(g);
-    if (!paletteItems.length) {
-      const none = document.createElement('div');
-      none.className = 'p-empty';
-      none.textContent = query ? `No files match “${query}”` : 'This folder looks empty';
-      paletteEl.appendChild(none);
-    }
-    paletteItems.forEach((item, i) => {
-      const row = document.createElement('div');
-      row.className = `p-item p-file${i === paletteIndex ? ' on' : ''}`;
-      row.setAttribute('role', 'option');
-      row.innerHTML = '<span class="p-icon"></span><span class="p-name"></span><span class="p-desc"></span>';
-      const slash = item.rel.lastIndexOf('/');
-      row.querySelector('.p-icon')!.innerHTML = Icon(item.dir ? 'folder' : 'file', 'sm');
-      row.querySelector('.p-name')!.textContent = item.rel.slice(slash + 1) + (item.dir ? '/' : '');
-      row.querySelector('.p-desc')!.textContent = slash > 0 ? item.rel.slice(0, slash) : '';
-      row.title = item.rel;
-      row.addEventListener('mousedown', (e) => {
+    const group = (label: string) => {
+      const g = document.createElement('div');
+      g.className = 'p-group';
+      Icon.text(g, label);
+      paletteEl.appendChild(g);
+    };
+    const row = (i: number, icon: string, name: string, desc: string, title: string, pick: () => void) => {
+      const r = document.createElement('div');
+      r.className = `p-item p-file${i === paletteIndex ? ' on' : ''}`;
+      r.setAttribute('role', 'option');
+      r.innerHTML = '<span class="p-icon"></span><span class="p-name"></span><span class="p-desc"></span>';
+      r.querySelector('.p-icon')!.innerHTML = Icon(icon, 'sm');
+      r.querySelector('.p-name')!.textContent = name;
+      r.querySelector('.p-desc')!.textContent = desc;
+      r.title = title;
+      r.addEventListener('mousedown', (e) => {
         e.preventDefault(); // keep focus in the input
-        insertMention(item);
+        pick();
       });
-      paletteEl.appendChild(row);
-    });
+      paletteEl.appendChild(r);
+    };
+    if (others.length) {
+      group('💬 Other tabs');
+      others.forEach((item, i) => row(i, 'tabs', `#${item.title}`, '', item.title, () => insertTabMention(item)));
+    }
+    if (!tabsOnly) {
+      group(`📁 ${folderName()}`);
+      if (!files.length) {
+        const none = document.createElement('div');
+        none.className = 'p-empty';
+        none.textContent = query ? `No files match “${query}”` : 'This folder looks empty';
+        paletteEl.appendChild(none);
+      }
+      files.forEach((item, i) => {
+        const slash = item.rel.lastIndexOf('/');
+        row(others.length + i, item.dir ? 'folder' : 'file', item.rel.slice(slash + 1) + (item.dir ? '/' : ''), slash > 0 ? item.rel.slice(0, slash) : '', item.rel, () => insertMention(item));
+      });
+    }
     paletteEl.hidden = false;
     paletteEl.querySelector('.p-item.on')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  // The robot's other conversations to mention (@#): ones that have said something, and keep it
+  function otherTabs(query: string): PaletteTab[] {
+    const q = query.toLowerCase();
+    return [...tabs.values()]
+      .filter((t) => t.id !== activeId && !t.data?.temporary && (t.data?.sessionId || t.log.querySelector('.msg.bot')))
+      .filter((t) => t.title.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((t): PaletteTab => ({ kind: 'tab', id: t.id, title: t.title }));
+  }
+
+  // put "@#title" in place of what was typed after @, and ask that tab for a brief
+  function insertTabMention(item: PaletteTab) {
+    const caret = input.selectionStart ?? input.value.length;
+    const before = input.value.slice(0, mentionStart);
+    const after = input.value.slice(caret).replace(/^[^\s"]*"?/, ''); // the rest of the half-typed name
+    const name = item.title.replace(/"/g, '');
+    const token = /\s/.test(name) ? `@#"${name}"` : `@#${name}`;
+    input.value = `${before}${token} ${after}`;
+    const pos = before.length + token.length + 1;
+    input.setSelectionRange(pos, pos);
+    paletteIndex = 0;
+    autosize();
+    input.focus();
+    hidePalette();
+    addBrief(item);
+  }
+
+  // Another tab writes a brief for this one (features/chat/brief.rs: a branch of it, so it
+  // isn't disturbed), while you type; it goes with the message, which waits for it.
+  const BRIEFS_MAX = 3;
+  function addBrief(from: PaletteTab) {
+    if (state.briefs.some((b) => b.tabId === from.id)) return;
+    if (state.briefs.length >= BRIEFS_MAX) return showPop('Three briefs is plenty!', 1800);
+    const b: ComposerBrief = { tabId: from.id, title: from.title, text: null, wait: Promise.resolve() };
+    b.wait = ipc
+      .robotTabBrief(from.id, active()!.id, input.value)
+      .then(
+        (text) => {
+          b.text = text;
+        },
+        (err) => {
+          state.briefs = state.briefs.filter((x) => x !== b);
+          express('flat', 'flat', 1500);
+          showPop(`📎 ${err}`, 2800);
+        },
+      )
+      .finally(renderAttachments);
+    state.briefs.push(b);
+    renderAttachments();
+  }
+
+  // the briefs written for the next message, which go with it (not one from the tab it goes to)
+  function takeBriefs(tab: ChatTab): Brief[] {
+    const ready = state.briefs.filter((b) => b.text !== null && b.tabId !== tab.id).map((b) => ({ title: b.title, text: b.text! }));
+    state.briefs = [];
+    return ready;
+  }
+
+  // Briefs as chips (in the composer, with ✕; under a message, as sent): click one to read it.
+  function briefChips<B extends { title: string; text: string | null }>(row: HTMLElement, list: B[], remove?: (b: B) => void) {
+    if (!list.length) return;
+    const body = document.createElement('div');
+    body.className = 'brief-body';
+    body.hidden = true;
+    const chips = list.map((b) => {
+      const chip = document.createElement('span');
+      chip.className = `file-chip brief-chip${b.text === null ? ' pending' : ''}`;
+      chip.title = 'Brief from another tab';
+      chip.innerHTML = `${Icon('tabs', 'sm')}<span></span>`;
+      chip.querySelector('span')!.textContent = b.text === null ? `${b.title}…` : b.title;
+      chip.addEventListener('click', () => {
+        if (b.text === null) return;
+        const open = !chip.classList.contains('on');
+        chips.forEach((c) => c.classList.remove('on'));
+        chip.classList.toggle('on', open);
+        body.hidden = !open;
+        body.innerHTML = open ? md(b.text) : '';
+      });
+      if (remove) {
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.title = 'Remove';
+        x.innerHTML = Icon('x', 'sm');
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          remove(b);
+        });
+        chip.appendChild(x);
+      }
+      row.appendChild(chip);
+      return chip;
+    });
+    row.appendChild(body);
   }
 
   // put "@path" in place of what was typed after @; a folder stays open to pick inside it
@@ -4519,8 +4661,9 @@ tooltips(document.querySelector<HTMLElement>('#side-panel')!);
   }
 
   // run = Enter/click: our own commands run straight away; Claude Code ones are completed so you can add arguments
-  function choose(item: PaletteCommand | PaletteFile, run: boolean) {
+  function choose(item: PaletteCommand | PaletteFile | PaletteTab, run: boolean) {
     if (item.kind === 'file') return insertMention(item);
+    if (item.kind === 'tab') return insertTabMention(item);
     if (run && item.kind === 'local') {
       input.value = `/${item.name}`;
       submit();

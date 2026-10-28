@@ -5,6 +5,7 @@
 //! robot:event, and the finished answer is kept in the tab's history.
 
 pub mod awake;
+pub mod brief;
 mod events;
 pub mod group;
 mod page;

@@ -10,7 +10,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::agents::personalities;
-use crate::features::chat::side;
+use crate::features::chat::{brief, side};
 use crate::features::{chat, notes, vocab};
 use crate::mcp::link;
 use crate::robots;
@@ -266,6 +266,8 @@ pub struct AskArgs {
     turn_id: Option<String>,
     kind: Option<chat::AskKind>, // (the page asks a chat or a bonk; compacting is robot_compact)
     tag: Option<String>,
+    #[serde(default)]
+    briefs: Vec<brief::Brief>, // (from other tabs, mentioned with @#: robot_tab_brief)
 }
 
 #[tauri::command(async)]
@@ -282,6 +284,7 @@ pub fn robot_ask(app: AppHandle, window: WebviewWindow, tab_id: String, ask: Ask
         turn_id,
         kind,
         tag: ask.tag.as_deref(),
+        briefs: &ask.briefs,
     };
     Ok(chat::ask(&app, &sender(&window)?, &tab_id, ask))
 }
@@ -299,6 +302,7 @@ pub fn robot_compact(
         turn_id: Some(turn_id),
         kind: chat::AskKind::Compact,
         tag: None,
+        briefs: &[],
     };
     Ok(chat::ask(&app, &sender(&window)?, &tab_id, ask))
 }
@@ -418,6 +422,32 @@ pub fn robot_side_ask(
         quote.as_deref().unwrap_or(""),
         &text,
     ))
+}
+
+/// A brief from another tab for the one you're writing in (@#tab: features/chat/brief.rs).
+/// Waits till that tab has written it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BriefArgs {
+    from_tab_id: String,
+    to_tab_id: String,
+    draft: Option<String>,
+}
+
+#[tauri::command(async)]
+pub fn robot_tab_brief(
+    app: AppHandle,
+    window: WebviewWindow,
+    args: BriefArgs,
+) -> Result<String, Error> {
+    let id = sender(&window)?;
+    brief::brief(
+        &app,
+        &id,
+        &args.from_tab_id,
+        &args.to_tab_id,
+        args.draft.as_deref().unwrap_or(""),
+    )
 }
 
 #[tauri::command(async)]

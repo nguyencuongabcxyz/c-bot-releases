@@ -199,43 +199,19 @@ fn start(
     claude_path: PathBuf,
 ) -> Arc<Chat> {
     let thread_id = thread.id().to_string();
-    let busy = with(app, |st| chat::is_busy(st, id, tab_id));
-    let last_answer = || {
-        tab["history"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .rev()
-            .find(|h| h["role"] == "assistant")
-            .and_then(|h| h["uuid"].as_str())
-            .map(str::to_string)
-    };
     let (session_id, fork, resume_at) = match (thread.session_id(), tab.session_id()) {
         (Some(own), _) => (Some(own.to_string()), false, None),
         (None, Some(main)) => (
             Some(main.to_string()),
             true,
-            if busy { last_answer() } else { None },
+            branch_point(app, id, tab_id, tab),
         ),
         (None, None) => (None, false, None),
     };
     let opts = claude::Opts {
-        claude_path,
-        cwd: c.folder().into(),
-        system_prompt: format!("{}\n{NOTE}", chat::prompt_for(app, c)),
-        permission_mode: "default".into(),
-        model: tab["model"]
-            .as_str()
-            .or(c["model"].as_str())
-            .unwrap_or("")
-            .into(), // (the tab's brain)
-        effort: tab.effort().into(),
-        tools: Some(TOOLS.iter().map(|t| t.to_string()).collect()),
-        allowed_tools: vec!["WebSearch".into(), "WebFetch".into()],
-        extra_args: vec!["--strict-mcp-config".into()], // (none of the robot's MCP tools)
         resume_at,
         fork,
-        ..Default::default()
+        ..looking(app, c, tab, claude_path, NOTE)
     };
     let (app2, id2, tab2, thread2) = (
         app.clone(),
@@ -251,6 +227,49 @@ fn start(
             .insert(key_of(id, tab_id, &thread_id), chat.clone())
     });
     chat
+}
+
+/// Where a branch of the tab's conversation picks it up: as it is now (none), or, while the tab
+/// is still answering, after its last answer.
+pub(super) fn branch_point(app: &AppHandle, id: &str, tab_id: &str, tab: &Value) -> Option<String> {
+    if !with(app, |st| chat::is_busy(st, id, tab_id)) {
+        return None;
+    }
+    tab["history"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .rev()
+        .find(|h| h["role"] == "assistant")
+        .and_then(|h| h["uuid"].as_str())
+        .map(str::to_string)
+}
+
+/// A Claude Code beside the tab's, with the tab's brain, that may look but not change anything
+/// (a side question, a brief for another tab: brief.rs). `note` says what it's there for.
+pub(super) fn looking(
+    app: &AppHandle,
+    c: &Value,
+    tab: &Value,
+    claude_path: PathBuf,
+    note: &str,
+) -> claude::Opts {
+    claude::Opts {
+        claude_path,
+        cwd: c.folder().into(),
+        system_prompt: format!("{}\n{note}", chat::prompt_for(app, c)),
+        permission_mode: "default".into(),
+        model: tab["model"]
+            .as_str()
+            .or(c["model"].as_str())
+            .unwrap_or("")
+            .into(), // (the tab's brain)
+        effort: tab.effort().into(),
+        tools: Some(TOOLS.iter().map(|t| t.to_string()).collect()),
+        allowed_tools: vec!["WebSearch".into(), "WebFetch".into()],
+        extra_args: vec!["--strict-mcp-config".into()], // (none of the robot's MCP tools)
+        ..Default::default()
+    }
 }
 
 fn on_event(
