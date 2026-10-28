@@ -156,8 +156,7 @@ pub(super) fn arrived_errand(face: &str) -> Errand {
 
 pub(super) fn arrived(app: &AppHandle) {
     let Some(v) = visit(app) else { return };
-    let (a, b) = (v.a.clone(), v.b.clone());
-    let rb = rep(app, &b);
+    let rb = rep(app, &v.b);
     // things may have changed on the way
     let mode = match v.mode {
         Mode::Chat if rb.b("busy") => Mode::Watch,
@@ -170,128 +169,136 @@ pub(super) fn arrived(app: &AppHandle) {
         v.arrived_at = Instant::now();
         v.mode = mode;
     });
-    let mine = v.side; // b turns to the side the visitor stands on
-    let face = v.face.clone();
     match mode {
-        Mode::Chat => {
-            tell(app, &b, json!({ "phase": "listen", "side": mine }));
-            let lines = [
-                (a.clone(), line(app, &a, "hi", &b)),
-                (b.clone(), line(app, &b, "reply", &a)),
-                (a.clone(), line(app, &a, "bye", &b)),
-            ];
-            let n = lines.len() as u64;
-            for (i, (who, text)) in lines.into_iter().enumerate() {
-                let (a, b, face) = (a.clone(), b.clone(), face.clone());
-                later(app, 400 + i as u64 * LINE_GAP, move |app| {
-                    if who == a {
-                        walkers::pose(app, &a, "talk", Some(&face));
-                        walkers::say(app, &a, &text, LINE_GAP - 200);
-                        later(app, LINE_GAP - 300, move |app| {
-                            walkers::pose(app, &a, "stand", Some(&face))
-                        });
-                    } else {
-                        tell(app, &b, json!({ "phase": "say", "text": text }));
-                    }
-                });
-            }
-            let (a2, b2, face2) = (a.clone(), b.clone(), face.clone());
-            later(app, 400 + n * LINE_GAP, move |app| {
-                walkers::pose(app, &a2, "wave", Some(&face2));
-                tell(app, &b2, json!({ "phase": "listen-end", "wave": true }));
-            });
-            later(app, 400 + n * LINE_GAP + 1300, |app| {
-                homeward(app, None, 1.0)
-            });
-        }
-        Mode::Order | Mode::GoOut if !free_awake(app, &b) => {
+        Mode::Chat => chat_at_desk(app, &v),
+        Mode::Order | Mode::GoOut if !free_awake(app, &v.b) => {
             // it got busy (or dozed off) while the visitor walked over: maybe next time
-            talk(app, &a, &line(app, &a, "goOutBusy", &b));
+            talk(app, &v.a, &line(app, &v.a, "goOutBusy", &v.b));
             later(app, 1800, |app| homeward(app, None, 1.0));
         }
-        Mode::Order | Mode::GoOut => {
-            // lunch: "order?" / "yes, …" / "ordered!", or "go out?" / "yes!" and off they go
-            tell(app, &b, json!({ "phase": "listen", "side": mine }));
-            let lines: Vec<(String, String)> = if mode == Mode::Order {
-                vec![
-                    (a.clone(), line(app, &a, "lunchAsk", &b)),
-                    (b.clone(), line(app, &b, "lunchDish", &a)),
-                    (a.clone(), line(app, &a, "lunchOrdered", &b)),
-                ]
-            } else {
-                vec![
-                    (a.clone(), line(app, &a, "goOut", &b)),
-                    (b.clone(), line(app, &b, "goOutYes", &a)),
-                ]
-            };
-            let after_lines = 400 + lines.len() as u64 * LINE_GAP;
-            for (i, (who, text)) in lines.into_iter().enumerate() {
-                later(app, 400 + i as u64 * LINE_GAP, move |app| {
-                    talk(app, &who, &text)
-                });
-            }
-            if mode == Mode::Order {
-                let (a2, b2) = (a.clone(), b.clone());
-                later(app, after_lines, move |app| {
-                    let face = visit(app).map(|v| v.face).unwrap_or_default();
-                    walkers::pose(app, &a2, "wave", Some(&face));
-                    tell(app, &b2, json!({ "phase": "listen-end", "wave": true }));
-                    deliver(app, vec![a2.clone(), b2.clone()], Treat::Food);
-                    soc(app, |s| s.lunch_day = today());
-                });
-                later(app, after_lines + 1300, |app| homeward(app, None, 1.0));
-            } else {
-                later(app, after_lines - 600, go_out);
-            }
-        }
-        Mode::Tea => {
-            // milk tea: takes this desk's order (the usual for a busy one), then on to the next
-            let wants_tea = free_awake(app, &b);
-            if wants_tea {
-                tell(app, &b, json!({ "phase": "listen", "side": mine }));
-                let (a2, b2) = (a.clone(), b.clone());
-                later(app, 400, move |app| {
-                    talk(app, &a2, &line(app, &a2, "teaAsk", &b2))
-                });
-                let (a3, b3) = (a.clone(), b.clone());
-                later(app, 400 + LINE_GAP, move |app| {
-                    talk(app, &b3, &line(app, &b3, "teaOrder", &a3))
-                });
-                vset(app, |v| v.ordered.push(b.clone()));
-            } else if rb.b("busy") {
-                let (a2, b2) = (a.clone(), b.clone());
-                later(app, 400, move |app| {
-                    talk(app, &a2, &line(app, &a2, "teaUsual", &b2))
-                });
-                vset(app, |v| v.ordered.push(b.clone()));
-            }
-            later(
-                app,
-                if wants_tea {
-                    400 + 2 * LINE_GAP
-                } else {
-                    400 + LINE_GAP
-                },
-                next_tea_stop,
-            );
-        }
+        Mode::Order | Mode::GoOut => lunch(app, &v, mode == Mode::Order),
+        Mode::Tea => tea_order(app, &v, &rb),
         Mode::Watch => {
-            walkers::pose(app, &a, "stand", Some(&face));
-            cheer(app, a.clone(), b.clone(), 0);
+            walkers::pose(app, &v.a, "stand", Some(&v.face));
+            cheer(app, v.a.clone(), v.b.clone(), 0);
             later(app, WATCH_MAX, |app| homeward(app, None, 1.0));
         }
         Mode::Tiptoe => {
             // a sticky on its monitor, and back without waking it
-            walkers::pose(app, &a, "stand", Some(&face));
-            walkers::say(app, &a, &line(app, &a, "tiptoe", &b), 2200);
+            let (a, b) = (&v.a, &v.b);
+            walkers::pose(app, a, "stand", Some(&v.face));
+            walkers::say(app, a, &line(app, a, "tiptoe", b), 2200);
             tell(
                 app,
-                &b,
-                json!({ "phase": "visit-note", "from": name_of(app, &a), "found": line(app, &b, "found", &a) }),
+                b,
+                json!({ "phase": "visit-note", "from": name_of(app, a), "found": line(app, b, "found", a) }),
             );
             later(app, 2600, |app| homeward(app, Some("tiptoe"), 0.6));
         }
     }
+}
+
+/// A word or two at b's desk: hi, its reply, bye; a wave, and home.
+fn chat_at_desk(app: &AppHandle, v: &Visit) {
+    let (a, b, face) = (v.a.clone(), v.b.clone(), v.face.clone());
+    tell(app, &b, json!({ "phase": "listen", "side": v.side })); // (b turns to the side the visitor stands on)
+    let lines = [
+        (a.clone(), line(app, &a, "hi", &b)),
+        (b.clone(), line(app, &b, "reply", &a)),
+        (a.clone(), line(app, &a, "bye", &b)),
+    ];
+    let n = lines.len() as u64;
+    for (i, (who, text)) in lines.into_iter().enumerate() {
+        let (a, b, face) = (a.clone(), b.clone(), face.clone());
+        later(app, 400 + i as u64 * LINE_GAP, move |app| {
+            if who == a {
+                walkers::pose(app, &a, "talk", Some(&face));
+                walkers::say(app, &a, &text, LINE_GAP - 200);
+                later(app, LINE_GAP - 300, move |app| {
+                    walkers::pose(app, &a, "stand", Some(&face))
+                });
+            } else {
+                tell(app, &b, json!({ "phase": "say", "text": text }));
+            }
+        });
+    }
+    later(app, 400 + n * LINE_GAP, move |app| {
+        walkers::pose(app, &a, "wave", Some(&face));
+        tell(app, &b, json!({ "phase": "listen-end", "wave": true }));
+    });
+    later(app, 400 + n * LINE_GAP + 1300, |app| {
+        homeward(app, None, 1.0)
+    });
+}
+
+/// Lunch: "order?" / "yes, …" / "ordered!" (and the food comes later), or "go out?" / "yes!"
+/// and off they go.
+fn lunch(app: &AppHandle, v: &Visit, order: bool) {
+    let (a, b) = (v.a.clone(), v.b.clone());
+    tell(app, &b, json!({ "phase": "listen", "side": v.side }));
+    let lines: Vec<(String, String)> = if order {
+        vec![
+            (a.clone(), line(app, &a, "lunchAsk", &b)),
+            (b.clone(), line(app, &b, "lunchDish", &a)),
+            (a.clone(), line(app, &a, "lunchOrdered", &b)),
+        ]
+    } else {
+        vec![
+            (a.clone(), line(app, &a, "goOut", &b)),
+            (b.clone(), line(app, &b, "goOutYes", &a)),
+        ]
+    };
+    let after_lines = 400 + lines.len() as u64 * LINE_GAP;
+    for (i, (who, text)) in lines.into_iter().enumerate() {
+        later(app, 400 + i as u64 * LINE_GAP, move |app| {
+            talk(app, &who, &text)
+        });
+    }
+    if order {
+        later(app, after_lines, move |app| {
+            let face = visit(app).map(|v| v.face).unwrap_or_default();
+            walkers::pose(app, &a, "wave", Some(&face));
+            tell(app, &b, json!({ "phase": "listen-end", "wave": true }));
+            deliver(app, vec![a.clone(), b.clone()], Treat::Food);
+            soc(app, |s| s.lunch_day = today());
+        });
+        later(app, after_lines + 1300, |app| homeward(app, None, 1.0));
+    } else {
+        later(app, after_lines - 600, go_out);
+    }
+}
+
+/// Milk tea: takes this desk's order (the usual for a busy one), then on to the next.
+fn tea_order(app: &AppHandle, v: &Visit, rb: &Rep) {
+    let (a, b) = (v.a.clone(), v.b.clone());
+    let wants_tea = free_awake(app, &b);
+    if wants_tea {
+        tell(app, &b, json!({ "phase": "listen", "side": v.side }));
+        let (a2, b2) = (a.clone(), b.clone());
+        later(app, 400, move |app| {
+            talk(app, &a2, &line(app, &a2, "teaAsk", &b2))
+        });
+        let (a3, b3) = (a.clone(), b.clone());
+        later(app, 400 + LINE_GAP, move |app| {
+            talk(app, &b3, &line(app, &b3, "teaOrder", &a3))
+        });
+        vset(app, |v| v.ordered.push(b.clone()));
+    } else if rb.b("busy") {
+        let (a2, b2) = (a.clone(), b.clone());
+        later(app, 400, move |app| {
+            talk(app, &a2, &line(app, &a2, "teaUsual", &b2))
+        });
+        vset(app, |v| v.ordered.push(b.clone()));
+    }
+    later(
+        app,
+        if wants_tea {
+            400 + 2 * LINE_GAP
+        } else {
+            400 + LINE_GAP
+        },
+        next_tea_stop,
+    );
 }
 
 /// Watching over its shoulder: a cheer now and then.

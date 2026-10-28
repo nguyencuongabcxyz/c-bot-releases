@@ -4,7 +4,7 @@
 //! far). Refine's reply carries a list of what changed after a marker line.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -275,6 +275,47 @@ fn delta_of(m: &Value) -> Option<&str> {
 /// Run a quick action to the end (on the calling thread; the handle stops it from another).
 /// on_text(shown_so_far) as the words come.
 pub fn run(job: &Job, handle: &Handle, mut on_text: impl FnMut(&str)) -> Result<Answer, Failed> {
+    let (mut child, prompt) = start(job)?;
+    let killer = Killer::new(child.id());
+    *handle.killer.locked() = Some(killer.clone());
+    if handle.is_cancelled() {
+        killer.kill(); // (stopped while it was starting)
+    }
+    // the prompt on stdin, so no quoting can mangle it
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(prompt.as_bytes());
+    }
+    let (Some(stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        killer.kill();
+        let _ = child.wait();
+        killer.gone();
+        return Err(Failed::Error("Couldn't start Claude Code".into()));
+    };
+    let err_text = thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = stderr.read_to_string(&mut buf);
+        buf
+    });
+    let (finished, timed_out) = watchdog(killer.clone());
+    let (so_far, result) = read_stream(stdout, |so_far| on_text(shown_part(&job.action, so_far)));
+    let code = child.wait().ok().and_then(|s| s.code());
+    killer.gone();
+    let _ = finished.send(());
+    let err_text = err_text.join().unwrap_or_default();
+    if handle.is_cancelled() {
+        return Err(Failed::Cancelled);
+    }
+    // (stopped for taking too long: as a killed process, no exit code)
+    let code = if timed_out.load(Ordering::SeqCst) {
+        None
+    } else {
+        code
+    };
+    answer_of(job, result.as_ref(), &so_far, code, &err_text)
+}
+
+/// `claude -p` for the job, started: the process, and the prompt to give it.
+fn start(job: &Job) -> Result<(Child, String), Failed> {
     let Some(exe) = locate::find(&job.claude_path) else {
         return Err(Failed::Error("Claude Code isn't installed".into()));
     };
@@ -307,7 +348,7 @@ pub fn run(job: &Job, handle: &Handle, mut on_text: impl FnMut(&str)) -> Result<
         "",
     ];
     // (a .cmd runs through cmd.exe: std does that, quoting it safely)
-    let spawned = Command::new(&exe)
+    let child = Command::new(&exe)
         .args(args)
         .current_dir(std::env::temp_dir())
         .env_clear()
@@ -316,40 +357,28 @@ pub fn run(job: &Job, handle: &Handle, mut on_text: impl FnMut(&str)) -> Result<
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .no_window()
-        .spawn();
-    let mut child =
-        spawned.map_err(|e| Failed::Error(format!("Couldn't start Claude Code: {e}")))?;
-    let killer = Killer::new(child.id());
-    *handle.killer.locked() = Some(killer.clone());
-    if handle.is_cancelled() {
-        killer.kill(); // (stopped while it was starting)
-    }
-    // the prompt on stdin, so no quoting can mangle it
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(prompt.as_bytes());
-    }
-    let (Some(stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        killer.kill();
-        let _ = child.wait();
-        killer.gone();
-        return Err(Failed::Error("Couldn't start Claude Code".into()));
-    };
-    let err_text = thread::spawn(move || {
-        let mut buf = String::new();
-        let _ = stderr.read_to_string(&mut buf);
-        buf
-    });
-    // too long: it's stopped
+        .spawn()
+        .map_err(|e| Failed::Error(format!("Couldn't start Claude Code: {e}")))?;
+    Ok((child, prompt))
+}
+
+/// Too long: it's stopped. Send on the first once it's done; the flag says it was stopped.
+fn watchdog(killer: Killer) -> (mpsc::Sender<()>, Arc<AtomicBool>) {
     let (finished, watch) = mpsc::channel::<()>();
     let timed_out = Arc::new(AtomicBool::new(false));
-    let (watchdog, flag) = (killer.clone(), timed_out.clone());
+    let flag = timed_out.clone();
     thread::spawn(move || {
         if let Err(mpsc::RecvTimeoutError::Timeout) = watch.recv_timeout(TIMEOUT) {
             flag.store(true, Ordering::SeqCst);
-            watchdog.kill();
+            killer.kill();
         }
     });
+    (finished, timed_out)
+}
 
+/// Its output, to the end: the words as they come (on_text with all of them so far), and
+/// the result line.
+fn read_stream(stdout: impl Read, mut on_text: impl FnMut(&str)) -> (String, Option<Value>) {
     let mut so_far = String::new();
     let mut result: Option<Value> = None;
     for line in BufReader::new(stdout).lines() {
@@ -359,42 +388,39 @@ pub fn run(job: &Job, handle: &Handle, mut on_text: impl FnMut(&str)) -> Result<
         };
         if let Some(delta) = delta_of(&m).filter(|d| !d.is_empty()) {
             so_far.push_str(delta);
-            on_text(shown_part(&job.action, &so_far));
+            on_text(&so_far);
         }
         if m["type"] == "result" {
             result = Some(m);
         }
     }
-    let code = child.wait().ok().and_then(|s| s.code());
-    killer.gone();
-    let _ = finished.send(());
-    let err_text = err_text.join().unwrap_or_default();
-    if handle.is_cancelled() {
-        return Err(Failed::Cancelled);
-    }
-    // (stopped for taking too long: as a killed process, no exit code)
-    let code = if timed_out.load(Ordering::SeqCst) {
-        None
-    } else {
-        code
-    };
-    let reply = match result.as_ref().map(|r| &r["result"]) {
+    (so_far, result)
+}
+
+/// What the run came to: its answer (refine: and the changes), or why there's none.
+fn answer_of(
+    job: &Job,
+    result: Option<&Value>,
+    so_far: &str,
+    code: Option<i32>,
+    err_text: &str,
+) -> Result<Answer, Failed> {
+    let reply = match result.map(|r| &r["result"]) {
         Some(Value::String(s)) => s.clone(),
         Some(v) if !v.is_null() => v.to_string(),
-        _ => so_far.clone(),
+        _ => so_far.to_string(),
     };
-    let failed = match &result {
+    let failed = match result {
         None => true,
         Some(r) => r["is_error"].as_bool().unwrap_or(false),
     } || reply.trim().is_empty();
     if failed {
         let said = result
-            .as_ref()
             .and_then(|r| r["result"].as_str())
             .filter(|s| !s.is_empty())
             .map(str::to_string);
         let msg = said.unwrap_or_else(|| match code {
-            Some(c) if c != 0 => format!("Claude Code stopped ({c}): {}", slice16(&err_text, 200)),
+            Some(c) if c != 0 => format!("Claude Code stopped ({c}): {}", slice16(err_text, 200)),
             _ => "nothing came back".into(),
         });
         return Err(Failed::Error(msg));
@@ -542,5 +568,66 @@ mod tests {
         let m = json!({ "type": "stream_event", "event": { "type": "content_block_delta", "delta": { "type": "text_delta", "text": "Hi" } } });
         assert_eq!(delta_of(&m), Some("Hi"));
         assert_eq!(delta_of(&json!({ "type": "result", "result": "x" })), None);
+    }
+    #[test]
+    fn the_stream_gives_the_words_as_they_come_and_the_result() {
+        let delta = |t: &str| {
+            json!({ "type": "stream_event", "event": { "type": "content_block_delta", "delta": { "type": "text_delta", "text": t } } }).to_string()
+        };
+        let out = [
+            delta("Hel"),
+            "not json".into(),
+            delta("lo"),
+            json!({ "type": "result", "result": "Hello" }).to_string(),
+        ]
+        .join("\n");
+        let mut seen = vec![];
+        let (so_far, result) = read_stream(out.as_bytes(), |s| seen.push(s.to_string()));
+        assert_eq!(so_far, "Hello");
+        assert_eq!(seen, ["Hel", "Hello"]);
+        assert_eq!(result.unwrap()["result"], "Hello");
+    }
+
+    #[test]
+    fn a_run_comes_to_an_answer_or_says_why_not() {
+        let j = job("explain", "x");
+        let ok = |r: Option<Value>, so_far: &str, code: Option<i32>, err: &str| {
+            answer_of(&j, r.as_ref(), so_far, code, err)
+        };
+        assert_eq!(
+            ok(
+                Some(json!({ "result": "  It means hi. " })),
+                "",
+                Some(0),
+                ""
+            )
+            .unwrap()
+            .text,
+            "It means hi."
+        );
+        assert_eq!(
+            ok(Some(json!({ "result": null })), "streamed", Some(0), "")
+                .unwrap()
+                .text,
+            "streamed"
+        );
+        assert_eq!(
+            ok(
+                Some(json!({ "result": "Not logged in", "is_error": true })),
+                "",
+                Some(1),
+                ""
+            )
+            .unwrap_err(),
+            Failed::Error("Not logged in".into())
+        );
+        assert_eq!(
+            ok(None, "", Some(2), "boom").unwrap_err(),
+            Failed::Error("Claude Code stopped (2): boom".into())
+        );
+        assert_eq!(
+            ok(None, "", Some(0), "").unwrap_err(),
+            Failed::Error("nothing came back".into())
+        );
     }
 }

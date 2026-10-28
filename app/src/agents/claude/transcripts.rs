@@ -219,163 +219,207 @@ struct Parsed {
 }
 
 fn parse_transcript(text: &str) -> Parsed {
-    static ASIDE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(^|\n)[ \t]*<aside>((?s:.*?))</aside>[ \t]*(?:\n|$)").unwrap()
-    });
-    static ANSWER: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#""([^"]+)"="([^"]*)""#).unwrap());
-    let aside = &*ASIDE;
-    let mut messages: Vec<Value> = vec![];
-    let (mut title, mut summary): (Option<String>, Option<String>) = (None, None);
-    let mut cur: Option<usize> = None; // the assistant message being added to
-    let mut asked: HashMap<String, Value> = HashMap::new(); // tool_use id -> questions, to pair with the answers
-    let mut planned: HashMap<String, String> = HashMap::new(); // tool_use id -> a plan, to pair with what you said to it
+    let mut r = Reader::default();
     for line in text.split('\n') {
-        let Ok(o) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
+        if let Ok(o) = serde_json::from_str::<Value>(line) {
+            r.line(&o);
+        }
+    }
+    r.finish()
+}
+
+/// A transcript read line by line: the chat as it went, and what pairs up across lines.
+#[derive(Default)]
+struct Reader {
+    messages: Vec<Value>,
+    title: Option<String>,
+    summary: Option<String>,
+    cur: Option<usize>,               // the assistant message being added to
+    asked: HashMap<String, Value>,    // tool_use id -> questions, to pair with the answers
+    planned: HashMap<String, String>, // tool_use id -> a plan, to pair with what you said to it
+}
+
+impl Reader {
+    fn line(&mut self, o: &Value) {
         let ty = o["type"].as_str().unwrap_or("");
         if ty == "custom-title" && o["customTitle"].is_string() {
-            title = o["customTitle"].as_str().map(str::to_string);
+            self.title = o["customTitle"].as_str().map(str::to_string);
         } else if ty == "summary" && o["summary"].is_string() {
-            summary = o["summary"].as_str().map(str::to_string);
+            self.summary = o["summary"].as_str().map(str::to_string);
         }
-        if (ty != "user" && ty != "assistant")
-            || o["isSidechain"].as_bool() == Some(true)
-            || o["isMeta"].as_bool() == Some(true)
-        {
-            continue;
+        if o["isSidechain"].as_bool() == Some(true) || o["isMeta"].as_bool() == Some(true) {
+            return;
         }
+        match ty {
+            "user" => self.user(o),
+            "assistant" => self.assistant(o),
+            _ => {}
+        }
+    }
+
+    /// Your message, a note Claude Code put in your name, or what its tools gave back.
+    fn user(&mut self, o: &Value) {
         let content = &o["message"]["content"];
-        if ty == "user" {
-            if let Some(blocks) = content
-                .as_array()
-                .filter(|b| !b.is_empty() && b.iter().all(|x| x["type"] == "tool_result"))
-            {
-                for b in blocks {
-                    let result = match &b["content"] {
-                        Value::String(t) => t.clone(),
-                        Value::Array(a) => {
-                            a.iter().map(|x| x["text"].as_str().unwrap_or("")).collect()
-                        }
-                        _ => String::new(),
-                    };
-                    if let Some(plan) = planned.remove(b["tool_use_id"].as_str().unwrap_or("")) {
-                        let approved = b["is_error"].as_bool() != Some(true);
-                        let feedback = if approved {
-                            ""
-                        } else {
-                            result
-                                .split_once("Their notes:")
-                                .map_or("", |(_, n)| n.trim())
-                        };
-                        messages.push(json!({ "role": "plan", "plan": plan, "approved": approved, "feedback": feedback }));
-                        cur = None;
-                        continue;
-                    }
-                    let Some(questions) = asked.get(b["tool_use_id"].as_str().unwrap_or("")) else {
-                        continue;
-                    };
-                    let picked: HashMap<String, String> = ANSWER
-                        .captures_iter(&result)
-                        .map(|c| (c[1].to_string(), c[2].to_string()))
-                        .collect();
-                    let items: Vec<Value> = questions.as_array().into_iter().flatten().map(|q| {
-                        let answer = picked.get(q["question"].as_str().unwrap_or("")).cloned().unwrap_or_else(|| "(no answer)".into());
-                        json!({ "question": q["question"], "header": q["header"], "answer": answer })
-                    }).collect();
-                    messages.push(json!({ "role": "qa", "items": items }));
-                    cur = None;
-                }
-                continue;
+        if let Some(blocks) = content
+            .as_array()
+            .filter(|b| !b.is_empty() && b.iter().all(|x| x["type"] == "tool_result"))
+        {
+            for b in blocks {
+                self.tool_result(b);
             }
-            let raw = match content {
-                Value::String(t) => t.clone(),
-                Value::Array(a) => a
-                    .iter()
-                    .filter(|b| b["type"] == "text")
-                    .filter_map(|b| b["text"].as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-                _ => String::new(),
+            return;
+        }
+        let raw = match content {
+            Value::String(t) => t.clone(),
+            Value::Array(a) => a
+                .iter()
+                .filter(|b| b["type"] == "text")
+                .filter_map(|b| b["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            _ => String::new(),
+        };
+        if let Some(note) = automatic_note(o, &raw) {
+            if !note.is_empty() {
+                self.messages
+                    .push(json!({ "role": "note", "text": note, "at": o["timestamp"] }));
+            }
+            self.cur = None;
+            return;
+        }
+        let clean = clean_user_text(&raw);
+        if clean.is_empty() {
+            return;
+        }
+        self.cur = None;
+        self.messages
+            .push(json!({ "role": "user", "text": clean, "at": o["timestamp"] }));
+    }
+
+    /// A tool's result: what you said to a plan, or your answers to its questions (others aren't shown).
+    fn tool_result(&mut self, b: &Value) {
+        static ANSWER: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#""([^"]+)"="([^"]*)""#).unwrap());
+        let result = match &b["content"] {
+            Value::String(t) => t.clone(),
+            Value::Array(a) => a.iter().map(|x| x["text"].as_str().unwrap_or("")).collect(),
+            _ => String::new(),
+        };
+        let id = b["tool_use_id"].as_str().unwrap_or("");
+        if let Some(plan) = self.planned.remove(id) {
+            let approved = b["is_error"].as_bool() != Some(true);
+            let feedback = if approved {
+                ""
+            } else {
+                result
+                    .split_once("Their notes:")
+                    .map_or("", |(_, n)| n.trim())
             };
-            if let Some(note) = automatic_note(&o, &raw) {
-                if !note.is_empty() {
-                    messages.push(json!({ "role": "note", "text": note, "at": o["timestamp"] }));
+            self.messages.push(
+                json!({ "role": "plan", "plan": plan, "approved": approved, "feedback": feedback }),
+            );
+            self.cur = None;
+            return;
+        }
+        let Some(questions) = self.asked.get(id) else {
+            return;
+        };
+        let picked: HashMap<String, String> = ANSWER
+            .captures_iter(&result)
+            .map(|c| (c[1].to_string(), c[2].to_string()))
+            .collect();
+        let items: Vec<Value> = questions
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|q| {
+                let answer = picked
+                    .get(q["question"].as_str().unwrap_or(""))
+                    .cloned()
+                    .unwrap_or_else(|| "(no answer)".into());
+                json!({ "question": q["question"], "header": q["header"], "answer": answer })
+            })
+            .collect();
+        self.messages.push(json!({ "role": "qa", "items": items }));
+        self.cur = None;
+    }
+
+    /// Its message: added to the answer under way (its words, asides and tools).
+    fn assistant(&mut self, o: &Value) {
+        let idx = *self.cur.get_or_insert_with(|| {
+            self.messages.push(json!({ "role": "assistant", "text": "", "tools": [], "asides": [], "at": o["timestamp"] }));
+            self.messages.len() - 1
+        });
+        for b in o["message"]["content"].as_array().into_iter().flatten() {
+            match b["type"].as_str() {
+                Some("text") if !b["text"].as_str().unwrap_or("").trim().is_empty() => {
+                    add_text(&mut self.messages[idx], b["text"].as_str().unwrap_or(""));
                 }
-                cur = None;
-                continue;
-            }
-            let clean = clean_user_text(&raw);
-            if clean.is_empty() {
-                continue;
-            }
-            cur = None;
-            messages.push(json!({ "role": "user", "text": clean, "at": o["timestamp"] }));
-        } else {
-            let idx = *cur.get_or_insert_with(|| {
-                messages.push(json!({ "role": "assistant", "text": "", "tools": [], "asides": [], "at": o["timestamp"] }));
-                messages.len() - 1
-            });
-            for b in content.as_array().into_iter().flatten() {
-                let m = &mut messages[idx];
-                match b["type"].as_str() {
-                    Some("text") if !b["text"].as_str().unwrap_or("").trim().is_empty() => {
-                        // the robot's running commentary lives in <aside> tags on their own lines; keep it apart from the answer
-                        let raw = b["text"].as_str().unwrap_or("");
-                        for c in aside.captures_iter(raw) {
-                            let a = c[2].split_whitespace().collect::<Vec<_>>().join(" ");
-                            m["asides"].as_array_mut().unwrap().push(json!(a));
-                        }
-                        let text = aside.replace_all(raw, "$1").trim().to_string();
-                        if !text.is_empty() {
-                            let joined = match m["text"].as_str().unwrap_or("") {
-                                "" => text,
-                                before => format!("{before}\n\n{text}"),
-                            };
-                            m["text"] = json!(joined);
-                        }
-                    }
-                    Some("tool_use") => {
-                        let name = b["name"].as_str().unwrap_or("");
-                        let label = match b["input"]["skill"].as_str() {
-                            Some(skill) if name == "Skill" => format!("Skill({skill})"),
-                            _ => name.to_string(),
-                        };
-                        m["tools"].as_array_mut().unwrap().push(json!(label));
-                        if name == "AskUserQuestion" && b["input"]["questions"].is_array() {
-                            asked.insert(
-                                b["id"].as_str().unwrap_or("").to_string(),
-                                b["input"]["questions"].clone(),
-                            );
-                        }
-                        if name == "ExitPlanMode"
-                            && let Some(plan) = b["input"]["plan"].as_str()
-                        {
-                            planned.insert(
-                                b["id"].as_str().unwrap_or("").to_string(),
-                                plan.to_string(),
-                            );
-                        }
-                    }
-                    _ => {}
-                }
+                Some("tool_use") => self.tool_use(idx, b),
+                _ => {}
             }
         }
     }
-    messages.retain(|m| {
-        m["role"] != "assistant"
-            || !m["text"].as_str().unwrap_or("").is_empty()
-            || m["tools"].as_array().is_some_and(|t| !t.is_empty())
+
+    fn tool_use(&mut self, idx: usize, b: &Value) {
+        let name = b["name"].as_str().unwrap_or("");
+        let label = match b["input"]["skill"].as_str() {
+            Some(skill) if name == "Skill" => format!("Skill({skill})"),
+            _ => name.to_string(),
+        };
+        self.messages[idx]["tools"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(label));
+        let id = b["id"].as_str().unwrap_or("").to_string();
+        if name == "AskUserQuestion" && b["input"]["questions"].is_array() {
+            self.asked
+                .insert(id.clone(), b["input"]["questions"].clone());
+        }
+        if name == "ExitPlanMode"
+            && let Some(plan) = b["input"]["plan"].as_str()
+        {
+            self.planned.insert(id, plan.to_string());
+        }
+    }
+
+    /// The chat without empty answers, and its title (named, summed up, or its first question).
+    fn finish(mut self) -> Parsed {
+        self.messages.retain(|m| {
+            m["role"] != "assistant"
+                || !m["text"].as_str().unwrap_or("").is_empty()
+                || m["tools"].as_array().is_some_and(|t| !t.is_empty())
+        });
+        let first_prompt = self
+            .messages
+            .iter()
+            .find(|m| m["role"] == "user")
+            .and_then(|m| m["text"].as_str())
+            .map(str::to_string);
+        Parsed {
+            title: self.title.or(self.summary).or(first_prompt),
+            messages: self.messages,
+        }
+    }
+}
+
+/// Its words, into the answer: the robot's running commentary lives in <aside> tags on their
+/// own lines, kept apart from the answer.
+fn add_text(m: &mut Value, raw: &str) {
+    static ASIDE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(^|\n)[ \t]*<aside>((?s:.*?))</aside>[ \t]*(?:\n|$)").unwrap()
     });
-    let first_prompt = messages
-        .iter()
-        .find(|m| m["role"] == "user")
-        .and_then(|m| m["text"].as_str())
-        .map(str::to_string);
-    Parsed {
-        title: title.or(summary).or(first_prompt),
-        messages,
+    for c in ASIDE.captures_iter(raw) {
+        let a = c[2].split_whitespace().collect::<Vec<_>>().join(" ");
+        m["asides"].as_array_mut().unwrap().push(json!(a));
+    }
+    let text = ASIDE.replace_all(raw, "$1").trim().to_string();
+    if !text.is_empty() {
+        let joined = match m["text"].as_str().unwrap_or("") {
+            "" => text,
+            before => format!("{before}\n\n{text}"),
+        };
+        m["text"] = json!(joined);
     }
 }
 
@@ -529,5 +573,38 @@ mod tests {
         assert_eq!(plans[0]["feedback"], "Make it blue");
         assert_eq!(plans[1]["approved"], true);
         assert_eq!(plans[1]["plan"], "1. Draw it, blue");
+    }
+
+    #[test]
+    fn a_transcript_reads_as_the_chat_showed_it() {
+        let text = [
+            line(json!({ "type": "summary", "summary": "Sum" })),
+            line(json!({ "type": "user", "timestamp": "t1", "message": { "content": "Hi there" } })),
+            line(json!({ "type": "assistant", "timestamp": "t2", "message": { "content": [{ "type": "text", "text": "Hello\n<aside>looking   around</aside>\nmore" }, { "type": "tool_use", "id": "s", "name": "Skill", "input": { "skill": "pdf" } }] } })),
+            line(json!({ "type": "assistant", "message": { "content": [{ "type": "text", "text": "second part" }, { "type": "tool_use", "id": "q", "name": "AskUserQuestion", "input": { "questions": [{ "question": "Color?", "header": "C" }, { "question": "Size?", "header": "S" }] } }] } })),
+            line(json!({ "type": "user", "message": { "content": [{ "type": "tool_result", "tool_use_id": "q", "content": [{ "type": "text", "text": "\"Color?\"=\"blue\"" }] }] } })),
+            line(json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "text", "text": "hidden" }] } })),
+            line(json!({ "type": "user", "isMeta": true, "message": { "content": "meta" } })),
+            line(json!({ "type": "assistant", "message": { "content": [{ "type": "text", "text": "   " }] } })),
+            line(json!({ "type": "user", "message": { "content": [{ "type": "text", "text": "Thanks" }, { "type": "image" }] } })),
+            line(json!({ "type": "user", "origin": { "kind": "task-notification" }, "message": { "content": "<task-notification><summary>Helper done</summary></task-notification>" } })),
+            line(json!({ "type": "assistant", "message": { "content": [{ "type": "tool_use", "id": "r", "name": "Read", "input": {} }] } })),
+            line(json!({ "type": "user", "message": { "content": [{ "type": "tool_result", "tool_use_id": "r", "content": "file" }] } })),
+            "not json".to_string(),
+        ]
+        .join("\n");
+        let parsed = parse_transcript(&text);
+        assert_eq!(parsed.title.as_deref(), Some("Sum"));
+        assert_eq!(
+            json!(parsed.messages),
+            json!([
+                { "role": "user", "text": "Hi there", "at": "t1" },
+                { "role": "assistant", "text": "Hello\nmore\n\nsecond part", "tools": ["Skill(pdf)", "AskUserQuestion"], "asides": ["looking around"], "at": "t2" },
+                { "role": "qa", "items": [{ "question": "Color?", "header": "C", "answer": "blue" }, { "question": "Size?", "header": "S", "answer": "(no answer)" }] },
+                { "role": "user", "text": "Thanks", "at": null },
+                { "role": "note", "text": "🔔 Helper done", "at": null },
+                { "role": "assistant", "text": "", "tools": ["Read"], "asides": [], "at": null },
+            ])
+        );
     }
 }

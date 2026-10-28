@@ -237,10 +237,56 @@ fn handle(app: &AppHandle, req: &Value, conn: u64) -> Value {
     )
 }
 
+/// What a robot asked for (ask_robot or hand_off_task), checked: who it goes to, and what.
+struct Asked {
+    to: String,
+    to_name: String,
+    from_name: String,
+    from_folder: String,
+    title: String, // (a task's)
+    message: String,
+}
+
 /// Robot `from` asks another (ask_robot) or hands it a task (hand_off_task): the checks, the
 /// bookkeeping, the message flying over; then the answer (or report) it waits for.
 pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn: u64) -> Value {
-    let from = from.to_string();
+    let asked = match read_ask(app, from, args, is_task) {
+        Ok(a) => a,
+        Err(e) => return err(e),
+    };
+    let (tx, rx) = mpsc::channel();
+    let started = link(app, |l| l.open(from, &asked, args, is_task, conn, tx));
+    let (req_id, exchange, first, task) = match started {
+        Ok(s) => s,
+        Err(e) => return err(e),
+    };
+    if let Some(t) = &task {
+        task_changed(app, t);
+    }
+    let text = if is_task {
+        task_text(
+            &asked.from_name,
+            &asked.from_folder,
+            &asked.title,
+            &asked.message,
+        )
+    } else {
+        message_text(&asked.from_name, &asked.from_folder, &asked.message)
+    };
+    let task_info = task
+        .as_ref()
+        .map(|t| json!({ "id": t.id, "title": t.title }));
+    on_ask(
+        app,
+        from,
+        &asked.to,
+        json!({ "phase": "incoming", "reqId": req_id, "exchange": exchange, "first": first, "from": asked.from_name, "text": text, "task": task_info }),
+    );
+    wait_for(app, &rx, &req_id, is_task, &asked.to_name)
+}
+
+/// The request, checked: a message (a task: a title and details), and a robot on the desktop.
+fn read_ask(app: &AppHandle, from: &str, args: &Value, is_task: bool) -> Result<Asked, String> {
     let everyone: Vec<(String, String, String)> = with(app, |st| {
         st.store
             .list()
@@ -276,29 +322,30 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
     .trim()
     .to_string();
     if message.is_empty() {
-        return err(if is_task {
+        return Err(if is_task {
             "The task has no details."
         } else {
             "The message is empty."
-        });
+        }
+        .into());
     }
     if is_task && title.is_empty() {
-        return err("The task needs a short title.");
+        return Err("The task needs a short title.".into());
     }
     let Some((to, to_name, _)) = target else {
-        let names: Vec<String> = others(app, &from).into_iter().map(|o| o.1).collect();
+        let names: Vec<String> = others(app, from).into_iter().map(|o| o.1).collect();
         let there = if names.is_empty() {
             "There are no other robots on the desktop.".to_string()
         } else {
             format!("On the desktop: {}.", names.join(", "))
         };
-        return err(format!(
+        return Err(format!(
             "There's no robot called \"{}\". {there}",
             text(&args["robot"])
         ));
     };
     if !visible(app, &to) {
-        return err(format!(
+        return Err(format!(
             "{to_name} is put away (not on the desktop), so it can't answer. The user can bring it out from the tray."
         ));
     }
@@ -307,19 +354,41 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
         .find(|c| c.0 == from)
         .map(|c| (c.1.clone(), c.2.clone()))
         .unwrap_or_default();
-    let now = now_ms();
+    Ok(Asked {
+        to,
+        to_name,
+        from_name,
+        from_folder,
+        title,
+        message,
+    })
+}
 
-    // the checks and the bookkeeping, in one go
-    let (tx, rx) = mpsc::channel();
-    let started = link(app, |l| {
+/// A started ask: its request id, the conversation it goes to (and whether that's new), its task.
+type Opened = (String, String, bool, Option<Task>);
+
+impl Link {
+    /// The checks and the bookkeeping, in one go (under the lock): not up its own chain, not
+    /// too long a chain, not too often; then the conversation, the task, and who waits.
+    fn open(
+        &mut self,
+        from: &str,
+        asked: &Asked,
+        args: &Value,
+        is_task: bool,
+        conn: u64,
+        reply: Sender<Value>,
+    ) -> Result<Opened, String> {
+        let (to, to_name) = (&asked.to, &asked.to_name);
+        let now = now_ms();
         // who's waiting on this robot (it's answering them, maybe for others further up)
-        let upstream: HashSet<String> = l
+        let upstream: HashSet<String> = self
             .pending
             .values()
             .filter(|p| p.to == from)
             .flat_map(|p| p.chain.iter().cloned())
             .collect();
-        if upstream.contains(&to) {
+        if upstream.contains(to) {
             return Err(format!(
                 "{to_name} is waiting on your answer (it asked you this), so you can't ask it: put what you need to know in your reply to it instead."
             ));
@@ -329,7 +398,7 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
                 "That's {CHAIN_MAX} robots in one chain already: answer with what you know instead of asking further."
             ));
         }
-        let times = l.asked.entry(from.clone()).or_default();
+        let times = self.asked.entry(from.to_string()).or_default();
         times.retain(|t| now - t < ASKS_WINDOW_MS);
         if times.len() >= ASKS_MAX {
             return Err(format!(
@@ -342,81 +411,76 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
         let (exchange, first) = if is_task {
             (uuid::Uuid::new_v4().to_string(), true)
         } else {
-            let key = format!("{from}>{to}");
             let fresh = args["new_conversation"].as_bool() == Some(true);
-            let ex = l
-                .exchanges
-                .get_mut(&key)
-                .filter(|ex| !fresh && now - ex.at <= EXCHANGE_KEEP_MS);
-            let (id, first) = match ex {
-                Some(ex) => {
-                    ex.at = now;
-                    (ex.id.clone(), false)
-                }
-                None => (uuid::Uuid::new_v4().to_string(), true),
-            };
-            l.exchanges.insert(
-                key,
-                Exchange {
-                    id: id.clone(),
-                    at: now,
-                },
-            );
-            (id, first)
+            self.exchange(&format!("{from}>{to}"), fresh, now)
         };
         let req_id = uuid::Uuid::new_v4().to_string();
-        let task = is_task.then(|| {
-            l.task_seq += 1;
-            let t = Task {
-                id: format!("t{}", l.task_seq),
-                from: from.clone(),
-                to: to.clone(),
-                title: title.clone(),
-                status: "sent",
-                at: now,
-                done_at: 0,
-                report: String::new(),
-            };
-            l.tasks.push(t.clone());
-            t
-        });
+        let task = is_task.then(|| self.new_task(from, to, &asked.title, now));
         let mut chain = upstream;
-        chain.insert(from.clone());
-        l.pending.insert(
+        chain.insert(from.to_string());
+        self.pending.insert(
             req_id.clone(),
             Pending {
-                from: from.clone(),
+                from: from.to_string(),
                 to: to.clone(),
                 chain,
                 conn,
                 task: task.as_ref().map(|t| t.id.clone()),
-                reply: tx,
+                reply,
             },
         );
         Ok((req_id, exchange, first, task))
-    });
-    let (req_id, exchange, first, task) = match started {
-        Ok(s) => s,
-        Err(e) => return err(e),
-    };
-    if let Some(t) = &task {
-        task_changed(app, t);
     }
-    let text = if is_task {
-        task_text(&from_name, &from_folder, &title, &message)
-    } else {
-        message_text(&from_name, &from_folder, &message)
-    };
-    let task_info = task
-        .as_ref()
-        .map(|t| json!({ "id": t.id, "title": t.title }));
-    on_ask(
-        app,
-        &from,
-        &to,
-        json!({ "phase": "incoming", "reqId": req_id, "exchange": exchange, "first": first, "from": from_name, "text": text, "task": task_info }),
-    );
 
+    /// The conversation between two robots a message goes to: the last one, if it's recent
+    /// (and not asked to start afresh), else a new one. Says whether it's new.
+    fn exchange(&mut self, key: &str, fresh: bool, now: i64) -> (String, bool) {
+        let ex = self
+            .exchanges
+            .get_mut(key)
+            .filter(|ex| !fresh && now - ex.at <= EXCHANGE_KEEP_MS);
+        let (id, first) = match ex {
+            Some(ex) => {
+                ex.at = now;
+                (ex.id.clone(), false)
+            }
+            None => (uuid::Uuid::new_v4().to_string(), true),
+        };
+        self.exchanges.insert(
+            key.to_string(),
+            Exchange {
+                id: id.clone(),
+                at: now,
+            },
+        );
+        (id, first)
+    }
+
+    fn new_task(&mut self, from: &str, to: &str, title: &str, now: i64) -> Task {
+        self.task_seq += 1;
+        let t = Task {
+            id: format!("t{}", self.task_seq),
+            from: from.to_string(),
+            to: to.to_string(),
+            title: title.to_string(),
+            status: "sent",
+            at: now,
+            done_at: 0,
+            report: String::new(),
+        };
+        self.tasks.push(t.clone());
+        t
+    }
+}
+
+/// The answer (or report), as long as it may take; after that, an error saying it didn't come.
+fn wait_for(
+    app: &AppHandle,
+    rx: &mpsc::Receiver<Value>,
+    req_id: &str,
+    is_task: bool,
+    to_name: &str,
+) -> Value {
     let wait = if is_task {
         TASK_TIMEOUT_MS
     } else {
@@ -430,7 +494,7 @@ pub(super) fn ask(app: &AppHandle, from: &str, args: &Value, is_task: bool, conn
                 "No {what} from {to_name} after {} minutes (it may be waiting on the user in its chat).",
                 wait / 60_000
             );
-            settle(app, &req_id, "", &error, false);
+            settle(app, req_id, "", &error, false);
             rx.recv_timeout(Duration::from_secs(1))
                 .unwrap_or_else(|_| err(error))
         }
