@@ -10,7 +10,7 @@ use std::io::Cursor;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -27,7 +27,7 @@ use crate::runtime::hub::Hotkey;
 use crate::runtime::util::only;
 use crate::runtime::{Error, Locked, hub, with};
 use crate::ui::views;
-use crate::workbench::{files, paste};
+use crate::workbench::{capture, files, paste};
 
 /// What to do with the box once it's dragged: its PNG bytes. (Not called if you cancel.)
 pub type OnShot = Box<dyn FnOnce(&AppHandle, Vec<u8>) + Send>;
@@ -36,6 +36,9 @@ const LABEL: &str = "snip";
 const ASK_HINT: &str = "🔍 Drag a box round what you want to ask about · Esc to cancel";
 // a box smaller than this (physical px) is a click, not a box
 const MIN_BOX: i64 = 6;
+// losing the focus to one of our own windows this soon after it opens isn't switching away
+const GRACE: Duration = Duration::from_secs(1);
+const SETTLE: Duration = Duration::from_millis(50);
 
 /// The screen as it was when the snip started, while its window is up.
 struct Shot {
@@ -58,6 +61,10 @@ fn take_shot(round: Option<u64>) -> Option<Shot> {
         return None;
     }
     shot.take()
+}
+
+fn is_up(round: u64) -> bool {
+    SHOT.locked().as_ref().is_some_and(|s| s.round == round)
 }
 
 fn close_window(app: &AppHandle) {
@@ -136,11 +143,23 @@ fn begin(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Res
     if !hidden.is_empty() {
         thread::sleep(Duration::from_millis(120)); // (till the screen's redrawn without them)
     }
-    let image = screenshot::capture(screen.bounds);
+    let shown = show(app, screen, hint, on_shot);
+    // the robots come back only once the box has the focus: a robot that had it (the palette
+    // hands it to one as it goes) takes it back as it's uncloaked, and the box would cancel
     for &h in &hidden {
         screenshot::cloak(h, false);
     }
-    let image = image.ok_or("couldn't capture the screen")?;
+    shown
+}
+
+/// The screen captured as it is now, and the box over it.
+fn show(
+    app: &AppHandle,
+    screen: window::Monitor,
+    hint: &str,
+    on_shot: OnShot,
+) -> Result<(), Error> {
+    let image = screenshot::capture(screen.bounds).ok_or("couldn't capture the screen")?;
     let data_url = data_url(&image).ok_or("couldn't encode the screen")?;
     let round = ROUND.fetch_add(1, Ordering::SeqCst) + 1;
     *SHOT.locked() = Some(Shot {
@@ -179,12 +198,12 @@ fn open_window(app: &AppHandle, screen: window::Monitor, round: u64) -> Result<(
         window::set_bounds(hwnd, r);
     }
     let app2 = app.clone();
+    let opened = Instant::now();
     w.on_window_event(move |e| match e {
-        // switched away (Alt+Tab): no box after all
         WindowEvent::Focused(false) => {
-            if take_shot(Some(round)).is_some() {
-                close_window(&app2);
-            }
+            let app = app2.clone();
+            // (once the focus has landed, off the main thread)
+            thread::spawn(move || focus_lost(&app, round, opened));
         }
         WindowEvent::Destroyed => {
             take_shot(Some(round));
@@ -194,6 +213,22 @@ fn open_window(app: &AppHandle, screen: window::Monitor, round: u64) -> Result<(
     let _ = w.show();
     let _ = w.set_focus();
     Ok(())
+}
+
+/// The box lost the focus. One of our own windows took it just as the box came up (the
+/// robot the palette left it with): the box takes it back. Else you switched away
+/// (Alt+Tab): no box after all.
+fn focus_lost(app: &AppHandle, round: u64, opened: Instant) {
+    thread::sleep(SETTLE);
+    if opened.elapsed() < GRACE && capture::foreground_is_ours() && is_up(round) {
+        if let Some(w) = app.get_webview_window(LABEL) {
+            let _ = w.set_focus();
+        }
+        return;
+    }
+    if take_shot(Some(round)).is_some() {
+        close_window(app);
+    }
 }
 
 // ---------------------------------------------------------------- ask about the screen

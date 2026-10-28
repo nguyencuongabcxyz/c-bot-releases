@@ -349,10 +349,16 @@ pub fn paste_into(hwnd: isize, text: &str) -> bool {
     true
 }
 
+/// The window in front is one of ours.
+pub fn foreground_is_ours() -> bool {
+    let hwnd = window::foreground();
+    hwnd != 0 && window::process_of(hwnd) == std::process::id()
+}
+
 /// The title of the window in front ("" if it's one of ours).
 pub fn foreground_title() -> String {
     let hwnd = window::foreground();
-    if hwnd == 0 || window::process_of(hwnd) == std::process::id() {
+    if hwnd == 0 || foreground_is_ours() {
         return String::new();
     }
     window::title_of(hwnd)
