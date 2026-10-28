@@ -23,8 +23,14 @@
 //! Its timers (later) belong to the visit: a visit's over, or its timers cleared, and the
 //! ones still to come do nothing (epoch). No lock is held while calling another module.
 
+mod office;
+mod reactions;
+mod throws;
 mod visits;
 
+pub use office::*;
+pub use reactions::*;
+pub use throws::*;
 pub use visits::*;
 
 use std::collections::{HashMap, HashSet};
@@ -423,127 +429,6 @@ fn report(app: &AppHandle, id: &str, r: &Value) {
     }
 }
 
-// ---------------------------------------------------------------- reactions
-
-fn on_done(app: &AppHandle, id: &str) {
-    // the visitor watching it work cheers, and goes home
-    if let Some(v) =
-        visit(app).filter(|v| v.b == id && v.mode == Mode::Watch && v.phase == Phase::There)
-    {
-        walkers::say(app, &v.a, &line(app, &v.a, "clap", id), 2400);
-        walkers::pose(app, &v.a, "clap", Some(&v.face));
-        later(app, 2600, |app| homeward(app, None, 1.0));
-    }
-    if level(app) == "never" || app_busy(app) {
-        return;
-    }
-    let now = Instant::now();
-    for o in live(app) {
-        if o == id || in_visit(app, &o) || !free_awake(app, &o) || !same_screen(app, &o, id) {
-            continue;
-        }
-        let clapped = soc(app, |s| {
-            if s.last_clap
-                .get(&o)
-                .is_some_and(|t| now.duration_since(*t) < CLAP_GAP)
-            {
-                return false;
-            }
-            s.last_clap.insert(o.clone(), now);
-            true
-        });
-        if clapped {
-            let text = if random() < 0.45 {
-                line(app, &o, "clap", id)
-            } else {
-                String::new()
-            };
-            tell(
-                app,
-                &o,
-                json!({ "phase": "clap", "side": side_of(app, &o, id), "text": text }),
-            );
-        }
-    }
-}
-
-fn on_slept(app: &AppHandle, id: &str) {
-    if level(app) == "never" || app_busy(app) {
-        return;
-    }
-    for o in live(app) {
-        if o == id || in_visit(app, &o) || !free_awake(app, &o) || dist(app, &o, id) > near() {
-            continue;
-        }
-        if random() < 0.5 {
-            let sleep_soon = rep(app, &o).idle_ms() > 90_000.0 && random() < 0.5;
-            tell(
-                app,
-                &o,
-                json!({ "phase": "yawn", "side": side_of(app, &o, id), "sleepSoon": sleep_soon }),
-            );
-        }
-    }
-}
-
-/// A word milestone (features/vocab/mod.rs): the others dance too.
-pub fn milestone(app: &AppHandle, id: &str) {
-    if level(app) == "never" {
-        return;
-    }
-    for o in live(app) {
-        if o != id && !in_visit(app, &o) && free_awake(app, &o) {
-            tell(app, &o, json!({ "phase": "dance" }));
-        }
-    }
-}
-
-fn try_wave(app: &AppHandle, now: Instant) -> bool {
-    let free: Vec<String> = live(app)
-        .into_iter()
-        .filter(|id| free_awake(app, id) && rep(app, id).idle_ms() > 15_000.0 && !in_visit(app, id))
-        .collect();
-    for a in &free {
-        for b in &free {
-            if a >= b || !same_screen(app, a, b) || dist(app, a, b) > near() {
-                continue;
-            }
-            let key = format!("{a}|{b}");
-            if soc(app, |s| {
-                s.last_wave
-                    .get(&key)
-                    .is_some_and(|t| now.duration_since(*t) < WAVE_PAIR_GAP)
-            }) {
-                continue;
-            }
-            if random() > 0.05 * kk(app) {
-                continue;
-            }
-            soc(app, |s| s.last_wave.insert(key, now));
-            let (x, y) = if random() < 0.5 {
-                (a.clone(), b.clone())
-            } else {
-                (b.clone(), a.clone())
-            };
-            tell(
-                app,
-                &x,
-                json!({ "phase": "wave", "side": side_of(app, &x, &y) }),
-            );
-            after(app, 900, move |app| {
-                let back = if rep(app, &y).b("awake") {
-                    json!({ "phase": "wave-back", "side": side_of(app, &y, &x) })
-                } else {
-                    json!({ "phase": "stir" })
-                };
-                tell(app, &y, back);
-            });
-            return true;
-        }
-    }
-    false
-}
-
 // ---------------------------------------------------------------- walker hooks
 
 /// Its walker was clicked: a visitor says "gotta go!" and hurries home. True if social.rs
@@ -602,91 +487,6 @@ pub fn gone(app: &AppHandle, id: &str) {
     if v.a == id {
         end_visit(app, "home");
     }
-}
-
-// ---------------------------------------------------------------- office life
-
-fn try_scene(app: &AppHandle) -> bool {
-    if visit(app).is_some() {
-        return false;
-    }
-    let now = Local::now();
-    let settings = with(app, |st| st.store.settings().clone());
-    if !workdays(&settings).contains(&now.weekday().num_days_from_sunday()) {
-        return false;
-    }
-    let mins = now.hour() * 60 + now.minute();
-    let day = today();
-    let (lunch_day, tea_day) = soc(app, |s| (s.lunch_day.clone(), s.tea_day.clone()));
-    let ids = live(app);
-    let organisers: Vec<&String> = ids
-        .iter()
-        .filter(|id| {
-            free_awake(app, id)
-                && rep(app, id).idle_ms() >= 45_000.0
-                && rep(app, id).wanders()
-                && !in_visit(app, id)
-        })
-        .collect();
-    for a in organisers {
-        if random() > 0.06 * kk(app) {
-            continue;
-        }
-        if lunch_day != day && (within(mins, SCENE_ORDER) || within(mins, SCENE_GOOUT)) {
-            let out = within(mins, SCENE_GOOUT);
-            let hosts: Vec<&String> = ids
-                .iter()
-                .filter(|b| {
-                    *b != a
-                        && free_awake(app, b)
-                        && !in_visit(app, b)
-                        && same_screen(app, a, b)
-                        && (!out || rep(app, b).wanders())
-                })
-                .collect();
-            if let Some(b) = pick(&hosts) {
-                return scene(
-                    app,
-                    if out { Mode::GoOut } else { Mode::Order },
-                    a,
-                    b,
-                    vec![],
-                );
-            }
-        }
-        if tea_day != day && within(mins, SCENE_TEA) {
-            // everyone at a desk on this screen, nearest first (the busy ones get the usual)
-            let mut stops: Vec<String> = ids
-                .iter()
-                .filter(|b| {
-                    *b != a
-                        && at_desk(app, b)
-                        && !rep(app, b).b("chat")
-                        && rep(app, b).b("awake")
-                        && same_screen(app, a, b)
-                })
-                .cloned()
-                .collect();
-            stops.sort_by(|x, y| dist(app, a, x).total_cmp(&dist(app, a, y)));
-            if !stops.is_empty() {
-                let first = stops.remove(0);
-                return scene(app, Mode::Tea, a, &first, stops);
-            }
-        }
-    }
-    false
-}
-
-/// An office scene: Order, GoOut or Tea (a goes to b; tea: then the stops).
-pub fn scene(app: &AppHandle, kind: Mode, a: &str, b: &str, stops: Vec<String>) -> bool {
-    soc(app, |s| {
-        if kind == Mode::Tea {
-            s.tea_day = today()
-        } else {
-            s.lunch_day = today()
-        }
-    });
-    start(app, a, b, kind, stops, None)
 }
 
 // ---------------------------------------------------------------- the clock
