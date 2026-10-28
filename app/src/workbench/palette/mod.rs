@@ -26,7 +26,7 @@ use crate::platform::window::Rect;
 use crate::platform::{clipboard, window};
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::only;
-use crate::runtime::{Locked, hub, with};
+use crate::runtime::{Error, Locked, hub, with};
 use crate::workbench::quick::{MAX_TEXT, slice16};
 use crate::workbench::{capture, quick, snip};
 
@@ -447,7 +447,7 @@ pub fn hotkey(app: &AppHandle) -> String {
 
 /// The menu, once the window is ready for it (null while there's nothing to show).
 #[tauri::command(async)]
-pub fn palette_init(window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn palette_init(window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, LABEL)?;
     Ok(pal(|p| {
         p.ready = true;
@@ -464,7 +464,7 @@ pub fn palette_size(
     app: AppHandle,
     window: tauri::WebviewWindow,
     height: f64,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     only(&window, LABEL)?;
     if !height.is_finite() {
         return Ok(());
@@ -487,7 +487,7 @@ pub fn palette_pick(
     app: AppHandle,
     window: tauri::WebviewWindow,
     id: String,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     only(&window, LABEL)?;
     let Some(picked) = pal(|p| p.ctx.clone()) else {
         return Ok(false);
@@ -502,7 +502,7 @@ pub fn palette_pick(
 }
 
 #[tauri::command(async)]
-pub fn palette_close(app: AppHandle, window: tauri::WebviewWindow) -> Result<bool, String> {
+pub fn palette_close(app: AppHandle, window: tauri::WebviewWindow) -> Result<bool, Error> {
     only(&window, LABEL)?;
     close(&app);
     Ok(true)

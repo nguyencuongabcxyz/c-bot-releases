@@ -26,7 +26,7 @@ use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::{only, text};
-use crate::runtime::{Locked, hub, part_if, with};
+use crate::runtime::{Error, Locked, hub, part_if, with};
 use crate::store::saved::Saved;
 use crate::ui::tray;
 use crate::workbench::capture;
@@ -698,7 +698,7 @@ pub fn add_for_chat(
     robot_id: &str,
     text: &str,
     important: bool,
-) -> Result<String, String> {
+) -> Result<String, Error> {
     let Some(note) = notes(app, |n| n.add(text, important, "chat", now())).flatten() else {
         return Err("The note is empty.".into());
     };
@@ -811,7 +811,7 @@ pub fn notes_remind_open(app: AppHandle, window: tauri::WebviewWindow, p: Value)
 // (the notebook's own: only it may ask)
 
 #[tauri::command(async)]
-pub fn notebook_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn notebook_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, notebook::LABEL)?;
     let ctx = notebook::ctx(&app);
     let mut v = view(&app);
@@ -830,7 +830,7 @@ pub fn notebook_act(
     window: tauri::WebviewWindow,
     action: String,
     p: Option<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, Error> {
     only(&window, notebook::LABEL)?;
     Ok(act(&app, &action, &p.unwrap_or_default()))
 }

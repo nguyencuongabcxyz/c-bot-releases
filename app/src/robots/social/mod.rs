@@ -45,7 +45,7 @@ use crate::platform::{input, presence, window};
 use crate::robots;
 use crate::robots::walkers::{Errand, after, pick, random};
 use crate::robots::{maid, planes, walkers};
-use crate::runtime::{hub, part_or_default, with};
+use crate::runtime::{Error, hub, part_or_default, with};
 use crate::workbench::quick;
 
 const TICK: Duration = Duration::from_secs(6);
@@ -721,7 +721,7 @@ pub fn social_report(
     app: AppHandle,
     window: tauri::WebviewWindow,
     report: Value,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     if report.is_object() {
         self::report(&app, &id, &report);

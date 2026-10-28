@@ -1,7 +1,7 @@
 //! The words' commands: a robot's page, the word card and the My words window ask these.
 
 use super::*;
-use crate::runtime::Locked;
+use crate::runtime::{Error, Locked};
 
 // ---------------------------------------------------------------- commands
 
@@ -61,14 +61,14 @@ pub fn robot_vocab_box(app: AppHandle, window: tauri::WebviewWindow) -> bool {
 // (the word card's own: only it may ask)
 
 #[tauri::command(async)]
-pub fn card_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn card_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, card::LABEL)?;
     Ok(card::init(&app))
 }
 
 /// How tall the card came out (CSS px).
 #[tauri::command(async)]
-pub fn card_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
+pub fn card_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -> Result<(), Error> {
     only(&window, card::LABEL)?;
     card::size(&app, height);
     Ok(())
@@ -81,7 +81,7 @@ pub fn card_act(
     window: tauri::WebviewWindow,
     action: String,
     payload: Option<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, Error> {
     only(&window, card::LABEL)?;
     Ok(on_card(&app, &action, &payload.unwrap_or_default()))
 }

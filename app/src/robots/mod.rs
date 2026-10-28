@@ -29,7 +29,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::features::chat;
 use crate::platform::window;
 use crate::platform::window::Rect;
-use crate::runtime::{State, with};
+use crate::runtime::{Error, State, with};
 use crate::store::title_for;
 use crate::ui::views;
 use crate::workbench::{shell, terminal};
@@ -55,10 +55,10 @@ pub fn id_of(label: &str) -> Option<&str> {
 }
 
 /// The robot whose window sent a command (an error for any other window).
-pub fn sender(window: &tauri::WebviewWindow) -> Result<String, String> {
+pub fn sender(window: &tauri::WebviewWindow) -> Result<String, Error> {
     id_of(window.label())
         .map(str::to_string)
-        .ok_or_else(|| format!("{} isn't a robot's window", window.label()))
+        .ok_or_else(|| format!("{} isn't a robot's window", window.label()).into())
 }
 
 fn dims_of(size: &str) -> (f64, f64) {

@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::runtime::Locked;
+use crate::runtime::{Error, Locked};
 
 // ---------------------------------------------------------------- what the page asks
 
@@ -440,7 +440,7 @@ pub fn set_brain(app: &AppHandle, id: &str, tab_id: &str, p: &Value) -> Value {
         return json!({ "ok": false });
     }
     let chat = chat_of(app, id, tab_id);
-    let result = (|| -> Result<(), String> {
+    let result = (|| -> Result<(), Error> {
         if let Some(model) = p["model"].as_str() {
             with(app, |st| {
                 st.store

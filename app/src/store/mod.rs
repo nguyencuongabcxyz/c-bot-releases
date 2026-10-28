@@ -14,6 +14,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::runtime::Error;
 use serde_json::{Map, Value, json};
 
 const HISTORY_LIMIT: usize = 60;
@@ -100,13 +101,13 @@ fn migrate(c: &mut Value) {
     o.remove("history");
 }
 
-fn read_json(file: &Path) -> Result<Value, String> {
-    let text = fs::read_to_string(file).map_err(|e| e.to_string())?;
+fn read_json(file: &Path) -> Result<Value, Error> {
+    let text = fs::read_to_string(file)?;
     let text = text.trim_start_matches('\u{feff}'); // (saved by an editor that adds a BOM)
     if text.trim().is_empty() {
         return Err("empty file".into());
     }
-    let data: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    let data: Value = serde_json::from_str(text)?;
     if !data.get("characters").is_some_and(Value::is_array) {
         return Err("not a C-Bot file".into());
     }

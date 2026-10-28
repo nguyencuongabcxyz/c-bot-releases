@@ -1,16 +1,17 @@
 //! What the pages ask of the walkers: a robot's page setting off, and the walker windows' own.
 
 use super::*;
+use crate::runtime::Error;
 
 // ---------------------------------------------------------------- commands
 
 /// The walker whose window (walker-<id>) sent a command.
-pub(super) fn walker_of(window: &tauri::WebviewWindow) -> Result<String, String> {
+pub(super) fn walker_of(window: &tauri::WebviewWindow) -> Result<String, Error> {
     window
         .label()
         .strip_prefix("walker-")
         .map(str::to_string)
-        .ok_or_else(|| format!("{} isn't a walker's window", window.label()))
+        .ok_or_else(|| format!("{} isn't a walker's window", window.label()).into())
 }
 
 /// The robot gets ready to go for a walk round the screen (asleep: it sleepwalks).
@@ -19,7 +20,7 @@ pub fn robot_wander_prep(
     app: AppHandle,
     window: tauri::WebviewWindow,
     opts: Value,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     let id = robots::sender(&window)?;
     Ok(prepare(
         &app,
@@ -36,7 +37,7 @@ pub fn robot_wander(
     app: AppHandle,
     window: tauri::WebviewWindow,
     opts: Value,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     let id = robots::sender(&window)?;
     let f = &opts["feet"];
     let feet = f["x"]
@@ -60,7 +61,7 @@ pub fn robot_walker(
     app: AppHandle,
     window: tauri::WebviewWindow,
     what: String,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     match what.as_str() {
         "wave" => wave(&app, &id),
@@ -74,7 +75,7 @@ pub fn robot_walker(
 }
 
 #[tauri::command(async)]
-pub fn walker_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn walker_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     let id = walker_of(&window)?;
     let found = ws(&app, |m| {
         m.get(&id)
@@ -91,7 +92,7 @@ pub fn walker_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value
 
 /// Its first frame is drawn: take over from the desk (now, or once it's told to go).
 #[tauri::command(async)]
-pub fn walker_ready(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+pub fn walker_ready(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), Error> {
     let id = walker_of(&window)?;
     with_walker(&app, &id, |w, fx| {
         w.ready = true;
@@ -108,7 +109,7 @@ pub fn walker_through(
     app: AppHandle,
     window: tauri::WebviewWindow,
     through: bool,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = walker_of(&window)?;
     with_walker(&app, &id, |w, fx| {
         if w.held.is_none() {
@@ -119,18 +120,14 @@ pub fn walker_through(
 }
 
 #[tauri::command(async)]
-pub fn walker_drag(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-    step: Value,
-) -> Result<(), String> {
+pub fn walker_drag(app: AppHandle, window: tauri::WebviewWindow, step: Value) -> Result<(), Error> {
     drag(&app, &walker_of(&window)?, &step);
     Ok(())
 }
 
 /// A click (no drag): it waves at you (or the maid / a visitor has something to say).
 #[tauri::command(async)]
-pub fn walker_click(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+pub fn walker_click(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), Error> {
     let id = walker_of(&window)?;
     if has(&app, &id) && !maid::clicked(&app, &id) && !social::clicked(&app, &id) {
         wave(&app, &id);

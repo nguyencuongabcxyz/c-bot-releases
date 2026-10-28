@@ -5,6 +5,7 @@
 //! a page sent (util.rs).
 
 pub mod commands;
+mod error;
 pub mod hub;
 pub mod migrate;
 pub mod paths;
@@ -14,4 +15,5 @@ mod state;
 pub mod updater;
 pub mod util;
 
+pub use error::Error;
 pub use state::{Locked, State, part, part_if, part_or_default, with};

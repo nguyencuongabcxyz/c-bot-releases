@@ -25,7 +25,7 @@ use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::only;
-use crate::runtime::{Locked, hub, with};
+use crate::runtime::{Error, Locked, hub, with};
 use crate::ui::views;
 use crate::workbench::{files, paste};
 
@@ -104,12 +104,7 @@ fn png_bytes(image: &RgbaImage) -> Option<Vec<u8>> {
 
 /// Capture the screen under the mouse and let the user drag a box (hint: the line at the
 /// top; hide_robots: fade the robot windows out of the way first).
-pub fn start(
-    app: &AppHandle,
-    hint: &str,
-    hide_robots: bool,
-    on_shot: OnShot,
-) -> Result<(), String> {
+pub fn start(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Result<(), Error> {
     // one box at a time (a second press of the hotkey while one's up does nothing)
     if app.get_webview_window(LABEL).is_some() || SHOT.locked().is_some() {
         return Ok(());
@@ -122,7 +117,7 @@ pub fn start(
     res
 }
 
-fn begin(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Result<(), String> {
+fn begin(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Result<(), Error> {
     let (cx, cy) = window::cursor();
     let screen = window::monitor_near(cx, cy); // (all of it: the box can go over the taskbar too)
     // the screen as it is now, before the window covers it (and without the robots in the way)
@@ -162,7 +157,7 @@ fn begin(app: &AppHandle, hint: &str, hide_robots: bool, on_shot: OnShot) -> Res
 }
 
 /// The window over the whole monitor (taskbar too), on top of everything.
-fn open_window(app: &AppHandle, screen: window::Monitor, round: u64) -> Result<(), String> {
+fn open_window(app: &AppHandle, screen: window::Monitor, round: u64) -> Result<(), Error> {
     let r = screen.bounds;
     let w = views::builder(app, LABEL, "snip", &[])
         .title("Drag a box round a word")
@@ -176,9 +171,8 @@ fn open_window(app: &AppHandle, screen: window::Monitor, round: u64) -> Result<(
         .visible(false)
         .background_color(Color(0, 0, 0, 255))
         .inner_size(r.w as f64 / screen.scale, r.h as f64 / screen.scale)
-        .build()
-        .map_err(|e| e.to_string())?;
-    let hwnd = w.hwnd().map_err(|e| e.to_string())?.0 as isize;
+        .build()?;
+    let hwnd = w.hwnd()?.0 as isize;
     // (moving it onto a screen of another scale rescales it once: placed again after)
     window::set_bounds(hwnd, r);
     if window::window_rect(hwnd) != r {
@@ -270,7 +264,7 @@ pub fn robot_screen_ask(app: AppHandle, window: tauri::WebviewWindow) -> bool {
 
 /// The screen as it was, for the snip window to draw.
 #[tauri::command(async)]
-pub fn snip_init(window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn snip_init(window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, LABEL)?;
     let shot = SHOT.locked();
     Ok(shot.as_ref().map_or(
@@ -281,11 +275,7 @@ pub fn snip_init(window: tauri::WebviewWindow) -> Result<Value, String> {
 
 /// The box was dragged (CSS px): its part of the screen goes where it was asked for.
 #[tauri::command(async)]
-pub fn snip_done(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-    area: Value,
-) -> Result<bool, String> {
+pub fn snip_done(app: AppHandle, window: tauri::WebviewWindow, area: Value) -> Result<bool, Error> {
     only(&window, LABEL)?;
     let Some(shot) = take_shot(None) else {
         return Ok(false);
@@ -303,7 +293,7 @@ pub fn snip_done(
 }
 
 #[tauri::command(async)]
-pub fn snip_cancel(app: AppHandle, window: tauri::WebviewWindow) -> Result<bool, String> {
+pub fn snip_cancel(app: AppHandle, window: tauri::WebviewWindow) -> Result<bool, Error> {
     only(&window, LABEL)?;
     let had = take_shot(None).is_some();
     close_window(&app);

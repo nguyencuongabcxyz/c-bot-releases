@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 
 use crate::platform::process;
 use crate::platform::process::NoWindow;
-use crate::runtime::Locked;
+use crate::runtime::{Error, Locked};
 
 /// When C-Bot itself was started from inside a Claude Code session, it inherits that
 /// session's private markers. Passed on, they make every robot's `claude` think it's a
@@ -288,7 +288,7 @@ pub struct Opts {
 }
 
 pub type Handler = Arc<dyn Fn(&Arc<Session>, &str, Value) + Send + Sync>;
-type Reply = Box<dyn FnOnce(Result<Value, String>) + Send>;
+type Reply = Box<dyn FnOnce(Result<Value, Error>) + Send>;
 
 struct Turn {
     id: String,

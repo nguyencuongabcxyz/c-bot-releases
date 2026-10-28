@@ -14,7 +14,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::features::chat;
-use crate::runtime::{part_if, with};
+use crate::runtime::{Error, part_if, with};
 use crate::ui::tray;
 
 const CHECK_EVERY: Duration = Duration::from_secs(4 * 60 * 60);
@@ -113,7 +113,7 @@ pub fn check(app: &AppHandle) {
 }
 
 /// Ask GitHub; a newer version is downloaded (and its signature checked) right away.
-async fn fetch(app: &AppHandle) -> Result<Option<String>, String> {
+async fn fetch(app: &AppHandle) -> Result<Option<String>, Error> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
         return Ok(None);

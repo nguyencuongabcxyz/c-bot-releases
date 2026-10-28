@@ -22,7 +22,7 @@ use crate::features::chat;
 use crate::platform::process;
 use crate::robots;
 use crate::runtime::util::patch;
-use crate::runtime::{State, part_or_default, with};
+use crate::runtime::{Error, State, part_or_default, with};
 use crate::ui::workshop;
 
 const POLL: Duration = Duration::from_millis(700);
@@ -404,7 +404,7 @@ pub fn robot_terminal(
     app: AppHandle,
     window: tauri::WebviewWindow,
     tab_id: String,
-) -> Result<Value, String> {
+) -> Result<Value, Error> {
     Ok(open_terminal(&app, &robots::sender(&window)?, &tab_id))
 }
 

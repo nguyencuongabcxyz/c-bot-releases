@@ -1,11 +1,12 @@
 //! The group chat's and the meeting room's commands (only their own pages may ask).
 
 use super::*;
+use crate::runtime::Error;
 
 // ---------------------------------------------------------------- commands (only its own pages')
 
 #[tauri::command(async)]
-pub fn groupchat_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn groupchat_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, LABEL)?;
     Ok(act(&app, |g, _| view(&app, g)))
 }
@@ -17,14 +18,14 @@ pub fn groupchat_act(
     window: tauri::WebviewWindow,
     action: String,
     p: Option<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, Error> {
     only(&window, LABEL)?;
     Ok(act_on(&app, &action, &p.unwrap_or_default()))
 }
 
 /// Who's in the meeting room and where they sit.
 #[tauri::command(async)]
-pub fn meeting_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn meeting_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, ROOM)?;
     Ok(act(&app, |g, _| {
         g.chat

@@ -52,6 +52,6 @@ pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
         args["important"].as_bool() == Some(true),
     ) {
         Ok(said) => json!({ "text": said }),
-        Err(e) => err(e),
+        Err(e) => err(e.to_string()),
     }
 }

@@ -37,7 +37,7 @@ use crate::platform::window;
 use crate::robots;
 use crate::robots::{planes, social, walkers};
 use crate::runtime::util::text;
-use crate::runtime::{hub, part_or_default, with};
+use crate::runtime::{Error, hub, part_or_default, with};
 use crate::store::now_ms;
 use crate::workbench::shell;
 
@@ -701,7 +701,7 @@ pub fn tasks_for(app: &AppHandle, id: &str) -> Value {
 
 /// The tasks a robot handed off or was handed, for its desk after a reload.
 #[tauri::command(async)]
-pub fn robot_tasks(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn robot_tasks(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     Ok(tasks_for(&app, &robots::sender(&window)?))
 }
 
@@ -711,7 +711,7 @@ pub fn robots_answer(
     app: AppHandle,
     window: tauri::WebviewWindow,
     answer: Value,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     let req_id = text(&answer["reqId"]);
     if link(&app, |l| l.pending.get(&req_id).is_some_and(|p| p.to == id)) {

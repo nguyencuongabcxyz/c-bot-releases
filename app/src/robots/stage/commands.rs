@@ -1,12 +1,13 @@
 //! What the pages ask of the stage: the robots' pages (picking, swapping, the gaps) and its bar.
 
 use super::*;
+use crate::runtime::Error;
 
 // ---------------------------------------------------------------- what the pages ask
 
 /// A robot Ctrl+clicked: picked for the stage, or not.
 #[tauri::command(async)]
-pub fn stage_pick(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+pub fn stage_pick(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), Error> {
     toggle_pick(&app, &robots::sender(&window)?);
     Ok(())
 }
@@ -17,7 +18,7 @@ pub fn stage_tile(
     app: AppHandle,
     window: tauri::WebviewWindow,
     action: String,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     match action.as_str() {
         "spot" => {
@@ -44,11 +45,7 @@ pub fn stage_tile(
 /// A gap between tiles dragged (d: CSS px along it since the press), or double-clicked
 /// ("even": every tile on that line the same size).
 #[tauri::command(async)]
-pub fn stage_split(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-    step: Value,
-) -> Result<(), String> {
+pub fn stage_split(app: AppHandle, window: tauri::WebviewWindow, step: Value) -> Result<(), Error> {
     robots::sender(&window)?;
     let Some(split) = step["split"].as_str().and_then(Split::parse) else {
         return Ok(());
@@ -104,7 +101,7 @@ pub fn stage_swap(
     app: AppHandle,
     window: tauri::WebviewWindow,
     phase: String,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     match phase.as_str() {
         "start" => stg(&app, |s| {
@@ -159,7 +156,7 @@ pub fn stage_swap(
 }
 
 #[tauri::command(async)]
-pub fn stage_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn stage_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, LABEL)?;
     let now = bar_state(&app);
     stg(&app, |s| s.sent = Some(now.clone()));
@@ -174,7 +171,7 @@ pub fn stage_act(
     window: tauri::WebviewWindow,
     action: String,
     id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     only(&window, LABEL)?;
     let id = id.unwrap_or_default();
     match action.as_str() {
@@ -206,7 +203,7 @@ pub fn stage_act(
 
 /// The bar's ＋: a menu of the robots on the desk that aren't on stage (ui/tray.rs picks it).
 #[tauri::command(async)]
-pub fn stage_add_menu(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+pub fn stage_add_menu(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), Error> {
     only(&window, LABEL)?;
     let cast = cast(&app);
     let others: Vec<(String, String)> = with(&app, |st| {
@@ -248,7 +245,7 @@ pub fn stage_send(
     window: tauri::WebviewWindow,
     prompt: String,
     paths: Vec<String>,
-) -> Result<Value, String> {
+) -> Result<Value, Error> {
     only(&window, LABEL)?;
     let prompt = prompt.trim();
     if prompt.is_empty() && paths.is_empty() {
@@ -259,10 +256,7 @@ pub fn stage_send(
 
 /// The bar's 📎: files (or pictures) to send along.
 #[tauri::command(async)]
-pub fn stage_pick_files(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-) -> Result<Vec<Value>, String> {
+pub fn stage_pick_files(app: AppHandle, window: tauri::WebviewWindow) -> Result<Vec<Value>, Error> {
     only(&window, LABEL)?;
     let picked = app
         .dialog()

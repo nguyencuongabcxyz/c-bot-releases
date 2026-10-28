@@ -22,7 +22,7 @@ use crate::features::chat::group;
 use crate::features::{notes, vocab};
 use crate::robots;
 use crate::robots::{ipc, maid, stage, walkers};
-use crate::runtime::{hub, updater, with};
+use crate::runtime::{Error, hub, updater, with};
 use crate::ui::{views, workshop};
 use crate::workbench::{palette, paste, quick, snip};
 
@@ -516,11 +516,7 @@ pub fn refresh(app: &AppHandle) {
 
 /// A robot was right-clicked: its menu, by the mouse (state: is it awake, out walking?).
 #[tauri::command(async)]
-pub fn robot_menu(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-    state: Value,
-) -> Result<(), String> {
+pub fn robot_menu(app: AppHandle, window: tauri::WebviewWindow, state: Value) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     let (awake, away) = (
         state["awake"].as_bool().unwrap_or(false),

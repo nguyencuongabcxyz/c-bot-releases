@@ -54,6 +54,7 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 # the shell in a robot's chat (shell.rs): a pseudoconsole (ConPTY) to run it in
 portable-pty = "0.9"
+thiserror = "2.0.21"
 
 # a small binary
 [profile.release]

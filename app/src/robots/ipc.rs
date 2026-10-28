@@ -16,13 +16,13 @@ use crate::mcp::link;
 use crate::robots;
 use crate::robots::sender;
 use crate::runtime::util::patch;
-use crate::runtime::{hub, with};
+use crate::runtime::{Error, hub, with};
 use crate::store;
 use crate::workbench::{files, shell};
 
 const TOO_MANY_TABS: &str = "That's the most tabs I can juggle!";
 
-type Answer = Result<Value, String>;
+type Answer = Result<Value, Error>;
 
 /// Everything the page needs on (re)load.
 #[tauri::command(async)]
@@ -57,26 +57,26 @@ pub fn robot_expand(
     window: WebviewWindow,
     expanded: bool,
     opts: Option<Value>,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     robots::expand(&app, &sender(&window)?, expanded, &opts.unwrap_or_default());
     Ok(())
 }
 
 /// Hidden at the screen's edge, peeking out, or back at its desk.
 #[tauri::command(async)]
-pub fn robot_peek(app: AppHandle, window: WebviewWindow, peek: bool) -> Result<(), String> {
+pub fn robot_peek(app: AppHandle, window: WebviewWindow, peek: bool) -> Result<(), Error> {
     robots::set_peek(&app, &sender(&window)?, peek);
     Ok(())
 }
 
 #[tauri::command(async)]
-pub fn robot_drag(app: AppHandle, window: WebviewWindow, step: Value) -> Result<(), String> {
+pub fn robot_drag(app: AppHandle, window: WebviewWindow, step: Value) -> Result<(), Error> {
     robots::drag(&app, &sender(&window)?, &step);
     Ok(())
 }
 
 #[tauri::command(async)]
-pub fn robot_resize(app: AppHandle, window: WebviewWindow, step: Value) -> Result<(), String> {
+pub fn robot_resize(app: AppHandle, window: WebviewWindow, step: Value) -> Result<(), Error> {
     robots::resize(&app, &sender(&window)?, &step);
     Ok(())
 }
@@ -86,14 +86,14 @@ pub fn robot_click_through(
     app: AppHandle,
     window: WebviewWindow,
     through: bool,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     robots::click_through(&app, &sender(&window)?, through);
     Ok(())
 }
 
 /// Poked once more: how many times now.
 #[tauri::command(async)]
-pub fn robot_poke(app: AppHandle, window: WebviewWindow) -> Result<i64, String> {
+pub fn robot_poke(app: AppHandle, window: WebviewWindow) -> Result<i64, Error> {
     let id = sender(&window)?;
     Ok(with(&app, |st| {
         let c = st.store.get(&id)?;
@@ -108,7 +108,7 @@ pub fn robot_poke(app: AppHandle, window: WebviewWindow) -> Result<i64, String> 
 }
 
 #[tauri::command(async)]
-pub fn robot_open_folder(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+pub fn robot_open_folder(app: AppHandle, window: WebviewWindow) -> Result<(), Error> {
     open_folder(&app, &sender(&window)?);
     Ok(())
 }
@@ -197,7 +197,7 @@ pub fn robot_tab_rename(
     window: WebviewWindow,
     tab_id: String,
     title: String,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = sender(&window)?;
     let title: String = title
         .split_whitespace()
@@ -219,7 +219,7 @@ pub fn robot_tab_activate(
     app: AppHandle,
     window: WebviewWindow,
     tab_id: String,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = sender(&window)?;
     with(&app, |st| {
         if st.store.tab(&id, &tab_id).is_some() {
@@ -236,7 +236,7 @@ pub fn robot_reset(
     app: AppHandle,
     window: WebviewWindow,
     tab_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     reset(&app, &sender(&window)?, tab_id.as_deref());
     Ok(())
 }
@@ -321,7 +321,7 @@ pub fn robot_unqueue(
     window: WebviewWindow,
     tab_id: String,
     turn_id: String,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     Ok(chat::unqueue(&app, &sender(&window)?, &tab_id, &turn_id))
 }
 
@@ -331,7 +331,7 @@ pub fn robot_send_now(
     window: WebviewWindow,
     tab_id: String,
     turn_id: String,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     Ok(chat::send_now(&app, &sender(&window)?, &tab_id, &turn_id))
 }
 
@@ -359,7 +359,7 @@ pub fn robot_answer(
     request_id: String,
     answers: Value,
     items: Value,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     Ok(chat::answer(
         &app,
         &sender(&window)?,
@@ -427,7 +427,7 @@ pub fn robot_side_cancel(
     window: WebviewWindow,
     tab_id: String,
     thread_id: String,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     Ok(side::cancel(&app, &sender(&window)?, &tab_id, &thread_id))
 }
 
@@ -437,13 +437,13 @@ pub fn robot_side_remove(
     window: WebviewWindow,
     tab_id: String,
     thread_id: String,
-) -> Result<bool, String> {
+) -> Result<bool, Error> {
     Ok(side::remove(&app, &sender(&window)?, &tab_id, &thread_id))
 }
 
 /// The side panel open beside the chat (its width, CSS px) or shut (0): the window makes room.
 #[tauri::command(async)]
-pub fn robot_side_width(app: AppHandle, window: WebviewWindow, width: f64) -> Result<(), String> {
+pub fn robot_side_width(app: AppHandle, window: WebviewWindow, width: f64) -> Result<(), Error> {
     robots::set_side_width(&app, &sender(&window)?, width);
     Ok(())
 }
@@ -522,7 +522,7 @@ pub fn robot_pick_files(
     app: AppHandle,
     window: WebviewWindow,
     pictures: Option<bool>,
-) -> Result<Vec<Value>, String> {
+) -> Result<Vec<Value>, Error> {
     let id = sender(&window)?;
     let folder = folder_of(&app, &id);
     let mut dialog = app
@@ -558,7 +558,7 @@ pub fn robot_chat_height(
     app: AppHandle,
     window: WebviewWindow,
     height: Option<f64>,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = sender(&window)?;
     let h = height
         .filter(|h| h.is_finite() && *h >= 200.0)

@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use crate::platform::process;
 use crate::platform::process::NoWindow;
-use crate::runtime::{Locked, paths};
+use crate::runtime::{Error, Locked, paths};
 
 const NAMES: [&str; 2] = ["claude.exe", "claude.cmd"];
 
@@ -271,7 +271,7 @@ pub fn find(chosen: &str) -> Option<PathBuf> {
 
 /// Is this really Claude Code? Runs `<file> --version`: its version line, or what's wrong
 /// in words for the Workshop (findClaude.js checkClaude).
-pub fn check(file: &Path) -> Result<String, String> {
+pub fn check(file: &Path) -> Result<String, Error> {
     use std::io::Read;
     use std::process::Stdio;
     use std::time::{Duration, Instant};
@@ -291,7 +291,7 @@ pub fn check(file: &Path) -> Result<String, String> {
         .no_window()
         .spawn()
     else {
-        return Err(not_claude());
+        return Err(not_claude().into());
     };
     let started = Instant::now();
     let status = loop {
@@ -315,6 +315,6 @@ pub fn check(file: &Path) -> Result<String, String> {
     if status.success() && out.to_ascii_lowercase().contains("claude") {
         Ok(out.lines().next().unwrap_or(out).trim().to_string())
     } else {
-        Err(not_claude())
+        Err(not_claude().into())
     }
 }

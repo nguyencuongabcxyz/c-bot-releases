@@ -25,7 +25,7 @@ use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::hub::Hotkey;
 use crate::runtime::util::{only, patch, text};
-use crate::runtime::{Locked, hub, part, with};
+use crate::runtime::{Error, Locked, hub, part, with};
 use crate::store::now_ms;
 use crate::ui::place;
 use crate::workbench::capture;
@@ -476,14 +476,14 @@ pub fn quick_open_blank(app: AppHandle, window: tauri::WebviewWindow, p: Option<
 // (only the Quick actions window may ask the rest)
 
 #[tauri::command(async)]
-pub fn quick_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn quick_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, LABEL)?;
     Ok(quick(&app, |q| q.ctx.clone()).map_or(Value::Null, |c| view(&app, &c)))
 }
 
 /// How tall the window's content came out (CSS px).
 #[tauri::command(async)]
-pub fn quick_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
+pub fn quick_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -> Result<(), Error> {
     only(&window, LABEL)?;
     if height.is_finite() {
         quick(&app, |q| q.height = height.ceil().clamp(200.0, 780.0));
@@ -494,11 +494,7 @@ pub fn quick_size(app: AppHandle, window: tauri::WebviewWindow, height: f64) -> 
 
 /// Run an action on the text (it streams in through quick:text; up to 90 s).
 #[tauri::command(async)]
-pub fn quick_run(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-    req: Value,
-) -> Result<Value, String> {
+pub fn quick_run(app: AppHandle, window: tauri::WebviewWindow, req: Value) -> Result<Value, Error> {
     only(&window, LABEL)?;
     Ok(run_action(&app, &req))
 }
@@ -510,7 +506,7 @@ pub fn quick_act(
     window: tauri::WebviewWindow,
     action: String,
     p: Option<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, Error> {
     only(&window, LABEL)?;
     Ok(act(&app, &action, &p.unwrap_or_default()))
 }

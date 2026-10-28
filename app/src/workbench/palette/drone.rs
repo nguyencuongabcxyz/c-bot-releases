@@ -20,7 +20,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::platform::window;
 use crate::platform::window::Rect;
-use crate::runtime::Locked;
+use crate::runtime::{Error, Locked};
 use crate::ui::views;
 
 pub const LABEL: &str = "drone";
@@ -182,7 +182,7 @@ pub fn recall(app: &AppHandle) {
 
 /// Its page says it got there.
 #[tauri::command(async)]
-pub fn drone_arrived(window: tauri::WebviewWindow) -> Result<(), String> {
+pub fn drone_arrived(window: tauri::WebviewWindow) -> Result<(), Error> {
     crate::runtime::util::only(&window, LABEL)?;
     for r in drone(|d| std::mem::take(&mut d.arrivals)) {
         let _ = r.send(());
@@ -192,7 +192,7 @@ pub fn drone_arrived(window: tauri::WebviewWindow) -> Result<(), String> {
 
 /// Back home (or faded out): nothing left to show.
 #[tauri::command(async)]
-pub fn drone_gone(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+pub fn drone_gone(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), Error> {
     crate::runtime::util::only(&window, LABEL)?;
     if let Some(h) = hwnd(&app).filter(|&h| window::is_visible(h)) {
         window::hide(h);

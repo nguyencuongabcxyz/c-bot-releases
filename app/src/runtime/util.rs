@@ -1,13 +1,14 @@
 //! Small helpers every module uses to read what a page sent and to answer it.
 
+use super::Error;
 use serde_json::{Map, Value};
 
 /// A command only one window may send (the palette's, the snip screen's…).
-pub fn only(window: &tauri::WebviewWindow, label: &str) -> Result<(), String> {
+pub fn only(window: &tauri::WebviewWindow, label: &str) -> Result<(), Error> {
     if window.label() == label {
         Ok(())
     } else {
-        Err(format!("only {label} may ask that, not {}", window.label()))
+        Err(format!("only {label} may ask that, not {}", window.label()).into())
     }
 }
 

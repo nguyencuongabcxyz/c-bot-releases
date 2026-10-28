@@ -23,7 +23,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use crate::platform::webview::Failure;
 use crate::platform::{presence, webview, window};
 use crate::robots;
-use crate::runtime::{part, with};
+use crate::runtime::{Error, part, with};
 
 const EVERY: Duration = Duration::from_secs(5);
 // a look that comes this late means the PC was asleep (pages checked in meanwhile or not)
@@ -173,7 +173,7 @@ pub fn nudge_all(app: &AppHandle) {
 
 /// A robot page checking in (every few seconds, and when it's hidden or shown).
 #[tauri::command(async)]
-pub fn robot_alive(app: AppHandle, window: WebviewWindow, hidden: bool) -> Result<(), String> {
+pub fn robot_alive(app: AppHandle, window: WebviewWindow, hidden: bool) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     rv(&app, |r| {
         let p = r.pulses.entry(id).or_insert_with(Pulse::new);
@@ -189,7 +189,7 @@ pub fn robot_alive(app: AppHandle, window: WebviewWindow, hidden: bool) -> Resul
 
 /// The robot's 3D canvas lost the GPU and didn't get it back: build it again.
 #[tauri::command(async)]
-pub fn robot_revive(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+pub fn robot_revive(app: AppHandle, window: WebviewWindow) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     rebuild(&app, &id, "its 3D canvas lost the GPU");
     Ok(())

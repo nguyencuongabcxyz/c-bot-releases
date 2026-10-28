@@ -24,7 +24,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use crate::agents::claude;
 use crate::platform::process::Job;
 use crate::robots::{ipc, label_of, sender};
-use crate::runtime::{part, with};
+use crate::runtime::{Error, part, with};
 
 const READ_BUF: usize = 16 * 1024;
 /// The most shells one robot keeps going at once.
@@ -189,7 +189,7 @@ fn start(
     which: &str,
     cols: u16,
     rows: u16,
-) -> Result<(u64, String), String> {
+) -> Result<(u64, String), Error> {
     if !with(app, |st| st.store.tab(id, tab).is_some()) {
         return Err("That conversation has closed.".into());
     }
@@ -198,7 +198,7 @@ fn start(
         return Err("My folder isn't there, so there's nowhere to open a shell.".into());
     }
     if shells(app, |s| s.open.values().filter(|sh| sh.robot == id).count()) >= MOST {
-        return Err(format!("That's {MOST} shells already: close one first."));
+        return Err(format!("That's {MOST} shells already: close one first.").into());
     }
     let Kind {
         exe,
@@ -322,7 +322,7 @@ pub fn robot_shell_open(
     rows: u16,
     tab_id: String,
     kind: Option<String>,
-) -> Result<Value, String> {
+) -> Result<Value, Error> {
     let id = sender(&window)?;
     Ok(
         match start(
@@ -345,7 +345,7 @@ pub fn robot_shell_write(
     window: WebviewWindow,
     sid: u64,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = sender(&window)?;
     shells(&app, |s| {
         if let Some(sh) = s.of(&id, sid) {
@@ -363,7 +363,7 @@ pub fn robot_shell_resize(
     sid: u64,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = sender(&window)?;
     shells(&app, |s| {
         if let Some(sh) = s.of(&id, sid) {
@@ -379,7 +379,7 @@ pub fn robot_shell_close(
     app: AppHandle,
     window: WebviewWindow,
     sid: Option<u64>,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = sender(&window)?;
     end(shells(&app, |s| {
         s.take(|s, sh| sh.robot == id && sid.is_none_or(|x| x == s))
@@ -450,7 +450,7 @@ pub fn robot_shell_reply(
     window: WebviewWindow,
     req: u64,
     answer: Value,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = sender(&window)?;
     shells(&app, |s| {
         if let Some((_, tx)) = s.asks.get(&req).filter(|(robot, _)| *robot == id) {

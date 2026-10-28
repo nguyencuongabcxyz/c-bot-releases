@@ -5,7 +5,7 @@
 use std::sync::MutexGuard;
 
 use super::*;
-use crate::runtime::Locked;
+use crate::runtime::{Error, Locked};
 
 impl Session {
     pub fn new(opts: Opts, session_id: Option<String>, handler: Handler) -> Arc<Session> {
@@ -405,7 +405,7 @@ impl Session {
 
     /// Ask the running process something and wait for its answer (not from the handler
     /// of an event that the answer would have to come after).
-    pub(super) fn control_wait(&self, request: Value) -> Result<Value, String> {
+    pub(super) fn control_wait(&self, request: Value) -> Result<Value, Error> {
         let (tx, rx) = mpsc::channel();
         self.lock().control(
             request,
@@ -417,7 +417,7 @@ impl Session {
             .map_err(|_| "Claude Code didn't answer in time".to_string())?
     }
 
-    pub fn set_model(&self, model: &str) -> Result<(), String> {
+    pub fn set_model(&self, model: &str) -> Result<(), Error> {
         let alive = {
             let mut i = self.lock();
             i.opts.model = model.into();
@@ -429,7 +429,7 @@ impl Session {
         Ok(())
     }
 
-    pub fn set_effort(&self, effort: &str) -> Result<(), String> {
+    pub fn set_effort(&self, effort: &str) -> Result<(), Error> {
         let alive = {
             let mut i = self.lock();
             i.opts.effort = effort.into();
@@ -579,7 +579,7 @@ impl Session {
                     reply(Err(if s(r, "error").is_empty() {
                         "control request failed".into()
                     } else {
-                        s(r, "error").to_string()
+                        s(r, "error").into()
                     }));
                 }
             }

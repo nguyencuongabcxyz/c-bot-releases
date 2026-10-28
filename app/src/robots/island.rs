@@ -26,7 +26,7 @@ use crate::platform::{input, window};
 use crate::robots;
 use crate::robots::walkers;
 use crate::runtime::util::{only, patch};
-use crate::runtime::{hub, part, with};
+use crate::runtime::{Error, hub, part, with};
 use crate::ui::views;
 
 pub const LABEL: &str = "island";
@@ -432,7 +432,7 @@ fn dropped(app: &AppHandle, edge: &str, at: (i32, i32)) {
 // ---------------------------------------------------------------- what it asks
 
 #[tauri::command(async)]
-pub fn island_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, String> {
+pub fn island_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, LABEL)?;
     let list = robots_view(&app);
     let edge = isl(&app, |i| {
@@ -449,7 +449,7 @@ pub fn island_size(
     window: tauri::WebviewWindow,
     width: f64,
     height: f64,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     only(&window, LABEL)?;
     isl(&app, |i| i.size = (width.max(1.0), height.max(1.0)));
     place(&app);
@@ -466,7 +466,7 @@ pub fn island_box(
     y: f64,
     width: f64,
     height: f64,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     only(&window, LABEL)?;
     isl(&app, |i| i.hit = (x, y, width, height));
     Ok(())
@@ -478,7 +478,7 @@ pub fn island_drag(
     app: AppHandle,
     window: tauri::WebviewWindow,
     phase: String,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     only(&window, LABEL)?;
     match phase.as_str() {
         "start" => isl(&app, |i| {
@@ -508,7 +508,7 @@ pub fn island_act(
     window: tauri::WebviewWindow,
     action: String,
     id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     only(&window, LABEL)?;
     let state = |id: &str| with(&app, |st| st.robots.get(id).map(|r| r.peek)); // None: put away
     let tell = |id: &str, what: &str| {
@@ -567,7 +567,7 @@ pub fn robot_island(
     window: tauri::WebviewWindow,
     report: Value,
     news: Option<Value>,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     let id = robots::sender(&window)?;
     let fresh = isl(&app, |i| {
         i.reports
