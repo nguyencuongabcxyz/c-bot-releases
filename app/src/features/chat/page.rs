@@ -189,26 +189,93 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
         kind,
         tag,
     } = ask;
+    let c = match ready(app, id, tab_id) {
+        Ok(c) => c,
+        Err(error) => return json!({ "ok": false, "error": error }),
+    };
+    let turn_id = turn_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let fed = with_files(prompt, attachments, c.folder());
+    with(app, |st| {
+        if kind == AskKind::Bonk {
+            st.store.push_history(
+                id,
+                tab_id,
+                json!({ "role": "note", "text": "🔨 Bonked! Starting over, quicker." }),
+            );
+        }
+        if kind == AskKind::Chat {
+            let files: Vec<Value> = fed
+                .dropped
+                .iter()
+                .map(|f| json!({ "name": f["name"], "isDir": f["isDir"], "isImage": f["isImage"] }))
+                .collect();
+            let mut entry = json!({ "role": "user", "text": prompt, "files": files });
+            if let Some(tag) = tag.filter(|t| !t.is_empty()) {
+                entry["tag"] = json!(tag.chars().take(200).collect::<String>());
+            }
+            st.store.push_history(id, tab_id, entry);
+            let mut stats = c["stats"].as_object().cloned().unwrap_or_default();
+            let n = stats.get("questions").and_then(Value::as_i64).unwrap_or(0) + 1;
+            stats.insert("questions".into(), json!(n));
+            st.store
+                .update(id, patch(vec![("stats", Value::Object(stats))]));
+        }
+    });
+
+    let Some(chat) = chat_for(app, id, tab_id) else {
+        return json!({ "ok": false, "error": "I can't find Claude Code anywhere on this computer." });
+    };
+    chat.session.set_system_prompt(&prompt_for(app, &c)); // personality changes (and who else is out) apply from the next question
+    chat.session.allow_dirs(&fed.add_dirs);
+    chat.book.locked().turns.insert(
+        turn_id.clone(),
+        TurnInfo {
+            prompt: fed.prompt.clone(),
+            kind,
+            retried: false,
+        },
+    );
+    let queued = chat.session.ask(fed.prompt, turn_id.clone());
+    json!({ "ok": true, "turnId": turn_id, "queued": queued })
+}
+
+/// Can the tab be asked: it's there, not open in the terminal, Claude Code is installed, the
+/// robot's folder is there. The robot, if so; else what's wrong, for the chat.
+fn ready(app: &AppHandle, id: &str, tab_id: &str) -> Result<Value, String> {
     let Some((c, settings)) = with(app, |st| {
         st.store.tab(id, tab_id)?;
         Some((st.store.get(id)?.clone(), st.store.settings().clone()))
     }) else {
-        return json!({ "ok": false, "error": "That conversation is gone." });
+        return Err("That conversation is gone.".into());
     };
     if with(app, |st| st.terminals.get(id).is_some_and(|t| t == tab_id)) {
-        return json!({ "ok": false, "error": "This conversation is open in the terminal. Carry on there, or close it to chat here." });
+        return Err(
+            "This conversation is open in the terminal. Carry on there, or close it to chat here."
+                .into(),
+        );
     }
     if locate::find(settings["claudePath"].as_str().unwrap_or("")).is_none() {
-        return json!({ "ok": false, "error": "I can't find Claude Code anywhere on this computer. Install it, then press “Search again” in the Robot Workshop (bottom left), or point me to it there." });
+        return Err("I can't find Claude Code anywhere on this computer. Install it, then press “Search again” in the Robot Workshop (bottom left), or point me to it there.".into());
     }
-    let folder = c.folder().to_string();
-    if folder.is_empty() || !Path::new(&folder).exists() {
-        let shown = if folder.is_empty() { "(none)" } else { &folder };
-        return json!({ "ok": false, "error": format!("My folder is missing: {shown}. Point me at a new one in the Robot Workshop.") });
+    let folder = c.folder();
+    if folder.is_empty() || !Path::new(folder).exists() {
+        let shown = if folder.is_empty() { "(none)" } else { folder };
+        return Err(format!(
+            "My folder is missing: {shown}. Point me at a new one in the Robot Workshop."
+        ));
     }
-    let turn_id = turn_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    Ok(c)
+}
 
-    // Files fed to the robot: name them in the prompt and let Claude Code read their folders.
+/// The question with the files that go with it: the ones dropped on the robot, and the ones
+/// mentioned with @.
+struct Fed {
+    prompt: String,        // the question, naming the files
+    dropped: Vec<Value>,   // (files::inspect of each)
+    add_dirs: Vec<String>, // their folders outside the robot's, for Claude Code to read
+}
+
+fn with_files(prompt: &str, attachments: &[Value], folder: &str) -> Fed {
     let dropped: Vec<Value> = attachments
         .iter()
         .filter_map(|a| a.as_str())
@@ -244,7 +311,7 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
         .iter()
         .map(|f| files::normalize(Path::new(f["path"].as_str().unwrap_or(""))))
         .collect();
-    let mentioned: Vec<Value> = files::mentioned(&folder, prompt)
+    let mentioned: Vec<Value> = files::mentioned(folder, prompt)
         .into_iter()
         .filter(|p| !dropped_paths.contains(p))
         .filter_map(|p| files::inspect(&p))
@@ -267,52 +334,15 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
                 .map(|d| d.to_string_lossy().into_owned())
                 .unwrap_or_default()
         };
-        if !dir.is_empty() && !files::is_inside(&dir, &folder) && !add_dirs.contains(&dir) {
+        if !dir.is_empty() && !files::is_inside(&dir, folder) && !add_dirs.contains(&dir) {
             add_dirs.push(dir);
         }
     }
-
-    with(app, |st| {
-        if kind == AskKind::Bonk {
-            st.store.push_history(
-                id,
-                tab_id,
-                json!({ "role": "note", "text": "🔨 Bonked! Starting over, quicker." }),
-            );
-        }
-        if kind == AskKind::Chat {
-            let fed: Vec<Value> = dropped
-                .iter()
-                .map(|f| json!({ "name": f["name"], "isDir": f["isDir"], "isImage": f["isImage"] }))
-                .collect();
-            let mut entry = json!({ "role": "user", "text": prompt, "files": fed });
-            if let Some(tag) = tag.filter(|t| !t.is_empty()) {
-                entry["tag"] = json!(tag.chars().take(200).collect::<String>());
-            }
-            st.store.push_history(id, tab_id, entry);
-            let mut stats = c["stats"].as_object().cloned().unwrap_or_default();
-            let n = stats.get("questions").and_then(Value::as_i64).unwrap_or(0) + 1;
-            stats.insert("questions".into(), json!(n));
-            st.store
-                .update(id, patch(vec![("stats", Value::Object(stats))]));
-        }
-    });
-
-    let Some(chat) = chat_for(app, id, tab_id) else {
-        return json!({ "ok": false, "error": "I can't find Claude Code anywhere on this computer." });
-    };
-    chat.session.set_system_prompt(&prompt_for(app, &c)); // personality changes (and who else is out) apply from the next question
-    chat.session.allow_dirs(&add_dirs);
-    chat.book.locked().turns.insert(
-        turn_id.clone(),
-        TurnInfo {
-            prompt: full.clone(),
-            kind,
-            retried: false,
-        },
-    );
-    let queued = chat.session.ask(full, turn_id.clone());
-    json!({ "ok": true, "turnId": turn_id, "queued": queued })
+    Fed {
+        prompt: full,
+        dropped,
+        add_dirs,
+    }
 }
 
 pub(super) fn chat_of(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {

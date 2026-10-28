@@ -88,62 +88,10 @@ impl Session {
     }
 
     pub(super) fn start(&self, i: &mut Inner) {
-        let o = i.opts.clone();
-        // stdin stays open: questions go in as stream-json messages, and tool permission
-        // requests come back to us ("stdio") so questions can be answered
-        let mut args: Vec<String> = [
-            "-p",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--include-partial-messages",
-            "--input-format",
-            "stream-json",
-            "--permission-prompt-tool",
-            "stdio",
-        ]
-        .map(String::from)
-        .to_vec();
-        let mut flag = |k: &str, v: &str| {
-            if !v.is_empty() {
-                args.push(k.into());
-                args.push(v.into());
-            }
-        };
-        flag("--permission-mode", &o.permission_mode);
-        flag("--append-system-prompt", &o.system_prompt);
-        flag("--resume", i.session_id.as_deref().unwrap_or(""));
-        // an edited question: the conversation carries on from before it, as a branch of its own
-        let resume_at = i.opts.resume_at.take().filter(|_| i.session_id.is_some());
-        // (a branch until it has a conversation of its own: a start that fails first never carries on the one it branches off)
-        let fork = i.opts.fork && i.session_id.is_some();
-        flag("--resume-session-at", resume_at.as_deref().unwrap_or(""));
-        flag("--model", &o.model);
-        flag("--effort", &o.effort);
-        // the default tools plus the task tools (for the to-do card), once we know the defaults
-        if let Some(tools) = o.tools.as_ref().filter(|t| !t.is_empty()) {
-            let mut all: Vec<String> = tools.clone();
-            for t in TASK_TOOLS {
-                if !all.iter().any(|x| x == t) {
-                    all.push(t.into());
-                }
-            }
-            flag("--tools", &all.join(","));
-        }
-        // folders of files fed to the robot, so Claude Code may read them
-        for dir in &o.add_dirs {
-            flag("--add-dir", dir);
-        }
-        // the other robots' tools (mcp/link.rs), usable without asking
-        flag("--mcp-config", &o.mcp_config);
-        flag("--allowedTools", &o.allowed_tools.join(","));
-        args.extend(o.extra_args.iter().cloned());
-        if resume_at.is_some() || fork {
-            args.push("--fork-session".into());
-        }
-
+        let args = i.command_line();
         i.cost_so_far = 0.0;
         i.restart_before_next = false;
+        let o = &i.opts;
         let spawned = Command::new(&o.claude_path)
             .args(&args)
             .current_dir(&o.cwd)
@@ -179,6 +127,7 @@ impl Session {
             let _ = err_pipe.read_to_string(&mut buf);
             stderr.locked().push_str(&buf);
         });
+        // what it writes, line by line (lines.rs), till it's gone
         let me = self.me.clone();
         thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
@@ -561,5 +510,69 @@ impl Session {
             }
             killer.kill(); // (if it hasn't gone by itself)
         });
+    }
+}
+
+impl Inner {
+    /// `claude`'s arguments for the next start, from the options. stdin stays open: questions
+    /// go in as stream-json messages, and tool permission requests come back to us ("stdio")
+    /// so questions can be answered. (An edited question's resume point is used up here.)
+    fn command_line(&mut self) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--input-format",
+            "stream-json",
+            "--permission-prompt-tool",
+            "stdio",
+        ]
+        .map(String::from)
+        .to_vec();
+        // an edited question: the conversation carries on from before it, as a branch of its own
+        let resume_at = self
+            .opts
+            .resume_at
+            .take()
+            .filter(|_| self.session_id.is_some());
+        // (a branch until it has a conversation of its own: a start that fails first never carries on the one it branches off)
+        let fork = self.opts.fork && self.session_id.is_some();
+        let o = &self.opts;
+        let mut flag = |k: &str, v: &str| {
+            if !v.is_empty() {
+                args.push(k.into());
+                args.push(v.into());
+            }
+        };
+        flag("--permission-mode", &o.permission_mode);
+        flag("--append-system-prompt", &o.system_prompt);
+        flag("--resume", self.session_id.as_deref().unwrap_or(""));
+        flag("--resume-session-at", resume_at.as_deref().unwrap_or(""));
+        flag("--model", &o.model);
+        flag("--effort", &o.effort);
+        // the default tools plus the task tools (for the to-do card), once we know the defaults
+        if let Some(tools) = o.tools.as_ref().filter(|t| !t.is_empty()) {
+            let mut all: Vec<String> = tools.clone();
+            for t in TASK_TOOLS {
+                if !all.iter().any(|x| x == t) {
+                    all.push(t.into());
+                }
+            }
+            flag("--tools", &all.join(","));
+        }
+        // folders of files fed to the robot, so Claude Code may read them
+        for dir in &o.add_dirs {
+            flag("--add-dir", dir);
+        }
+        // the other robots' tools (mcp/link.rs), usable without asking
+        flag("--mcp-config", &o.mcp_config);
+        flag("--allowedTools", &o.allowed_tools.join(","));
+        args.extend(o.extra_args.iter().cloned());
+        if resume_at.is_some() || fork {
+            args.push("--fork-session".into());
+        }
+        args
     }
 }
