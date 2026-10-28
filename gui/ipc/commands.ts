@@ -14,7 +14,8 @@ function tell(cmd: string, args?: InvokeArgs): void {
 // ---- a robot window
 export const robotInit = () => invoke<RobotInit>('robot_init');
 // (tag: a line kept above the message: sent to everyone on the stage)
-export const robotAsk = (tabId: string, prompt: string, attachments: string[], turnId?: string, kind?: 'chat' | 'bonk', tag?: string) => invoke<AskResult>('robot_ask', { tabId, prompt, attachments, turnId, kind, tag });
+export const robotAsk = (tabId: string, prompt: string, attachments: string[], turnId?: string, kind?: 'chat' | 'bonk', tag?: string) =>
+  invoke<AskResult>('robot_ask', { tabId, ask: { prompt, attachments, turnId, kind, tag } });
 export const robotCompact = (tabId: string, turnId: string) => invoke<AskResult>('robot_compact', { tabId, turnId });
 export const robotRemote = (tabId: string, on: boolean) => invoke<OkOr<{}>>('robot_remote', { tabId, on });
 export const robotCancel = (tabId: string) => invoke<string[]>('robot_cancel', { tabId });
@@ -59,7 +60,7 @@ export const robotPasteClipboard = () => invoke<FileInfo[]>('robot_paste_clipboa
 export const robotOpenFile = (file: string, opts?: { reveal?: boolean }) => invoke<OkOr<{ revealed?: boolean }>>('robot_open_file', { file, opts });
 // (a file or folder opened in the chat itself)
 export const robotReadFile = (path: string) => invoke<OkOr<FileView>>('robot_read_file', { path });
-// (speaking into the chat box, voice.rs: the system's engine, if there is one; systemUi: it
+// (speaking into the chat box, workbench/voice.rs: the system's engine, if there is one; systemUi: it
 // shows the listening itself)
 export const voiceEngine = () => invoke<{ name: string | null; systemUi: boolean }>('voice_engine');
 export const voiceStart = () => invoke<void>('voice_start');
@@ -70,7 +71,7 @@ export const robotChatHeight = (height: number | null) => invoke<void>('robot_ch
 // (what an MCP tool's view asked to open: main opens it only if it's a web link)
 export const robotOpenLink = (url: string | undefined) => invoke<void>('robot_open_link', { url });
 export const robotOpenFolder = () => invoke<void>('robot_open_folder');
-// (the shells in its chat, shell.rs: one per tab of the drawer, each belonging to a chat tab;
+// (the shells in its chat, workbench/shell.rs: one per tab of the drawer, each belonging to a chat tab;
 // sid names one, and its robot:shell events)
 // (kind: 'bash' for Git Bash, else PowerShell; robotShellKinds: the ones there are here)
 export const robotShellOpen = (cols: number, rows: number, tabId: string, kind: string) => invoke<OkOr<{ sid: number; shell: string }>>('robot_shell_open', { cols, rows, tabId, kind });
@@ -146,10 +147,10 @@ export const groupchatInit = () => invoke<P.GroupChatView | null>('groupchat_ini
 export const groupchatAct = (action: string, p?: unknown) => invoke<unknown>('groupchat_act', { action, p });
 export const meetingInit = () => invoke<P.MeetingInit | null>('meeting_init');
 
-// ---- the robot island (island.rs)
+// ---- the robot island (robots/island.rs)
 export const islandInit = () => invoke<{ robots: IslandRobot[]; edge: IslandEdge }>('island_init');
 
-// ---- the stage (stage.rs): its bar
+// ---- the stage (robots/stage/mod.rs): its bar
 export const stageInit = () => invoke<StageState>('stage_init');
 export const stageSend = (prompt: string, paths: string[]) => invoke<OkOr<{ count: number }>>('stage_send', { prompt, paths });
 export const stagePickFiles = () => invoke<FileInfo[]>('stage_pick_files');

@@ -10,7 +10,7 @@ import * as ipc from '@/ipc';
 showView(markup, { title: 'C-Bot stage' });
 
 (() => {
-  // The stage's bar (main stage.rs; docs/mockups/stage-*.svg). While robots are being picked
+  // The stage's bar (main robots/stage/mod.rs; docs/mockups/stage-*.svg). While robots are being picked
   // (Ctrl+click), a pill saying who, to take the stage; on stage, the bar along the bottom of
   // the screen: one message to every robot on it (each asks it in its own chat; click a
   // robot's chip to leave it out), and the stage's buttons. Main sizes and places the window.

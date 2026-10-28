@@ -229,7 +229,7 @@ export type Layout = {
   sideW?: number; // (the side panel open beside the chat: the part of the panel's room that's its)
 };
 
-/** A robot's tile on the stage (stage.rs): the gaps on its edges you can drag (each named,
+/** A robot's tile on the stage (robots/stage/mod.rs): the gaps on its edges you can drag (each named,
  * as stage_split knows them), or that it's in the spotlight or a strip beside it. */
 export type StageTileInfo = {
   edges?: Partial<Record<'left' | 'right' | 'top' | 'bottom', string | null>>;
@@ -242,7 +242,7 @@ export type FileInfo = { path: string; name: string; isDir: boolean; size: numbe
 
 export type OkOr<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
-/** A file or folder opened in the chat's file viewer (files.rs read_for_view): its text (the
+/** A file or folder opened in the chat's file viewer (workbench/files.rs read_for_view): its text (the
  * first 2 MB), a picture (an SVG's source too), a PDF/song/video to show through cbot-file,
  * a folder's list, or only what it is. modified: ms. */
 export type FileView = { name: string; path: string; ext: string; size: number; modified?: number | null } & (
