@@ -1,5 +1,9 @@
 # C-Bot
 
+## README
+
+- When adding a major feature, describe it in `README.md` too, under Features, in the same short, user-facing style, with a screenshot in `docs/screenshots/` when it's something you can see. If it adds a module, list it under "How it fits together".
+
 ## UI text
 
 - Tooltips (`title`) are short, plain labels naming the control, like "Remote control" or "Past chats". No sentences explaining the feature, no state, no slash commands in them.

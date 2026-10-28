@@ -6,7 +6,7 @@ Each robot sits at its own little 3D desk, with a name, a personality and a proj
 
 ![Robots at their desks](docs/screenshots/hero.png)
 
-- **Claude Code with a face:** chat with each robot about its project.
+- **Claude Code with a face:** chat with each robot about its project, plan first, ask side questions, and see every file it touches.
 - **A team:** robots ask each other questions, hand off work and hold meetings.
 - **Everyday helpers:** refine or translate text, ask about the screen, learn English words, take notes.
 - **Yours to build:** design and dress up every robot.
@@ -30,9 +30,38 @@ Open the **Robot Workshop** from the tray. Pick a name, a project folder and a p
 
 ### Chat with it
 
-Click a robot to wake it and open its chat. It works in its folder like Claude Code does: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Press **⌨️** to continue the conversation in a real Claude Code terminal, or **📱** (`/remote-control`) to carry it on from [claude.ai/code](https://claude.ai/code) or the Claude phone app while the robot keeps working on your PC (it acts out what you send from there).
+Click a robot to wake it and open its chat. Under the hood it *is* your own Claude Code, running in the robot's folder, so **anything Claude Code can do, a robot can do too**: write and fix code, run commands, search the web, and use your skills, MCP servers, hooks, subagents, `CLAUDE.md` and slash commands. The chat shows it all: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Press **⌨️** to continue the conversation in a real Claude Code terminal.
 
 <img src="docs/screenshots/chat.png" alt="Chatting with a robot" width="440">
+
+- **Plan first:** press **Shift+Tab** (or `/plan`) for plan mode. The robot looks around, changes nothing, and comes back with a plan card: go ahead in the mode you pick, or send it back with notes.
+- **Side questions:** select part of an answer and *Ask about this*. A thread opens under it that knows the whole conversation, but the conversation never hears about it, like Claude Code's `/btw`. It works while the robot is still answering; *Use in main* brings a side answer back.
+- **Steps, folded:** what it did folds under one line (*"Read 2 files, ran 1 command · 4 steps"*) that says what it's on while it works. Open a step to see the command or file and what came back, and its thinking too.
+- **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file.
+- **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), and 👁 temporary chats that keep nothing.
+
+Drag the chat's edges or corner to resize it; double-click to put it back.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**A terminal in the chat** · `` Ctrl+` ``<br>
+A shell in the robot's folder (PowerShell or Git Bash) opens in a drawer under the chat. The robot uses it too: ask it to start your dev server and it runs it there, where you can watch, then reads the output back to check it's really up.
+
+<img src="docs/screenshots/terminal.png" alt="A robot starting a dev server in the chat's terminal">
+
+</td>
+<td width="50%" valign="top">
+
+**📱 Remote Control** · `/remote-control`<br>
+Carry the conversation on from [claude.ai/code](https://claude.ai/code) or the Claude phone app while the robot keeps working on your PC. It acts out what you send from there, and your PC stays awake while it's on.
+
+<img src="docs/screenshots/remote-control.png" alt="Remote Control turned on in a robot's chat">
+
+</td>
+</tr>
+</table>
 
 ### Robots working together
 
@@ -41,6 +70,14 @@ Ask one robot to ask another (*"Ask Sunny which port her API runs on"*) or to ha
 ![A robot group chat](docs/screenshots/group-chat.png)
 
 To work with several robots at once, put them **▦ on stage**: Ctrl+click the robots (or tick them in the tray's *Arrange on stage*), then *Take the stage*. Their chats tile the screen like windows: drag the gaps between them to resize (the neighbours give way), drag a title bar onto another to swap, or spotlight one. The bar along the bottom sends one message to all of them, and each answers from its own project.
+
+![Three robots on stage, answering one question](docs/screenshots/stage.png)
+
+### The robot island
+
+Too many desks? Turn on **🏝️ Robot island** in the tray: every robot's face sits in a strip at the screen's edge. Drag a robot onto it (or press 🏝️ in its chat) to send it away; its desk keeps its place for when it comes back. Hover the island to bring robots out or send them away. Robots that are away keep working, and the island tells you when one finishes, hits a snag or needs you. It also passes on their word cards.
+
+![The robot island: its panel, and news from a robot that's away](docs/screenshots/island.png)
 
 ### Everyday helpers
 
@@ -59,7 +96,7 @@ Select text anywhere to refine it, translate it (English ↔ Vietnamese), explai
 <td width="50%" valign="top">
 
 **🔍 Ask about the screen** · `Ctrl+Alt+B`<br>
-Drag a box round an error, a chart or a foreign paragraph, and a robot tells you what it means or what's wrong.
+Drag a box round an error, a chart or a foreign paragraph, and a robot tells you what it means or what's wrong. Or just ask it in the chat (*"What's this error on my screen?"*): it takes a screenshot itself and looks.
 
 <img src="docs/screenshots/screen-ask.png" alt="A robot explaining a git error from a screen box">
 
@@ -102,6 +139,8 @@ Each robot has a permission mode, set in the Workshop under **Mind**:
 | **Unleashed** | run anything; only for folders you trust it with |
 | **Planner** | propose plans, change nothing |
 
+Each chat tab can also switch on its own with **Shift+Tab** or the mode picker: read-only, auto-accept edits, plan mode, and full access (only where the robot is unleashed).
+
 ## Contributing
 
 Contributions are welcome: open an issue to report a bug or suggest an idea, or send a pull request.
@@ -137,8 +176,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       over a screen; island.rs the island at the screen's edge; walkers/,
                       social/, maid.rs robots away from their desks; topmost.rs, screens.rs
     mcp/              what Claude itself calls: server.rs C-Bot's MCP server; tools/ its tools
-                      (robots, words, notes, terminal: schema and handler together); link.rs
-                      the app's end of it and robots asking each other; apps.rs MCP Apps
+                      (robots, words, notes, terminal, screen: schema and handler together);
+                      link.rs the app's end of it and robots asking each other; apps.rs MCP Apps
     workbench/        what you use in the chat: files.rs, shell.rs, terminal.rs (full Claude
                       Code in a terminal), voice.rs, paste.rs; capture.rs grabs selections;
                       snip, quick, palette
