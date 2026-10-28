@@ -155,7 +155,7 @@ pub fn setup(app: &AppHandle) {
         })
         .build();
     if let Err(err) = app.plugin(quitting) {
-        eprintln!("[vocab] couldn't watch for quitting: {err}");
+        log::warn!("couldn't watch for quitting: {err}");
     }
     hub::add_hotkey(
         app,

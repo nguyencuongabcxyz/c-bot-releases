@@ -77,7 +77,7 @@ fn open_now(app: &AppHandle, focus: Option<&str>) {
         .background_color(Color(0x1b, 0x1f, 0x2e, 0xff))
         .build();
     if let Err(err) = built {
-        eprintln!("[workshop] couldn't open: {err}");
+        log::warn!("couldn't open: {err}");
     }
 }
 
@@ -357,7 +357,7 @@ fn create(app: &AppHandle, fields: &Value) -> Value {
     });
     let id = c.id().to_string();
     if let Err(err) = robots::open(app, &id, index) {
-        eprintln!("[robots] couldn't open {id}: {err}");
+        log::warn!("couldn't open {id}: {err}");
     }
     tray::refresh(app);
     notify(app);

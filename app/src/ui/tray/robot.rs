@@ -16,7 +16,7 @@ pub fn robot_menu(app: AppHandle, window: tauri::WebviewWindow, state: Value) ->
             let _ = window.popup_menu(&menu);
         }
         Ok(None) => {}
-        Err(err) => eprintln!("[tray] couldn't build {id}'s menu: {err}"),
+        Err(err) => log::warn!("couldn't build {id}'s menu: {err}"),
     }
     Ok(())
 }

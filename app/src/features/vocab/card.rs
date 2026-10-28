@@ -167,7 +167,7 @@ fn build(app: &AppHandle) {
                 }
                 place(app);
             } else {
-                eprintln!("[card] couldn't open: {err}");
+                log::warn!("couldn't open: {err}");
                 card(app, |c| c.shown = None);
             }
             return;

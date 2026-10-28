@@ -160,7 +160,7 @@ fn make(app: &AppHandle) -> Option<isize> {
     let w = match built {
         Ok(w) => w,
         Err(err) => {
-            eprintln!("[island] couldn't make it: {err}");
+            log::warn!("couldn't make it: {err}");
             return None;
         }
     };

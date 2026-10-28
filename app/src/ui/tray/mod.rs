@@ -185,7 +185,7 @@ pub fn refresh(app: &AppHandle) {
         Ok(menu) => {
             let _ = tray.set_menu(Some(menu));
         }
-        Err(err) => eprintln!("[tray] couldn't build the menu: {err}"),
+        Err(err) => log::warn!("couldn't build the menu: {err}"),
     }
 }
 

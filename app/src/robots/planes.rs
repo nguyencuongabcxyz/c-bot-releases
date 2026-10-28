@@ -137,7 +137,7 @@ fn flight(
         Ok(w) => w,
         Err(err) => {
             // no plane, but the message still gets there
-            eprintln!("[planes] couldn't open {label}: {err}");
+            log::warn!("couldn't open {label}: {err}");
             if let Some(f) = on_land {
                 f(app);
             }

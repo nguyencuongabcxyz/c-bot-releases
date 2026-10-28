@@ -225,7 +225,7 @@ fn open_now(app: &AppHandle, ctx: Ctx) {
     let w = match built {
         Ok(w) => w,
         Err(err) => {
-            eprintln!("[quick] couldn't open: {err}");
+            log::warn!("couldn't open: {err}");
             quick(app, |q| q.ctx = None);
             return;
         }

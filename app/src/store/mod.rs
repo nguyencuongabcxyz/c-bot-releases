@@ -244,8 +244,8 @@ impl Store {
         candidates.extend(self.backups());
         for candidate in candidates {
             if let Ok(data) = read_json(&candidate) {
-                eprintln!(
-                    "[store] {} was unreadable ({err}); recovered from {}",
+                log::warn!(
+                    "{} was unreadable ({err}); recovered from {}",
                     self.file.display(),
                     candidate.display()
                 );
@@ -297,7 +297,7 @@ impl Store {
             Ok(())
         })();
         if let Err(err) = result {
-            eprintln!("[store] backup failed: {err}");
+            log::warn!("backup failed: {err}");
         }
     }
 
@@ -322,7 +322,7 @@ impl Store {
         let result = fs::create_dir_all(self.file.parent().unwrap())
             .and_then(|_| write_safely(&self.file, &self.text()));
         if let Err(err) = result {
-            eprintln!("[store] save failed: {err}");
+            log::error!("save failed: {err}");
         }
         self.backup(); // a new day while the app kept running
     }

@@ -7,6 +7,7 @@
 pub mod commands;
 mod error;
 pub mod hub;
+pub mod logging;
 pub mod migrate;
 pub mod paths;
 pub mod protocols;

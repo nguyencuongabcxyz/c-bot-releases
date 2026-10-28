@@ -134,7 +134,7 @@ fn build(app: &AppHandle, activate: bool) {
         Ok(w) => w,
         Err(err) => {
             if app.get_webview_window(LABEL).is_none() {
-                eprintln!("[notebook] couldn't open: {err}");
+                log::warn!("couldn't open: {err}");
             }
             return;
         }

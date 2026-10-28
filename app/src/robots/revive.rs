@@ -103,12 +103,10 @@ pub fn rebuild(app: &AppHandle, id: &str, why: &str) {
         ok
     });
     if !allowed {
-        eprintln!(
-            "[revive] {id}: {why}, but it was built again {REBUILDS} times lately; leaving it be"
-        );
+        log::warn!("{id}: {why}, but it was built again {REBUILDS} times lately; leaving it be");
         return;
     }
-    eprintln!("[revive] {id}: {why}; building its window again");
+    log::info!("{id}: {why}; building its window again");
     let label = robots::label_of(id);
     if let Some(w) = app.get_webview_window(&label) {
         let _ = w.destroy();
@@ -127,7 +125,7 @@ pub fn rebuild(app: &AppHandle, id: &str, why: &str) {
     });
     let Some(index) = index else { return }; // (put away meanwhile, or deleted)
     if let Err(err) = robots::open(app, id, index) {
-        eprintln!("[revive] couldn't open {id} again: {err}");
+        log::warn!("couldn't open {id} again: {err}");
     }
 }
 
@@ -236,7 +234,7 @@ pub fn setup(app: &AppHandle) {
                 });
             }
             for id in nudges {
-                eprintln!("[revive] {id}: its page thinks it's hidden; nudging it");
+                log::info!("{id}: its page thinks it's hidden; nudging it");
                 nudge(&app, &id);
             }
             for id in silent {

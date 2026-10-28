@@ -18,7 +18,7 @@ pub fn setup(app: &AppHandle) {
     let app = app.clone();
     thread::spawn(move || {
         let Some(mut awake) = KeepAwake::new("C-Bot: Remote Control is on") else {
-            eprintln!("[awake] couldn't make a power request");
+            log::warn!("couldn't make a power request");
             return;
         };
         loop {

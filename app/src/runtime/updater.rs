@@ -102,7 +102,7 @@ pub fn check(app: &AppHandle) {
                     .show();
             }
             Err(err) => {
-                eprintln!("[update] {err}");
+                log::warn!("{err}");
                 set_status(&app, |s| {
                     s.checking = false;
                     s.last = "couldn't check".into();
@@ -138,7 +138,7 @@ fn install(app: &AppHandle, restart: bool) {
     with(app, |st| st.store.flush());
     // (on success this doesn't come back: the installer takes over)
     if let Err(err) = update.restart_after_install(restart).install(&bytes) {
-        eprintln!("[update] couldn't install: {err}");
+        log::warn!("couldn't install: {err}");
         set_status(app, |s| {
             s.ready = None;
             s.last = "couldn't update".into();

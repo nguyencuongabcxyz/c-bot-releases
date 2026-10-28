@@ -731,7 +731,7 @@ pub fn mcp_config(app: &AppHandle, id: &str, tab: &str) -> Option<String> {
     let written =
         std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, cfg.to_string()));
     if let Err(e) = written {
-        eprintln!("[robots] cannot set up the robot tools: {e}");
+        log::warn!("cannot set up the robot tools: {e}");
         return None;
     }
     Some(file.to_string_lossy().into_owned())
@@ -802,7 +802,7 @@ pub fn setup(app: &AppHandle) {
             let app = app.clone();
             thread::spawn(move || serve(app, listener));
         }
-        Err(e) => eprintln!("[robots] link socket: {e}"),
+        Err(e) => log::warn!("link socket: {e}"),
     }
     app.manage(Mutex::new(state));
 }

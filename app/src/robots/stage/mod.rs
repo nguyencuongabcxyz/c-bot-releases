@@ -512,7 +512,7 @@ fn make_bar(app: &AppHandle) -> Option<isize> {
     let w = match built {
         Ok(w) => w,
         Err(err) => {
-            eprintln!("[stage] couldn't make the bar: {err}");
+            log::warn!("couldn't make the bar: {err}");
             return None;
         }
     };

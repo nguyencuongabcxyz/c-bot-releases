@@ -453,7 +453,7 @@ fn open_words_window(app: &AppHandle) {
         .min_inner_size(420.0, 420.0)
         .build();
     if let Err(err) = built {
-        eprintln!("[words] couldn't open My words: {err}");
+        log::warn!("couldn't open My words: {err}");
     }
 }
 
@@ -524,7 +524,7 @@ fn export(app: &AppHandle) -> Value {
     };
     let rows = words(app, |w| words::csv(&w.vocab.list())).unwrap_or_default();
     if let Err(err) = std::fs::write(&path, rows) {
-        eprintln!("[words] couldn't export: {err}");
+        log::warn!("couldn't export: {err}");
         return Value::Null;
     }
     let _ = app.opener().reveal_item_in_dir(&path);

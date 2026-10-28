@@ -155,7 +155,7 @@ pub(super) fn box_for(app: &AppHandle, robot: Option<String>, source: String) ->
     match snip::start(app, "", false, on_shot) {
         Ok(()) => true,
         Err(err) => {
-            eprintln!("[snip] {err}");
+            log::warn!("{err}");
             tell(app, r.as_deref(), json!({ "phase": "unreadable" }));
             false
         }
@@ -177,7 +177,7 @@ pub(super) fn read_boxed(app: &AppHandle, robot: Option<String>, source: String,
             }
             Ok((found, sentence)) => catch(&app, &found, &source, robot, &sentence),
             Err(err) => {
-                eprintln!("[snip] reading failed: {err}");
+                log::warn!("reading failed: {err}");
                 tell(&app, robot.as_deref(), json!({ "phase": "unreadable" }));
             }
         }

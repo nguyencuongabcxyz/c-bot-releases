@@ -161,7 +161,7 @@ fn http() -> Option<&'static reqwest::blocking::Client> {
         reqwest::blocking::Client::builder()
             .timeout(HTTP_TIMEOUT)
             .build()
-            .map_err(|e| eprintln!("[mcp apps] no HTTP client: {e}"))
+            .map_err(|e| log::warn!("no HTTP client: {e}"))
             .ok()
     });
     CLIENT.as_ref()
@@ -584,7 +584,7 @@ fn open_window(app: &AppHandle, robot_id: &str, view: &Value) -> bool {
                 });
             }
             Err(err) => {
-                eprintln!("[mcp apps] couldn't open {label}: {err}");
+                log::warn!("couldn't open {label}: {err}");
                 apps(&app, |a| a.windows.remove(&label));
             }
         }

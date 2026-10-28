@@ -211,7 +211,7 @@ fn ask(app: &AppHandle, robot_id: Option<String>, source: Option<String>) -> boo
     match start(app, ASK_HINT, true, on_shot) {
         Ok(()) => true,
         Err(err) => {
-            eprintln!("[snip] {err}");
+            log::warn!("{err}");
             false
         }
     }

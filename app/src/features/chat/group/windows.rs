@@ -69,7 +69,7 @@ pub(super) fn build_window(app: &AppHandle) {
     let window = match built {
         Ok(w) => w,
         Err(err) => {
-            eprintln!("[groupchat] couldn't open: {err}");
+            log::warn!("couldn't open: {err}");
             return;
         }
     };
@@ -185,6 +185,6 @@ pub(super) fn open_room(app: &AppHandle, people: Value, room_gen: u64) {
                 let _ = w.destroy();
             }
         }
-        Err(err) => eprintln!("[groupchat] couldn't open the meeting room: {err}"),
+        Err(err) => log::warn!("couldn't open the meeting room: {err}"),
     }
 }

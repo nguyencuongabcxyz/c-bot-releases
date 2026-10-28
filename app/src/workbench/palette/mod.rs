@@ -261,7 +261,7 @@ fn make(app: &AppHandle) {
     let w = match built {
         Ok(w) => w,
         Err(err) => {
-            eprintln!("[palette] couldn't make it: {err}");
+            log::warn!("couldn't make it: {err}");
             return;
         }
     };

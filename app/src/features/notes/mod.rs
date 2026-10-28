@@ -474,7 +474,7 @@ fn remind(app: &AppHandle, kind: Reminder, info: &Value) -> bool {
             .body(body.join("\n"))
             .show()
         {
-            eprintln!("[notes] couldn't show the reminder: {err}");
+            log::warn!("couldn't show the reminder: {err}");
             return false;
         }
         return true;
@@ -868,7 +868,7 @@ pub fn setup(app: &AppHandle) {
         })
         .build();
     if let Err(err) = app.plugin(quitting) {
-        eprintln!("[notes] couldn't watch for quitting: {err}");
+        log::warn!("couldn't watch for quitting: {err}");
     }
     hub::add_hotkey(
         app,

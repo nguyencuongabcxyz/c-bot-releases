@@ -69,8 +69,8 @@ impl Saved {
             let _ = fs::create_dir_all(dir);
         }
         match fs::copy(&src, &self.file) {
-            Ok(_) => eprintln!("[{}] brought over from {}", self.name, src.display()),
-            Err(err) => eprintln!("[{}] couldn't copy {}: {err}", self.name, src.display()),
+            Ok(_) => log::info!("{}: brought over from {}", self.name, src.display()),
+            Err(err) => log::warn!("{}: couldn't copy {}: {err}", self.name, src.display()),
         }
     }
 
@@ -118,7 +118,7 @@ impl Saved {
             .and_then(|_| write_safely(&self.file, &text));
         match result {
             Ok(()) => self.backup(data, &text),
-            Err(err) => eprintln!("[{}] save failed: {err}", self.name),
+            Err(err) => log::error!("{}: save failed: {err}", self.name),
         }
     }
 
@@ -158,7 +158,7 @@ impl Saved {
             Ok(())
         })();
         if let Err(err) = result {
-            eprintln!("[{}] backup failed: {err}", self.name);
+            log::warn!("{}: backup failed: {err}", self.name);
         }
     }
 }

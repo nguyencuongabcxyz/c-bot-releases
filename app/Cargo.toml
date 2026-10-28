@@ -55,6 +55,8 @@ windows-sys = { version = "0.61.2", features = [
 # the shell in a robot's chat (shell.rs): a pseudoconsole (ConPTY) to run it in
 portable-pty = "0.9"
 thiserror = "2.0.21"
+log = "0.4.34"
+tauri-plugin-log = "2.10.1"
 
 # a small binary
 [profile.release]

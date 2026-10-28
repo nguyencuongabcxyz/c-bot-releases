@@ -11,7 +11,7 @@ use serde_json::json;
 use tauri::{App, AppHandle, Manager, RunEvent};
 
 use super::paths::{self, electron_data_dir};
-use super::{State, hub, migrate, with};
+use super::{State, hub, logging, migrate, with};
 use crate::features::chat::awake;
 use crate::features::{chat, notes, vocab};
 use crate::mcp::{apps, link};
@@ -24,16 +24,22 @@ use crate::ui::{tray, workshop};
 use crate::workbench::{capture, palette, paste, quick, shell, snip, terminal};
 
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    logging::log_panics();
     paths::init(app.handle()); // (first: where the user's folders are)
     // (CBOT_DATA_DIR: somewhere else, to try things without touching your robots)
     let dir = match std::env::var_os("CBOT_DATA_DIR") {
         Some(d) => PathBuf::from(d),
         None => app.path().app_data_dir()?,
     };
+    log::info!(
+        "C-Bot {} starting, its data in {}",
+        app.package_info().version,
+        dir.display()
+    );
     let store = Store::open(&dir, electron_data_dir());
     if let Some(r) = &store.recovered {
-        eprintln!(
-            "[store] recovered from {:?}; the damaged file was kept as {}",
+        log::warn!(
+            "recovered from {:?}; the damaged file was kept as {}",
             r.from,
             r.broken.display()
         );
@@ -91,7 +97,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     for id in &visible {
         let index = order.iter().position(|o| o == id).unwrap_or(0);
         if let Err(err) = robots::open(&handle, id, index) {
-            eprintln!("[robots] couldn't open {id}: {err}");
+            log::warn!("couldn't open {id}: {err}");
         }
     }
     if no_robots {

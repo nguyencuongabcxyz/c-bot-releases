@@ -39,6 +39,7 @@ fn main() {
         }));
     }
     let builder = builder
+        .plugin(runtime::logging::plugin())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())

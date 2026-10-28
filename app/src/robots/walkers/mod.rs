@@ -581,7 +581,7 @@ fn prepare(
     let window = match built {
         Ok(w) => w,
         Err(err) => {
-            eprintln!("[walkers] couldn't open {label}: {err}");
+            log::warn!("couldn't open {label}: {err}");
             return false;
         }
     };

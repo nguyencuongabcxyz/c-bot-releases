@@ -216,7 +216,7 @@ pub fn register(app: &AppHandle, name: &str, keys: &str, run: fn(&AppHandle)) ->
         return false;
     }
     let Some(shortcut) = parse_accelerator(keys) else {
-        eprintln!("[capture] bad hotkey {keys}");
+        log::warn!("bad hotkey {keys}");
         return false;
     };
     // (the handler runs on the main thread: what it does — waiting for keys, opening
@@ -235,7 +235,7 @@ pub fn register(app: &AppHandle, name: &str, keys: &str, run: fn(&AppHandle)) ->
             true
         }
         Err(err) => {
-            eprintln!("[capture] {keys} is taken by another app ({err})");
+            log::warn!("{keys} is taken by another app ({err})");
             false
         }
     }

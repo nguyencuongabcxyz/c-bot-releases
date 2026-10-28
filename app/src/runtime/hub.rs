@@ -130,7 +130,7 @@ pub fn set_visible(app: &AppHandle, id: &str, visible: bool) {
     if visible {
         // (put away, its window was closed: it opens again; already out, nothing to do)
         if let Err(err) = robots::open(app, id, index) {
-            eprintln!("[robots] couldn't open {id}: {err}");
+            log::warn!("couldn't open {id}: {err}");
         }
     } else {
         close_robot_window(app, id);
@@ -225,7 +225,7 @@ pub fn apply_login_item(app: &AppHandle) {
         })
     };
     if let Err(err) = result {
-        eprintln!("[startup] couldn't set Start with Windows: {err}");
+        log::warn!("couldn't set Start with Windows: {err}");
     }
 }
 

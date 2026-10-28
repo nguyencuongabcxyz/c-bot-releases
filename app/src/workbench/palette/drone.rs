@@ -100,7 +100,7 @@ pub fn prepare(app: &AppHandle) {
     let w = match built {
         Ok(w) => w,
         Err(err) => {
-            eprintln!("[drone] couldn't make it: {err}");
+            log::warn!("couldn't make it: {err}");
             return;
         }
     };
