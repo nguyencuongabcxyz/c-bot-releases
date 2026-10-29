@@ -97,6 +97,8 @@ fn tray_action(app: &AppHandle, what: &str) {
 fn robot_action(app: &AppHandle, id: &str, action: &str) {
     let rid = Some(id.to_string());
     match action {
+        // (the page acts it out: features/workbench/quick/robot.ts robot:action)
+        "terminal" => hub::send_to_robot(app, id, "robot:action", json!(action)),
         "hide" => hub::set_visible(app, id, false),
         "groupchat" => group::open(app, rid),
         "notebook" => notes::open_notebook(app, rid, None),

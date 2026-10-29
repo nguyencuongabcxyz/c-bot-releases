@@ -15,6 +15,7 @@ import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { FaceApi } from '@/views/robot/life/face';
 import type { TabsApi } from '@/features/chat/tabs';
 import type { RobotMessagesApi } from '@/features/robots/link/asks';
+import type { TerminalModeApi } from '../terminal';
 import type { PlayApi } from '@/views/robot/life/play';
 import type { PokingApi } from '@/views/robot/life/poke';
 import { Sfx } from '@/views/robot/sound';
@@ -57,6 +58,7 @@ export type QuickActionsNeeds = {
   readonly onNotes: NotesApi['onNotes'];
   readonly onSocial: OtherRobotsApi['onSocial'];
   readonly openChat: LifeCycleApi['openChat'];
+  readonly openTerminal: TerminalModeApi['openTerminal'];
   readonly peek: LifeCycleApi['peek'];
   readonly playWith: PlayApi['playWith'];
   readonly pokingPart: PokingApi;
@@ -423,6 +425,7 @@ export function createQuickActions(rw: QuickActionsNeeds) {
     else if (action === 'meeting') rw.toMeeting();
     else if (action === 'meeting-end') rw.fromMeeting();
     else if (action === 'reset') ipc.robotReset(rw.activeId ?? undefined);
+    else if (action === 'terminal') rw.openTerminal();
     else if (action === 'handoff') rw.goneWalking();
     else if (action === 'dock' || String(action).startsWith('dock:')) {
       const [x, y] = String(action).slice(5).split(',').map(Number);

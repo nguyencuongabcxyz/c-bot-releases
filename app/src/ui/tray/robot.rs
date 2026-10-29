@@ -25,8 +25,12 @@ fn act(id: &str, action: &str) -> String {
 
 /// Only what has no quicker way (a click, a button, a hotkey, the action menu).
 fn robot_menu_of(app: &AppHandle, id: &str, away: bool) -> tauri::Result<Option<Menu<Wry>>> {
-    let Some((c, visible)) = with(app, |st| {
-        Some((st.store.get(id)?.clone(), visible_count(st.store.list())))
+    let Some((c, visible, terminal_open)) = with(app, |st| {
+        Some((
+            st.store.get(id)?.clone(),
+            visible_count(st.store.list()),
+            st.terminals.contains_key(id),
+        ))
     }) else {
         return Ok(None);
     };
@@ -53,6 +57,17 @@ fn robot_menu_of(app: &AppHandle, id: &str, away: bool) -> tauri::Result<Option<
                 "👥 Start a group chat…"
             },
             visible >= 2,
+        ));
+        // (the chat's title bar and /terminal no longer have it)
+        items.push(item(
+            app,
+            act(id, "terminal"),
+            if terminal_open {
+                "⌨️ Terminal is open"
+            } else {
+                "⌨️ Open in terminal (full Claude Code)"
+            },
+            !terminal_open,
         ));
     }
     items.push(notes_menu(app, id, &s));
