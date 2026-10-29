@@ -3,11 +3,8 @@
 // its dictionary; a little hop when the answer goes back into your app. Asleep or out
 // for a walk, it lets you get on with it.
 // (robot.ts calls createQuickActions with its hub.)
-import type { PastChatsApi } from '@/features/chat/past/resume';
-import type { ShellsApi } from '../shell/drawer';
 import { ROBOT_H, ROBOT_W } from '@/views/robot/constants';
 import { pick } from '@/lib/random';
-import type { BonkApi } from '@/views/robot/life/bonk';
 import type { OtherRobotsApi } from '@/features/robots/reactions';
 import type { DeskActivityApi } from '@/views/robot/life/desk';
 import type { IdleAnticsApi } from '@/views/robot/life/antics';
@@ -18,8 +15,6 @@ import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { FaceApi } from '@/views/robot/life/face';
 import type { TabsApi } from '@/features/chat/tabs';
 import type { RobotMessagesApi } from '@/features/robots/link/asks';
-import type { TerminalModeApi } from '../terminal';
-import type { AttachmentsApi } from '@/features/chat/composer/attachments';
 import type { PlayApi } from '@/views/robot/life/play';
 import type { PokingApi } from '@/views/robot/life/poke';
 import { Sfx } from '@/views/robot/sound';
@@ -41,7 +36,6 @@ export type QuickActionsNeeds = {
   readonly awayClick: IdleAnticsApi['awayClick'];
   readonly backToDesk: IdleAnticsApi['backToDesk'];
   readonly body: HTMLElement;
-  readonly bonkRobot: BonkApi['bonkRobot'];
   readonly canAct: VocabApi['canAct'];
   readonly canActNotes: NotesApi['canActNotes'];
   readonly collapse: LifeCycleApi['collapse'];
@@ -52,12 +46,10 @@ export type QuickActionsNeeds = {
   readonly fromMeeting: IdleAnticsApi['fromMeeting'];
   readonly goneWalking: IdleAnticsApi['goneWalking'];
   readonly haveTreat: OtherRobotsApi['haveTreat'];
-  readonly helpersOut: DeskActivityApi['helpersOut'];
   readonly idleAnticsPart: IdleAnticsApi;
   readonly input: HTMLTextAreaElement;
   readonly islandReport: LifeCycleApi['islandReport'];
   readonly islandReportAgain: LifeCycleApi['islandReportAgain'];
-  readonly leaveDesk: IdleAnticsApi['leaveDesk'];
   readonly newTab: TabsApi['newTab'];
   readonly notesPart: NotesApi;
   readonly office: Office3DView;
@@ -65,9 +57,6 @@ export type QuickActionsNeeds = {
   readonly onNotes: NotesApi['onNotes'];
   readonly onSocial: OtherRobotsApi['onSocial'];
   readonly openChat: LifeCycleApi['openChat'];
-  readonly openHistory: PastChatsApi['openHistory'];
-  readonly openTerminal: TerminalModeApi['openTerminal'];
-  readonly pasteClipboard: AttachmentsApi['pasteClipboard'];
   readonly peek: LifeCycleApi['peek'];
   readonly playWith: PlayApi['playWith'];
   readonly pokingPart: PokingApi;
@@ -81,12 +70,10 @@ export type QuickActionsNeeds = {
   readonly setSight: VocabApi['setSight'];
   readonly setVocabCount: VocabApi['setVocabCount'];
   readonly showPop: DeskActivityApi['showPop'];
-  readonly sleep: LifeCycleApi['sleep'];
   readonly socialReport: OtherRobotsApi['socialReport'];
   readonly state: RobotState;
   readonly stopAntic: IdleAnticsApi['stopAntic'];
   readonly strikePose: DeskActivityApi['strikePose'];
-  readonly toggleShell: ShellsApi['toggleShell'];
   readonly toMeeting: IdleAnticsApi['toMeeting'];
   readonly unpeek: LifeCycleApi['unpeek'];
   readonly vocabPart: VocabApi;
@@ -423,9 +410,7 @@ export function createQuickActions(rw: QuickActionsNeeds) {
   setTimeout(() => rw.socialReport(), 1500);
 
   ipc.on('robot:action', (action) => {
-    if (action === 'sleep') rw.sleep();
-    else if (action === 'wake') rw.wake();
-    else if (action === 'peek') rw.peek();
+    if (action === 'peek') rw.peek();
     else if (action === 'unpeek') rw.unpeek();
     else if (action === 'chat') {
       // (the island: out, and its chat open)
@@ -438,19 +423,7 @@ export function createQuickActions(rw: QuickActionsNeeds) {
     else if (action === 'meeting') rw.toMeeting();
     else if (action === 'meeting-end') rw.fromMeeting();
     else if (action === 'reset') ipc.robotReset(rw.activeId ?? undefined);
-    else if (action === 'new-tab') {
-      if (!rw.state.awake) rw.wake({ sayHi: false });
-      rw.newTab();
-    } else if (action === 'history') rw.openHistory();
-    else if (action === 'terminal') rw.openTerminal();
-    else if (action === 'shell') rw.toggleShell({ show: true });
-    else if (action === 'bonk') rw.bonkRobot();
-    else if (action === 'paste') rw.pasteClipboard();
-    else if (action === 'wander') {
-      // right-click menu: off for a walk now (not in the middle of a job, though)
-      if (rw.state.busy || rw.helpersOut() || rw.state.mirroring) rw.showPop("Can't go now, I'm working!", 1800);
-      else rw.leaveDesk();
-    } else if (action === 'handoff') rw.goneWalking();
+    else if (action === 'handoff') rw.goneWalking();
     else if (action === 'dock' || String(action).startsWith('dock:')) {
       const [x, y] = String(action).slice(5).split(',').map(Number);
       rw.backToDesk({ feet: Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null });

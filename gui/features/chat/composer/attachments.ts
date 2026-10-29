@@ -197,7 +197,7 @@ export function createAttachments(r: AttachmentsNeeds) {
     }
     eat(await toEntries(files));
   });
-  // from the robot's right-click menu: works even while it's asleep
+  // from the ＋ menu (Paste from clipboard)
   async function pasteClipboard() {
     startCraving();
     eat((await ipc.robotPasteClipboard()) || []);
