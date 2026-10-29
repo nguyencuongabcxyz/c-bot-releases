@@ -75,6 +75,7 @@ export function createSlash(r: SlashNeeds) {
     { name: 'screen', description: 'Drag a box round part of the screen and ask about it' },
     { name: 'note', args: '<text>', description: 'Jot a note down (it goes on my corkboard)' },
     { name: 'notes', description: 'Open my notebook' },
+    { name: 'routines', description: 'Prompts I run on a schedule' },
     { name: 'sleep', description: 'Send me to bed' },
     { name: 'help', description: 'What I can do' },
   ];
@@ -178,6 +179,9 @@ export function createSlash(r: SlashNeeds) {
         return true;
       case 'notes':
         ipc.notesOpen({ focus: null });
+        return true;
+      case 'routines':
+        ipc.routinesOpen();
         return true;
       case 'sleep':
         r.sleep();

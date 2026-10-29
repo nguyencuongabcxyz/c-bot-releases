@@ -13,7 +13,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::agents::claude::locate;
 use crate::agents::personalities;
-use crate::features::{chat, notes};
+use crate::features::{chat, notes, routines};
 use crate::robots;
 use crate::robots::ipc;
 use crate::runtime::util::patch;
@@ -369,6 +369,7 @@ fn delete(app: &AppHandle, id: &str) {
     chat::close_robot(app, id);
     hub::close_robot_window(app, id);
     with(app, |st| st.store.remove(id));
+    routines::robot_deleted(app, id);
     tray::refresh(app);
     notify(app);
 }

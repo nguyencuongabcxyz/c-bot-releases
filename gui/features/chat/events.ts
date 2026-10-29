@@ -5,6 +5,7 @@ import { pick } from '@/lib/random';
 import { Sfx } from '@/views/robot/sound';
 import type { Ask, ChatTab, Reply, ToolCall } from '@/views/robot/types';
 import type { AskingApi } from './reply/ask';
+import type { RoutinesApi } from '@/features/routines/robot';
 import * as ipc from '@/ipc';
 import type { RobotEvent } from '@/types/model';
 
@@ -25,7 +26,7 @@ export type ChatEventsNeeds = Omit<import('./reply/ask').AskingNeeds, 'onEvent'>
     | 'renderCurrent'
     | 'setBusy'
     | 'startReply'
-  >;
+  > & { readonly routineAnswer: RoutinesApi['routineAnswer'] };
 
 export function createChatEvents(r: ChatEventsNeeds) {
   let quiet = 0; // (the timer that stops the talking face once the words pause)
@@ -306,6 +307,7 @@ export function createChatEvents(r: ChatEventsNeeds) {
       if (tab.bonk) return; // the rerun follows straight away
       tab.noteId = '';
       if (tab.linkReq) r.linkAnswer(tab, { error: 'it was stopped before it finished' });
+      r.routineAnswer(tab, { error: 'It was stopped before it finished.' });
       if (show) r.setActivity(r.restingActivity());
       r.express('flat', 'o', 1200);
       r.renderTabs();
@@ -332,6 +334,14 @@ export function createChatEvents(r: ChatEventsNeeds) {
     if (tab.linkReq) {
       const said = done ? (done.asked ? done.text.slice(done.offset || 0) : done.text) : '';
       r.linkAnswer(tab, ev.isError ? { error: said || ev.text || 'it hit an error' } : { text: said || ev.text || '' });
+    }
+    // a routine's run: its result goes back (main shows it)
+    if (tab.routineRun) {
+      const said = done ? (done.asked ? done.text.slice(done.offset || 0) : done.text) : '';
+      r.routineAnswer(
+        tab,
+        ev.isError ? { error: said || ev.text || 'It hit an error.' } : { text: said || ev.text || '' },
+      );
     }
     if (!ev.isError) r.socialReport({ kind: 'done' });
     if (ev.isError) r.islandNews('error', ev.text || 'It hit an error.');
@@ -382,6 +392,7 @@ export function createChatEvents(r: ChatEventsNeeds) {
       tab.noteId = '';
     }
     if (tab.linkReq) r.linkAnswer(tab, { error: ev.cancelled ? 'it was stopped' : ev.message || 'it failed' });
+    r.routineAnswer(tab, { error: ev.cancelled ? 'It was stopped.' : ev.message || 'It failed.' });
     const done = r.finishCurrent(tab);
     r.expireQuestion(tab);
     const said = done ? done.text.slice(done.offset || 0).trim() : '';

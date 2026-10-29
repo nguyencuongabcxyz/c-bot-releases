@@ -27,6 +27,7 @@ import { createRobotMessages, type RobotMessagesApi } from '@/features/robots/li
 import { createOtherRobots, type OtherRobotsApi } from '@/features/robots/reactions';
 import { createScreenAsk, type ScreenAskApi } from '@/features/workbench/snip/robot';
 import { createNotes, type NotesApi } from '@/features/notes/robot';
+import { createRoutines, type RoutinesApi } from '@/features/routines/robot';
 import { createVocab, type VocabApi } from '@/features/vocab/robot';
 import { createStage, type StageApi } from '@/features/robots/stage/tile';
 import { createIdleAntics, type IdleAnticsApi } from './life/antics';
@@ -227,6 +228,7 @@ tooltips($('#side-panel'));
       renderPose: () => renderPose,
       renderRemote: () => renderRemote,
       renderScreenAsks: () => renderScreenAsks,
+      routineAnswer: () => routineAnswer,
       renderStepDetail: () => renderStepDetail,
       renderTabs: () => renderTabs,
       renderTodo: () => renderTodo,
@@ -662,6 +664,9 @@ tooltips($('#side-panel'));
 
   // handed-off tasks
   createHandedOffTasks(hub);
+
+  // routines
+  const { routineAnswer }: RoutinesApi = createRoutines(hub); // (routines/robot.ts)
 
   // quick actions
   const quickActionsPart: QuickActionsApi = createQuickActions(hub); // (workbench/quick/robot.ts)

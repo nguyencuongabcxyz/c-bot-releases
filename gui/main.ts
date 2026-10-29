@@ -17,6 +17,7 @@ const VIEWS: Record<string, () => Promise<unknown>> = {
   plane: () => import('./views/plane/plane'),
   quick: () => import('./views/quick/quick'),
   robot: () => import('./views/robot/robot'),
+  routines: () => import('./views/routines/routines'),
   snip: () => import('./views/snip/snip'),
   stage: () => import('./views/stage/stage'),
   walker: () => import('./views/walker/walker'),

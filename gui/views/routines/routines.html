@@ -1,0 +1,88 @@
+<main id="win" aria-label="Routines">
+  <header>
+    <button type="button" id="btn-back" class="icon" title="Back" data-icon="back" hidden></button>
+    <h1 id="title" data-icon="clock">Routines</h1>
+    <span id="count" class="count" hidden></span>
+    <div class="actions">
+      <button type="button" id="btn-close" class="icon" title="Close" data-icon="x"></button>
+    </div>
+  </header>
+
+  <!-- every routine -->
+  <section id="v-list" class="view">
+    <ul id="list"></ul>
+    <p id="empty" class="empty" hidden>No routines yet.<br /><small>A routine is a prompt a robot runs on a schedule, like the news every morning at 8.</small></p>
+    <button type="button" id="btn-new" class="add-row" data-icon="plus">New routine</button>
+    <p class="hint">Or ask a robot in its chat: <code>every weekday at 8, bring me the news on AI chips</code></p>
+  </section>
+
+  <!-- a new routine, or one to change -->
+  <form id="v-edit" class="view" autocomplete="off" hidden>
+    <div class="scroll">
+      <div class="row">
+        <label class="field emoji"><span>Icon</span><input id="f-emoji" type="text" maxlength="4" placeholder="⏰" /></label>
+        <label class="field grow"><span>Name</span><input id="f-name" type="text" maxlength="60" placeholder="Morning news" /></label>
+      </div>
+      <label class="field"><span>Robot</span><select id="f-robot"></select></label>
+
+      <div class="field"><span>When</span>
+        <div class="seg" id="f-kind">
+          <button type="button" data-v="daily">At times</button>
+          <button type="button" data-v="every">Every few hours</button>
+          <button type="button" data-v="once">Once</button>
+        </div>
+        <div class="days" id="f-days"></div>
+        <div id="k-daily" class="times">
+          <span id="f-times" class="chips"></span>
+          <input id="f-time" type="time" title="Add a time" />
+          <button type="button" id="btn-time" class="link" data-icon="plus">Add</button>
+        </div>
+        <div id="k-every" class="times" hidden>
+          Every <input id="f-hours" type="number" min="1" max="24" value="2" /> hours, from
+          <input id="f-from" type="time" value="09:00" /> to <input id="f-to" type="time" value="18:00" />
+        </div>
+        <div id="k-once" class="times" hidden><input id="f-at" type="datetime-local" /></div>
+      </div>
+
+      <div class="field"><span>What to do</span>
+        <div class="templates" id="templates"></div>
+        <textarea id="f-prompt" rows="5" placeholder="Search today's news on AI chips. Give me the top 5: one line each, with the source and a link."></textarea>
+      </div>
+
+      <div class="field"><span>Show the result</span>
+        <div class="seg" id="f-show">
+          <button type="button" data-v="card">Beside the robot</button>
+          <button type="button" data-v="pop">Robot says it</button>
+          <button type="button" data-v="toast">Notification</button>
+        </div>
+      </div>
+
+      <details>
+        <summary>More options</summary>
+        <label class="check"><input id="f-catchup" type="checkbox" checked /> Missed it (PC asleep)? Run when I'm back that day</label>
+        <label class="check">Stop a run after <input id="f-limit" type="number" min="1" max="60" value="10" /> minutes</label>
+      </details>
+      <p id="error" class="error" hidden></p>
+    </div>
+    <footer>
+      <button type="button" id="btn-delete" class="btn danger" data-icon="trash" hidden><span>Delete</span></button>
+      <span class="spacer"></span>
+      <button type="button" id="btn-cancel" class="btn">Cancel</button>
+      <button type="button" id="btn-save-run" class="btn" data-icon="zap">Save &amp; run</button>
+      <button type="submit" id="btn-save" class="btn primary">Save</button>
+    </footer>
+  </form>
+
+  <!-- a run's result -->
+  <section id="v-result" class="view" hidden>
+    <p id="r-when" class="meta"></p>
+    <div id="r-text" class="result"></div>
+    <footer>
+      <button type="button" id="btn-chat" class="btn primary" data-icon="chat">Ask about it</button>
+      <button type="button" id="btn-note" class="btn" data-icon="note-plus">To notes</button>
+      <button type="button" id="btn-again" class="btn" data-icon="refresh">Run again</button>
+    </footer>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" hidden></div>

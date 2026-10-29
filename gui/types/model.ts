@@ -472,6 +472,45 @@ export type NotesEvent =
   | { phase: 'remind'; kind: 'morning' | 'evening'; info: NotesReminder }
   | { phase: 'ask'; prompt: string; note?: Note; draft?: boolean; summary?: boolean };
 
+// ---------------------------------------------------------------- routines
+
+/** When a routine runs (features/routines/schedule.rs When). days: 1 = Monday … 7 = Sunday (none: every day); at: "2026-10-30T14:00". */
+export type RoutineWhen =
+  | { kind: 'daily'; days: number[]; times: string[] }
+  | { kind: 'every'; hours: number; from: string; to: string; days: number[] }
+  | { kind: 'once'; at: string };
+/** How a run's result is shown: the Routines window beside the robot, the robot's line, a Windows notification. */
+export type RoutineShow = 'card' | 'pop' | 'toast';
+/** How its last run went: slot, the time it ran for ("" by hand); text, the result or why there's none. */
+export type RoutineLast = { slot: string; at: number; outcome: 'done' | 'failed'; text: string };
+/** A prompt a robot runs on a schedule (routines.json; features/routines/mod.rs Routine). robot: its id. */
+export type Routine = {
+  id: string;
+  name: string;
+  emoji: string;
+  robot: string;
+  prompt: string;
+  when: RoutineWhen;
+  show: RoutineShow;
+  on: boolean;
+  catchUp: boolean;
+  limitMin: number;
+  createdAt: number;
+  slot: string;
+  last: RoutineLast | null;
+};
+
+/**
+ * A routine's run, on the robot that does it (robot:routine; features/routines/runs.rs): run it
+ * in its tab (last: the result before, for a new tab), stop it (too long), its result is in,
+ * or open its tab.
+ */
+export type RoutineEvent =
+  | { phase: 'run'; runId: string; routineId: string; title: string; text: string; last: string }
+  | { phase: 'stop'; runId: string }
+  | { phase: 'result'; routineId: string; title: string; line: string; ok: boolean; show: RoutineShow }
+  | { phase: 'open'; routineId: string };
+
 // ---------------------------------------------------------------- the other robots
 
 /** The side of the screen another robot is on. */

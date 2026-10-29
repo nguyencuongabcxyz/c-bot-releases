@@ -239,6 +239,10 @@ mod tests {
                 "save_words",
                 "list_notes",
                 "add_note",
+                "list_routines",
+                "add_routine",
+                "remove_routine",
+                "run_routine",
                 "terminal_read",
                 "terminal_type",
                 "terminal_run",
@@ -252,7 +256,7 @@ mod tests {
             .filter(|t| t["annotations"]["readOnlyHint"] == true)
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(read_only, [&names[..8], &names[10..]].concat());
+        assert_eq!(read_only, [&names[..12], &names[14..]].concat());
     }
 
     #[test]

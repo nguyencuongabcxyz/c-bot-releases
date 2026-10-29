@@ -81,6 +81,9 @@ pub fn describe_tool(name: &str, input: &Value) -> String {
         "mcp__cbot__list_words" => short(s(input, "query"), 32),
         "mcp__cbot__save_words" => saved_words(input),
         "mcp__cbot__add_note" => short(s(input, "text"), 48),
+        "mcp__cbot__add_routine" | "mcp__cbot__remove_routine" | "mcp__cbot__run_routine" => {
+            short(s(input, "name"), 48)
+        }
         "mcp__cbot__wait_for_tab" => format!("“{}”", short(s(input, "tab"), 48)),
         "mcp__cbot__terminal_type" | "mcp__cbot__terminal_run" => short(s(input, "command"), 48),
         _ => String::new(),

@@ -5,7 +5,7 @@ use tauri::Wry;
 use tauri::ipc::Invoke;
 
 use crate::features::chat::group;
-use crate::features::{notes, vocab};
+use crate::features::{notes, routines, vocab};
 use crate::mcp::{apps, link};
 use crate::robots::{ipc, island, revive, social, stage, walkers};
 use crate::ui::{tray, workshop};
@@ -123,7 +123,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         apps::robot_app_call,
         apps::robot_app_window,
         apps::appview_init,
-        // your words and your notes
+        // your words, your notes and your routines
         vocab::robot_vocab_save,
         vocab::robot_vocab_open,
         vocab::robot_vocab_quiz,
@@ -146,6 +146,10 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         notes::notes_remind_open,
         notes::notebook_init,
         notes::notebook_act,
+        routines::routines_init,
+        routines::routines_act,
+        routines::routines_done,
+        routines::routines_open,
         // the Robot Workshop
         workshop::mgr_state,
         workshop::mgr_pick_folder,

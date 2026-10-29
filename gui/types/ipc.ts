@@ -13,6 +13,7 @@ import type {
   Point,
   RobotEvent,
   RobotView,
+  RoutineEvent,
   Settings,
   SightWord,
   SocialEvent,
@@ -117,6 +118,7 @@ export interface Events {
   'robot:palette': { phase: 'launch' };
   'robot:social': SocialEvent;
   'robot:link': LinkEvent;
+  'robot:routine': RoutineEvent;
   // (its shell, workbench/shell.rs: what it printed, or that it ended)
   'robot:shell': { sid: number; kind: 'data'; data: string } | { sid: number; kind: 'exit'; code: number };
   // (its Claude, in the shells of its conversation tab: a terminal_* tool call; wait: seconds, for terminal_run)
@@ -139,6 +141,8 @@ export interface Events {
   'words:changed': undefined;
   'notebook:notes': P.NotebookNotes;
   'notebook:open': P.NotebookOpen;
+  'routines:list': P.RoutinesList;
+  'routines:open': P.RoutinesFocus;
   'palette:open': PaletteView;
   'drone:cmd': DroneCmd;
   'quick:open': P.QuickOpen;

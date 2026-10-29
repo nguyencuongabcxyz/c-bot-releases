@@ -4,12 +4,14 @@
 //!   robots.rs    list_robots, ask_robot, hand_off_task: the other robots
 //!   words.rs     list_words, save_words: the user's English words
 //!   notes.rs     list_notes, add_note: the user's notebook
+//!   routines.rs  list_routines, add_routine, remove_routine, run_routine: prompts run on a schedule
 //!   terminal.rs  terminal_read, terminal_type, terminal_run: the shells in the chat's drawer
 //!   screen.rs    screenshot: the screen as it is now, as a picture to look at
 //!   tabs.rs      list_tabs, wait_for_tab: the robot's other conversations (and the edit guard)
 
 pub mod notes;
 pub mod robots;
+pub mod routines;
 pub mod screen;
 pub mod tabs;
 pub mod terminal;
@@ -40,6 +42,7 @@ pub fn list() -> Value {
         robots::list(),
         words::list(),
         notes::list(),
+        routines::list(),
         terminal::list(),
         screen::list(),
         tabs::list(),
@@ -61,6 +64,10 @@ pub fn allowed() -> Vec<String> {
         "save_words",
         "list_notes",
         "add_note",
+        "list_routines",
+        "add_routine",
+        "remove_routine",
+        "run_routine",
         "terminal_read",
         "terminal_type",
         "screenshot",
@@ -82,6 +89,9 @@ pub fn call(app: &AppHandle, from: &str, tab: &str, tool: &str, args: &Value, co
         "list_robots" | "ask_robot" | "hand_off_task" => robots::call(app, from, tool, args, conn),
         "list_words" | "save_words" => words::call(app, from, tool, args),
         "list_notes" | "add_note" => notes::call(app, from, tool, args),
+        "list_routines" | "add_routine" | "remove_routine" | "run_routine" => {
+            routines::call(app, from, tool, args)
+        }
         "terminal_read" | "terminal_type" | "terminal_run" => {
             terminal::call(app, from, tab, tool, args)
         }

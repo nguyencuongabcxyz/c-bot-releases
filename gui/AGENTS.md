@@ -11,9 +11,9 @@ These rules are strict. New code follows them; code you touch is brought in line
 | Folder | What lives there |
 | --- | --- |
 | `main.ts` | Picks the window from `?view=` and loads only that one |
-| `views/<name>/` | One window each: `robot/` (the robot at its desk: `robot.ts` makes the shared state and calls each part; `life/` its moods, antics and pokes; `layout.ts`, `sound.ts`, `constants.ts`), `workshop/` (`?view=manager`: the robot builder, `look.ts`, `kit.ts`, and `settings.ts`), `big-window/` (`?view=appview`: an MCP App fullscreen), `island`, `walker`, `plane`, `stage`, `groupchat`, `meeting`, `notebook`, `words`, `card`, `quick`, `palette`, `drone`, `snip` |
+| `views/<name>/` | One window each: `robot/` (the robot at its desk: `robot.ts` makes the shared state and calls each part; `life/` its moods, antics and pokes; `layout.ts`, `sound.ts`, `constants.ts`), `workshop/` (`?view=manager`: the robot builder, `look.ts`, `kit.ts`, and `settings.ts`), `big-window/` (`?view=appview`: an MCP App fullscreen), `island`, `walker`, `plane`, `stage`, `groupchat`, `meeting`, `notebook`, `routines`, `words`, `card`, `quick`, `palette`, `drone`, `snip` |
 | `features/chat/` | A robot's chat: `log.ts`, `events.ts` (one function per `ChatEvent` kind), `reply/` (asking and the answer streaming in: steps, commentary, code blocks, local files), `composer/` (the box you type in: format, @ mentions, /commands, attachments), `agents.ts` (sub-agents), `plan/`, `side/` (side questions), `past/` (past conversations), `brief.ts`, `tabs.ts`, `todo.ts`, `outputs.ts`… |
-| `features/notes/`, `features/vocab/` | What the robot does with your notes, and with English words (`robot.ts`) |
+| `features/notes/`, `features/vocab/`, `features/routines/` | What the robot does with your notes, with English words, and when one of your routines runs (`robot.ts`) |
 | `features/robots/` | Robots and each other: `reactions.ts` (noticing each other), `link/` (one asking another, work handed off), `stage/tile.ts` (a robot window as a tile of the stage) |
 | `features/workbench/` | Tools round the robot: `quick/robot.ts` and `snip/robot.ts` (what it does for quick actions and a box round the screen), `shell/` (the shell drawer), `files/` (the file viewer), `terminal.ts` |
 | `features/mcp/` | MCP Apps: `app-host.ts` (hosting a tool's own page), `apps.ts` (in the chat) |

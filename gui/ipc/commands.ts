@@ -216,6 +216,10 @@ export const wordsSettings = (patch: { reminders?: boolean; hours?: [number, num
 // ---- the notebook, Quick actions
 export const notebookInit = () => invoke<P.NotebookInit | null>('notebook_init');
 export const notebookAct = acts<P.NotebookActs>('notebook_act', 'p');
+// ---- routines
+export const routinesInit = () => invoke<P.RoutinesInit | null>('routines_init');
+export const routinesAct = acts<P.RoutinesActs>('routines_act', 'p');
+export const routinesOpen = () => invoke<void>('routines_open');
 export const quickInit = () => invoke<P.QuickInit | null>('quick_init');
 export const quickRun = (req: P.QuickRunRequest) => invoke<unknown>('quick_run', { req });
 export const quickAct = acts<P.QuickActs>('quick_act', 'p');
@@ -258,6 +262,8 @@ export const robotWalker = (what: 'wave' | 'asleep' | 'awake' | 'dock' | 'docked
   tell('robot_walker', { what });
 export const robotsAnswer = (answer: { reqId: string; text?: string; error?: string }) =>
   tell('robots_answer', { answer });
+export const routinesDone = (answer: { runId: string; text?: string; error?: string }) =>
+  tell('routines_done', { answer });
 export const socialReport = (report: SocialReport) => tell('social_report', { report });
 export const robotIsland = (report: IslandReport, news?: IslandNews) => tell('robot_island', { report, news });
 export const walkerDrag = (step: { phase: 'start' | 'move' | 'end'; dx?: number; dy?: number }) =>

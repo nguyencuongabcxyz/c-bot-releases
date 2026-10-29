@@ -8,7 +8,7 @@ Each robot sits at its own little 3D desk, with a name, a personality and a proj
 
 - **Claude Code with a face:** chat with each robot about its project, plan first, ask side questions, and see every file it touches.
 - **A team:** robots ask each other questions, hand off work and hold meetings.
-- **Everyday helpers:** refine or translate text, ask about the screen, learn English words, take notes.
+- **Everyday helpers:** refine or translate text, ask about the screen, learn English words, take notes, run prompts on a schedule.
 - **Yours to build:** design and dress up every robot.
 
 ## Install (Windows)
@@ -73,7 +73,7 @@ Ask one robot to ask another (*"Ask Sunny which port her API runs on"*) or to ha
 
 ![A robot group chat](docs/screenshots/group-chat.png)
 
-To work with several robots at once, put them **▦ on stage**: Ctrl+click the robots (or tick them in the tray's *Arrange on stage*), then *Take the stage*. Their chats tile the screen like windows: drag the gaps between them to resize (the neighbours give way), drag a title bar onto another to swap, or spotlight one. The bar along the bottom sends one message to all of them, and each answers from its own project.
+To work with several robots at once, put them **▦ on stage**: Ctrl+click the robots, then *Take the stage* in the tray's *Arrange on stage*. Their chats tile the screen like windows: drag the gaps between them to resize (the neighbours give way), drag a title bar onto another to swap, or spotlight one. The bar along the bottom sends one message to all of them, and each answers from its own project.
 
 ![Three robots on stage, answering one question](docs/screenshots/stage.png)
 
@@ -82,6 +82,14 @@ To work with several robots at once, put them **▦ on stage**: Ctrl+click the r
 Too many desks? Turn on **🏝️ Robot island** in the tray: every robot's face sits in a strip at the screen's edge. Drag a robot onto it (or press 🏝️ in its chat) to send it away; its desk keeps its place for when it comes back. Hover the island to bring robots out or send them away. Robots that are away keep working, and the island tells you when one finishes, hits a snag or needs you. It also passes on their word cards.
 
 ![The robot island: its panel, and news from a robot that's away](docs/screenshots/island.png)
+
+### Routines
+
+Have a robot do something on a schedule and show you what it found: the news on your topics every weekday at 8, your open pull requests every two hours, a plan for your day from your notes. Open **⏰ Routines** from the tray (or `/routines` in a chat), pick a robot, when it runs (set times on chosen days, every few hours, or once) and what to do. Or just ask a robot in its chat: *"Every weekday at 8, bring me the news on AI chips."*
+
+At the set time, the robot runs the prompt in a tab of its own and shows the result beside its desk, says it in a bubble, or sends a Windows notification. **Ask about it** opens that tab so you can keep the conversation going. If your PC was asleep at the time, the routine runs when you're back that day. Run any routine right away with ⚡, or switch it off for a while.
+
+![The Routines window, and a morning's news](docs/screenshots/routines.png)
 
 ### Everyday helpers
 
@@ -180,7 +188,7 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       over a screen; island.rs the island at the screen's edge; walkers/,
                       social/, maid.rs robots away from their desks; topmost.rs, screens.rs
     mcp/              what Claude itself calls: server.rs C-Bot's MCP server; tools/ its tools
-                      (robots, words, notes, terminal, screen, tabs: schema and handler
+                      (robots, words, notes, routines, terminal, screen, tabs: schema and handler
                       together); link.rs the app's end of it and robots asking each other;
                       guard.rs the hook that stops two tabs changing one file; apps.rs MCP Apps
     workbench/        what you use in the chat: files.rs, shell.rs, terminal.rs (full Claude
@@ -191,7 +199,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       tabs.rs what each tab is up to, for the others; temporary.rs; awake.rs
                       the PC kept awake for Remote Control) and
                       group/ the group chat and meeting room; vocab/ English words; notes/
-                      notes and reminders
+                      notes and reminders; routines/ prompts a robot runs on a schedule
+                      (schedule.rs when, runs.rs a run and its result, panel.rs the window)
     ui/               the app's own windows and menus: views.rs, place.rs, tray.rs, workshop.rs
     platform/         what needs the operating system, kept by system: windows/ (window,
                       input, clipboard, screenshot, presence, power, process, webview), and
@@ -201,11 +210,12 @@ gui/                  the pages (TypeScript, built by Vite into dist/)
   views/
     robot/            the robot window: its life (moods, antics, sounds), calling the parts below
     workshop/         the Robot Workshop and Settings
-    …                 one folder per other window (island, stage, notebook, words, quick, …)
+    …                 one folder per other window (island, stage, notebook, routines, words, quick, …)
   features/           what the robot window is built from (views/ shows, features/ handles)
     chat/             a robot's chat: the log, replies, the box you type in, plans, side
                       questions, past chats
     notes/  vocab/    what the robot does with your notes, and with English words
+    routines/         what the robot does when one of your routines runs
     robots/           robots noticing and asking each other, and the robot as a stage tile
     workbench/        quick actions, snip, the shell drawer, the file viewer
     mcp/              MCP Apps: a tool's own page, shown in the chat

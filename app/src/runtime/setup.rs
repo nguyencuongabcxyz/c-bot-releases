@@ -13,7 +13,7 @@ use tauri::{App, AppHandle, Manager, RunEvent};
 use super::paths::{self, electron_data_dir};
 use super::{State, hub, logging, migrate, with};
 use crate::features::chat::awake;
-use crate::features::{chat, notes, vocab};
+use crate::features::{chat, notes, routines, vocab};
 use crate::mcp::{apps, link};
 use crate::robots;
 use crate::robots::{island, maid, planes, revive, screens, social, stage, topmost, walkers};
@@ -96,6 +96,7 @@ fn setup_parts(handle: &AppHandle) -> tauri::Result<()> {
     maid::setup(handle);
     vocab::setup(handle);
     notes::setup(handle);
+    routines::setup(handle);
     quick::setup(handle);
     palette::setup(handle);
     link::setup(handle);

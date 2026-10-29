@@ -57,6 +57,11 @@ export const TOOLS: Record<string, [string, string, string]> = {
   mcp__cbot__save_words: ['📚', 'Saving the words', 'edit'],
   mcp__cbot__list_notes: ['🗒️', 'Reading your notes', 'read'],
   mcp__cbot__add_note: ['🗒️', 'Noting down', 'edit'],
+  // your routines
+  mcp__cbot__list_routines: ['⏰', 'Checking your routines', 'read'],
+  mcp__cbot__add_routine: ['⏰', 'Adding a routine:', 'edit'],
+  mcp__cbot__remove_routine: ['⏰', 'Deleting a routine:', 'edit'],
+  mcp__cbot__run_routine: ['⏰', 'Running a routine:', 'run'],
   // the shells in its conversation's drawer
   mcp__cbot__terminal_read: ['💻', 'Reading the terminal', 'read'],
   mcp__cbot__terminal_type: ['💻', 'Typing in the terminal:', 'run'],

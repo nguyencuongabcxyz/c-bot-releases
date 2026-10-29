@@ -10,6 +10,7 @@ import type {
   PermissionMode,
   Point,
   RobotView,
+  Routine,
   Settings,
   VocabReview,
   VocabWord,
@@ -70,6 +71,23 @@ export type NotebookNotes = { notes: Note[]; board: NotesBoard };
 /** focus: 'add' (the add box), a note's id, or null; text, source: what to put in the add box. */
 export type NotebookOpen = { focus: string | null; reminder: NotebookReminder | null; text?: string; source?: string };
 export type NotebookInit = NotebookNotes & NotebookOpen;
+
+// ---- routines
+
+/** A routine as the Routines window shows it: when it runs (in words), its next few times, whether it's running now. */
+export type RoutineView = Routine & { whenLabel: string; next: string[]; running: boolean; robotName: string };
+export type RoutinesList = { routines: RoutineView[]; robots: { id: string; name: string }[] };
+/** What the window opens on: the list, a routine to change, or a run's result. */
+export type RoutinesFocus = { view: 'list' | 'edit' | 'result'; id?: string };
+/** robot: the one it's beside (a new routine's, to start with). */
+export type RoutinesInit = RoutinesList & { focus: RoutinesFocus; robot: string | null };
+/** A routine as the editor sends it (features/routines/commands.rs Draft): a new one has no id. */
+export type RoutineDraft = Pick<
+  Routine,
+  'name' | 'emoji' | 'robot' | 'prompt' | 'when' | 'show' | 'catchUp' | 'limitMin'
+> & {
+  id: string | null;
+};
 
 // ---- Quick actions
 
@@ -301,6 +319,17 @@ export type NotebookActs = {
   summary: [undefined, boolean];
   snooze: [{ minutes: number }, null];
   'done-for-today': [undefined, true];
+};
+
+/** The Routines window (features/routines/commands.rs routines_act). */
+export type RoutinesActs = {
+  save: [RoutineDraft, string]; // (its id)
+  delete: [{ id: string }, string | null]; // (its name, if it was there)
+  toggle: [{ id: string; on: boolean }, null];
+  run: [{ id: string }, null];
+  chat: [{ id: string }, null]; // (its tab, on its robot)
+  note: [{ id: string }, Note | null];
+  close: [undefined, null];
 };
 
 /** Quick actions (workbench/quick/mod.rs act, on_action). */

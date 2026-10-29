@@ -142,6 +142,8 @@ export type ChatTab = {
   linkReq?: string;
   exchange?: string;
   task?: string;
+  routine?: string; // (a routine's own tab: its runs go here)
+  routineRun?: string; // the run it's on now
   // the status line while it works: since when, and how much it has written
   turnStart?: number;
   outTokens?: number; // (as Claude Code counts them, when it says)
