@@ -52,6 +52,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ipc::robot_sessions,
         ipc::robot_session,
         ipc::robot_resume,
+        ipc::robot_forget_sessions,
         ipc::robot_files,
         ipc::robot_inspect_paths,
         ipc::robot_save_paste,

@@ -7,9 +7,8 @@
       <button id="folder" type="button" class="chip" title="Open folder"></button>
     </div>
     <div class="actions">
-      <button id="btn-shell" type="button" title="Shell (Ctrl+`)" data-icon="shell"></button>
+      <button id="btn-shell" type="button" title="Terminal (Ctrl+`)" data-icon="shell"></button>
       <button id="btn-remote" type="button" title="Remote control" data-icon="phone"></button>
-      <button id="btn-terminal" type="button" title="Open in terminal" data-icon="terminal"></button>
       <button id="btn-history" type="button" title="Past chats" data-icon="history"></button>
       <button id="btn-bonk" type="button" title="Bonk!" data-icon="hammer"></button>
       <button id="btn-reset" type="button" title="Start over" data-icon="reset"></button>
@@ -38,7 +37,17 @@
     <div class="h-top">
       <button id="h-back" type="button" title="All conversations" data-icon="back" hidden></button>
       <input id="h-search" type="search" placeholder="Search past conversations…" autocomplete="off" />
+      <button id="h-clear" type="button" title="Clear history" data-icon="trash"></button>
+      <button id="h-delete" type="button" title="Delete" data-icon="trash" hidden></button>
       <button id="h-close" type="button" title="Back to chat (Esc)" data-icon="x"></button>
+    </div>
+    <!-- the conversations ticked in the list, to delete together (chat/past/list.ts) -->
+    <div id="h-picked" role="toolbar" aria-label="Selected conversations" hidden>
+      <span id="h-picked-n"></span>
+      <span class="spacer"></span>
+      <button id="h-pick-all" type="button">Select all</button>
+      <button id="h-pick-del" type="button">Delete</button>
+      <button id="h-pick-none" type="button">Cancel</button>
     </div>
     <!-- biome-ignore lint/a11y/useSemanticElements: chat/past/list.ts fills it with buttons and notes, which a <ul> can't hold -->
     <div id="h-list" role="list"></div>
@@ -48,17 +57,17 @@
       <button id="h-resume" type="button">Resume this conversation</button>
     </div>
   </div>
-  <!-- a shell in my folder (workbench/shell/shells.ts): drag its top edge to make it taller -->
+  <!-- a terminal in my folder (workbench/shell/shells.ts): drag its top edge to make it taller -->
   <div id="shell" hidden>
     <div id="sh-grip" title="Drag to resize" aria-hidden="true"></div>
     <div class="sh-bar">
-      <div id="sh-tabs" role="tablist" aria-label="Shells"></div>
-      <button id="sh-new" type="button" title="New shell (Ctrl+Shift+`)" data-icon="plus"></button>
-      <button id="sh-kind" type="button" title="Shell type" data-icon="down" hidden></button>
+      <div id="sh-tabs" role="tablist" aria-label="Terminals"></div>
+      <button id="sh-new" type="button" title="New terminal (Ctrl+Shift+`)" data-icon="plus"></button>
+      <button id="sh-kind" type="button" title="Terminal type" data-icon="down" hidden></button>
       <div id="sh-menu" role="menu" hidden></div>
       <span class="spacer"></span>
-      <button id="sh-restart" type="button" title="Restart shell" data-icon="reset"></button>
-      <button id="sh-hide" type="button" title="Hide shells (Ctrl+`)" data-icon="down"></button>
+      <button id="sh-restart" type="button" title="Restart terminal" data-icon="reset"></button>
+      <button id="sh-hide" type="button" title="Hide terminals (Ctrl+`)" data-icon="down"></button>
     </div>
     <div id="sh-term"></div>
   </div>

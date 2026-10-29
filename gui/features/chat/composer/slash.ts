@@ -9,7 +9,6 @@ import type { RemoteControlApi } from '../remote';
 import type { ChatLogApi } from '../log';
 import type { MentionsApi } from './mentions';
 import type { TabsApi } from '../tabs';
-import type { TerminalModeApi } from '@/features/workbench/terminal';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { AskingApi } from '../reply/ask';
 import type { ChatTab, PaletteCommand, PaletteItem, RobotState } from '@/views/robot/types';
@@ -33,7 +32,6 @@ export type SlashNeeds = {
   readonly openEffortMenu: BrainApi['openEffortMenu'];
   readonly openHistory: PastChatsApi['openHistory'];
   readonly openModelMenu: BrainApi['openModelMenu'];
-  readonly openTerminal: TerminalModeApi['openTerminal'];
   readonly pickEffort: BrainApi['pickEffort'];
   readonly pickModel: BrainApi['pickModel'];
   readonly remoteNote: RemoteControlApi['remoteNote'];
@@ -66,14 +64,13 @@ export function createSlash(r: SlashNeeds) {
     },
     { name: 'compact', description: 'Squish my memory to free up room' },
     { name: 'context', description: 'How full my memory is' },
-    { name: 'terminal', description: 'Continue in full Claude Code, in a terminal' },
     {
       name: 'remote-control',
       args: '[on|off]',
       description: 'Carry on from claude.ai or the Claude app (Remote Control)',
     },
     { name: 'folder', description: 'Open my folder' },
-    { name: 'shell', description: 'A shell in my folder, right here (Ctrl+`; another: Ctrl+Shift+`)' },
+    { name: 'terminal', description: 'A terminal in my folder, right here (Ctrl+`; another: Ctrl+Shift+`)' },
     { name: 'refine', args: '[text]', description: 'Refine, translate or explain some text (Quick actions)' },
     { name: 'screen', description: 'Drag a box round part of the screen and ask about it' },
     { name: 'note', args: '<text>', description: 'Jot a note down (it goes on my corkboard)' },
@@ -124,10 +121,6 @@ export function createSlash(r: SlashNeeds) {
       case 'conversations':
         r.openHistory(arg);
         return true;
-      case 'terminal':
-      case 'cli':
-        r.openTerminal();
-        return true;
       case 'remote-control':
       case 'remote':
       case 'rc': {
@@ -167,6 +160,7 @@ export function createSlash(r: SlashNeeds) {
       case 'folder':
         ipc.robotOpenFolder();
         return true;
+      case 'terminal':
       case 'shell':
         r.toggleShell({ show: true });
         return true;

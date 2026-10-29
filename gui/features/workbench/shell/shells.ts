@@ -194,14 +194,14 @@ export const ShellDrawer = ({
     tabEl.className = 'sh-tab';
     tabEl.setAttribute('role', 'tab');
     tabEl.innerHTML =
-      '<span class="sh-label"></span><button type="button" class="sh-x" title="Close this shell (ends what\'s running in it)">×</button>';
+      '<span class="sh-label"></span><button type="button" class="sh-x" title="Close terminal">×</button>';
     tabsEl.appendChild(tabEl);
     const tab: Tab = {
       chat: forChat,
       kind,
       n,
       sid: 0,
-      name: kind === 'bash' ? 'bash' : 'shell',
+      name: kind === 'bash' ? 'bash' : 'terminal',
       term,
       fit,
       el,
@@ -396,7 +396,7 @@ export const ShellDrawer = ({
 
   /** Another shell for this conversation, in a tab of its own (your usual kind, unless picked). */
   function add(kind = usual()) {
-    if (tabs.length >= MOST) return onError?.(`That's ${MOST} shells already: close one first.`);
+    if (tabs.length >= MOST) return onError?.(`That's ${MOST} terminals already: close one first.`);
     if (root.hidden) show({ fresh: true, kind });
     else open(kind);
   }

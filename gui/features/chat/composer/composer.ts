@@ -11,7 +11,6 @@ import type { HelpersApi } from '../agents';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { AttachmentsApi } from './attachments';
 import type { SlashApi } from './slash';
-import type { TerminalModeApi } from '@/features/workbench/terminal';
 import type { MentionsApi } from './mentions';
 import type { AskingApi } from '../reply/ask';
 import type { ChatTab, RobotState } from '@/views/robot/types';
@@ -38,7 +37,6 @@ export type ComposerNeeds = {
   readonly menuEl: BrainApi['menuEl'];
   readonly openHistory: PastChatsApi['openHistory'];
   readonly openMenu: BrainApi['openMenu'];
-  readonly openTerminal: TerminalModeApi['openTerminal'];
   readonly paletteEl: SlashApi['paletteEl'];
   readonly paletteKey: MentionsApi['paletteKey'];
   readonly pasteClipboard: AttachmentsApi['pasteClipboard'];
@@ -352,7 +350,6 @@ export function createComposer(r: ComposerNeeds) {
     else r.sleep();
   });
   $('#btn-history').addEventListener('click', () => (r.history.isOpen() ? r.history.close() : r.openHistory()));
-  $('#btn-terminal').addEventListener('click', () => r.openTerminal());
   $('#btn-remote').addEventListener('click', () => r.toggleRemote());
   $('#btn-shell').addEventListener('click', () => r.toggleShell());
   // the ■ button always means stop, even with a draft in the box

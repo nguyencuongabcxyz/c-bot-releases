@@ -30,7 +30,7 @@ Open the **Robot Workshop** from the tray. Pick a name, a project folder and a p
 
 ### Chat with it
 
-Click a robot to wake it and open its chat. Under the hood it *is* your own Claude Code, running in the robot's folder, so **anything Claude Code can do, a robot can do too**: write and fix code, run commands, search the web, and use your skills, MCP servers, hooks, subagents, `CLAUDE.md` and slash commands. The chat shows it all: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Press **⌨️** to continue the conversation in a real Claude Code terminal.
+Click a robot to wake it and open its chat. Under the hood it *is* your own Claude Code, running in the robot's folder, so **anything Claude Code can do, a robot can do too**: write and fix code, run commands, search the web, and use your skills, MCP servers, hooks, subagents, `CLAUDE.md` and slash commands. The chat shows it all: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Right-click the robot and pick **⌨️ Open in terminal** to continue the conversation in a real Claude Code terminal.
 
 <img src="docs/screenshots/chat.png" alt="Chatting with a robot" width="440">
 
@@ -42,7 +42,7 @@ Click a robot to wake it and open its chat. Under the hood it *is* your own Clau
 - **Tabs mind each other:** a robot's tabs can work in its folder at the same time without tripping over each other. A tab that starts work hears which others are busy, and on which files. It can check on them (`list_tabs`) or wait for one to finish and hear what it did (`wait_for_tab`). If it tries to change a file another tab is changing right now, the edit is stopped and it's told to wait for that tab, then read the file again.
 - **Steps, folded:** what it did folds under one line (*"Read 2 files, ran 1 command · 4 steps"*) that says what it's on while it works. Open a step to see the command or file and what came back, and its thinking too.
 - **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file; click a changed file to see its **Changes**, every diff in turn.
-- **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), and 👁 temporary chats that keep nothing.
+- **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), 👁 temporary chats that keep nothing, and 🗑 in *Past chats* to delete old conversations: one, the ones you tick, or all of them.
 
 Drag the chat's edges or corner to resize it; double-click to put it back.
 
@@ -51,7 +51,7 @@ Drag the chat's edges or corner to resize it; double-click to put it back.
 <td width="50%" valign="top">
 
 **A terminal in the chat** · `` Ctrl+` ``<br>
-A shell in the robot's folder (PowerShell or Git Bash) opens in a drawer under the chat. The robot uses it too: ask it to start your dev server and it runs it there, where you can watch, then reads the output back to check it's really up.
+A terminal in the robot's folder (PowerShell or Git Bash) opens in a drawer under the chat. The robot uses it too: ask it to start your dev server and it runs it there, where you can watch, then reads the output back to check it's really up.
 
 <img src="docs/screenshots/terminal.png" alt="A robot starting a dev server in the chat's terminal">
 

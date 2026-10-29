@@ -120,6 +120,8 @@ export const robotTabRename = (tabId: string, title: string) => invoke<void>('ro
 export const robotTabActivate = (tabId: string) => invoke<void>('robot_tab_activate', { tabId });
 export const robotSessions = () => invoke<SessionRow[]>('robot_sessions');
 export const robotSession = (sessionId: string) => invoke<Transcript | null>('robot_session', { sessionId });
+// (past conversations thrown away, none named: every one it had; ones open in a tab stay. How many went)
+export const robotForgetSessions = (sessionIds?: string[]) => invoke<number>('robot_forget_sessions', { sessionIds });
 // (already: it was open in one of the tabs, now the active one)
 export const robotResume = (tabId: string, sessionId: string) =>
   invoke<OkOr<{ tabId: string; already: true } | { tabId: string; already?: undefined; title: string; total: number }>>(

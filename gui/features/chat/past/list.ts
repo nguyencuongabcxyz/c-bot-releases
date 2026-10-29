@@ -1,5 +1,5 @@
 // "Past conversations" view inside the speech bubble: every Claude Code
-// conversation in the robot's folder, a read-only preview, and Resume.
+// conversation in the robot's folder, a read-only preview, Resume, and the bin.
 import { $ } from '@/lib/dom';
 import type { SessionRow } from '@/types/model';
 import { Icon } from '@/icons/icons';
@@ -29,9 +29,15 @@ export const HistoryView = ({
   const preview = $('#h-preview');
   const back = $('#h-back');
   const resumeBtn = $<HTMLButtonElement>('#h-resume');
+  const clearBtn = $<HTMLButtonElement>('#h-clear');
+  const deleteBtn = $('#h-delete');
+  const pickedBar = $('#h-picked');
   let sessions: SessionRow[] = [];
+  let shown: SessionRow[] = []; // (the list as it's drawn: all, or what the search matches)
   let showing: SessionRow | null = null; // session being previewed
   let confirmElsewhere = false;
+  const picked = new Set<string>(); // ticked to delete
+  let lastPick = -1; // (where a Shift+click ticks from)
 
   function ago(ms: number) {
     const s = (Date.now() - ms) / 1000;
@@ -45,8 +51,11 @@ export const HistoryView = ({
 
   function renderList() {
     const q = search.value.trim().toLowerCase();
-    const shown = q ? sessions.filter((s) => `${s.title} ${s.preview}`.toLowerCase().includes(q)) : sessions;
+    shown = q ? sessions.filter((s) => `${s.title} ${s.preview}`.toLowerCase().includes(q)) : sessions;
+    lastPick = -1;
+    clearBtn.disabled = !sessions.some((s) => s.byRobot && !s.tabId);
     list.innerHTML = '';
+    renderPicked();
     if (!shown.length) {
       const empty = document.createElement('p');
       empty.className = 'h-empty';
@@ -56,31 +65,82 @@ export const HistoryView = ({
       list.appendChild(empty);
       return;
     }
-    for (const s of shown) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = `h-item${s.current ? ' current' : ''}`;
-      item.innerHTML =
-        '<div class="h-row"><span class="h-name"></span><span class="h-when"></span></div><div class="h-sub"></div>';
-      $('.h-name', item).textContent = s.title;
-      $('.h-when', item).textContent = ago(s.updatedAt);
-      const bits = [];
-      if (s.current) bits.push('● this tab');
-      else if (s.tabId) bits.push('📑 open in another tab');
-      else if (s.active) bits.push('🟢 open elsewhere');
-      bits.push(s.byRobot ? `🤖 with ${robotName()}` : '💻 Claude Code');
-      if (s.messages) bits.push(`${s.messages} messages`);
-      // (each bit can start with an emoji: drawn as its line icon)
-      const sub = $('.h-sub', item);
-      bits.forEach((b, i) => {
-        if (i) sub.append(' · ');
-        sub.append(Icon.text(document.createElement('span'), b));
-      });
-      item.title = s.preview ? `Last: ${s.preview}` : s.title;
-      item.addEventListener('click', () => openPreview(s));
-      list.appendChild(item);
-    }
+    list.append(...shown.map(row));
   }
+
+  // a row: its tick (none for one open in a tab: it stays), and the conversation to preview
+  function row(s: SessionRow, i: number) {
+    const entry = document.createElement('div');
+    entry.className = 'h-entry';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'h-pick';
+    box.value = s.id;
+    box.checked = picked.has(s.id);
+    box.disabled = !!s.tabId;
+    box.setAttribute('aria-label', `Select “${s.title}”`);
+    box.addEventListener('click', (e) => pick(i, box.checked, e.shiftKey));
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `h-item${s.current ? ' current' : ''}`;
+    item.innerHTML =
+      '<div class="h-row"><span class="h-name"></span><span class="h-when"></span></div><div class="h-sub"></div>';
+    $('.h-name', item).textContent = s.title;
+    $('.h-when', item).textContent = ago(s.updatedAt);
+    const bits = [];
+    if (s.current) bits.push('● this tab');
+    else if (s.tabId) bits.push('📑 open in another tab');
+    else if (s.active) bits.push('🟢 open elsewhere');
+    bits.push(s.byRobot ? `🤖 with ${robotName()}` : '💻 Claude Code');
+    if (s.messages) bits.push(`${s.messages} messages`);
+    // (each bit can start with an emoji: drawn as its line icon)
+    const sub = $('.h-sub', item);
+    bits.forEach((b, j) => {
+      if (j) sub.append(' · ');
+      sub.append(Icon.text(document.createElement('span'), b));
+    });
+    item.title = s.preview ? `Last: ${s.preview}` : s.title;
+    item.addEventListener('click', () => openPreview(s));
+    entry.append(box, item);
+    return entry;
+  }
+
+  // ---- ticking several to delete at once (Shift+click: the ones in between too)
+  function pick(i: number, on: boolean, range: boolean) {
+    const from = range && lastPick >= 0 ? Math.min(lastPick, i) : i;
+    const to = range && lastPick >= 0 ? Math.max(lastPick, i) : i;
+    for (const s of shown.slice(from, to + 1).filter((s) => !s.tabId)) {
+      if (on) picked.add(s.id);
+      else picked.delete(s.id);
+    }
+    lastPick = i;
+    for (const box of list.querySelectorAll<HTMLInputElement>('.h-pick')) box.checked = picked.has(box.value);
+    renderPicked();
+  }
+
+  function renderPicked() {
+    pickedBar.hidden = !picked.size || !!showing;
+    root.classList.toggle('picking', picked.size > 0);
+    $('#h-picked-n').textContent = `${picked.size} selected`;
+  }
+
+  function unpick() {
+    picked.clear();
+    renderList();
+  }
+
+  $('#h-pick-all').addEventListener('click', () => {
+    for (const s of shown) if (!s.tabId) picked.add(s.id);
+    renderList();
+  });
+  $('#h-pick-none').addEventListener('click', unpick);
+  $('#h-pick-del').addEventListener('click', async () => {
+    const n = picked.size;
+    if (!n || !confirm(`Delete ${n} conversation${n === 1 ? '' : 's'}? They can’t be brought back.`)) return;
+    await ipc.robotForgetSessions([...picked]);
+    picked.clear();
+    await reload();
+  });
 
   async function openPreview(s: SessionRow) {
     showing = s;
@@ -89,6 +149,9 @@ export const HistoryView = ({
     preview.hidden = false;
     list.hidden = true;
     back.hidden = false;
+    clearBtn.hidden = true;
+    deleteBtn.hidden = !!s.tabId; // (open in a tab: it stays)
+    renderPicked();
     $('#h-ptitle').textContent = s.title;
     const msgs = $('#h-msgs');
     msgs.innerHTML = '<p class="h-empty">Opening the transcript…</p>';
@@ -192,8 +255,33 @@ export const HistoryView = ({
     preview.hidden = true;
     list.hidden = false;
     back.hidden = true;
+    clearBtn.hidden = false;
+    deleteBtn.hidden = true;
+    renderPicked();
     search.focus();
   }
+
+  async function reload() {
+    sessions = await ipc.robotSessions();
+    renderList();
+  }
+
+  // the bin: in the list, every conversation it had; in a preview, that one
+  // (ones open in a tab stay: main keeps them)
+  clearBtn.addEventListener('click', async () => {
+    if (!confirm(`Delete all your past conversations with ${robotName()}? They can’t be brought back.`)) return;
+    await ipc.robotForgetSessions();
+    picked.clear();
+    await reload();
+  });
+  deleteBtn.addEventListener('click', async () => {
+    const s = showing;
+    if (!s || !confirm(`Delete “${s.title}”? It can’t be brought back.`)) return;
+    await ipc.robotForgetSessions([s.id]);
+    picked.delete(s.id);
+    showList();
+    await reload();
+  });
 
   resumeBtn.addEventListener('click', async () => {
     const s = showing;
@@ -239,10 +327,10 @@ export const HistoryView = ({
     document.body.classList.add('history-open');
     root.hidden = false;
     search.value = query;
+    picked.clear();
     showList();
     list.innerHTML = '<p class="h-empty">Looking through old notes…</p>';
-    sessions = await ipc.robotSessions();
-    renderList();
+    await reload();
   }
 
   function close() {
@@ -252,9 +340,10 @@ export const HistoryView = ({
     onClose?.();
   }
 
-  // Esc steps back: preview -> list -> closed
+  // Esc steps back: preview -> list -> ticks off -> closed
   function stepBack() {
     if (showing) showList();
+    else if (picked.size) unpick();
     else close();
   }
 

@@ -570,6 +570,29 @@ impl Store {
         self.save();
     }
 
+    /// Past conversations thrown away: no longer listed as the robot's, and the closed tabs
+    /// that held them can't be reopened. The closed tabs that went.
+    pub fn forget_sessions(&mut self, id: &str, session_ids: &[String]) -> Vec<Value> {
+        let Some(c) = self.get_mut(id) else {
+            return vec![];
+        };
+        let gone = |s: &Value| {
+            s.as_str()
+                .is_some_and(|s| session_ids.iter().any(|x| x == s))
+        };
+        if let Some(ids) = c.get_mut("sessionIds").and_then(Value::as_array_mut) {
+            ids.retain(|s| !gone(s));
+        }
+        let mut dropped = vec![];
+        if let Some(closed) = c.get_mut("closedTabs").and_then(Value::as_array_mut) {
+            let kept;
+            (dropped, kept) = closed.drain(..).partition(|t| gone(&t["sessionId"]));
+            *closed = kept;
+        }
+        self.save();
+        dropped
+    }
+
     pub fn push_history(&mut self, id: &str, tab_id: &str, entry: Value) {
         let Some(tab) = self
             .tabs_mut(id)
@@ -687,6 +710,27 @@ mod tests {
         .unwrap();
         let store = Store::open(&dir, None);
         assert_eq!(names(&store), ["Bo"]);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_forgotten_conversation_leaves_its_list_and_its_closed_tab() {
+        let dir = scratch("forget");
+        let bo = json!({
+            "id": "bo", "name": "Bo", "sessionIds": ["a", "b"],
+            "closedTabs": [{ "id": "t1", "sessionId": "a" }, { "id": "t2", "sessionId": "c" }],
+        });
+        fs::write(
+            dir.join("c-bot.json"),
+            json!({ "characters": [bo], "settings": {} }).to_string(),
+        )
+        .unwrap();
+        let mut store = Store::open(&dir, None);
+        let dropped = store.forget_sessions("bo", &["a".into()]);
+        assert_eq!(dropped, [json!({ "id": "t1", "sessionId": "a" })]);
+        let bo = store.get("bo").unwrap();
+        assert_eq!(bo["sessionIds"], json!(["b"]));
+        assert_eq!(bo["closedTabs"], json!([{ "id": "t2", "sessionId": "c" }]));
         let _ = fs::remove_dir_all(dir);
     }
 }

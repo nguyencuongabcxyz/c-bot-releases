@@ -28,19 +28,20 @@ pub fn project_dir(folder: &str) -> PathBuf {
         .join(name)
 }
 
-/// Throw a conversation's transcript away (a temporary chat closed): its JSONL, and the
-/// folder of its helpers' transcripts beside it.
-pub fn forget(folder: &str, session_id: &str) {
+/// Throw a conversation's transcript away (a temporary chat closed, or one thrown out of the
+/// past conversations): its JSONL, and the folder of its helpers' transcripts beside it.
+/// Whether there was a transcript to throw away.
+pub fn forget(folder: &str, session_id: &str) -> bool {
     if session_id.is_empty()
         || !session_id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-')
     {
-        return; // (a session id, nothing that could point elsewhere)
+        return false; // (a session id, nothing that could point elsewhere)
     }
     let dir = project_dir(folder);
-    let _ = fs::remove_file(dir.join(format!("{session_id}.jsonl")));
     let _ = fs::remove_dir_all(dir.join(session_id));
+    fs::remove_file(dir.join(format!("{session_id}.jsonl"))).is_ok()
 }
 
 fn read_slice(file: &Path, size: u64) -> String {

@@ -498,6 +498,17 @@ pub fn robot_resume(
     Ok(chat::resume(&app, &sender(&window)?, &tab_id, &session_id))
 }
 
+/// Past conversations thrown away (none named: every one it had), not ones open in a tab:
+/// how many went.
+#[tauri::command(async)]
+pub fn robot_forget_sessions(
+    app: AppHandle,
+    window: WebviewWindow,
+    session_ids: Option<Vec<String>>,
+) -> Result<usize, Error> {
+    chat::forget_sessions(&app, &sender(&window)?, session_ids)
+}
+
 // ---------------------------------------------------------------- files
 
 /// @-mentions: files and folders in the robot's folder matching what's typed after @.

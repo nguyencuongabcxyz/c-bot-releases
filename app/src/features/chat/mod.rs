@@ -10,12 +10,14 @@ mod events;
 pub mod group;
 mod page;
 mod page_event;
+mod past;
 pub mod side;
 pub mod tabs;
 mod temporary;
 
 pub use page::*;
 use page_event::PageEvent;
+pub use past::*;
 pub use temporary::*;
 
 use std::collections::HashMap;
