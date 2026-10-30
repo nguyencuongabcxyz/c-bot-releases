@@ -37,6 +37,7 @@ export type TabsNeeds = {
   readonly helperView: HelpersApi['helperView'];
   readonly hidePalette: SlashApi['hidePalette'];
   readonly input: HTMLTextAreaElement;
+  readonly jumpDown: ChatLogApi['jumpDown'];
   lastMainActive: string | null;
   readonly loadBrain: BrainApi['loadBrain'];
   readonly logs: HTMLElement;
@@ -47,7 +48,6 @@ export type TabsNeeds = {
   readonly renderRemote: RemoteControlApi['renderRemote'];
   readonly renderTodo: TodoCardApi['renderTodo'];
   readonly restingActivity: DeskActivityApi['restingActivity'];
-  readonly scrollDown: ChatLogApi['scrollDown'];
   readonly setActivity: DeskActivityApi['setActivity'];
   readonly setBusy: AskingApi['setBusy'];
   readonly shell: ShellsApi['shell'];
@@ -58,6 +58,7 @@ export type TabsNeeds = {
   readonly syncChrome: AskingApi['syncChrome'];
   readonly tabs: Map<string, ChatTab>;
   readonly tabStrip: HTMLElement;
+  readonly watchScroll: ChatLogApi['watchScroll'];
 };
 
 export function createTabs(r: TabsNeeds) {
@@ -93,6 +94,7 @@ export function createTabs(r: TabsNeeds) {
           queue: [],
         } as Partial<ChatTab> as ChatTab; // (its data and tasks follow)
         r.tabs.set(t.id, tab);
+        r.watchScroll(tab);
         tab.data = t;
         r.renderHistory(tab);
         if (t.busy) {
@@ -159,7 +161,7 @@ export function createTabs(r: TabsNeeds) {
     if ((r.helperView.id || r.helperView.call || r.helperView.file) && r.helperView.tab !== next) r.closeHelper();
     r.renderBrain();
     r.loadBrain(next);
-    r.scrollDown(next);
+    r.jumpDown(next);
     // the robot shows what the visible tab is up to
     if (next.busy) r.setActivity(next.question && !next.question.sent ? 'ask' : next.activity || 'think');
     else if (!r.state.busy && !r.state.mirroring) r.setActivity(r.restingActivity());

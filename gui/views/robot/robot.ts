@@ -156,6 +156,7 @@ tooltips($('#side-panel'));
       islandOn: () => islandOn,
       islandReport: () => islandReport,
       islandReportAgain: () => islandReportAgain,
+      jumpDown: () => jumpDown,
       leaveDesk: () => leaveDesk,
       linkAnswer: () => linkAnswer,
       loadBrain: () => loadBrain,
@@ -297,6 +298,7 @@ tooltips($('#side-panel'));
       waitForBriefs: () => waitForBriefs,
       wake: () => wake,
       wanders: () => wanders,
+      watchScroll: () => watchScroll,
       wordOf: () => wordOf,
       setStaged: () => setStaged,
       setClickThrough: () => setClickThrough,
@@ -429,6 +431,7 @@ tooltips($('#side-panel'));
     callChip,
     diffCard,
     foldSteps,
+    jumpDown,
     renderStepDetail,
     scrollDown,
     setStepOut,
@@ -437,6 +440,7 @@ tooltips($('#side-panel'));
     thumbImg,
     toolLook,
     toolPics,
+    watchScroll,
   }: ChatLogApi = createChatLog(hub); // (chat/log.ts)
 
   // MCP tool views

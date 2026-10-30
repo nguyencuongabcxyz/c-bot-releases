@@ -32,13 +32,13 @@ export type HelpersNeeds = {
   readonly history: PastChatsApi['history'];
   readonly imageUrl: ChatMarkdownApi['imageUrl'];
   readonly input: HTMLTextAreaElement;
+  readonly jumpDown: ChatLogApi['jumpDown'];
   readonly md: ChatMarkdownApi['md'];
   readonly openInApp: ChatMarkdownApi['openInApp'];
   readonly renderFace: FaceApi['renderFace'];
   readonly renderTabs: TabsApi['renderTabs'];
   readonly renderWorking: LifeCycleApi['renderWorking'];
   readonly restingActivity: DeskActivityApi['restingActivity'];
-  readonly scrollDown: ChatLogApi['scrollDown'];
   readonly setActivity: DeskActivityApi['setActivity'];
   readonly showPop: DeskActivityApi['showPop'];
   readonly state: RobotState;
@@ -440,7 +440,7 @@ export function createHelpers(r: HelpersNeeds) {
     Object.assign(helperView, { id: null, call: null, tab: null, file: null, trail: [] });
     $('#helper-view').hidden = true;
     document.body.classList.remove('helper-open');
-    r.scrollDown();
+    r.jumpDown();
     r.input.focus();
   }
   // Back: to the file or folder opened before this one, or out to the chat

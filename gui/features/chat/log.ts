@@ -35,8 +35,26 @@ export type ChatLogNeeds = {
 };
 
 export function createChatLog(r: ChatLogNeeds) {
+  /** Keeps up with what comes in: down to the end, unless you scrolled up to read. */
   function scrollDown(tab = r.active()) {
-    if (tab) tab.log.scrollTop = tab.log.scrollHeight;
+    if (tab && !tab.scrolledUp) tab.log.scrollTop = tab.log.scrollHeight;
+  }
+  /** Down to the end whatever: you sent something, or came back to the log. */
+  function jumpDown(tab = r.active()) {
+    if (!tab) return;
+    tab.scrolledUp = false;
+    tab.log.scrollTop = tab.log.scrollHeight;
+  }
+  /** Notes when you scroll away from the end, and when you're back at it. */
+  function watchScroll(tab: ChatTab) {
+    const L = tab.log;
+    L.addEventListener('scroll', () => {
+      tab.scrolledUp = L.scrollHeight - L.scrollTop - L.clientHeight > 60;
+    });
+    // (the wheel at once: a scroll event can come after the next words have pulled it down again)
+    L.addEventListener('wheel', (e) => {
+      if (e.deltaY < 0 && L.scrollTop > 0) tab.scrolledUp = true;
+    });
   }
 
   const thumbImg = (src: string) => {
@@ -104,7 +122,7 @@ export function createChatLog(r: ChatLogNeeds) {
     }
     r.msgActions(el, 'user', tab);
     tab.log.appendChild(el);
-    scrollDown(tab);
+    jumpDown(tab);
     return el;
   }
 
@@ -533,6 +551,7 @@ export function createChatLog(r: ChatLogNeeds) {
     callChip,
     diffCard,
     foldSteps,
+    jumpDown,
     renderStepDetail,
     scrollDown,
     setStepOut,
@@ -541,6 +560,7 @@ export function createChatLog(r: ChatLogNeeds) {
     thumbImg,
     toolLook,
     toolPics,
+    watchScroll,
   };
 }
 export type ChatLogApi = ReturnType<typeof createChatLog>;

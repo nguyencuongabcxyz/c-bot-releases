@@ -368,13 +368,11 @@ export function createAsking(r: AskingNeeds) {
       tab.renderQueued = false;
       const cur = tab.current;
       if (!cur) return;
-      const L = tab.log;
-      const nearBottom = L.scrollHeight - L.scrollTop - L.clientHeight < 60;
       // (only the words still coming: the parts before them are done)
       const last = cur.parts[cur.parts.length - 1];
       if (last?.kind === 'text') last.el.innerHTML = r.md(partText(cur, last));
       r.dedupePics(cur.el);
-      if (nearBottom) r.scrollDown(tab);
+      r.scrollDown(tab);
     });
   }
 

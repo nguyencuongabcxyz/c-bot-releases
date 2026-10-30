@@ -123,6 +123,7 @@ export type ChatTab = {
   canBypass?: boolean; // (the robot may be switched to full access: the Workshop's choice)
   verbs?: number;
   renderQueued?: boolean;
+  scrolledUp?: boolean; // (you scrolled up to read: what comes in doesn't pull the log down)
   calls?: Map<string, ToolCall>;
   agents?: Map<string, Helper>;
   justBack?: string | null;

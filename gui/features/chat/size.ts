@@ -17,8 +17,8 @@ import type { Office3DView } from '@/office3d';
 /** What it uses of the robot window (robot.ts's hub). */
 export type ChatSizeNeeds = {
   readonly body: HTMLElement;
+  readonly jumpDown: ChatLogApi['jumpDown'];
   readonly office: Office3DView;
-  readonly scrollDown: ChatLogApi['scrollDown'];
   readonly stagePart: StageApi;
   readonly state: RobotState;
 };
@@ -75,7 +75,7 @@ export function createChatSize(r: ChatSizeNeeds) {
             if (chatH != null && chatH >= fullH() - 2) chatH = null; // (all the way: the height of the screen, whatever screen)
             ipc.robotChatHeight(chatH);
           }
-          r.scrollDown();
+          r.jumpDown();
         },
       };
     });
