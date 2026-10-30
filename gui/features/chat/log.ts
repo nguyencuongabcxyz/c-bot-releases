@@ -45,6 +45,16 @@ export function createChatLog(r: ChatLogNeeds) {
     tab.scrolledUp = false;
     tab.log.scrollTop = tab.log.scrollHeight;
   }
+  /** Where you were in the log, before it's hidden (a file up close, another tab): hidden, it loses its place. */
+  function keepPlace(tab = r.active()) {
+    if (tab) tab.scrollAt = tab.log.scrollTop;
+  }
+  /** Back where you were when it shows again: at the end if you were following it. */
+  function backToPlace(tab = r.active()) {
+    if (!tab) return;
+    if (tab.scrolledUp && tab.scrollAt != null) tab.log.scrollTop = tab.scrollAt;
+    else jumpDown(tab);
+  }
   /** Notes when you scroll away from the end, and when you're back at it. */
   function watchScroll(tab: ChatTab) {
     const L = tab.log;
@@ -548,10 +558,12 @@ export function createChatLog(r: ChatLogNeeds) {
   return {
     addBot,
     addUser,
+    backToPlace,
     callChip,
     diffCard,
     foldSteps,
     jumpDown,
+    keepPlace,
     renderStepDetail,
     scrollDown,
     setStepOut,

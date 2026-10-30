@@ -25,6 +25,7 @@ export type HelpersNeeds = {
   readonly active: () => ChatTab | undefined;
   readonly current: () => ChatTab;
   readonly animates: CommentaryApi['animates'];
+  readonly backToPlace: ChatLogApi['backToPlace'];
   readonly express: FaceApi['express'];
   readonly FILE_URL: ChatMarkdownApi['FILE_URL'];
   readonly flash: FaceApi['flash'];
@@ -32,7 +33,7 @@ export type HelpersNeeds = {
   readonly history: PastChatsApi['history'];
   readonly imageUrl: ChatMarkdownApi['imageUrl'];
   readonly input: HTMLTextAreaElement;
-  readonly jumpDown: ChatLogApi['jumpDown'];
+  readonly keepPlace: ChatLogApi['keepPlace'];
   readonly md: ChatMarkdownApi['md'];
   readonly openInApp: ChatMarkdownApi['openInApp'];
   readonly renderFace: FaceApi['renderFace'];
@@ -250,7 +251,7 @@ export function createHelpers(r: HelpersNeeds) {
     clearInterval(helperView.timer);
     if (!back) helperView.trail = [];
     Object.assign(helperView, { id: null, call: null, tab: r.active() ?? null, file: OUTPUTS_VIEW });
-    document.body.classList.add('helper-open');
+    coverChat();
     $('#helper-view').hidden = false;
     const title = $('#hv-title');
     title.innerHTML = Icon('box', 'sm lead');
@@ -278,7 +279,7 @@ export function createHelpers(r: HelpersNeeds) {
     if (!tab.agents?.has(id)) return;
     if (r.history.isOpen()) r.history.close();
     Object.assign(helperView, { id, tab, call: null, file: null, trail: [] });
-    document.body.classList.add('helper-open');
+    coverChat();
     $('#helper-view').hidden = false;
     renderHelperView(true);
     clearInterval(helperView.timer);
@@ -297,7 +298,7 @@ export function createHelpers(r: HelpersNeeds) {
     if (r.history.isOpen()) r.history.close();
     clearInterval(helperView.timer);
     Object.assign(helperView, { id: null, call, tab, file: null, trail: [] });
-    document.body.classList.add('helper-open');
+    coverChat();
     $('#helper-view').hidden = false;
     renderToolView();
     $('#hv-body').scrollTop = 0;
@@ -435,12 +436,18 @@ export function createHelpers(r: HelpersNeeds) {
     return box;
   }
 
+  // the panel takes the chat's place (from the chat, not from another view in it: keep where you were)
+  function coverChat() {
+    if (!document.body.classList.contains('helper-open')) r.keepPlace();
+    document.body.classList.add('helper-open');
+  }
+
   function closeHelper() {
     clearInterval(helperView.timer);
     Object.assign(helperView, { id: null, call: null, tab: null, file: null, trail: [] });
     $('#helper-view').hidden = true;
     document.body.classList.remove('helper-open');
-    r.jumpDown();
+    r.backToPlace();
     r.input.focus();
   }
   // Back: to the file or folder opened before this one, or out to the chat
@@ -461,7 +468,7 @@ export function createHelpers(r: HelpersNeeds) {
     if (!back && helperView.file && helperView.file !== path) helperView.trail.push(helperView.file);
     if (!helperView.file) helperView.trail = [];
     Object.assign(helperView, { id: null, call: null, tab: r.active() ?? null, file: path });
-    document.body.classList.add('helper-open');
+    coverChat();
     $('#helper-view').hidden = false;
     const name =
       path

@@ -29,6 +29,7 @@ export type TabsNeeds = {
   readonly character: () => RobotView;
   readonly addNote: CommentaryApi['addNote'];
   readonly autosize: ComposerApi['autosize'];
+  readonly backToPlace: ChatLogApi['backToPlace'];
   readonly cancelEdit: ComposerApi['cancelEdit'];
   readonly closeHelper: HelpersApi['closeHelper'];
   readonly deskState: OfficeData;
@@ -37,7 +38,7 @@ export type TabsNeeds = {
   readonly helperView: HelpersApi['helperView'];
   readonly hidePalette: SlashApi['hidePalette'];
   readonly input: HTMLTextAreaElement;
-  readonly jumpDown: ChatLogApi['jumpDown'];
+  readonly keepPlace: ChatLogApi['keepPlace'];
   lastMainActive: string | null;
   readonly loadBrain: BrainApi['loadBrain'];
   readonly logs: HTMLElement;
@@ -145,6 +146,7 @@ export function createTabs(r: TabsNeeds) {
     if (prev && prev !== next) prev.draft = r.input.value; // each tab keeps its half-typed message
     r.activeId = id;
     r.sides.tabShown(id); // (the side panel holds another tab's thread: it shuts)
+    if (prev && prev !== next) r.keepPlace(prev);
     for (const t of r.tabs.values()) t.log.hidden = t !== next;
     r.shell.switchTo(id); // (its own shells)
     if (next.status === 'done' || next.status === 'error') next.status = 'idle'; // read it
@@ -161,7 +163,7 @@ export function createTabs(r: TabsNeeds) {
     if ((r.helperView.id || r.helperView.call || r.helperView.file) && r.helperView.tab !== next) r.closeHelper();
     r.renderBrain();
     r.loadBrain(next);
-    r.jumpDown(next);
+    r.backToPlace(next);
     // the robot shows what the visible tab is up to
     if (next.busy) r.setActivity(next.question && !next.question.sent ? 'ask' : next.activity || 'think');
     else if (!r.state.busy && !r.state.mirroring) r.setActivity(r.restingActivity());

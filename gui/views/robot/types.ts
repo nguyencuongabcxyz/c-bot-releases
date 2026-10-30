@@ -124,6 +124,7 @@ export type ChatTab = {
   verbs?: number;
   renderQueued?: boolean;
   scrolledUp?: boolean; // (you scrolled up to read: what comes in doesn't pull the log down)
+  scrollAt?: number; // (where you were, while the log is out of sight: hidden, it loses its place)
   calls?: Map<string, ToolCall>;
   agents?: Map<string, Helper>;
   justBack?: string | null;
