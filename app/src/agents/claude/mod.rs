@@ -7,12 +7,14 @@
 
 mod lines;
 pub mod locate;
+mod login;
 mod protocol;
 mod session;
 mod steps;
 mod stream;
 pub mod transcripts;
 
+pub use login::*;
 pub use steps::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};

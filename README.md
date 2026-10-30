@@ -43,6 +43,7 @@ Click a robot to wake it and open its chat. Under the hood it *is* your own Clau
 - **Steps, folded:** what it did folds under one line (*"Read 2 files, ran 1 command · 4 steps"*) that says what it's on while it works. Open a step to see the command or file and what came back, and its thinking too.
 - **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file; click a changed file to see its **Changes**, every diff in turn.
 - **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), 👁 temporary chats that keep nothing, and 🗑 in *Past chats* to delete old conversations: one, the ones you tick, or all of them.
+- **Signed out? Sign back in:** when Claude Code's sign-in runs out, the error comes with a **🔑 Sign in to Claude** button. Your browser opens, you sign in, and the robot asks your question again.
 
 Drag the chat's edges or corner to resize it; double-click to put it back.
 

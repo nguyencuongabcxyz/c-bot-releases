@@ -1,5 +1,5 @@
 // The box you type in: its height, ↑ and ↓ through what you asked, editing or taking back the
-// last question, and the buttons on a message (copy, retry, edit).
+// last question, and the buttons on a message (copy, retry, edit, and signing in again).
 // (robot.ts calls createComposer with its hub.)
 import type { PastChatsApi } from '../past/resume';
 import type { SidePanelApi } from '../side/panel';
@@ -16,6 +16,8 @@ import type { AskingApi } from '../reply/ask';
 import type { ChatTab, RobotState } from '@/views/robot/types';
 import { TRANSFORMS, codeBlock, link, prefixLines, transform, wrap } from './format';
 import * as ipc from '@/ipc';
+import { Icon } from '@/icons/icons';
+import { needsSignIn } from '../sign-in';
 import { $, iconButton } from '@/lib/dom';
 
 /** What it uses of the robot window (robot.ts's hub). */
@@ -186,6 +188,35 @@ export function createComposer(r: ComposerNeeds) {
       button('chat-ask', 'Side question', () => r.sides.start(el));
     }
     el.appendChild(bar);
+    if (kind === 'bot' && el.classList.contains('error') && !el.querySelector(':scope > .sign-in')) {
+      // biome-ignore lint/performance/useDomNodeTextContent: innerText as the copy button reads it
+      if (needsSignIn(rawText.get(el) ?? el.innerText)) el.appendChild(signInChip(el, tab));
+    }
+  }
+
+  // Claude Code's sign-in ran out: sign in again (in the browser), then ask the last question again
+  function signInChip(el: HTMLElement, tab: ChatTab) {
+    const b = document.createElement('button');
+    b.className = 'chip save-word sign-in';
+    Icon.text(b, '🔑 Sign in to Claude');
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      b.disabled = true;
+      Icon.text(b, '🔑 Finish signing in in your browser…');
+      try {
+        await ipc.robotSignIn();
+      } catch (err) {
+        b.disabled = false;
+        Icon.text(b, '🔑 Sign in to Claude');
+        return r.showPop(String(err), 3200);
+      }
+      Icon.text(b, '🔑 Signed in');
+      const answers = tab.log.querySelectorAll('.msg.bot:not(.greet)');
+      if (answers[answers.length - 1] !== el) return r.showPop('Signed in! ✨', 1800);
+      r.showPop('Signed in! Asking again…', 1800);
+      retry(tab);
+    });
+    return b;
   }
 
   // The composer's tools. ＋: files or pictures (the open dialog), what's on the clipboard, or a

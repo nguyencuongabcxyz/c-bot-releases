@@ -152,6 +152,8 @@ export const robotChatHeight = (height: number | null) => invoke<void>('robot_ch
 // (what an MCP tool's view asked to open: main opens it only if it's a web link)
 export const robotOpenLink = (url: string | undefined) => invoke<void>('robot_open_link', { url });
 export const robotOpenFolder = () => invoke<void>('robot_open_folder');
+// (Claude Code's `auth login`: the browser opens; it answers once you've signed in there, or why not)
+export const robotSignIn = () => invoke<void>('robot_sign_in');
 // (the shells in its chat, workbench/shell.rs: one per tab of the drawer, each belonging to a chat tab;
 // sid names one, and its robot:shell events)
 // (kind: 'bash' for Git Bash, else PowerShell; robotShellKinds: the ones there are here)

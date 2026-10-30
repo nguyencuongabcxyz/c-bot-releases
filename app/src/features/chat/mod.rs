@@ -12,12 +12,14 @@ mod page;
 mod page_event;
 mod past;
 pub mod side;
+mod sign_in;
 pub mod tabs;
 mod temporary;
 
 pub use page::*;
 use page_event::PageEvent;
 pub use past::*;
+pub use sign_in::*;
 pub use temporary::*;
 
 use std::collections::HashMap;

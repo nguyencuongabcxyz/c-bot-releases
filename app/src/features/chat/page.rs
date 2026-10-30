@@ -139,27 +139,33 @@ pub fn close_idle(app: AppHandle) {
     thread::spawn(move || {
         loop {
             thread::sleep(Duration::from_secs(60));
-            let idle: Vec<Arc<Chat>> = with(&app, |st| {
-                let keys: Vec<String> = st
-                    .chats
-                    .iter()
-                    .filter(|(_, c)| {
-                        let s = &c.session;
-                        !s.busy()
-                            && s.helpers_running() == 0
-                            && s.alive()
-                            && !s.remote()
-                            && s.idle_for() > IDLE_CLOSE
-                    })
-                    .map(|(k, _)| k.clone())
-                    .collect();
-                keys.iter().filter_map(|k| st.chats.remove(k)).collect()
-            });
-            for chat in idle {
-                chat.session.close();
-            }
+            close_resting(&app, IDLE_CLOSE);
         }
     });
+}
+
+/// Close the conversations resting (not answering, no helpers, no Remote Control) for longer
+/// than `idle`; they start again on the next question.
+pub fn close_resting(app: &AppHandle, idle: Duration) {
+    let resting: Vec<Arc<Chat>> = with(app, |st| {
+        let keys: Vec<String> = st
+            .chats
+            .iter()
+            .filter(|(_, c)| {
+                let s = &c.session;
+                !s.busy()
+                    && s.helpers_running() == 0
+                    && s.alive()
+                    && !s.remote()
+                    && s.idle_for() > idle
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        keys.iter().filter_map(|k| st.chats.remove(k)).collect()
+    });
+    for chat in resting {
+        chat.session.close();
+    }
 }
 
 /// What a question is (the page hears it back with the turn: "chat", "bonk", "compact").

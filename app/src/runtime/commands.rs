@@ -4,6 +4,7 @@
 use tauri::Wry;
 use tauri::ipc::Invoke;
 
+use crate::features::chat;
 use crate::features::chat::group;
 use crate::features::{notes, routines, vocab};
 use crate::mcp::{apps, link};
@@ -42,6 +43,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ipc::robot_answer,
         ipc::robot_plan,
         ipc::robot_rewind,
+        chat::robot_sign_in,
         ipc::robot_side_ask,
         ipc::robot_side_cancel,
         ipc::robot_side_remove,
