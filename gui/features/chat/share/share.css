@@ -1,0 +1,99 @@
+/* A shared chat (share.ts): the strip under the tabs, the share card, the cards in the log, and
+   what a visiting robot's chat leaves out. The host's touches take the robot's paint; a guest's
+   are violet. */
+
+#btn-share.on { color: var(--accent-ink); background: var(--accent-soft); }
+#tabs .tab-shared { color: var(--accent-ink); margin-right: 2px; flex: none; }
+
+/* ---------------------------------------------------------- the strip */
+
+#share-strip {
+  flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; padding: 6px 12px;
+  background: var(--accent-soft); border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); font-size: 12px;
+}
+#share-strip.guest { background: color-mix(in srgb, var(--violet) 11%, transparent); border-color: color-mix(in srgb, var(--violet) 25%, transparent); }
+.share-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.share-line > span:first-child { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-where { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 100; } /* (gives way before the name) */
+.share-stop {
+  margin-left: auto; flex: none; border: 1px solid var(--line-2); background: var(--panel-bg); color: inherit;
+  border-radius: 999px; padding: 1px 10px; font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap;
+}
+.share-stop + .share-stop { margin-left: 0; }
+.share-stop.danger { color: var(--danger); }
+
+/* ---------------------------------------------------------- people */
+
+.share-person { display: flex; align-items: center; gap: 7px; font-size: 12.5px; min-width: 0; }
+.share-person .share-acts { margin-left: auto; }
+.share-person b, .share-head b { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-face {
+  flex: none; width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--violet); color: var(--on-accent); font: 700 10px var(--font-ui);
+}
+
+/* ---------------------------------------------------------- buttons */
+
+.share-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; flex: none; max-width: 100%; }
+.share-btn {
+  border: 1px solid var(--line-2); background: var(--panel-bg); color: inherit; border-radius: 999px;
+  padding: 3px 12px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; flex: none;
+}
+.share-btn:hover { border-color: var(--accent); }
+.share-btn.primary { background: var(--btn); color: var(--on-btn); border-color: transparent; font-weight: 600; }
+.share-btn.danger { color: var(--danger); }
+
+/* ---------------------------------------------------------- the share card */
+
+.share-pop {
+  position: absolute; z-index: 30; top: 46px; right: 10px; width: min(360px, calc(100% - 20px));
+  background: var(--panel-bg); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow-pop);
+  padding: 14px; display: flex; flex-direction: column; gap: 6px; animation: pop-in 0.16s ease-out;
+}
+.share-pop h3 { margin: 0; font: 650 14px var(--font-display); }
+.share-sub { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+.share-label { margin-top: 6px; font: 600 10.5px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.share-net { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.share-opt { border: 1px solid var(--line-2); border-radius: 10px; padding: 7px 10px; display: flex; flex-direction: column; font-size: 12.5px; }
+.share-opt span { color: var(--muted); font-size: 11px; }
+.share-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.share-opt.off { opacity: 0.45; }
+.share-check { display: flex; align-items: flex-start; gap: 7px; font-size: 12.5px; cursor: pointer; }
+.share-check input { margin: 2px 0 0; accent-color: var(--accent); }
+.share-warn { margin: 4px 0 0; color: var(--warn); font-size: 12px; }
+.share-rules { list-style: none; margin: 4px 0; padding: 8px 10px; background: var(--bg-2); border-radius: 10px; font-size: 12px; display: grid; gap: 3px; }
+.share-pop > .share-acts { margin-top: 6px; }
+.share-invite { display: flex; align-items: center; gap: 8px; }
+.share-said { color: var(--muted); font-size: 11.5px; }
+
+/* ---------------------------------------------------------- cards in the log */
+
+.msg.share-card {
+  align-self: stretch; border: 1px solid color-mix(in srgb, var(--violet) 45%, transparent);
+  background: color-mix(in srgb, var(--violet) 9%, transparent); border-radius: 12px; padding: 9px 11px;
+}
+.share-head { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--violet); }
+.share-text { margin: 6px 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.share-card .share-warn { margin: 6px 0 0; }
+
+.msg.share-mine {
+  align-self: flex-end; max-width: 84%; border: 1px dashed color-mix(in srgb, var(--violet) 55%, transparent);
+  background: color-mix(in srgb, var(--violet) 9%, transparent); border-radius: 12px; padding: 7px 11px;
+}
+.share-mine .share-text { margin: 0; }
+.share-state { margin-top: 4px; font-size: 11px; color: var(--muted); text-align: right; }
+.share-mine[data-state="declined"], .share-mine[data-state="refused"] { opacity: 0.65; }
+.share-mine[data-state="declined"] .share-state, .share-mine[data-state="refused"] .share-state { color: var(--danger); }
+.share-take-back { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
+
+/* ---------------------------------------------------------- a visiting robot's chat */
+
+/* (it has no folder and no Claude Code here: only the chat, read-only, and the box to suggest) */
+body.visiting :is(#btn-shell, #btn-remote, #btn-share, #btn-history, #btn-context, #btn-bonk, #btn-reset, #folder),
+body.visiting :is(#btn-attach, #btn-screen, #btn-mic, #brainbar, #attachments, #screen-asks),
+body.visiting #tabs :is(.tab-add, .tab-x),
+body.visiting #logs .msg-actions {
+  display: none;
+}
+body.visiting #composer { border-color: var(--violet); }
+body.visiting #send { background: var(--violet); }

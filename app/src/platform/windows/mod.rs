@@ -4,6 +4,7 @@
 //!               screen a point is on, the cursor; other apps' windows (in front, titles)
 //!   input       the keyboard and mouse: keys down, pressing keys, the last-input stamp
 //!   clipboard   its text, pictures and files; saved and put back
+//!   network     what Windows calls a network (Public or not), and links that open C-Bot
 //!   screenshot  the screen as it is now
 //!   presence    presenting, focus assist, locked
 //!   power       keeping the PC awake
@@ -12,6 +13,7 @@
 
 pub mod clipboard;
 pub mod input;
+pub mod network;
 pub mod power;
 pub mod presence;
 pub mod process;

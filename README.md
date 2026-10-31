@@ -71,6 +71,14 @@ Carry the conversation on from [claude.ai/code](https://claude.ai/code) or the C
 </tr>
 </table>
 
+### Share a chat with a colleague
+
+Press **🔗** in a robot's chat to share that tab with colleagues on your office network. **Copy invite link** gives you a link for one person; it works once, for ten minutes. When they open it, their C-Bot asks you to let them in, showing their name, PC and address. Once in, your robot comes to visit their desktop, with the whole chat as you see it, live.
+
+They can't ask your robot anything themselves: what they type goes to you as a suggestion, and you **Send** it, **Edit** it first, or **Decline** it. Whatever you send runs on your own Claude Code, in your folder, so nothing they suggest runs without you. What tools read and ran (file contents, command output) stays hidden unless you choose to share it. The link is encrypted and pinned to your C-Bot. Sharing stops when you say, after an hour, or when the network changes, and C-Bot won't share on a network Windows calls Public. If someone sent you a link, you can also pick **🔗 Join a shared chat** from the tray after copying it.
+
+<img src="docs/screenshots/shared-chat.png" alt="A shared tab on your PC, and your robot visiting a colleague's" width="720">
+
 ### Robots working together
 
 Ask one robot to ask another (*"Ask Sunny which port her API runs on"*) or to hand off work to it (*"Have BE add a GET /orders endpoint"*). For bigger questions, start a **👥 group chat** from the tray: the robots meet, discuss the topic from their own projects, and write up a summary.
@@ -207,10 +215,14 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       the PC kept awake for Remote Control) and
                       group/ the group chat and meeting room; vocab/ English words; notes/
                       notes and reminders; routines/ prompts a robot runs on a schedule
-                      (schedule.rs when, runs.rs a run and its result, panel.rs the window)
+                      (schedule.rs when, runs.rs a run and its result, panel.rs the window);
+                      share/ a tab shared with colleagues on the office network (host.rs
+                      the sharing end, guest.rs the visiting robot, wire.rs what they say,
+                      tls.rs the encryption)
     ui/               the app's own windows and menus: views.rs, place.rs, tray.rs, workshop.rs
     platform/         what needs the operating system, kept by system: windows/ (window,
-                      input, clipboard, screenshot, presence, power, process, webview), and
+                      input, clipboard, network, screenshot, presence, power, process,
+                      webview), and
                       common/ for what every system shares (types, input logic, images)
 gui/                  the pages (TypeScript, built by Vite into dist/)
   ipc/                main, through @tauri-apps/api: a typed function per command, events
@@ -220,7 +232,7 @@ gui/                  the pages (TypeScript, built by Vite into dist/)
     …                 one folder per other window (island, stage, notebook, routines, words, quick, …)
   features/           what the robot window is built from (views/ shows, features/ handles)
     chat/             a robot's chat: the log, replies, the box you type in, plans, side
-                      questions, past chats
+                      questions, past chats, share/ a shared chat
     notes/  vocab/    what the robot does with your notes, and with English words
     routines/         what the robot does when one of your routines runs
     robots/           robots noticing and asking each other, and the robot as a stage tile

@@ -14,7 +14,7 @@ use super::paths::{self, electron_data_dir};
 use super::{State, hub, logging, migrate, with};
 use crate::context;
 use crate::features::chat::awake;
-use crate::features::{chat, notes, routines, vocab};
+use crate::features::{chat, notes, routines, share, vocab};
 use crate::mcp::{apps, link};
 use crate::robots;
 use crate::robots::{island, maid, planes, revive, screens, social, stage, topmost, walkers};
@@ -108,6 +108,9 @@ fn setup_parts(handle: &AppHandle) -> tauri::Result<()> {
     shell::setup(handle);
     updater::setup(handle);
     workshop::setup(handle);
+    share::setup(handle);
+    share::register_links(); // (cbot:// invite links open here)
+    share::join_from_args(handle, &std::env::args().collect::<Vec<_>>()); // (one started it)
     Ok(())
 }
 
@@ -149,6 +152,7 @@ pub fn on_event(app: &AppHandle, event: RunEvent) {
             api, code: None, ..
         } => api.prevent_exit(),
         RunEvent::Exit => {
+            share::end_all(app);
             chat::close_all(app);
             shell::close_all(app);
             context::shutdown(app); // (its database, if C-Bot started it)

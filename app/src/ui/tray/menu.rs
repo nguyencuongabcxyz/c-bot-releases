@@ -57,6 +57,12 @@ fn robot_items(app: &AppHandle, chars: &[Value]) -> Vec<Item> {
         visible_count(chars) >= 2,
     ));
     items.push(stage_menu(app, chars));
+    items.push(item(
+        app,
+        "tray|join".into(),
+        "🔗 Join a shared chat (copied link)",
+        true,
+    ));
     items
 }
 

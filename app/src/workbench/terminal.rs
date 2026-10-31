@@ -415,7 +415,9 @@ pub fn robot_terminal(
     window: tauri::WebviewWindow,
     tab_id: String,
 ) -> Result<Value, Error> {
-    Ok(open_terminal(&app, &robots::sender(&window)?, &tab_id))
+    let id = robots::sender(&window)?;
+    crate::features::share::not_visiting(&app, &id)?;
+    Ok(open_terminal(&app, &id, &tab_id))
 }
 
 pub fn setup(app: &AppHandle) {

@@ -196,11 +196,11 @@ export function createTabs(r: TabsNeeds) {
       const s = statusOf(t);
       const el = document.createElement('div');
       const temp = !!t.data?.temporary;
-      el.className = `tab s-${s}${t.id === r.activeId ? ' on' : ''}${temp ? ' temporary' : ''}${t.data?.remote ? ' remote' : ''}`;
+      el.className = `tab s-${s}${t.id === r.activeId ? ' on' : ''}${temp ? ' temporary' : ''}${t.data?.remote ? ' remote' : ''}${t.data?.shared ? ' shared' : ''}`;
       el.setAttribute('role', 'tab');
       el.setAttribute('aria-selected', String(t.id === r.activeId));
       el.title = `${temp ? 'Temporary chat (nothing is kept): ' : ''}${t.title}${STATUS_LABEL[s] ? ` (${STATUS_LABEL[s]})` : ''}\nDouble-click to rename`;
-      el.innerHTML = `${temp ? Icon('eye', 'sm tab-temp') : ''}<span class="tab-dot"></span><span class="tab-title"></span><button class="tab-x" type="button" title="Close tab (Ctrl+W)">×</button>`;
+      el.innerHTML = `${temp ? Icon('eye', 'sm tab-temp') : ''}${t.data?.shared ? Icon('link', 'sm tab-shared') : ''}<span class="tab-dot"></span><span class="tab-title"></span><button class="tab-x" type="button" title="Close tab (Ctrl+W)">×</button>`;
       $('.tab-title', el).textContent = t.title;
       el.addEventListener('click', (e) => {
         if (!(e.target as Element).closest('.tab-x') && t.id !== r.activeId) activateTab(t.id);

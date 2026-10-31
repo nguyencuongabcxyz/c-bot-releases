@@ -59,6 +59,7 @@ export function createChatMarkdown(r: ChatMarkdownNeeds) {
   });
   const ABS_FILE = /^(?:[a-zA-Z]:[\\/]|\\\\|\/(?:Users|home|tmp|var|opt|mnt)\/)[^\n<>"|?*]*\.[A-Za-z0-9]{1,8}$/;
   function md(text: string) {
+    if (r.state.visitor) return visitorMd(text);
     const frag = chatMd.fragment(text);
     // `C:\…\rocket.svg` in code: clickable, and pictures show right under it
     for (const code of frag.querySelectorAll('code')) {
@@ -84,6 +85,21 @@ export function createChatMarkdown(r: ChatMarkdownNeeds) {
     const box = document.createElement('div');
     box.appendChild(frag);
     dressCode(box); // (highlighted, with a Copy button)
+    return box.innerHTML;
+  }
+
+  // A visiting robot's answers come from a colleague's PC: no pictures (not even from the web:
+  // they'd tell someone you read it), and links only to web pages, never to a file here.
+  const plainMd = markdown();
+  function visitorMd(text: string) {
+    const frag = plainMd.fragment(text);
+    for (const img of frag.querySelectorAll('img')) img.remove();
+    for (const a of frag.querySelectorAll('a')) {
+      if (!/^https?:\/\//i.test(a.getAttribute('href') ?? '')) a.removeAttribute('href');
+    }
+    const box = document.createElement('div');
+    box.appendChild(frag);
+    dressCode(box);
     return box.innerHTML;
   }
 

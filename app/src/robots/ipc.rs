@@ -11,7 +11,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::agents::personalities;
 use crate::features::chat::{brief, side};
-use crate::features::{chat, notes, vocab};
+use crate::features::{chat, notes, share, vocab};
 use crate::mcp::link;
 use crate::robots;
 use crate::robots::sender;
@@ -46,6 +46,7 @@ pub fn robot_init(app: AppHandle, window: WebviewWindow) -> Answer {
         "notesBoard": notes::board_for(&app, &id),
         "noteHotkey": notes::hotkey(&app),
         "hush": hub::hush(&app),
+        "share": share::view_for(&app, &id),
     }))
 }
 
@@ -109,7 +110,9 @@ pub fn robot_poke(app: AppHandle, window: WebviewWindow) -> Result<i64, Error> {
 
 #[tauri::command(async)]
 pub fn robot_open_folder(app: AppHandle, window: WebviewWindow) -> Result<(), Error> {
-    open_folder(&app, &sender(&window)?);
+    let id = sender(&window)?;
+    share::not_visiting(&app, &id)?;
+    open_folder(&app, &id);
     Ok(())
 }
 

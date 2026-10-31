@@ -6,6 +6,7 @@ import { Sfx } from '@/views/robot/sound';
 import type { Ask, ChatTab, Reply, ToolCall } from '@/views/robot/types';
 import type { AskingApi } from './reply/ask';
 import type { RoutinesApi } from '@/features/routines/robot';
+import type { SharingApi } from './share/share';
 import * as ipc from '@/ipc';
 import type { RobotEvent } from '@/types/model';
 
@@ -26,7 +27,7 @@ export type ChatEventsNeeds = Omit<import('./reply/ask').AskingNeeds, 'onEvent'>
     | 'renderCurrent'
     | 'setBusy'
     | 'startReply'
-  > & { readonly routineAnswer: RoutinesApi['routineAnswer'] };
+  > & { readonly routineAnswer: RoutinesApi['routineAnswer']; readonly onShare: SharingApi['onShare'] };
 
 export function createChatEvents(r: ChatEventsNeeds) {
   let quiet = 0; // (the timer that stops the talking face once the words pause)
@@ -253,6 +254,11 @@ export function createChatEvents(r: ChatEventsNeeds) {
     }
   }
 
+  // a shared chat (chat/share): who's in, a guest's suggestion, what became of yours, the end
+  function onShare(ev: Ev<Extract<RobotEvent['type'], `share-${string}`>>, { tab }: At) {
+    r.onShare(ev, tab);
+  }
+
   function onQuestion(ev: Ev<'question'>, { tab }: At) {
     r.askUser(ev, tab);
   }
@@ -443,6 +449,11 @@ export function createChatEvents(r: ChatEventsNeeds) {
     remote: onRemote,
     'remote-state': onRemoteState,
     'remote-prompt': onRemotePrompt,
+    'share-state': onShare,
+    'share-suggest': onShare,
+    'share-taken-back': onShare,
+    'share-suggestion': onShare,
+    'share-ended': onShare,
     question: onQuestion,
     plan: onPlan,
     mode: onMode,

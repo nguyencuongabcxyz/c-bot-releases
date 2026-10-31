@@ -173,6 +173,7 @@ pub struct Store {
     due: Option<Instant>, // when the pending changes get saved
     backup_day: Option<String>,
     pub recovered: Option<Recovered>,
+    visitors: Vec<Value>, // robots visiting from a shared chat (features/share): never saved
 }
 
 impl Store {
@@ -193,6 +194,7 @@ impl Store {
             due: None,
             backup_day: None,
             recovered: None,
+            visitors: Vec::new(),
         };
         let raw = store.load();
         if let Some(raw) = &raw {
@@ -375,15 +377,51 @@ impl Store {
             .expect("characters is a list")
     }
 
+    /// A robot: one of yours, or one visiting.
     pub fn get(&self, id: &str) -> Option<&Value> {
-        self.list().iter().find(|c| str_of(c, "id") == id)
+        self.list()
+            .iter()
+            .chain(&self.visitors)
+            .find(|c| str_of(c, "id") == id)
     }
 
     fn get_mut(&mut self, id: &str) -> Option<&mut Map<String, Value>> {
-        self.characters_mut()
+        let Store { data, visitors, .. } = self;
+        data["characters"]
+            .as_array_mut()
+            .expect("characters is a list")
             .iter_mut()
+            .chain(visitors.iter_mut())
             .find(|c| str_of(c, "id") == id)
             .and_then(Value::as_object_mut)
+    }
+
+    // ---------------------------------------------------------------- visitors
+
+    /// A robot visiting from a shared chat: there while it visits, never written to the file
+    /// (and not in list(), so the tray, the island and the rest don't count it as yours).
+    pub fn add_visitor(&mut self, c: Value) {
+        self.visitors.push(c);
+    }
+
+    pub fn remove_visitor(&mut self, id: &str) {
+        self.visitors.retain(|c| str_of(c, "id") != id);
+    }
+
+    pub fn is_visitor(&self, id: &str) -> bool {
+        self.visitors.iter().any(|c| str_of(c, "id") == id)
+    }
+
+    /// The visitor's tab again, as the host sent it.
+    pub fn set_visitor_tab(&mut self, id: &str, tab_id: &str, tab: Value) {
+        let Some(c) = self.visitors.iter_mut().find(|c| str_of(c, "id") == id) else {
+            return;
+        };
+        if let Some(tabs) = c["tabs"].as_array_mut()
+            && let Some(t) = tabs.iter_mut().find(|t| str_of(t, "id") == tab_id)
+        {
+            *t = tab;
+        }
     }
 
     pub fn update(&mut self, id: &str, patch: Map<String, Value>) -> Option<Value> {
@@ -643,6 +681,44 @@ mod tests {
             .iter()
             .map(|c| str_of(c, "name").to_string())
             .collect()
+    }
+
+    #[test]
+    fn a_visitor_is_found_and_changed_but_never_listed_or_saved() {
+        let dir = scratch("visit");
+        fs::write(dir.join("c-bot.json"), robots(&["Bo"])).unwrap();
+        let mut store = Store::open(&dir, None);
+        store.add_visitor(
+            json!({ "id": "visit-1", "name": "Pixel", "tabs": [{ "id": "t1", "history": [] }] }),
+        );
+        assert!(store.is_visitor("visit-1"));
+        assert_eq!(
+            store.get("visit-1").map(|c| str_of(c, "name")),
+            Some("Pixel")
+        );
+        store.update(
+            "visit-1",
+            crate::runtime::util::patch(vec![("chatWidth", json!(600))]),
+        );
+        assert_eq!(store.get("visit-1").unwrap()["chatWidth"], 600);
+        store.set_visitor_tab(
+            "visit-1",
+            "t1",
+            json!({ "id": "t1", "history": [{ "role": "user" }] }),
+        );
+        assert_eq!(
+            store.tab("visit-1", "t1").unwrap()["history"][0]["role"],
+            "user"
+        );
+        assert_eq!(names(&store), ["Bo"]);
+        store.flush();
+        assert!(
+            !fs::read_to_string(dir.join("c-bot.json"))
+                .unwrap()
+                .contains("Pixel")
+        );
+        store.remove_visitor("visit-1");
+        assert!(store.get("visit-1").is_none());
     }
 
     #[test]

@@ -653,6 +653,7 @@ pub fn robot_context_set(
     on: bool,
 ) -> Result<Status, Error> {
     let id = robots::sender(&window)?;
+    crate::features::share::not_visiting(&app, &id)?;
     with(&app, |st| {
         st.store
             .update(&id, util::patch(vec![("contextEngine", json!(on))]))

@@ -327,6 +327,7 @@ pub fn robot_shell_open(
     kind: Option<String>,
 ) -> Result<Value, Error> {
     let id = sender(&window)?;
+    crate::features::share::not_visiting(&app, &id)?;
     Ok(
         match start(
             &app,

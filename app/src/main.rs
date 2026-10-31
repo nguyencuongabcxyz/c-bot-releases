@@ -37,11 +37,14 @@ fn main() {
         std::process::exit(code);
     }
     let mut builder = tauri::Builder::default();
-    // a second launch opens the Workshop of the running C-Bot (main.js second-instance); a
-    // test copy on data of its own (CBOT_DATA_DIR) runs beside the installed one instead
+    // a second launch opens the Workshop of the running C-Bot (main.js second-instance), or
+    // joins the shared chat whose invite link was clicked; a test copy on data of its own
+    // (CBOT_DATA_DIR) runs beside the installed one instead
     if std::env::var_os("CBOT_DATA_DIR").is_none() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            ui::workshop::open(app, None)
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if !features::share::join_from_args(app, &args) {
+                ui::workshop::open(app, None);
+            }
         }));
     }
     let builder = builder

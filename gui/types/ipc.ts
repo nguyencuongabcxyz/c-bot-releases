@@ -20,6 +20,7 @@ import type {
   SocialEvent,
   ThemePick,
   VocabEvent,
+  ShareView,
 } from './model';
 import type * as P from './pages';
 
@@ -35,6 +36,7 @@ export type RobotInit = {
   notesBoard: NotesBoard;
   noteHotkey: string;
   hush: boolean;
+  share: ShareView | null; // (part of a shared chat: features/share)
 };
 
 export type AskResult = OkOr<{ turnId: string; queued: boolean }>;

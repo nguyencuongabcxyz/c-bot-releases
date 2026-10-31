@@ -2,6 +2,7 @@
 // streams into a bubble: its words, the steps between them and what they made, in order.
 // (robot.ts calls createAsking with its hub.)
 import type { SidePanelApi } from '../side/panel';
+import type { SharingApi } from '../share/share';
 import { THINKING_VERBS } from '@/views/robot/constants';
 import { pick } from '@/lib/random';
 import type { CommentaryApi } from './commentary';
@@ -39,6 +40,7 @@ import { Icon } from '@/icons/icons';
 /** What it uses of the robot window (robot.ts's hub). */
 export type AskingNeeds = {
   readonly onEvent: ChatEventsApi['onEvent'];
+  readonly suggestInstead: SharingApi['suggestInstead'];
   readonly active: () => ChatTab | undefined;
   readonly current: () => ChatTab;
   readonly addBot: ChatLogApi['addBot'];
@@ -152,6 +154,7 @@ export function createAsking(r: AskingNeeds) {
   }
 
   async function submit({ again = false, tag = '' } = {}) {
+    if (r.suggestInstead()) return; // (a visiting robot suggests to its owner: chat/share)
     const tab = r.current();
     // briefs still being written (@#tab): the message waits for them
     if (r.state.briefs.some((b) => b.text === null)) {

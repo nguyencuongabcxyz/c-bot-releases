@@ -247,6 +247,29 @@ export type Tab = {
   remote?: boolean; // Remote Control: carried on from claude.ai/code or the Claude app too
   remoteUrl?: string | null; // (its page on claude.ai)
   sides?: SideThread[]; // side questions about its answers
+  shared?: boolean; // (the page's own: shared with colleagues right now, features/share)
+};
+
+/** Someone at either end of a shared chat: their name, PC and address on the network
+ * (app/src/features/share/wire.rs Person). */
+export type SharePerson = { name: string; pc: string; ip: string };
+
+/** Where a guest's suggestion is at. */
+export type SuggestionState = 'waiting' | 'sent' | 'editing' | 'declined' | 'refused';
+
+/** A shared chat as a robot's page shows it (features/share ShareView): the host's side, or a
+ * visiting robot's. */
+export type ShareView = {
+  role: 'host' | 'guest';
+  on: boolean;
+  tabId: string;
+  host: SharePerson;
+  people: SharePerson[];
+  asking: { conn: number; person: SharePerson }[];
+  endsAt: number;
+  toolOutput: boolean;
+  fromNow: boolean;
+  folderName: string;
 };
 
 export type ClaudeCommand = { name: string; description: string };
@@ -256,6 +279,8 @@ export type Character = {
   id: string;
   name: string;
   folder: string;
+  folderName?: string; // a visiting robot's (features/share): its folder's name on its owner's PC
+  visitor?: boolean;
   personality: string;
   color: string;
   permissionMode: PermissionMode;
@@ -825,6 +850,11 @@ export type ChatEvent =
   | { type: 'remote'; on: boolean; url?: string | null; error?: string }
   | { type: 'remote-state'; state: string }
   | { type: 'remote-prompt'; text: string; tag: string }
+  | { type: 'share-state'; state: ShareView }
+  | { type: 'share-suggest'; id: string; from: SharePerson; text: string; hidden: boolean }
+  | { type: 'share-taken-back'; id: string }
+  | { type: 'share-suggestion'; id: string; state: SuggestionState; why?: string }
+  | { type: 'share-ended'; reason: string }
   | { type: 'mirror'; kind: 'prompt' | 'question' | 'text' | 'idle' }
   | { type: 'mirror'; kind: 'tool'; name: string; detail: string }
   | ({ type: 'app' } & AppViewCall)

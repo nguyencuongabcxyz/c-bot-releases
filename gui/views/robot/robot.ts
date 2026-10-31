@@ -19,6 +19,7 @@ import '@/features/chat/chat.css';
 import '@/theme/code.css';
 import '@/features/context/context.css';
 import '@/features/robots/stage/tile.css';
+import '@/features/chat/share/share.css';
 import type { Settings } from '@/types/model';
 import * as ipc from '@/ipc';
 
@@ -43,6 +44,7 @@ import { createBriefs, type BriefsApi } from '@/features/chat/brief';
 import { createPlans, type PlansApi } from '@/features/chat/plan/card';
 import { createQuestions, type QuestionsApi } from '@/features/chat/questions';
 import { createRemoteControl, type RemoteControlApi } from '@/features/chat/remote';
+import { createSharing, type SharingApi } from '@/features/chat/share/share';
 import { createTerminalMode, type TerminalModeApi } from '@/features/workbench/terminal';
 import { createPoking, type PokingApi } from './life/poke';
 import { createAppViews, type AppViewsApi } from '@/features/mcp/apps';
@@ -184,6 +186,7 @@ tooltips($('#side-panel'));
       onLink: () => onLink,
       onNotes: () => onNotes,
       onRemote: () => onRemote,
+      onShare: () => onShare,
       onSocial: () => onSocial,
       onTasks: () => onTasks,
       openChat: () => openChat,
@@ -281,6 +284,7 @@ tooltips($('#side-panel'));
       stopTab: () => stopTab,
       strikePose: () => strikePose,
       submit: () => submit,
+      suggestInstead: () => suggestInstead,
       syncChrome: () => syncChrome,
       tabs: () => tabs,
       tabStrip: () => tabStrip,
@@ -393,7 +397,10 @@ tooltips($('#side-panel'));
 
   const persona = () =>
     state.personalities[state.character?.personality ?? ''] || Object.values(state.personalities)[0];
-  const folderName = () => (state.character?.folder || '').split(/[\\/]/).filter(Boolean).pop() || 'this folder';
+  const folderName = () =>
+    (state.character?.folder || '').split(/[\\/]/).filter(Boolean).pop() ||
+    state.character?.folderName ||
+    'this folder';
   /** The robot itself: robot_init brings it before anything is shown, so none is a bug. */
   function character() {
     if (!state.character) throw new Error('No character yet');
@@ -502,6 +509,9 @@ tooltips($('#side-panel'));
   // remote control
   const { mirror, onRemote, remoteNote, renderRemote, terminalState, toggleRemote }: RemoteControlApi =
     createRemoteControl(hub); // (chat/remote.ts)
+
+  // a shared chat: colleagues watching a tab, or this robot visiting
+  const { init: initSharing, onShare, suggestInstead }: SharingApi = createSharing(hub); // (chat/share/share.ts)
 
   // questions from Claude
   const { askUser, handDown, handUp }: QuestionsApi = createQuestions(hub); // (chat/questions.ts)
@@ -713,6 +723,7 @@ tooltips($('#side-panel'));
     setSight(init.vocabSight || []);
     setBoard(init.notesBoard);
     syncTabs(init.character);
+    initSharing(init.share);
     if (init.character.peek) {
       // (away on the island when it was last closed: main keeps it veiled)
       state.peek = true;

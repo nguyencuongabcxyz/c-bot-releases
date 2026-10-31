@@ -9,6 +9,7 @@ use super::AskKind;
 use crate::agents::{
     AgentEvent, Compact, Diff, Done, Fail, Plan, Question, TaskChange, Tool, ToolOutput,
 };
+use crate::features::share::{Person, ShareView, Suggestion};
 
 #[derive(Serialize)]
 #[serde(
@@ -16,7 +17,7 @@ use crate::agents::{
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-pub(super) enum PageEvent {
+pub(in crate::features) enum PageEvent {
     TurnStart {
         turn_id: String,
         kind: Option<AskKind>,
@@ -93,6 +94,32 @@ pub(super) enum PageEvent {
     RemotePrompt {
         text: String,
         tag: String,
+    },
+    /// A shared chat changed: who's in, who's asking, how long it has left (features/share).
+    ShareState {
+        state: ShareView,
+    },
+    /// For the host: a guest's suggestion, as raw text (what can't be seen shown as codes).
+    ShareSuggest {
+        id: String,
+        from: Person,
+        text: String,
+        hidden: bool,
+    },
+    /// For the host: the guest took their suggestion back.
+    ShareTakenBack {
+        id: String,
+    },
+    /// For a guest: what became of their suggestion.
+    ShareSuggestion {
+        id: String,
+        state: Suggestion,
+        #[serde(skip_serializing_if = "String::is_empty")]
+        why: String,
+    },
+    /// The shared chat ended, and why.
+    ShareEnded {
+        reason: String,
     },
 }
 
@@ -186,6 +213,38 @@ mod tests {
                 error: None
             }),
             json!({ "type": "remote", "on": false })
+        );
+    }
+
+    #[test]
+    fn the_page_gets_a_shared_chats_names_and_fields() {
+        let page = |e: PageEvent| serde_json::to_value(e).unwrap();
+        assert_eq!(
+            page(PageEvent::ShareSuggestion {
+                id: "s1".into(),
+                state: Suggestion::Declined,
+                why: String::new()
+            }),
+            json!({ "type": "share-suggestion", "id": "s1", "state": "declined" })
+        );
+        let from = Person {
+            name: "Minh".into(),
+            pc: "PC-MINH".into(),
+            ip: "10.0.0.2".into(),
+        };
+        assert_eq!(
+            page(PageEvent::ShareSuggest {
+                id: "3-a".into(),
+                from,
+                text: "hi".into(),
+                hidden: false
+            }),
+            json!({ "type": "share-suggest", "id": "3-a", "from": { "name": "Minh", "pc": "PC-MINH", "ip": "10.0.0.2" },
+                "text": "hi", "hidden": false })
+        );
+        assert_eq!(
+            page(PageEvent::ShareTakenBack { id: "x".into() }),
+            json!({ "type": "share-taken-back", "id": "x" })
         );
     }
 }

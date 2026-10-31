@@ -155,5 +155,6 @@ fn closed(app: &AppHandle, id: &str, hwnd: isize) {
         shell::close(app, id); // (and the shell in its chat)
         stage::gone(app, id);
         island::gone(app, id);
+        crate::features::share::gone(app, id); // (visiting: it leaves; sharing: that stops)
     }
 }

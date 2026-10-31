@@ -91,8 +91,12 @@ export function createBrain(rw: BrainNeeds) {
     $('#brain-mode').children[1].textContent = MODES[mode][1];
     $('#brain-mode').dataset.mode = mode;
     rw.body.classList.toggle('plan-mode', mode === 'plan');
-    rw.input.placeholder =
-      mode === 'plan' ? 'Plan something with me… (Shift+Tab: mode)' : 'Ask me something… (/ for commands, @ for files)';
+    // (a visiting robot's box suggests to its owner instead: chat/share)
+    if (!rw.state.visitor)
+      rw.input.placeholder =
+        mode === 'plan'
+          ? 'Plan something with me… (Shift+Tab: mode)'
+          : 'Ask me something… (/ for commands, @ for files)';
     const meter = $('#brain-meter');
     const ctx = t.context;
     const pct = ctx ? Math.max(0, Math.min(100, ctx.percentage)) : null;

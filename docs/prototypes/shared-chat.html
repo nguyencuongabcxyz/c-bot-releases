@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+<meta charset="utf-8">
+<title>C-Bot · Shared chat v1 (prototype)</title>
+<style>
+/* Prototype only: a copy of the "future" tokens from gui/theme/theme.css, painted like Pixel. */
+:root {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --bg: #fff; --bg-2: #f3f7fc; --bg-3: #e8eef7; --fg: #0b1426; --fg-2: #2c3a55; --muted: #64748b;
+  --line: rgba(11,20,38,.09); --line-2: rgba(11,20,38,.16);
+  --accent: #ec4899; --accent-ink: color-mix(in srgb, var(--accent) 62%, var(--fg));
+  --accent-soft: color-mix(in srgb, var(--accent) 11%, transparent);
+  --guest: #7c6cf2; --guest-soft: color-mix(in srgb, var(--guest) 11%, transparent);
+  --btn: var(--accent); --on-btn: #fff; --ok: #059669; --warn: #d97706; --danger: #e5484d;
+  --shadow: 0 1px 2px rgba(11,20,38,.06), 0 4px 14px rgba(11,20,38,.08);
+  --shadow-pop: 0 2px 6px rgba(11,20,38,.08), 0 14px 36px rgba(11,20,38,.18);
+  --desk-bg: linear-gradient(120deg, #dfe8f6, #ece6f3 60%, #f1e4ee);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--desk-bg); color: var(--fg); font: 13px/1.45 var(--font-ui); width: 1880px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.top { padding: 18px 26px 4px; display: flex; align-items: baseline; gap: 14px; }
+.top h2 { margin: 0; font: 650 17px var(--font-display); }
+.top .note { color: var(--muted); }
+.stage { display: grid; grid-template-columns: repeat(4, 440px); gap: 22px; padding: 14px 26px 26px; align-items: start; }
+.label { font: 600 11px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px 4px; }
+.label b { color: var(--accent-ink); }
+.label b.g { color: var(--guest); }
+.cap { color: var(--fg-2); font-size: 12px; margin: 0 0 10px 4px; min-height: 34px; }
+
+/* ---------------------------------------------------------------- the chat window */
+.win { position: relative; background: var(--bg); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow-pop); overflow: visible; }
+.hd { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--line); }
+.hd .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+.hd .name { font: 650 14px var(--font-display); }
+.folder { font: 500 11.5px var(--font-mono); border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 8px; color: var(--fg-2); }
+.owner { font-size: 11.5px; color: var(--guest); font-weight: 600; }
+.sp { flex: 1; }
+.ib { position: relative; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); display: grid; place-items: center; font-size: 14px; padding: 0; }
+.ib.on { background: var(--accent-soft); color: var(--accent-ink); }
+.ib.on::after { content: ""; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.faces { display: flex; }
+.face { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 10px var(--font-ui); color: #fff; border: 2px solid var(--bg); margin-left: -6px; }
+.face.h { background: var(--accent); }
+.face.g { background: var(--guest); }
+.tabs { display: flex; align-items: center; gap: 10px; padding: 6px 14px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.tab { padding: 4px 2px 7px; border-bottom: 2px solid var(--accent); display: flex; gap: 6px; align-items: center; }
+.tab .lk { font-size: 11px; }
+.tabs .x { color: var(--muted); }
+.body { padding: 10px 14px; display: flex; flex-direction: column; gap: 9px; }
+.body.dim > .old { opacity: .55; }
+
+.strip { display: flex; align-items: center; gap: 8px; margin: 0; padding: 7px 14px; background: var(--accent-soft); border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); font-size: 12px; }
+.strip.g { background: var(--guest-soft); border-color: color-mix(in srgb, var(--guest) 25%, transparent); }
+.strip .mode { font: 600 10.5px var(--font-mono); border-radius: 5px; padding: 0 6px; background: var(--bg); border: 1px solid var(--line-2); color: var(--fg-2); }
+.strip .stop { margin-left: auto; border: 1px solid var(--line-2); background: var(--bg); border-radius: 999px; padding: 1px 10px; font-size: 11.5px; }
+.strip .stop.red { color: var(--danger); }
+
+.me { align-self: flex-end; max-width: 82%; background: #fde7f1; border: 1px solid #f9c4dc; border-radius: 12px; padding: 7px 11px; }
+.from { font-size: 10.5px; color: var(--muted); margin: 0 4px 2px; align-self: flex-end; }
+.from .who { color: var(--guest); font-weight: 600; }
+.me.byg { background: #ece9fd; border-color: #d3cdfa; }
+.steps { font: 12px var(--font-mono); color: var(--fg-2); }
+.steps .c { color: var(--muted); }
+.ans p { margin: 0 0 6px; }
+code { font: 11.5px var(--font-mono); background: var(--bg-3); border-radius: 4px; padding: 0 4px; }
+
+/* the guest's suggestion, as the host sees it */
+.sugg { border: 1px solid color-mix(in srgb, var(--guest) 45%, transparent); background: var(--guest-soft); border-radius: 12px; padding: 9px 11px; }
+.sugg .t { font-size: 11.5px; color: var(--guest); font-weight: 650; display: flex; align-items: center; gap: 6px; }
+.sugg .t .ago { color: var(--muted); font-weight: 400; }
+.sugg .q { margin: 5px 0 8px; color: var(--fg); }
+.acts { display: flex; gap: 6px; justify-content: flex-end; }
+.b { border: 1px solid var(--line-2); background: var(--bg); border-radius: 999px; padding: 3px 12px; font-size: 12px; }
+.b.p { background: var(--btn); color: var(--on-btn); border-color: transparent; font-weight: 600; }
+.b.gp { background: var(--guest); color: #fff; border-color: transparent; font-weight: 600; }
+
+/* the guest's own suggestions, as the guest sees them */
+.mine { align-self: flex-end; max-width: 84%; border: 1px dashed color-mix(in srgb, var(--guest) 55%, transparent); background: var(--guest-soft); border-radius: 12px; padding: 7px 11px; }
+.state { align-self: flex-end; font-size: 11px; color: var(--muted); margin: -5px 4px 0; display: flex; gap: 6px; align-items: center; }
+.state .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.state.no { color: var(--danger); }
+
+.foot { padding: 8px 12px 12px; }
+.bar { display: flex; gap: 10px; font: 500 11px var(--font-mono); color: var(--muted); padding: 0 4px 7px; }
+.bar .lock { color: var(--guest); }
+.composer { display: flex; align-items: center; gap: 8px; border: 1.5px solid var(--accent); border-radius: 14px; padding: 8px 8px 8px 14px; color: var(--muted); }
+.composer.g { border-color: var(--guest); }
+.composer .ph { flex: 1; }
+.send { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; }
+.send.g { width: auto; border-radius: 999px; padding: 0 12px; background: var(--guest); font-size: 12px; }
+
+/* popovers and dialogs */
+.pop { position: absolute; z-index: 2; background: var(--bg); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow-pop); padding: 14px; }
+.pop h3 { margin: 0 0 3px; font: 650 14px var(--font-display); }
+.pop .sub { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+.opt { border: 1px solid var(--line-2); border-radius: 10px; padding: 8px 10px; }
+.opt.sel { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+.opt.off { opacity: .45; }
+.opt .n { font-weight: 650; display: flex; gap: 6px; align-items: center; }
+.opt .d { font-size: 11px; color: var(--muted); }
+.soon { font: 600 9.5px var(--font-mono); background: var(--bg-3); border-radius: 4px; padding: 0 5px; color: var(--muted); }
+.fl { font: 600 10.5px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+.link { display: flex; gap: 6px; margin-bottom: 6px; }
+.link .u { flex: 1; font: 11.5px var(--font-mono); background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta { font-size: 11.5px; color: var(--muted); margin-bottom: 12px; display: flex; gap: 10px; }
+.rules { list-style: none; margin: 0 0 12px; padding: 9px 11px; background: var(--bg-2); border-radius: 10px; font-size: 12px; display: grid; gap: 3px; }
+.who-list { margin: 0 0 12px; display: grid; gap: 6px; }
+.who-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.who-row .face { margin: 0; border: 0; }
+.who-row .st { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+.row-end { display: flex; justify-content: flex-end; gap: 6px; }
+.tip { position: absolute; z-index: 3; background: #1f2433; color: #fff; font-size: 11.5px; padding: 3px 8px; border-radius: 6px; }
+
+/* the guest's desktop */
+.desk { position: relative; height: 250px; border-radius: 16px; border: 1px dashed var(--line-2); background: rgba(255,255,255,.35); margin-bottom: 14px; }
+.bot { position: absolute; display: grid; justify-items: center; gap: 4px; font-size: 11.5px; color: var(--fg-2); }
+.bot .av { position: relative; width: 70px; height: 70px; border-radius: 22px; display: grid; place-items: center; font-size: 38px; box-shadow: var(--shadow); }
+.bot .badge { position: absolute; right: -6px; bottom: -6px; width: 24px; height: 24px; border-radius: 50%; background: var(--guest); color: #fff; font-size: 12px; display: grid; place-items: center; border: 2px solid #fff; }
+.bot .nm { font-weight: 600; }
+.bot .sm { color: var(--muted); font-size: 10.5px; margin-top: -4px; }
+.toast { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 330px; }
+.toast .head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.toast .av2 { width: 42px; height: 42px; border-radius: 14px; background: #fde7f1; display: grid; place-items: center; font-size: 24px; }
+.kv { display: grid; grid-template-columns: 70px 1fr; gap: 3px 8px; font-size: 12px; margin-bottom: 12px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.ended { text-align: center; color: var(--muted); font-size: 12px; padding: 8px; border: 1px dashed var(--line-2); border-radius: 10px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h2>🔗 Shared chat · v1 (LAN)</h2>
+  <span class="note">Cuong shares a tab of Pixel with Minh. Minh watches everything and suggests prompts; only Cuong sends them.</span>
+</div>
+
+<div class="stage">
+
+  <!-- =============================================================== 1. host: share -->
+  <div>
+    <div class="label"><b>Host</b> · 1. Share this tab</div>
+    <div class="cap">A new header button opens the share card. Pick the network, copy the link, send it to Minh on Teams.</div>
+    <div class="win" style="height:640px">
+      <div class="hd">
+        <span class="dot"></span><span class="name">Pixel</span><span class="folder">🗀 shop-web</span><span class="sp"></span>
+        <button class="ib">▣</button><button class="ib on" style="outline:2px solid color-mix(in srgb, var(--accent) 35%, transparent)">🔗</button><button class="ib">›_</button><button class="ib">🕘</button><button class="ib">⚒</button>
+      </div>
+      <div class="tip" style="top:44px; left:236px">Share</div>
+      <div class="tabs"><span class="tab">Cart prices show as…</span><span class="x">×</span><span class="x">+</span></div>
+      <div class="body dim">
+        <div class="me old">Prices in the cart show as 20.5 instead of 20.50. Fix it.</div>
+        <div class="steps old"><span class="c">›</span> Searched 1 time, read 1 file, edited 1 file <span class="c">· 3 steps</span></div>
+        <div class="ans old"><p>Fixed! <code>formatPrice</code> in <code>src/cart.js:16</code> now uses <code>toFixed(2)</code>.</p></div>
+      </div>
+
+      <div class="pop" style="top:50px; left:70px; width:350px">
+        <h3>Share this tab</h3>
+        <p class="sub">Colleagues with C-Bot can watch the whole chat and suggest prompts. Only you can send them.</p>
+        <div class="fl">Network</div>
+        <div class="seg">
+          <div class="opt sel"><div class="n">🏢 Office (LAN)</div><div class="d">Same network, direct</div></div>
+          <div class="opt off"><div class="n">🌍 Internet <span class="soon">LATER</span></div><div class="d">From anywhere</div></div>
+        </div>
+        <div class="fl">Invite link</div>
+        <div class="link"><div class="u">cbot://join/10.0.4.27:47821/k7Qp2…Xw</div><button class="b">Copy</button></div>
+        <div class="meta"><span>⏱ Works for 1 hour</span><span>👥 Up to 3 people</span></div>
+        <ul class="rules">
+          <li>👀 They see the whole chat, from the start</li>
+          <li>💬 Their prompts wait for your <b>Send</b></li>
+          <li>🚫 They can't run anything on your PC</li>
+        </ul>
+        <div class="row-end"><button class="b">Cancel</button><button class="b p">Start sharing</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============================================================== 2. host: sharing -->
+  <div>
+    <div class="label"><b>Host</b> · 2. While sharing</div>
+    <div class="cap">A strip says who's watching. Minh's prompt arrives as a card: send it as is, edit it first, or decline.</div>
+    <div class="win" style="height:640px; display:flex; flex-direction:column">
+      <div class="hd">
+        <span class="dot"></span><span class="name">Pixel</span><span class="folder">🗀 shop-web</span><span class="sp"></span>
+        <div class="faces"><span class="face h">C</span><span class="face g">M</span></div>
+        <button class="ib on">🔗</button><button class="ib">›_</button><button class="ib">🕘</button>
+      </div>
+      <div class="tabs"><span class="tab"><span class="lk">🔗</span>Cart prices show as…</span><span class="x">×</span><span class="x">+</span></div>
+      <div class="strip"><span>🔗 Shared with <b>Minh</b></span><span class="mode">LAN</span><span style="color:var(--muted)">· 52 min left</span><button class="stop red">Stop sharing</button></div>
+      <div class="body" style="flex:1">
+        <div class="me">Prices in the cart show as 20.5 instead of 20.50. Fix it.</div>
+        <div class="steps"><span class="c">›</span> Searched 1 time, read 1 file, edited 1 file <span class="c">· 3 steps</span></div>
+        <div class="ans"><p>Fixed! <code>formatPrice</code> in <code>src/cart.js:16</code> now uses <code>toFixed(2)</code>.</p></div>
+
+        <div class="from"><span class="who">Minh</span> · sent by you</div>
+        <div class="me byg" style="margin-top:-7px">Does anything else call formatPrice with a string?</div>
+        <div class="steps"><span class="c">›</span> Searched 2 times <span class="c">· 2 steps</span></div>
+        <div class="ans"><p>Yes, one place: <code>src/checkout.js:41</code> passes <code>item.price</code>, which comes from the API as a string.</p></div>
+
+        <div class="sugg">
+          <div class="t"><span class="face g" style="margin:0;width:18px;height:18px;border:0;font-size:9px">M</span>Minh suggests <span class="ago">· just now</span></div>
+          <div class="q">Can you make formatPrice accept strings too, and add a test for "20.5"?</div>
+          <div class="acts"><button class="b">Decline</button><button class="b">Edit</button><button class="b p">Send</button></div>
+        </div>
+      </div>
+      <div class="foot">
+        <div class="bar"><span>⚙ Sonnet 5.5</span><span>⚡ auto</span><span class="sp"></span><span>CTX 6%</span></div>
+        <div class="composer"><span class="ph">Ask me something… (/ for commands, @ for files)</span><span class="send">↑</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============================================================== 3. guest: join -->
+  <div>
+    <div class="label"><b class="g">Guest</b> · 3. Join</div>
+    <div class="cap">Minh clicks the link. C-Bot asks first, then Pixel walks onto Minh's desktop as a visitor with a 🔗 badge.</div>
+    <div class="desk">
+      <div class="bot" style="left:24px; top:22px"><div class="av" style="background:#e0f2fe">🤖</div><div class="nm">Sunny</div><div class="sm">Minh's own robot</div></div>
+      <div class="pop toast">
+        <div class="head"><div class="av2">🤖</div><div><h3 style="margin:0">Join Cuong's chat?</h3><div style="color:var(--muted);font-size:12px">Cuong invited you to watch a tab.</div></div></div>
+        <div class="kv"><span>Robot</span><span><b>Pixel</b> · 🗀 shop-web</span><span>Tab</span><span>Cart prices show as…</span><span>From</span><span>Cuong's PC · office network</span></div>
+        <div class="row-end"><button class="b">Not now</button><button class="b gp">Join</button></div>
+      </div>
+    </div>
+    <div class="desk" style="height:150px">
+      <div class="bot" style="left:24px; top:22px"><div class="av" style="background:#e0f2fe">🤖</div><div class="nm">Sunny</div><div class="sm">Minh's own robot</div></div>
+      <div class="bot" style="left:150px; top:22px"><div class="av" style="background:#fde7f1">🤖<span class="badge">🔗</span></div><div class="nm">Pixel</div><div class="sm">Cuong's · visiting</div></div>
+      <div style="position:absolute; left:262px; top:30px; width:160px; font-size:11.5px; color:var(--muted)">Click to open the shared tab. Right-click → <b>Leave</b>. Goes home when Cuong stops sharing.</div>
+    </div>
+    <div class="label">If it can't connect</div>
+    <div class="ended">⚠ Can't reach Cuong's PC. Are you both on the office network?</div>
+  </div>
+
+  <!-- =============================================================== 4. guest: watching -->
+  <div>
+    <div class="label"><b class="g">Guest</b> · 4. In the shared tab</div>
+    <div class="cap">The whole chat, read-only and live. The box sends suggestions; each one shows whether Cuong sent it yet.</div>
+    <div class="win" style="height:640px; display:flex; flex-direction:column">
+      <div class="hd">
+        <span class="dot"></span><span class="name">Pixel</span><span class="owner">Cuong's</span><span class="folder">🗀 shop-web</span><span class="sp"></span>
+        <div class="faces"><span class="face h">C</span><span class="face g">M</span></div>
+        <button class="ib">🕘</button>
+      </div>
+      <div class="tabs"><span class="tab" style="border-color:var(--guest)"><span class="lk">🔗</span>Cart prices show as…</span></div>
+      <div class="strip g"><span>👀 Watching <b>Cuong's</b> tab</span><span class="mode">LAN</span><button class="stop">Leave</button></div>
+      <div class="body" style="flex:1">
+        <div class="me">Prices in the cart show as 20.5 instead of 20.50. Fix it.</div>
+        <div class="steps"><span class="c">›</span> Searched 1 time, read 1 file, edited 1 file <span class="c">· 3 steps</span></div>
+        <div class="ans"><p>Fixed! <code>formatPrice</code> in <code>src/cart.js:16</code> now uses <code>toFixed(2)</code>.</p></div>
+        <div class="from"><span class="who">You</span> · sent by Cuong</div>
+        <div class="me byg" style="margin-top:-7px">Does anything else call formatPrice with a string?</div>
+        <div class="steps"><span class="c">›</span> Searched 2 times <span class="c">· 2 steps</span></div>
+        <div class="ans"><p>Yes, one place: <code>src/checkout.js:41</code> passes <code>item.price</code>, which comes from the API as a string.</p></div>
+        <div class="mine">Can you make formatPrice accept strings too, and add a test for "20.5"?</div>
+        <div class="state"><span class="pulse"></span>Waiting for Cuong · <a href="#" style="color:var(--muted)">Take back</a></div>
+        <div class="mine" style="opacity:.6">Also run the tests?</div>
+        <div class="state no">✕ Cuong declined</div>
+      </div>
+      <div class="foot">
+        <div class="bar"><span class="lock">🔒 You can suggest; Cuong sends</span><span class="sp"></span><span>CTX 6%</span></div>
+        <div class="composer g"><span class="ph">Suggest a prompt to Cuong…</span><span class="send g">Suggest</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

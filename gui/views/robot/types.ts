@@ -181,6 +181,7 @@ export type RobotState = {
   // (and as it goes)
   scale?: number;
   mirroring?: boolean;
+  visitor?: boolean; // a visiting copy of a colleague's robot (features/chat/share): no files, no pictures
   away?: boolean;
   leaving?: boolean;
   meeting?: boolean;

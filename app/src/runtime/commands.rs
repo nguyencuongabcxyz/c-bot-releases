@@ -7,7 +7,7 @@ use tauri::ipc::Invoke;
 use crate::context;
 use crate::features::chat;
 use crate::features::chat::group;
-use crate::features::{notes, routines, vocab};
+use crate::features::{notes, routines, share, vocab};
 use crate::mcp::{apps, link, tools};
 use crate::robots::{ipc, island, revive, social, stage, walkers};
 use crate::ui::{tray, workshop};
@@ -37,6 +37,15 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ipc::robot_compact,
         ipc::robot_cancel,
         ipc::robot_remote,
+        // a shared chat (features/share): the host's card, the visitor's suggestions
+        share::share_start,
+        share::share_invite,
+        share::share_admit,
+        share::share_answer,
+        share::share_stop,
+        share::share_suggest,
+        share::share_take_back,
+        share::share_leave,
         ipc::robot_unqueue,
         ipc::robot_send_now,
         ipc::robot_brain,

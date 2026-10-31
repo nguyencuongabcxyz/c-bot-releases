@@ -257,6 +257,9 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
                 .update(id, patch(vec![("stats", Value::Object(stats))]));
         }
     });
+    if kind == AskKind::Chat {
+        share::said(app, id, tab_id, prompt, tag); // (anyone watching the tab sees it too)
+    }
 
     let Some(chat) = chat_for(app, id, tab_id) else {
         return json!({ "ok": false, "error": "I can't find Claude Code anywhere on this computer." });
@@ -278,6 +281,11 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
 /// Can the tab be asked: it's there, not open in the terminal, Claude Code is installed, the
 /// robot's folder is there. The robot, if so; else what's wrong, for the chat.
 fn ready(app: &AppHandle, id: &str, tab_id: &str) -> Result<Value, Error> {
+    if share::is_visitor(app, id) {
+        return Err(
+            "I'm only visiting: suggest it, and my owner decides whether to send it.".into(),
+        );
+    }
     let Some((c, settings)) = with(app, |st| {
         st.store.tab(id, tab_id)?;
         Some((st.store.get(id)?.clone(), st.store.settings().clone()))

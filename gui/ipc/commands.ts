@@ -32,6 +32,8 @@ import type {
   QAItem,
   SessionRow,
   Settings,
+  ShareView,
+  SuggestionState,
   ToolGroupInfo,
   Transcript,
 } from '@/types/model';
@@ -76,6 +78,16 @@ export const robotTabBrief = (fromTabId: string, toTabId: string, draft: string)
   invoke<string>('robot_tab_brief', { args: { fromTabId, toTabId, draft } });
 export const robotCompact = (tabId: string, turnId: string) => invoke<AskResult>('robot_compact', { tabId, turnId });
 export const robotRemote = (tabId: string, on: boolean) => invoke<OkOr>('robot_remote', { tabId, on });
+// (a shared chat, features/share: the host's card and suggestion cards, a visitor's suggestions)
+export const shareStart = (tabId: string, fromNow: boolean, toolOutput: boolean) =>
+  invoke<ShareView>('share_start', { args: { tabId, fromNow, toolOutput } });
+export const shareInvite = () => invoke<string>('share_invite');
+export const shareAdmit = (conn: number, yes: boolean) => invoke<void>('share_admit', { conn, yes });
+export const shareAnswer = (id: string, state: SuggestionState) => invoke<void>('share_answer', { id, state });
+export const shareStop = () => invoke<void>('share_stop');
+export const shareSuggest = (text: string) => invoke<string>('share_suggest', { text });
+export const shareTakeBack = (id: string) => invoke<void>('share_take_back', { id });
+export const shareLeave = () => invoke<void>('share_leave');
 // (the context engine, app/src/context: how its index is, switching it on or off, reading the folder again)
 export const robotContext = () => invoke<ContextEngineStatus>('robot_context');
 export const robotContextSet = (on: boolean) => invoke<ContextEngineStatus>('robot_context_set', { on });

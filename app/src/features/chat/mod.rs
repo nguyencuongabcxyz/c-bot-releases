@@ -17,7 +17,7 @@ pub mod tabs;
 mod temporary;
 
 pub use page::*;
-use page_event::PageEvent;
+pub(in crate::features) use page_event::PageEvent;
 pub use past::*;
 pub use sign_in::*;
 pub use temporary::*;
@@ -34,6 +34,7 @@ use tauri::{AppHandle, Emitter};
 use crate::agents::claude::{Session, locate, transcripts};
 use crate::agents::{self, claude, personalities};
 use crate::context;
+use crate::features::share;
 use crate::mcp::{apps, link, tools};
 use crate::robots::label_of;
 use crate::runtime::{Locked, with};
@@ -105,11 +106,14 @@ pub fn key_of(id: &str, tab_id: &str) -> String {
     format!("{id}|{tab_id}")
 }
 
-fn tell(app: &AppHandle, id: &str, tab_id: &str, event: PageEvent) {
+/// An event for a robot's page, about one of its tabs (and, if that tab is shared, for the
+/// guests watching it: features/share).
+pub(in crate::features) fn tell(app: &AppHandle, id: &str, tab_id: &str, event: PageEvent) {
     let Ok(mut p) = serde_json::to_value(event) else {
         return;
     };
     p["tabId"] = json!(tab_id);
+    share::forward(app, id, tab_id, &p);
     let _ = app.emit_to(label_of(id), "robot:event", p);
 }
 

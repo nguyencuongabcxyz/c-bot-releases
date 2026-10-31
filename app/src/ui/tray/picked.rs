@@ -58,6 +58,7 @@ fn tray_action(app: &AppHandle, what: &str) {
         "workshop" => workshop::open(app, None),
         "new" => workshop::open(app, Some("new")),
         "groupchat" => group::open(app, hub::nearest_robot(app)),
+        "join" => crate::features::share::join_copied(app),
         "stage-start" => stage::start(app, None),
         "stage-all" => {
             let ids = with(app, |st| {
