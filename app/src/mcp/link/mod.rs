@@ -293,17 +293,16 @@ pub fn mcp_config(app: &AppHandle, id: &str, tab: &str) -> Option<String> {
 pub fn guard_settings(app: &AppHandle, id: &str, tab: &str, mcp_config: &str) -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     let file = config_file(app, id, tab).with_extension("hooks.json");
-    // (forward slashes and quotes: whichever shell runs it)
-    let path = |p: &str| p.replace('\\', "/");
-    let command = format!(
-        "\"{}\" {} \"{}\"",
-        path(&exe.to_string_lossy()),
-        crate::mcp::guard::FLAG,
-        path(mcp_config)
-    );
+    // (the program and its arguments apart: run as they are, with no shell to quote for, or to
+    // be missing, as Git Bash may be on Windows)
     let settings = json!({ "hooks": { "PreToolUse": [{
         "matcher": crate::mcp::guard::MATCHER,
-        "hooks": [{ "type": "command", "command": command, "timeout": 15 }],
+        "hooks": [{
+            "type": "command",
+            "command": exe.to_string_lossy(),
+            "args": [crate::mcp::guard::FLAG, mcp_config],
+            "timeout": 15,
+        }],
     }] } });
     if let Err(e) = std::fs::write(&file, settings.to_string()) {
         log::warn!("cannot set up the edit guard: {e}");
