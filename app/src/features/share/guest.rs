@@ -26,7 +26,7 @@ const HANDSHAKE_WAIT: Duration = Duration::from_secs(15);
 /// How long to wait for the host to let you in (a little longer than they have).
 const LET_IN_WAIT: Duration = Duration::from_secs(200);
 /// How long the visitor stays after the chat ends (so you can read why) before it walks off.
-const GOODBYE: Duration = Duration::from_secs(4);
+const GOODBYE: Duration = Duration::from_secs(2);
 
 pub(super) struct Visit {
     tab: String,

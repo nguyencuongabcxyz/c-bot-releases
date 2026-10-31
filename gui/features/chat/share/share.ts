@@ -274,9 +274,9 @@ export function createSharing(r: SharingNeeds) {
     Sfx.pop();
     r.express('happy', 'smile', 1800);
     setTimeout(() => {
-      r.flash('hop', 600);
-      r.strikePose('wave', 1800);
-    }, 900);
+      r.flash('hop', 500);
+      r.strikePose('wave', 1200);
+    }, 400);
   }
 
   /** The composer's Enter on a visiting robot: a suggestion, not a question. Whether it was. */
