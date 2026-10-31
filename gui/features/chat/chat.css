@@ -47,6 +47,9 @@ header {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line);
 }
+/* hold it to carry the robot, chat and all (life/poke.ts) */
+#panel > header { cursor: grab; user-select: none; }
+body.dragging #panel > header { cursor: grabbing; }
 .who { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .who::before {
   content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--ok);

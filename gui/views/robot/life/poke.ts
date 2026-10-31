@@ -1,8 +1,10 @@
-// Poking it and dragging it about: clicks on the robot, and carrying it round the screen.
+// Poking it and dragging it about: clicks on the robot, and carrying it round the screen (by
+// the robot, or by its chat's title bar).
 // (robot.ts calls createPoking with its hub.)
 import { pick } from '@/lib/random';
 import { clamp } from '@/lib/math';
 import { onDrag } from '@/lib/drag';
+import { $ } from '@/lib/dom';
 import type { BonkApi } from './bonk';
 import type { DeskActivityApi } from './desk';
 import type { IdleAnticsApi } from './antics';
@@ -119,6 +121,32 @@ export function createPoking(r: PokingNeeds) {
           } else {
             r.renderFace();
           }
+        },
+      };
+    },
+    { threshold: 5 },
+  );
+
+  // the chat's title bar carries it too, chat and all (on the stage that bar swaps tiles
+  // instead: features/robots/stage/tile.ts)
+  onDrag(
+    $('#panel > header'),
+    (e) => {
+      if (r.body.classList.contains('staged') || (e.target as HTMLElement).closest('button')) return;
+      return {
+        begin: () => {
+          held = true;
+          r.stopAntic();
+          ipc.robotDrag({ phase: 'start' });
+          r.body.classList.add('dragging');
+        },
+        move: ({ dx, dy }) => ipc.robotDrag({ phase: 'move', dx, dy }),
+        end: ({ moved }) => {
+          if (!moved) return; // (a click: nothing was carried)
+          held = false;
+          ipc.robotDrag({ phase: 'end' });
+          r.body.classList.remove('dragging');
+          r.state.lastActivity = Date.now();
         },
       };
     },
