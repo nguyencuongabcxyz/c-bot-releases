@@ -148,6 +148,31 @@ pub(super) fn fuse(
         .collect()
 }
 
+/// Chunks by (path, chunk index).
+pub(super) type Chunks = HashMap<(String, i32), StoredChunk>;
+
+/// From the lanes to what search_code shows: fused (POOL of them), their chunks fetched (with
+/// their files' openings, for the reranker), then in the reranker's order (`scores` gives None
+/// while it isn't downloaded, or when it fails: the lanes' order stands).
+pub(super) fn pick(
+    query: &str,
+    lanes: &[(&'static str, Vec<(String, i32)>)],
+    limit: usize,
+    fetch: impl FnOnce(&[(String, i32)]) -> Result<Vec<StoredChunk>, Error>,
+    scores: impl FnOnce(&[String]) -> Option<Vec<f32>>,
+) -> Result<(Vec<Ranked>, Chunks), Error> {
+    let pool = fuse(lanes, plain(query), POOL.max(limit));
+    let chunks: HashMap<(String, i32), StoredChunk> = fetch(&rerank_keys(&pool))?
+        .into_iter()
+        .map(|c| ((c.path.clone(), c.idx), c))
+        .collect();
+    let found = match scores(&rerank_texts(&pool, &chunks)) {
+        Some(s) => rerank(pool, &s, limit),
+        None => pool.into_iter().take(limit).collect(),
+    };
+    Ok((found, chunks))
+}
+
 /// The fused results (best first) in the reranker's order, `limit` of them; `scores` are its,
 /// one for each.
 pub(super) fn rerank(found: Vec<Ranked>, scores: &[f32], limit: usize) -> Vec<Ranked> {
@@ -253,9 +278,15 @@ pub(super) fn symbol_targets(code: &Code, query: &str, filter: Filter) -> Vec<(S
 }
 /// Words a question is made of that say nothing about code.
 const STOP: &[&str] = &[
-    "a", "an", "and", "are", "as", "at", "be", "by", "do", "does", "for", "from", "how", "in",
-    "is", "it", "of", "on", "or", "the", "this", "that", "to", "what", "where", "which", "who",
-    "with",
+    "a", "about", "after", "again", "all", "am", "an", "and", "another", "any", "are", "as", "at",
+    "be", "been", "being", "both", "but", "by", "can", "could", "did", "do", "does", "doing",
+    "each", "for", "from", "had", "has", "have", "having", "he", "her", "here", "him", "his",
+    "how", "i", "if", "in", "into", "is", "it", "its", "just", "me", "more", "most", "my", "no",
+    "not", "now", "of", "on", "one", "only", "or", "other", "our", "out", "own", "same", "she",
+    "should", "so", "some", "such", "than", "that", "the", "their", "them", "then", "there",
+    "these", "they", "this", "those", "through", "to", "too", "us", "very", "was", "we", "were",
+    "what", "when", "where", "which", "while", "who", "whom", "why", "will", "with", "would",
+    "you", "your",
 ];
 
 /// The words of some text as the search knows them (each once per name, in order), and the

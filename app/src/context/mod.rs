@@ -110,7 +110,7 @@ const NOTE: &str = concat!(
     "C-Bot's context engine has indexed the code in this folder (TypeScript/JavaScript, C#, Java, C/C++, Go, Python, Rust; Kotlin, Swift, PHP, Ruby, shell and PowerShell for their definitions only; its XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte and CSS; its Markdown and text) and keeps it up to date. ",
     "Use its tools before grepping or reading whole files: code_map for the files and definitions that matter most (focus it on what you're working on), ",
     "code_outline for the signatures in a file or folder with their lines, find_symbol for where something is defined (body: true to see its code), ",
-    "and search_code to find code or docs by words or meaning when you don't know the names. Then Read only the lines you need. ",
+    "and search_code to find code or docs by words or meaning when you don't know the names (ask it in English, in the code's words, whatever language the user writes in). Then Read only the lines you need. ",
     "It also knows who calls what (not yet in the languages read for their definitions only), through imports, fields and types: find_references for a function's or type's callers, call_chain for how one reaches another, ",
     "file_dependencies for what a file imports and what imports it, type_hierarchy for supertypes, subtypes and overrides, and change_impact before changing something."
 );
@@ -534,14 +534,19 @@ pub fn search_code(
             }),
         ),
     ];
-    let pool = search::fuse(&lanes, search::plain(query), search::POOL.max(limit));
-    let chunks: HashMap<(String, i32), StoredChunk> = db
-        .store
-        .chunks(&f.scope, &search::rerank_keys(&pool))?
-        .into_iter()
-        .map(|c| ((c.path.clone(), c.idx), c))
-        .collect();
-    let found = rerank(&embedder, &dir, query, pool, &chunks, limit);
+    let (found, chunks) = search::pick(
+        query,
+        &lanes,
+        limit,
+        |keys| db.store.chunks(&f.scope, keys),
+        |texts| {
+            embedder
+                .reranker(&dir)?
+                .scores(query, texts)
+                .inspect_err(|e| log::warn!("search_code: {e}"))
+                .ok()
+        },
+    )?;
     Ok(answers::search_code(query, &found, &chunks))
 }
 
@@ -567,28 +572,6 @@ fn meaning_lane(
         .locked()
         .search(&question, search::LANE_DEPTH, filter)?;
     Ok(near.into_iter().map(|(p, i, _)| (p, i)).collect())
-}
-
-/// The fused results in the reranker's order, `limit` of them (the lanes' order while it isn't
-/// downloaded yet, or if it fails).
-fn rerank(
-    embedder: &Embedder,
-    dir: &Path,
-    query: &str,
-    pool: Vec<Ranked>,
-    chunks: &HashMap<(String, i32), StoredChunk>,
-    limit: usize,
-) -> Vec<Ranked> {
-    let Some(reranker) = embedder.reranker(dir) else {
-        return pool.into_iter().take(limit).collect();
-    };
-    match reranker.scores(query, &search::rerank_texts(&pool, chunks)) {
-        Ok(scores) => search::rerank(pool, &scores, limit),
-        Err(e) => {
-            log::warn!("search_code: {e}");
-            pool.into_iter().take(limit).collect()
-        }
-    }
 }
 
 /// What's indexed, in a line.
