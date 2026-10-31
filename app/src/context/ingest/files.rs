@@ -43,8 +43,17 @@ pub(in crate::context) fn skipped(rel: &str) -> bool {
         .any(|d| d.starts_with('.') || SKIP_DIRS.contains(d))
 }
 
-/// Generated files that only get in the way.
-const SKIP_ENDINGS: &[&str] = &[".min.js", ".bundle.js", ".designer.cs", ".g.cs", ".g.i.cs"];
+/// Generated files that only get in the way (lock files too: thousands of versions).
+const SKIP_ENDINGS: &[&str] = &[
+    ".min.js",
+    ".bundle.js",
+    ".min.css",
+    ".designer.cs",
+    ".g.cs",
+    ".g.i.cs",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+];
 
 /// How a file was when it was read: changed (perhaps) when either is different.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

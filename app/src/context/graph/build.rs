@@ -638,7 +638,16 @@ fn module_name(path: &str, lang: Lang) -> String {
         Lang::Rust => "mod",
         Lang::Python => "__init__",
         Lang::TypeScript | Lang::Tsx => "index",
-        Lang::Go | Lang::CSharp | Lang::Java | Lang::Cpp => "",
+        Lang::Go
+        | Lang::CSharp
+        | Lang::Java
+        | Lang::Cpp
+        | Lang::Kotlin
+        | Lang::Swift
+        | Lang::Php
+        | Lang::Ruby
+        | Lang::Bash
+        | Lang::PowerShell => "",
     };
     let stem = stem
         .strip_suffix(own)

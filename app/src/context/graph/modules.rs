@@ -302,6 +302,10 @@ pub(super) fn resolve(g: &Graph, settings: &Settings, from: usize, spec: &str) -
             }
         }
         Lang::Cpp => cpp(g, &file.path, spec),
+        // (their imports aren't read yet: extract/ sends none)
+        Lang::Kotlin | Lang::Swift | Lang::Php | Lang::Ruby | Lang::Bash | Lang::PowerShell => {
+            Target::Nowhere
+        }
     }
 }
 

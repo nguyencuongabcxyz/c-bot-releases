@@ -1,5 +1,5 @@
-﻿//! The context engine: the code and documents in a robot's folder (TypeScript/JavaScript, C#,
-//! Go, Python, Rust; Markdown, text) read, kept up to date, and asked about by the robot's
+﻿//! The context engine: the code and documents in a robot's folder (the languages and files in
+//! langs.rs; Markdown, text) read, kept up to date, and asked about by the robot's
 //! Claude Code (mcp/tools/code.rs), which also starts each conversation with a map of the code.
 //! The user switches it on robot by robot, from the chat (the robot's `contextEngine`); it's
 //! off until then. Robots sharing a folder share its index.
@@ -107,11 +107,11 @@ pub const MAP_MAX: usize = 40_000;
 
 /// What every conversation of a robot with the engine on is told about it.
 const NOTE: &str = concat!(
-    "C-Bot's context engine has indexed the code in this folder (TypeScript/JavaScript, C#, Java, C/C++, Go, Python, Rust; its XML/XAML, Razor views, YAML and Dockerfiles; its Markdown and text) and keeps it up to date. ",
+    "C-Bot's context engine has indexed the code in this folder (TypeScript/JavaScript, C#, Java, C/C++, Go, Python, Rust; Kotlin, Swift, PHP, Ruby, shell and PowerShell for their definitions only; its XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte and CSS; its Markdown and text) and keeps it up to date. ",
     "Use its tools before grepping or reading whole files: code_map for the files and definitions that matter most (focus it on what you're working on), ",
     "code_outline for the signatures in a file or folder with their lines, find_symbol for where something is defined (body: true to see its code), ",
     "and search_code to find code or docs by words or meaning when you don't know the names. Then Read only the lines you need. ",
-    "It also knows who calls what, through imports, fields and types: find_references for a function's or type's callers, call_chain for how one reaches another, ",
+    "It also knows who calls what (not yet in the languages read for their definitions only), through imports, fields and types: find_references for a function's or type's callers, call_chain for how one reaches another, ",
     "file_dependencies for what a file imports and what imports it, type_hierarchy for supertypes, subtypes and overrides, and change_impact before changing something."
 );
 

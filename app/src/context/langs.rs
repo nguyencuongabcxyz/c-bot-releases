@@ -1,7 +1,9 @@
 //! The files the context engine reads: code in the languages it knows (their tree-sitter
 //! grammar, which of their syntax nodes define something, and what, or name something); the
-//! files that set code up or lay out its pages (XML and XAML, Razor views, YAML, Dockerfiles),
-//! cut along their structure and searched with the code; and documents, read for search only.
+//! files that set code up or lay out its pages (XML and XAML, Razor views, YAML, Dockerfiles,
+//! JSON, TOML, SQL, HTML with Vue and Svelte, CSS), cut along their structure and searched with
+//! the code; and documents, read for search only. Kotlin, Swift, PHP, Ruby, shell and
+//! PowerShell are read for what they define and the names they use, not yet for their links.
 
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +19,14 @@ pub(super) enum Lang {
     Rust,
     Java,
     Cpp, // (and C: the C++ grammar reads it too)
+    // (what they define, and their names: no links to the rest yet, graph/ leaves them be)
+    Kotlin,
+    Swift,
+    Php,
+    Ruby,
+    Bash,
+    #[serde(rename = "powershell")]
+    PowerShell,
 }
 
 /// A file that sets code up rather than runs: searched with the code, no definitions of its own.
@@ -26,6 +36,11 @@ pub(super) enum Config {
     Razor, // (ASP.NET's views: .cshtml, .razor)
     Yaml,
     Docker, // (Dockerfile, Containerfile)
+    Json,
+    Toml,
+    Sql,
+    Html, // (Vue's and Svelte's components too)
+    Css,  // (SCSS, Less)
 }
 
 /// What a file is to the engine: code in a language, a config file, or a document.
@@ -71,6 +86,12 @@ impl Lang {
             "java" => Lang::Java,
             "cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h++" | "ipp" | "inl" | "tpp"
             | "c" | "h" => Lang::Cpp,
+            "kt" | "kts" => Lang::Kotlin,
+            "swift" => Lang::Swift,
+            "php" | "phtml" => Lang::Php,
+            "rb" | "rake" | "gemspec" => Lang::Ruby,
+            "sh" | "bash" | "zsh" => Lang::Bash,
+            "ps1" | "psm1" | "psd1" => Lang::PowerShell,
             _ => return None,
         })
     }
@@ -85,6 +106,12 @@ impl Lang {
             Lang::Rust => tree_sitter_rust::LANGUAGE.into(),
             Lang::Java => tree_sitter_java::LANGUAGE.into(),
             Lang::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+            Lang::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
+            Lang::Swift => tree_sitter_swift::LANGUAGE.into(),
+            Lang::Php => tree_sitter_php::LANGUAGE_PHP.into(), // (with the HTML around it)
+            Lang::Ruby => tree_sitter_ruby::LANGUAGE.into(),
+            Lang::Bash => tree_sitter_bash::LANGUAGE.into(),
+            Lang::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
         }
     }
 
@@ -97,6 +124,12 @@ impl Lang {
             Lang::Rust => "Rust",
             Lang::Java => "Java",
             Lang::Cpp => "C/C++",
+            Lang::Kotlin => "Kotlin",
+            Lang::Swift => "Swift",
+            Lang::Php => "PHP",
+            Lang::Ruby => "Ruby",
+            Lang::Bash => "Shell",
+            Lang::PowerShell => "PowerShell",
         }
     }
 
@@ -116,6 +149,16 @@ impl Lang {
             Lang::Rust => rust_def(node),
             Lang::Java => java_def(node),
             Lang::Cpp => cpp_def(node),
+            Lang::Kotlin => kotlin_def(node),
+            Lang::Swift => swift_def(node),
+            Lang::Php => php_def(node),
+            Lang::Ruby => ruby_def(node),
+            Lang::Bash => match node {
+                "function_definition" => Some(Kind::Function),
+                "variable_assignment" => Some(Kind::Const),
+                _ => None,
+            },
+            Lang::PowerShell => powershell_def(node),
         }
     }
 
@@ -138,6 +181,12 @@ impl Lang {
                 node,
                 "identifier" | "type_identifier" | "field_identifier" | "namespace_identifier"
             ),
+            Lang::Kotlin => node == "identifier",
+            Lang::Swift => matches!(node, "simple_identifier" | "type_identifier"),
+            Lang::Php => node == "name",
+            Lang::Ruby => matches!(node, "identifier" | "constant"),
+            Lang::Bash => matches!(node, "word" | "variable_name"), // (a command is a word)
+            Lang::PowerShell => matches!(node, "simple_name" | "command_name"),
         }
     }
 }
@@ -162,6 +211,11 @@ impl FileType {
             | "targets" | "config" | "xsd" | "wxs" => Some(FileType::Config(Config::Xml)),
             "cshtml" | "razor" => Some(FileType::Config(Config::Razor)),
             "yaml" | "yml" => Some(FileType::Config(Config::Yaml)),
+            "json" | "jsonc" | "json5" => Some(FileType::Config(Config::Json)),
+            "toml" => Some(FileType::Config(Config::Toml)),
+            "sql" => Some(FileType::Config(Config::Sql)),
+            "html" | "htm" | "vue" | "svelte" => Some(FileType::Config(Config::Html)),
+            "css" | "scss" | "less" => Some(FileType::Config(Config::Css)),
             "md" | "mdx" | "markdown" => Some(FileType::Markdown),
             "txt" | "rst" | "adoc" => Some(FileType::Text),
             _ => None,
@@ -179,10 +233,21 @@ impl FileType {
             FileType::Code(Lang::Rust) => "rust",
             FileType::Code(Lang::Java) => "java",
             FileType::Code(Lang::Cpp) => "cpp",
+            FileType::Code(Lang::Kotlin) => "kotlin",
+            FileType::Code(Lang::Swift) => "swift",
+            FileType::Code(Lang::Php) => "php",
+            FileType::Code(Lang::Ruby) => "ruby",
+            FileType::Code(Lang::Bash) => "bash",
+            FileType::Code(Lang::PowerShell) => "powershell",
             FileType::Config(Config::Xml) => "xml",
             FileType::Config(Config::Razor) => "razor",
             FileType::Config(Config::Yaml) => "yaml",
             FileType::Config(Config::Docker) => "dockerfile",
+            FileType::Config(Config::Json) => "json",
+            FileType::Config(Config::Toml) => "toml",
+            FileType::Config(Config::Sql) => "sql",
+            FileType::Config(Config::Html) => "html",
+            FileType::Config(Config::Css) => "css",
             FileType::Markdown => "markdown",
             FileType::Text => "text",
         }
@@ -200,6 +265,11 @@ impl FileType {
             FileType::Config(Config::Razor) => "Razor",
             FileType::Config(Config::Yaml) => "YAML",
             FileType::Config(Config::Docker) => "Dockerfile",
+            FileType::Config(Config::Json) => "JSON",
+            FileType::Config(Config::Toml) => "TOML",
+            FileType::Config(Config::Sql) => "SQL",
+            FileType::Config(Config::Html) => "HTML/Vue/Svelte",
+            FileType::Config(Config::Css) => "CSS",
             FileType::Markdown => "Markdown",
             FileType::Text => "Text",
         }
@@ -218,7 +288,7 @@ impl FileType {
     }
 }
 
-const ALL: [FileType; 14] = [
+const ALL: [FileType; 25] = [
     FileType::Code(Lang::TypeScript),
     FileType::Code(Lang::Tsx),
     FileType::Code(Lang::CSharp),
@@ -227,10 +297,21 @@ const ALL: [FileType; 14] = [
     FileType::Code(Lang::Rust),
     FileType::Code(Lang::Java),
     FileType::Code(Lang::Cpp),
+    FileType::Code(Lang::Kotlin),
+    FileType::Code(Lang::Swift),
+    FileType::Code(Lang::Php),
+    FileType::Code(Lang::Ruby),
+    FileType::Code(Lang::Bash),
+    FileType::Code(Lang::PowerShell),
     FileType::Config(Config::Xml),
     FileType::Config(Config::Razor),
     FileType::Config(Config::Yaml),
     FileType::Config(Config::Docker),
+    FileType::Config(Config::Json),
+    FileType::Config(Config::Toml),
+    FileType::Config(Config::Sql),
+    FileType::Config(Config::Html),
+    FileType::Config(Config::Css),
     FileType::Markdown,
     FileType::Text,
 ];
@@ -325,6 +406,72 @@ fn cpp_def(node: &str) -> Option<Kind> {
     })
 }
 
+/// (An interface or enum is a class_declaration too, and an object a class; a property at the
+/// top of the file is a constant: parse.rs tells them apart.)
+fn kotlin_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "class_declaration" | "object_declaration" => Kind::Class,
+        "function_declaration" => Kind::Function,
+        "secondary_constructor" => Kind::Constructor,
+        "property_declaration" => Kind::Property,
+        "type_alias" => Kind::Type,
+        "package_header" => Kind::Module,
+        _ => return None,
+    })
+}
+
+/// (A struct, enum, actor or extension is a class_declaration too, told apart by its keyword
+/// in parse.rs.)
+fn swift_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "class_declaration" => Kind::Class,
+        "protocol_declaration" => Kind::Interface,
+        "function_declaration" => Kind::Function,
+        "protocol_function_declaration" => Kind::Method,
+        "init_declaration" => Kind::Constructor,
+        "property_declaration" => Kind::Property,
+        "typealias_declaration" => Kind::Type,
+        _ => return None,
+    })
+}
+
+fn php_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "class_declaration" => Kind::Class,
+        "interface_declaration" => Kind::Interface,
+        "trait_declaration" => Kind::Trait,
+        "enum_declaration" => Kind::Enum,
+        "function_definition" => Kind::Function,
+        "method_declaration" => Kind::Method,
+        "namespace_definition" => Kind::Module,
+        "const_element" => Kind::Const,
+        "property_element" => Kind::Property,
+        _ => return None,
+    })
+}
+
+fn ruby_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "class" => Kind::Class,
+        "module" => Kind::Module,
+        "method" => Kind::Function,
+        "singleton_method" => Kind::Method,
+        "assignment" => Kind::Const, // (to a Constant: parse.rs)
+        _ => return None,
+    })
+}
+
+fn powershell_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "function_statement" => Kind::Function,
+        "class_statement" => Kind::Class,
+        "enum_statement" => Kind::Enum,
+        "class_method_definition" => Kind::Method,
+        "class_property_definition" => Kind::Property,
+        _ => return None,
+    })
+}
+
 impl Kind {
     pub(super) fn word(self) -> &'static str {
         match self {
@@ -388,6 +535,20 @@ mod tests {
     }
 
     #[test]
+    fn the_languages_read_for_their_definitions_are_known_too() {
+        assert_eq!(Lang::of("app/Main.kt"), Some(Lang::Kotlin));
+        assert_eq!(Lang::of("build.gradle.kts"), Some(Lang::Kotlin));
+        assert_eq!(Lang::of("App/View.swift"), Some(Lang::Swift));
+        assert_eq!(Lang::of("src/Order.php"), Some(Lang::Php));
+        assert_eq!(Lang::of("app/models/order.rb"), Some(Lang::Ruby));
+        assert_eq!(Lang::of("Rakefile.rake"), Some(Lang::Ruby));
+        assert_eq!(Lang::of("scripts/deploy.sh"), Some(Lang::Bash));
+        assert_eq!(Lang::of("tools/Build.PS1"), Some(Lang::PowerShell));
+        assert_eq!(Lang::of("Module.psm1"), Some(Lang::PowerShell));
+        assert_eq!(serde_json::json!(Lang::PowerShell), "powershell");
+    }
+
+    #[test]
     fn config_files_are_known_by_their_extension_or_name() {
         let config = |p: &str| match FileType::of(p) {
             Some(FileType::Config(c)) => Some(c),
@@ -406,6 +567,15 @@ mod tests {
         assert_eq!(config("api.dockerfile"), Some(Config::Docker));
         assert_eq!(config("Containerfile"), Some(Config::Docker));
         assert_eq!(config("dockerfiles/readme"), None);
+        assert_eq!(config("package.json"), Some(Config::Json));
+        assert_eq!(config(".vscode/settings.jsonc"), Some(Config::Json));
+        assert_eq!(config("Cargo.toml"), Some(Config::Toml));
+        assert_eq!(config("db/schema.SQL"), Some(Config::Sql));
+        assert_eq!(config("public/index.html"), Some(Config::Html));
+        assert_eq!(config("src/App.vue"), Some(Config::Html));
+        assert_eq!(config("src/Card.svelte"), Some(Config::Html));
+        assert_eq!(config("styles/site.scss"), Some(Config::Css));
+        assert_eq!(config("theme.less"), Some(Config::Css));
         assert!(FileType::of("ci.yml").is_some_and(FileType::is_code));
         assert!(!FileType::Markdown.is_code());
     }
@@ -435,16 +605,7 @@ mod tests {
 
     #[test]
     fn every_grammar_loads() {
-        for lang in [
-            Lang::TypeScript,
-            Lang::Tsx,
-            Lang::CSharp,
-            Lang::Go,
-            Lang::Python,
-            Lang::Rust,
-            Lang::Java,
-            Lang::Cpp,
-        ] {
+        for lang in ALL.into_iter().filter_map(FileType::lang) {
             let mut p = tree_sitter::Parser::new();
             assert!(p.set_language(&lang.grammar()).is_ok(), "{lang:?}");
         }

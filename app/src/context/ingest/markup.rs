@@ -3,9 +3,16 @@
 //! and what names them: `Grid Main` for x:Name="Main", `PackageReference Serilog` for
 //! Include="Serilog", `form order` for id="order"; its C# and comments let be), a YAML file's
 //! keys (`jobs â€º build â€º steps`; a list item by its name), a Dockerfile's stages (`stage build`
-//! from `FROM node:20 AS build`). Only the first DEPTH levels: deeper is what's in a chunk.
+//! from `FROM node:20 AS build`), a JSON file's keys, a TOML file's tables and keys, what SQL
+//! creates (`table orders`), CSS's rules (`.card:hover`, `@media (max-width: 600px)`); an HTML
+//! page, Vue or Svelte component as XML. Only the first DEPTH levels: deeper is what's in a
+//! chunk.
 
 use super::*;
+
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 /// How many levels of nesting are definitions.
 const DEPTH: usize = 3;
@@ -15,9 +22,14 @@ const NAME_CHARS: usize = 60;
 /// A config file's structure, as definitions.
 pub(super) fn defs(config: Config, text: &str) -> Vec<Def> {
     match config {
-        Config::Xml | Config::Razor => xml(text),
+        // (an HTML page, and a Vue or Svelte component's template, script and style, too)
+        Config::Xml | Config::Razor | Config::Html => xml(text),
         Config::Yaml => yaml(text),
         Config::Docker => docker(text),
+        Config::Json => json(text),
+        Config::Toml => toml(text),
+        Config::Sql => sql(text),
+        Config::Css => css(text),
     }
 }
 
@@ -286,6 +298,252 @@ fn docker(text: &str) -> Vec<Def> {
     out
 }
 
+// ---------------------------------------------------------------- JSON
+
+/// A JSON file's keys, the first DEPTH levels of them, each to where its value ends (an object
+/// or a list at its closing bracket). JSONC's comments are let be.
+fn json(text: &str) -> Vec<Def> {
+    let mut out: Vec<Def> = vec![];
+    // (the open objects and lists: the key each is the value of, when it's a definition)
+    let mut open: Vec<Option<usize>> = vec![];
+    let mut key: Option<usize> = None; // (a key read, its value still to come)
+    let mut lines = Lines {
+        text,
+        at: 0,
+        line: 0,
+    };
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // (only sliced at an ASCII byte: a character's own start)
+        let rest = || &text[i..];
+        match bytes[i] {
+            b'"' => {
+                let end = string_end(text, i);
+                let is_key = text[end..].trim_start().starts_with(':');
+                if is_key && (1..=DEPTH).contains(&open.len()) {
+                    let line = lines.of(i);
+                    let name = &text[i + 1..end.saturating_sub(1).max(i + 1)];
+                    out.push(def(
+                        parse::cut(name, NAME_CHARS),
+                        open.len() - 1,
+                        line,
+                        line,
+                    ));
+                    key = Some(out.len() - 1);
+                }
+                i = end;
+                continue;
+            }
+            b'{' | b'[' => open.push(key.take()),
+            b'}' | b']' => {
+                if let Some(Some(d)) = open.pop() {
+                    out[d].end = lines.of(i);
+                }
+                key = None;
+            }
+            b',' => key = None,
+            b'/' if rest().starts_with("//") => i += rest().find('\n').unwrap_or(rest().len()),
+            b'/' if rest().starts_with("/*") => {
+                i += rest().find("*/").map_or(rest().len(), |e| e + 1);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let last = line_no(text.lines().count().saturating_sub(1));
+    for d in open.into_iter().flatten() {
+        out[d].end = last;
+    }
+    out
+}
+
+/// Where a string that starts at `at` (its quote) ends: past its closing quote, escapes let be.
+fn string_end(text: &str, at: usize) -> usize {
+    let quote = text.as_bytes()[at];
+    let mut escaped = false;
+    for (i, b) in text.as_bytes()[at + 1..].iter().enumerate() {
+        match b {
+            _ if escaped => escaped = false,
+            b'\\' => escaped = true,
+            b if *b == quote => return at + i + 2,
+            _ => {}
+        }
+    }
+    text.len()
+}
+
+// ---------------------------------------------------------------- TOML
+
+/// A TOML file's tables (`[package]`, `[[bin]]`) and their keys, each to the last line before
+/// the next; keys before any table are at the top.
+fn toml(text: &str) -> Vec<Def> {
+    let mut out: Vec<Def> = vec![];
+    let (mut table, mut key): (Option<usize>, Option<usize>) = (None, None);
+    let mut last_text = 0;
+    let mut in_string = false; // (a """ string over several lines)
+    let mut brackets = 0i32; // (a list over several lines)
+    let close = |out: &mut Vec<Def>, d: &mut Option<usize>, last: usize| {
+        if let Some(d) = d.take() {
+            out[d].end = line_no(last);
+        }
+    };
+    for (i, line) in text.lines().enumerate() {
+        let t = line.trim();
+        let quotes = t.matches("\"\"\"").count() + t.matches("'''").count();
+        let was_in_string = in_string;
+        in_string ^= quotes % 2 == 1;
+        if !was_in_string && (t.is_empty() || t.starts_with('#')) {
+            continue;
+        }
+        if was_in_string {
+            // (the string's text: nothing in it counts)
+        } else if brackets > 0 {
+            brackets += bracket_change(t);
+        } else if let Some(name) = t.strip_prefix('[').map(|h| {
+            h.trim_start_matches('[')
+                .split(']')
+                .next()
+                .unwrap_or("")
+                .trim()
+        }) {
+            close(&mut out, &mut key, last_text);
+            close(&mut out, &mut table, last_text);
+            out.push(def(name.to_string(), 0, line_no(i), line_no(i)));
+            table = Some(out.len() - 1);
+        } else if let Some((name, value)) = t.split_once('=') {
+            close(&mut out, &mut key, last_text);
+            let name = name.trim().trim_matches(['"', '\'']);
+            out.push(def(
+                name.to_string(),
+                usize::from(table.is_some()),
+                line_no(i),
+                line_no(i),
+            ));
+            key = Some(out.len() - 1);
+            brackets = bracket_change(value);
+        }
+        last_text = i;
+    }
+    close(&mut out, &mut key, last_text);
+    close(&mut out, &mut table, last_text);
+    out
+}
+
+/// How many more lists a line opens than it closes.
+fn bracket_change(t: &str) -> i32 {
+    let count = |c| i32::try_from(t.matches(c).count()).unwrap_or(0);
+    count('[') - count(']')
+}
+
+// ---------------------------------------------------------------- SQL
+
+/// `CREATE [OR REPLACE] [TEMP…] TABLE [IF NOT EXISTS] name`, and views, functions, procedures,
+/// indexes, triggers, types, sequences, schemas.
+fn create_re() -> &'static Regex {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(concat!(
+            r"(?i)^\s*create\s+(?:or\s+(?:replace|alter)\s+)?",
+            r"(?:(?:temp|temporary|unique|materialized|global|local|unlogged|clustered|nonclustered|definer\s*=\s*\S+)\s+)*",
+            r"(table|view|function|procedure|proc|index|trigger|type|sequence|schema)\s+",
+            r"(?:concurrently\s+)?(?:if\s+not\s+exists\s+)?([^\s(;]+)",
+        ))
+        .expect("a constant regex")
+    });
+    &RE
+}
+
+/// What an SQL file creates, each to the last line before the next (`table orders`).
+fn sql(text: &str) -> Vec<Def> {
+    let mut out: Vec<Def> = vec![];
+    let mut last_text = 0;
+    for (i, line) in text.lines().enumerate() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with("--") {
+            continue;
+        }
+        if let Some(c) = create_re().captures(line) {
+            if let Some(last) = out.last_mut() {
+                last.end = line_no(last_text);
+            }
+            let what = match c[1].to_ascii_lowercase().as_str() {
+                "proc" => "procedure".to_string(),
+                w => w.to_string(),
+            };
+            let name = c[2].trim_matches(['"', '`', '[', ']']).replace("].[", ".");
+            out.push(def(format!("{what} {name}"), 0, line_no(i), line_no(i)));
+        }
+        last_text = i;
+    }
+    if let Some(last) = out.last_mut() {
+        last.end = line_no(last_text);
+    }
+    out
+}
+
+// ---------------------------------------------------------------- CSS
+
+/// CSS's rules and at-rules (SCSS's and Less's nested ones too), the first DEPTH levels, each
+/// named by its selector, from it to its closing brace.
+fn css(text: &str) -> Vec<Def> {
+    let mut out: Vec<Def> = vec![];
+    let mut open: Vec<Option<usize>> = vec![];
+    let mut start = 0; // (where the selector being read starts: after the last { } or ;)
+    let mut lines = Lines {
+        text,
+        at: 0,
+        line: 0,
+    };
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // (only sliced at an ASCII byte: a character's own start)
+        let rest = || &text[i..];
+        match bytes[i] {
+            b'"' | b'\'' => {
+                i = string_end(text, i);
+                continue;
+            }
+            b'/' if rest().starts_with("/*") => {
+                i += rest().find("*/").map_or(rest().len(), |e| e + 2);
+                start = i;
+                continue;
+            }
+            b'{' => {
+                let prelude = &text[start..i];
+                let name = prelude.split_whitespace().collect::<Vec<_>>().join(" ");
+                let d = (open.len() < DEPTH && !name.is_empty()).then(|| {
+                    let from = start + (prelude.len() - prelude.trim_start().len());
+                    let line = lines.of(from);
+                    out.push(def(
+                        parse::cut(&name, NAME_CHARS),
+                        open.len(),
+                        line,
+                        lines.of(i),
+                    ));
+                    out.len() - 1
+                });
+                open.push(d);
+                start = i + 1;
+            }
+            b'}' => {
+                if let Some(Some(d)) = open.pop() {
+                    out[d].end = lines.of(i);
+                }
+                start = i + 1;
+            }
+            b';' => start = i + 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    let last = line_no(text.lines().count().saturating_sub(1));
+    for d in open.into_iter().flatten() {
+        out[d].end = last;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,6 +632,89 @@ mod tests {
         assert_eq!(
             shown(&docker(src)),
             ["stage build @2-4", "stage nginx:alpine @5-6"]
+        );
+    }
+
+    #[test]
+    fn json_is_its_keys_each_to_where_its_value_ends() {
+        let src = "{\n  // JSONC\n  \"name\": \"c-bot\",\n  \"scripts\": {\n    \"test\": \"vitest\",\n    \"url\": \"http://x/{a}\"\n  },\n  \"files\": [\"a\", { \"deep\": { \"deeper\": 1 } }]\n}\n";
+        assert_eq!(
+            shown(&json(src)),
+            [
+                "name @3-3",
+                "scripts @4-7",
+                "  test @5-5",
+                "  url @6-6",
+                "files @8-8",
+                "    deep @8-8",
+            ]
+        );
+    }
+
+    #[test]
+    fn toml_is_its_tables_and_their_keys() {
+        let src = "name = \"x\"\n\n[package]\nversion = \"1.0\"\nauthors = [\n  \"a\",\n]\n\n[[bin]]\nname = \"\"\"\ntwo = lines\n\"\"\"\n";
+        assert_eq!(
+            shown(&toml(src)),
+            [
+                "name @1-1",
+                "package @3-7",
+                "  version @4-4",
+                "  authors @5-7",
+                "bin @9-12",
+                "  name @10-12",
+            ]
+        );
+    }
+
+    #[test]
+    fn sql_is_what_it_creates() {
+        let src = "-- schema\nCREATE TABLE IF NOT EXISTS \"orders\" (\n  id int\n);\nINSERT INTO orders VALUES (1);\n\ncreate or replace view open_orders as select 1;\nCREATE UNIQUE INDEX idx_orders ON orders(id);\nCREATE PROC [dbo].[GetOrders] AS SELECT 1;\n";
+        assert_eq!(
+            shown(&sql(src)),
+            [
+                "table orders @2-5",
+                "view open_orders @7-7",
+                "index idx_orders @8-8",
+                "procedure dbo.GetOrders @9-9",
+            ]
+        );
+    }
+
+    #[test]
+    fn css_is_its_rules_nested_too() {
+        let src = "/* card { */\n.card,\n.panel {\n  content: \"}\";\n  &:hover { color: red; }\n}\n@media (max-width: 600px) {\n  .card { padding: 0; }\n}\n@import 'x.css';\n";
+        assert_eq!(
+            shown(&css(src)),
+            [
+                ".card, .panel @2-6",
+                "  &:hover @5-5",
+                "@media (max-width: 600px) @7-9",
+                "  .card @8-8",
+            ]
+        );
+    }
+
+    #[test]
+    fn text_in_any_script_is_read_without_breaking_it() {
+        // (bytes past ASCII: never cut inside a character)
+        let src = "{ \"tên\": \"đăng nhập\", /* chú thích */ \"x\": 1 }\n.thẻ::after { content: \"→\"; }\n";
+        assert_eq!(shown(&json(src)), ["tên @1-1", "x @1-1"]);
+        assert_eq!(shown(&css(src)), [".thẻ::after @2-2"]); // (the JSON's { has no selector)
+    }
+
+    #[test]
+    fn a_vue_component_is_its_blocks_and_template() {
+        let src = "<template>\n  <div id=\"app\">\n    <Card v-if=\"a < b\" />\n  </div>\n</template>\n<script setup lang=\"ts\">\nconst a = 1 < 2;\n</script>\n<style scoped>\n.a { }\n</style>\n";
+        assert_eq!(
+            shown(&defs(Config::Html, src)),
+            [
+                "template @1-5",
+                "  div app @2-4",
+                "    Card @3-3",
+                "script @6-8",
+                "style @9-11",
+            ]
         );
     }
 }

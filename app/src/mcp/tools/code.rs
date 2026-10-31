@@ -100,7 +100,7 @@ fn finding() -> Value {
         },
         {
             "name": "search_code",
-            "description": "Find code (with the project's XML/XAML, Razor views, YAML and Dockerfiles, and its Markdown and text docs) when you don't know the names: by what it does, in plain words (English or Vietnamese: \"retry the upload when it fails\"), or by words and names (\"refresh token expiry\"). Ranked results, best first, each with its file and lines, what it's in (Class › method, or a doc's section) and the lines with the words. Names are matched in their parts too (getUserById matches user).",
+            "description": "Find code (with the project's XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte and CSS, and its Markdown and text docs) when you don't know the names: by what it does, in plain words (English or Vietnamese: \"retry the upload when it fails\"), or by words and names (\"refresh token expiry\"). Ranked results, best first, each with its file and lines, what it's in (Class › method, or a doc's section) and the lines with the words. Names are matched in their parts too (getUserById matches user).",
             "inputSchema": {
                 "type": "object",
                 "properties": {

@@ -66,6 +66,9 @@ impl<'a> Walk<'a> {
             Lang::CSharp => csharp::visit(self, node),
             Lang::Java => java::visit(self, node),
             Lang::Cpp => cpp::visit(self, node),
+            // (only what they define, for now: no imports, calls or heritage)
+            Lang::Kotlin | Lang::Swift | Lang::Php | Lang::Ruby | Lang::Bash | Lang::PowerShell => {
+            }
         }
     }
 

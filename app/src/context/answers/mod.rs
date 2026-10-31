@@ -42,7 +42,7 @@ pub(super) fn outline(ix: &Code, rel: &str) -> Result<String, String> {
         .collect();
     if files.is_empty() {
         return Err(format!(
-            "There's no code file or folder \"{rel}\" here (the context engine reads TypeScript/JavaScript, C#, Java, C/C++, Go, Python and Rust)."
+            "There's no code file or folder \"{rel}\" here (the context engine reads TypeScript/JavaScript, C#, Java, C/C++, Go, Python, Rust, Kotlin, Swift, PHP, Ruby, shell and PowerShell)."
         ));
     }
     let mut out = String::new();
