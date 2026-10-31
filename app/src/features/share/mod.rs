@@ -11,6 +11,7 @@ mod host;
 mod pipe;
 mod relay;
 mod tls;
+mod walk;
 mod wire;
 
 pub use commands::*;

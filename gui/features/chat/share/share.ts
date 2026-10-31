@@ -10,6 +10,11 @@ import type { AskingApi } from '../reply/ask';
 import type { CommentaryApi } from '../reply/commentary';
 import type { ChatLogApi } from '../log';
 import type { TabsApi } from '../tabs';
+import type { PlansApi } from '../plan/card';
+import type { DeskActivityApi } from '@/views/robot/life/desk';
+import type { FaceApi } from '@/views/robot/life/face';
+import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
+import { Icon } from '@/icons/icons';
 import { Sfx } from '@/views/robot/sound';
 import * as ipc from '@/ipc';
 import { mineCard, setMine, suggestionCard, type SuggestionChoice } from './cards';
@@ -30,6 +35,13 @@ export type SharingNeeds = {
   readonly addNote: CommentaryApi['addNote'];
   readonly scrollDown: ChatLogApi['scrollDown'];
   readonly renderTabs: TabsApi['renderTabs'];
+  readonly express: FaceApi['express'];
+  readonly flash: FaceApi['flash'];
+  readonly setActivity: DeskActivityApi['setActivity'];
+  readonly restingActivity: DeskActivityApi['restingActivity'];
+  readonly strikePose: DeskActivityApi['strikePose'];
+  readonly pendingQuestion: PlansApi['pendingQuestion'];
+  readonly wake: LifeCycleApi['wake'];
 };
 
 export function createSharing(r: SharingNeeds) {
@@ -146,6 +158,7 @@ export function createSharing(r: SharingNeeds) {
     if (ev.type === 'share-suggest') return onSuggest(ev, tab);
     if (ev.type === 'share-taken-back') return takenBack(ev.id, tab);
     if (ev.type === 'share-suggestion') return onSuggestion(ev);
+    if (ev.type === 'share-arrived') return arrived();
     return ended(ev.reason, tab);
   }
 
@@ -162,12 +175,35 @@ export function createSharing(r: SharingNeeds) {
     cards.set(ev.id, card);
     tab.log.append(card);
     r.scrollDown(tab);
+    handUp();
+  }
+
+  // While a guest's suggestion waits for you, your robot keeps its hand up (as for a question
+  // from Claude), with a ? on it while the chat is put away; down again once none is left.
+  function handUp() {
     Sfx.ask();
+    r.express('open', 'o', 1500);
+    r.state.pose = null; // (drop any wave or stretch in progress)
+    r.setActivity('ask');
+    if (!r.state.awake) {
+      $('#badge').textContent = '?';
+      r.body.classList.add('has-badge');
+    }
+  }
+
+  function handDown() {
+    if (cards.size) return;
+    if (!r.pendingQuestion()) {
+      r.body.classList.remove('has-badge');
+      $('#badge').textContent = '!';
+    }
+    r.setActivity(r.restingActivity());
   }
 
   async function choose(id: string, text: string, from: string, c: SuggestionChoice, tab: ChatTab) {
     cards.get(id)?.remove();
     cards.delete(id);
+    handDown();
     if (c === 'decline') return ipc.shareAnswer(id, 'declined');
     const draft = r.input.value;
     r.input.value = text;
@@ -190,11 +226,13 @@ export function createSharing(r: SharingNeeds) {
     cards.delete(id);
     card.replaceWith(el('div', 'msg note', 'They took that suggestion back.'));
     r.scrollDown(tab);
+    handDown();
   }
 
   function ended(reason: string, tab: ChatTab) {
     for (const c of cards.values()) c.remove();
     cards.clear();
+    handDown();
     const visiting = view?.role === 'guest';
     closeCard();
     setView(null);
@@ -210,6 +248,11 @@ export function createSharing(r: SharingNeeds) {
   function visit(v: ShareView) {
     r.state.visitor = true;
     r.body.classList.add('visiting');
+    // (a link badge on the robot: it's a colleague's, visiting, not one of yours)
+    const badge = $('#visit-badge');
+    badge.innerHTML = Icon('link', 'sm');
+    badge.title = 'Visiting';
+    badge.hidden = false;
     r.input.placeholder = `Suggest a prompt to ${v.host.name}…`;
     $('#send').title = 'Suggest';
     // (nothing in a visitor's chat opens a file here: the paths are on someone else's PC)
@@ -223,6 +266,17 @@ export function createSharing(r: SharingNeeds) {
       },
       true,
     );
+  }
+
+  /** It has walked in to its desk: awake (its chat still put away), a hop and a wave hello. */
+  function arrived() {
+    r.wake({ sayHi: false, tucked: true });
+    Sfx.pop();
+    r.express('happy', 'smile', 1800);
+    setTimeout(() => {
+      r.flash('hop', 600);
+      r.strikePose('wave', 1800);
+    }, 900);
   }
 
   /** The composer's Enter on a visiting robot: a suggestion, not a question. Whether it was. */

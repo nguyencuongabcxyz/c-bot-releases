@@ -855,6 +855,7 @@ export type ChatEvent =
   | { type: 'share-suggest'; id: string; from: SharePerson; text: string; hidden: boolean }
   | { type: 'share-taken-back'; id: string }
   | { type: 'share-suggestion'; id: string; state: SuggestionState; why?: string }
+  | { type: 'share-arrived' }
   | { type: 'share-ended'; reason: string }
   | { type: 'mirror'; kind: 'prompt' | 'question' | 'text' | 'idle' }
   | { type: 'mirror'; kind: 'tool'; name: string; detail: string }

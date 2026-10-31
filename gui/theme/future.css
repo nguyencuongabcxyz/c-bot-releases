@@ -5,7 +5,7 @@
    windows; a window's own touches are at the top of its stylesheet. */
 
 /* rounder: pill buttons and chips, softer panels (the pages set their own radii, hence !important) */
-[data-theme="future"] :is(button, .chip, .tool, .file-chip, .count, .q-header):not(.h-item, .q-opt, .group-head, .form, .kit-tile) { border-radius: var(--r-btn) !important; }
+[data-theme="future"] :is(button, .chip, .tool, .file-chip, .count, .q-header):not(.h-item, .q-opt, .group-head, .form, .kit-tile, .share-opt) { border-radius: var(--r-btn) !important; }
 [data-theme="future"] :is(input, select, textarea, .q-key, .form, .h-item, .q-opt, .kit-tile) { border-radius: var(--r-sm) !important; }
 [data-theme="future"] :is(#card, #panel, #book) { border-radius: var(--r-lg) !important; }
 [data-theme="future"] :is(.menu, #menu, #palette, .note-menu, .q-card, #todo, #helpers, .diff, .app-card, .row, .stat, #composer, #add, #tip, #older, #dream-ex, #quiz-hint, #quiz-result, .reminder, .qa-summary, .msg.user) { border-radius: var(--r) !important; }

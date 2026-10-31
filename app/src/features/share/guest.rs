@@ -25,8 +25,8 @@ const CONNECT_WAIT: Duration = Duration::from_secs(5);
 const HANDSHAKE_WAIT: Duration = Duration::from_secs(15);
 /// How long to wait for the host to let you in (a little longer than they have).
 const LET_IN_WAIT: Duration = Duration::from_secs(200);
-/// How long the visitor stays after the chat ends, so you can read why.
-const GOODBYE: Duration = Duration::from_secs(6);
+/// How long the visitor stays after the chat ends (so you can read why) before it walks off.
+const GOODBYE: Duration = Duration::from_secs(4);
 
 pub(super) struct Visit {
     tab: String,
@@ -223,6 +223,7 @@ fn arrive(
     let id = format!("visit-{}", uuid::Uuid::new_v4());
     let visitor = wire::visitor(&id, robot);
     let tab = visitor["activeTab"].as_str().unwrap_or("").to_string();
+    let tab_id = tab.clone();
     let name = visitor["name"].as_str().unwrap_or("A robot").to_string();
     let folder_name = visitor["folderName"].as_str().unwrap_or("").to_string();
     let (out, rx) = mpsc::channel();
@@ -248,6 +249,7 @@ fn arrive(
         forget(app, &id);
         return None;
     }
+    walk::walk_in(app, &id, &tab_id, &host.name);
     note(
         app,
         &format!("{name} is visiting from {}. Click it to watch.", host.name),
@@ -331,12 +333,16 @@ fn heard(app: &AppHandle, id: &str, m: Msg) {
 
 /// The chat's over: the visitor says why, then goes home.
 fn goodbye(app: &AppHandle, id: &str, reason: &str) {
-    let tab = shares(app, |s| s.visits.get(id).map(|v| v.tab.clone()));
-    if let Some(tab) = tab {
+    let visit = shares(app, |s| {
+        s.visits
+            .get(id)
+            .map(|v| (v.tab.clone(), v.host.name.clone()))
+    });
+    if let Some((tab, _)) = &visit {
         tell(
             app,
             id,
-            &tab,
+            tab,
             PageEvent::ShareEnded {
                 reason: reason.into(),
             },
@@ -344,7 +350,8 @@ fn goodbye(app: &AppHandle, id: &str, reason: &str) {
     }
     shares(app, |s| s.visits.remove(id));
     thread::sleep(GOODBYE);
-    forget(app, id);
+    let host = visit.map(|(_, h)| h).unwrap_or_default();
+    walk::walk_off(app, id, &host, forget);
 }
 
 fn forget(app: &AppHandle, id: &str) {

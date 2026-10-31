@@ -453,6 +453,7 @@ export function createChatEvents(r: ChatEventsNeeds) {
     'share-suggest': onShare,
     'share-taken-back': onShare,
     'share-suggestion': onShare,
+    'share-arrived': onShare,
     'share-ended': onShare,
     question: onQuestion,
     plan: onPlan,

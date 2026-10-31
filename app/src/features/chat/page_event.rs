@@ -117,6 +117,8 @@ pub(in crate::features) enum PageEvent {
         #[serde(skip_serializing_if = "String::is_empty")]
         why: String,
     },
+    /// For a guest: the visiting robot has walked in to its desk.
+    ShareArrived,
     /// The shared chat ended, and why.
     ShareEnded {
         reason: String,
@@ -241,6 +243,10 @@ mod tests {
             }),
             json!({ "type": "share-suggest", "id": "3-a", "from": { "name": "Minh", "pc": "PC-MINH", "ip": "10.0.0.2" },
                 "text": "hi", "hidden": false })
+        );
+        assert_eq!(
+            page(PageEvent::ShareArrived),
+            json!({ "type": "share-arrived" })
         );
         assert_eq!(
             page(PageEvent::ShareTakenBack { id: "x".into() }),

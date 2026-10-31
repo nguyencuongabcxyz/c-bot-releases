@@ -23,8 +23,8 @@ export function startCard(tabTitle: string, a: CardActions): HTMLElement {
   );
   card.append(el('div', 'share-label', 'Network'));
   const net = el('div', 'share-net');
-  const lan = option('🏢 Office (LAN)', 'Same network, straight there');
-  const web = option('🌍 Internet', 'From anywhere, through C-Bot’s relay');
+  const lan = option('🏢', 'Office network', 'Same network as you');
+  const web = option('🌍', 'Internet', 'From anywhere');
   let internet = false;
   const pick = (on: boolean) => {
     internet = on;
@@ -127,10 +127,12 @@ export function minutesLeft(endsAt: number): string {
   return m === 1 ? '1 min left' : `${m} min left`;
 }
 
-function option(name: string, detail: string): HTMLButtonElement {
+function option(icon: string, name: string, detail: string): HTMLButtonElement {
   const o = el('button', 'share-opt');
   o.type = 'button';
-  o.append(el('b', '', name), el('span', '', detail));
+  const words = el('span', 'share-opt-words');
+  words.append(el('b', '', name), el('small', '', detail));
+  o.append(el('span', 'share-opt-icon', icon), words);
   return o;
 }
 

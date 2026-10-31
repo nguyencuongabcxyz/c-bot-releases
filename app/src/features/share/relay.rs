@@ -23,7 +23,7 @@ use super::wire;
 use crate::runtime::Error;
 
 /// The relay C-Bot shares through, unless the `shareRelay` setting names another.
-pub(super) const RELAY: &str = "cbot-relay.cbot-relay.workers.dev";
+pub(super) const RELAY: &str = "cbot-relay.thebackally-support.workers.dev";
 /// How long a read waits (how quickly what's queued to go out goes).
 const TICK: Duration = Duration::from_millis(20);
 /// How long a pipe's read waits before saying "nothing yet" (as a socket's read timeout).
