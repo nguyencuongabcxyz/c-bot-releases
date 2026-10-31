@@ -27,7 +27,9 @@
   --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent);
   --on-accent: #ffffff;
   --btn: var(--accent); /* the main action on a window (send, show the meaning…) */
-  --on-btn: #04222a;
+  /* white on a deep paint (pink, violet, blue), dark ink (#04222a) on a light one (cyan, lime):
+     the button's own lightness picks, so any robot's paint reads */
+  --on-btn: oklch(from var(--btn) clamp(0.24, (0.7 - l) * 1000, 1) clamp(0, (l - 0.7) * 1000, 0.04) 215);
   --ok: #059669;
   --warn: #d97706;
   --danger: #e5484d;
@@ -58,7 +60,6 @@
   --accent-ink: color-mix(in srgb, var(--accent) 75%, var(--fg));
   --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
   --on-accent: #04222a;
-  --on-btn: #04222a;
   --ok: #34d399;
   --warn: #fbbf24;
   --danger: #f87171;
