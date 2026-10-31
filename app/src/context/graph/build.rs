@@ -283,7 +283,10 @@ impl Graph {
                 continue;
             };
             let owner = match self.syms[p].kind {
-                Kind::Impl => self.resolve_type(self.syms[p].file, &self.syms[p].name.clone()),
+                // (an impl for a type from outside, `impl Fields for Value`: its methods are its own)
+                Kind::Impl => self
+                    .resolve_type(self.syms[p].file, &self.syms[p].name.clone())
+                    .or(Some(p)),
                 k if k.holds_methods() => Some(p),
                 _ => None,
             };
@@ -352,9 +355,17 @@ impl Graph {
                 continue;
             };
             for h in &file.links.heritage {
-                let (Some(sub), Some(sup)) =
-                    (self.resolve_type(i, &h.sub), self.resolve_type(i, &h.sup))
-                else {
+                // (`impl Fields for Value`, Value from outside: the impl itself is below Fields)
+                let impl_here = || {
+                    self.files[i]
+                        .syms
+                        .clone()
+                        .find(|&s| self.syms[s].kind == Kind::Impl && self.syms[s].line == h.line)
+                };
+                let (Some(sub), Some(sup)) = (
+                    self.resolve_type(i, &h.sub).or_else(impl_here),
+                    self.resolve_type(i, &h.sup),
+                ) else {
                     continue;
                 };
                 if sub != sup && !self.supers[sub].iter().any(|(s, _)| *s == sup) {

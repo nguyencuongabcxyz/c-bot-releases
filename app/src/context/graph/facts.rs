@@ -49,6 +49,9 @@ pub(in crate::context) enum Via {
     Name(String),
     /// Anything else: `a().b()`, `x[0].b()`.
     Unknown,
+    /// `invoke('robot_ask', …)`: a command the app's other side answers (Tauri's: the Rust
+    /// function of that name).
+    Command,
 }
 
 /// A call or a construction.

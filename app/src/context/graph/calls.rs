@@ -195,11 +195,16 @@ impl Graph {
                 let mut parts = path.split('#');
                 let first = parts.next().unwrap_or("");
                 match self.start(file, first).map(|t| self.through(t, parts)) {
-                    // (a member the type doesn't show, in another part of a partial class say:
-                    // as a call through anything else)
-                    Some(Some(t)) => self
-                        .member(t, &r.name)
-                        .or_else(|| self.chained(file, &r.name)),
+                    // (a hub's member is the function its API holds; a member the type doesn't
+                    // show, in another part of a partial class say: as a call through anything
+                    // else)
+                    Some(Some(t)) => match self.member(t, &r.name) {
+                        Some(m) if self.callable(m) => Some(m),
+                        m => self
+                            .api_function(t, &r.name)
+                            .or(m)
+                            .or_else(|| self.chained(file, &r.name)),
+                    },
                     // (a field whose type isn't the folder's own)
                     Some(None) => None,
                     // (a type that isn't the folder's own, a library's: `ILogger<T>`'s LogWarning
@@ -210,6 +215,7 @@ impl Graph {
             }
             Via::Name(n) => self.named(code, file, caller, n, &r.name),
             Via::Unknown => self.chained(file, &r.name),
+            Via::Command => self.command(&r.name),
         }?;
         let kind = if self.is_type(found) {
             RefKind::New
@@ -280,6 +286,35 @@ impl Graph {
             .iter()
             .all(|&s| self.owner[s] == self.owner[first])
             .then_some(first)
+    }
+
+    /// What a hub's member is: `r.deniedNote()` where r's type has `deniedNote:
+    /// CommentaryApi['deniedNote']` (or picks it, `Pick<CommentaryApi, 'deniedNote'>`), and
+    /// `CommentaryApi = ReturnType<typeof createCommentary>`, is createCommentary's own
+    /// deniedNote: the function of the name inside the one that makes the API.
+    fn api_function(&self, t: usize, name: &str) -> Option<usize> {
+        let (file, ty) = self.field_type(t, name)?;
+        let (api, member) = ty.strip_suffix("']")?.split_once("['")?;
+        let api = self.resolve_type(file, api)?;
+        let (at, made) = self.field_type(api, "=")?;
+        let free = |s: usize| self.callable(s) && self.owner[s].is_none();
+        let maker = self.resolve(at, made.strip_suffix("()")?, &free)?;
+        self.files[self.syms[maker].file]
+            .syms
+            .clone()
+            .find(|&s| self.syms[s].parent == Some(maker) && self.syms[s].name == member)
+    }
+
+    /// The command `invoke('name')` calls: the folder's one Rust free function of the name (none
+    /// when there are several, or none: a plugin's).
+    fn command(&self, name: &str) -> Option<usize> {
+        let mut found = self.by_name.get(name)?.iter().copied().filter(|&s| {
+            self.callable(s)
+                && self.owner[s].is_none()
+                && self.files[self.syms[s].file].lang == Lang::Rust
+        });
+        let first = found.next()?;
+        found.next().is_none().then_some(first)
     }
 
     /// Where a typed path starts: a type, or what a free function returns (`build()`).

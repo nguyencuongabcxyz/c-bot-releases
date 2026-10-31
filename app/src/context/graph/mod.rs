@@ -529,6 +529,133 @@ mod tests {
     }
 
     #[test]
+    fn rust_calls_through_destructured_fields_what_functions_return_and_macros() {
+        let g = graph(&[
+            (
+                "src/session.rs",
+                "pub struct Session;\nimpl Session {\n    pub fn new() -> Self { Session }\n    pub fn ask(&self) -> bool { true }\n}\n",
+            ),
+            (
+                "src/chat.rs",
+                "use crate::session::Session;\npub struct Chat {\n    pub session: Arc<Session>,\n}\nstruct Ev<'a> {\n    session: &'a Arc<Session>,\n}\npub fn chat_for() -> Option<Arc<Chat>> { None }\nfn start() -> Result<Arc<Chat>, Error> { todo() }\nfn on_fail(e: Ev) {\n    let Ev { session, .. } = e;\n    session.ask();\n}\nfn page() {\n    let Some(chat) = chat_for() else { return };\n    chat.session.ask();\n}\nfn side(c: Option<Arc<Chat>>) {\n    let chat = match c {\n        Some(chat) => chat,\n        None => start()?,\n    };\n    chat.session.ask();\n}\nfn live() {\n    let s = Session::new();\n    assert!(!s.ask());\n    if let Some(chat) = chat_for() {\n        log(format!(\"{}\", chat.session.ask()));\n    }\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.chat.live -> src.chat.chat_for",
+                "src.chat.live -> src.session.Session.ask",
+                "src.chat.live -> src.session.Session.new",
+                "src.chat.on_fail -> src.session.Session.ask",
+                "src.chat.page -> src.chat.chat_for",
+                "src.chat.page -> src.session.Session.ask",
+                "src.chat.side -> src.chat.start",
+                "src.chat.side -> src.session.Session.ask",
+            ]
+        );
+    }
+
+    #[test]
+    fn rust_calls_through_what_enum_variants_and_collections_hold() {
+        let g = graph(&[
+            (
+                "src/session.rs",
+                "pub struct Session;\nimpl Session {\n    pub fn ask(&self) {}\n}\n",
+            ),
+            (
+                "src/fx.rs",
+                "use crate::session::Session;\npub enum Fx {\n    Ask(Arc<Session>, String),\n    Note { session: Arc<Session> },\n}\nfn run_ask(f: Fx) {\n    match f {\n        Fx::Ask(s, prompt) => s.ask(),\n        _ => {}\n    }\n}\nfn run_note(f: Fx) {\n    if let Fx::Note { session } = f {\n        session.ask();\n    }\n}\nfn each_closure(list: Vec<Arc<Session>>) {\n    list.iter().filter(|s| true).for_each(|s| s.ask());\n}\nfn each_loop(list: &[Session]) {\n    for s in list.iter() {\n        s.ask();\n    }\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.fx.each_closure -> src.session.Session.ask",
+                "src.fx.each_loop -> src.session.Session.ask",
+                "src.fx.run_ask -> src.fx.Fx (new)",
+                "src.fx.run_ask -> src.session.Session.ask",
+                "src.fx.run_note -> src.fx.Fx (new)",
+                "src.fx.run_note -> src.session.Session.ask",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_tauri_invoke_is_a_call_of_the_rust_command_of_its_name() {
+        let g = graph(&[
+            (
+                "gui/ipc/commands.ts",
+                "import { invoke } from '@tauri-apps/api/core';\nexport const robotAsk = (tabId: string) => invoke<string>('robot_ask', { tabId });\nexport const robotGone = () => invoke('no_such_command');\n",
+            ),
+            (
+                "app/src/robots/ipc.rs",
+                "#[tauri::command]\npub fn robot_ask(tab_id: String) -> String {\n    tab_id\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            ["gui.ipc.commands.robotAsk -> app.src.robots.ipc.robot_ask"]
+        );
+    }
+
+    #[test]
+    fn a_rust_enum_variant_is_a_use_of_its_enum_not_a_type_of_its_name() {
+        let g = graph(&[(
+            "src/a.rs",
+            "pub struct Done { pub text: String }\npub enum AgentEvent { Done { id: u32 }, Start }\npub enum Event { Usage(u64) }\nfn make() -> AgentEvent { AgentEvent::Done { id: 1 } }\nfn tell() { send(Event::Usage(3)); }\nfn pick(e: AgentEvent) -> bool { e == AgentEvent::Start }\nfn real() -> Done { Done { text: String::new() } }\n",
+        )]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.a.make -> src.a.AgentEvent (new)",
+                "src.a.pick -> src.a.AgentEvent (new)",
+                "src.a.real -> src.a.Done (new)",
+                "src.a.tell -> src.a.Event (new)",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_trait_implemented_for_an_outside_type_has_that_impl_below_it() {
+        let g = graph(&[(
+            "src/fields.rs",
+            "pub trait Fields {\n    fn id(&self) -> &str;\n}\nimpl Fields for Value {\n    fn id(&self) -> &str { \"\" }\n}\n",
+        )]);
+        let fields = g.resolve_name("Fields", "").first().copied().unwrap();
+        let below: Vec<String> = g
+            .lineage(fields, false)
+            .iter()
+            .map(|&(s, _, _)| format!("{} {}", g.syms[s].kind.word(), g.syms[s].name))
+            .collect();
+        assert_eq!(below, ["impl Value"]);
+    }
+
+    #[test]
+    fn typescript_calls_through_a_hub_reach_the_function_its_api_returns() {
+        let g = graph(&[
+            (
+                "src/commentary.ts",
+                "export function createCommentary(r: CommentaryNeeds) {\n  function deniedNote(d: string[]) { return d; }\n  return { deniedNote };\n}\nexport type CommentaryApi = ReturnType<typeof createCommentary>;\nexport type CommentaryNeeds = { readonly n: number };\n",
+            ),
+            (
+                "src/log.ts",
+                "import type { CommentaryApi } from './commentary';\nexport type ChatLogNeeds = {\n  readonly deniedNote: CommentaryApi['deniedNote'];\n};\nexport function createChatLog(r: ChatLogNeeds) {\n  function addBot() {\n    r.deniedNote([]);\n  }\n  return { addBot };\n}\n",
+            ),
+            (
+                "src/events.ts",
+                "import type { CommentaryApi } from './commentary';\nexport type EventsNeeds = Pick<CommentaryApi, 'deniedNote' | 'other'> & { readonly n: number };\nexport function createEvents(r: EventsNeeds) {\n  function onDone() {\n    r.deniedNote([]);\n  }\n  return { onDone };\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.events.createEvents.onDone -> src.commentary.createCommentary.deniedNote",
+                "src.log.createChatLog.addBot -> src.commentary.createCommentary.deniedNote",
+            ]
+        );
+    }
+
+    #[test]
     fn python_calls_through_relative_and_aliased_imports() {
         let g = graph(&[
             (

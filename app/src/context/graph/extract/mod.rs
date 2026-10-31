@@ -352,7 +352,7 @@ impl<'a> Walk<'a> {
     fn returns(&mut self, node: Node, name: &str, ty: &str) {
         let holder = self.holder(Self::line(node)).unwrap_or("");
         let ty = match ty.trim().trim_start_matches(':').trim() {
-            "this" => holder,
+            "this" | "Self" => holder,
             t => type_name(t),
         };
         if !name.is_empty() && !ty.is_empty() && ty != "void" {
@@ -414,6 +414,10 @@ pub(super) fn type_name(ty: &str) -> &str {
     let mut t = ty.trim().trim_start_matches(':').trim();
     loop {
         t = t.trim_start_matches(['&', '*', '?']).trim();
+        // (Rust's lifetime: `&'a Store`)
+        if let Some(rest) = t.strip_prefix('\'') {
+            t = rest.split_once(' ').map_or("", |(_, r)| r).trim();
+        }
         t = t.strip_prefix("mut ").unwrap_or(t).trim();
         t = t.strip_prefix("readonly ").unwrap_or(t).trim();
         t = t.strip_prefix("const ").unwrap_or(t).trim();
@@ -423,9 +427,18 @@ pub(super) fn type_name(ty: &str) -> &str {
             .trim_end_matches("[]")
             .trim();
         t = t.strip_suffix(" const").unwrap_or(t).trim();
+        // (Rust's slice and array: `[Store]`, `[Store; 4]`)
+        if let Some(inner) = t.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+            t = inner.split(';').next().unwrap_or("").trim();
+            continue;
+        }
         match t.split_once('<') {
             Some((outer, inner)) if WRAPPERS.contains(&bare(outer)) => {
                 t = inner.strip_suffix('>').unwrap_or(inner);
+            }
+            // (Rust's `Result<Store, Error>`: what it holds when it's Ok)
+            Some((outer, inner)) if bare(outer) == "Result" => {
+                t = first_argument(inner.strip_suffix('>').unwrap_or(inner));
             }
             _ => break,
         }
@@ -436,6 +449,20 @@ pub(super) fn type_name(ty: &str) -> &str {
     } else {
         ""
     }
+}
+
+/// A generic's first argument: `Store` of `Store, Error` (`Vec<A, B>, E`'s first is whole).
+fn first_argument(args: &str) -> &str {
+    let mut depth = 0i32;
+    for (i, c) in args.char_indices() {
+        match c {
+            '<' | '(' | '[' => depth += 1,
+            '>' | ')' | ']' => depth -= 1,
+            ',' if depth == 0 => return args[..i].trim(),
+            _ => {}
+        }
+    }
+    args.trim()
 }
 
 #[cfg(test)]
@@ -455,6 +482,7 @@ mod tests {
             Via::Typed(t) => format!("typed:{t}"),
             Via::Name(n) => format!("name:{n}"),
             Via::Unknown => "unknown".to_string(),
+            Via::Command => "command".to_string(),
         };
         let within =
             |w: Option<u32>| w.map_or("-".to_string(), |i| facts.defs[i as usize].name.clone());
@@ -730,6 +758,11 @@ mod tests {
         assert_eq!(type_name("*db.Conn"), "Conn");
         assert_eq!(type_name("HashMap<String, Store>"), "HashMap");
         assert_eq!(type_name("string | null"), "");
+        assert_eq!(type_name("&'a Arc<Session>"), "Session");
+        assert_eq!(type_name("Result<Arc<Chat>, Error>"), "Chat");
+        assert_eq!(type_name("&[Session]"), "Session");
+        assert_eq!(type_name("[u8; 4]"), "u8");
+        assert_eq!(type_name("[string, number]"), "");
         assert_eq!(bare("crate::x::Store<T>"), "Store");
         assert_eq!(bare("ns.Thing"), "Thing");
     }
