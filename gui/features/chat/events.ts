@@ -320,6 +320,7 @@ export function createChatEvents(r: ChatEventsNeeds) {
       else r.finishText(done, { text: done.asked ? '' : ev.text, empty: '_(no words, just vibes)_' });
       if (ev.isError) done.el.classList.add('error');
       if (ev.denials?.length) done.el.appendChild(r.deniedNote(ev.denials));
+      if (ev.tokens) done.el.appendChild(r.usageLine(ev.tokens, ev.costUsd));
       if (done.el.isConnected) {
         r.rawText.set(done.el, done.asked ? done.text.slice(done.offset || 0) : done.text || ev.text);
         r.msgActions(done.el, 'bot', tab);

@@ -1,7 +1,8 @@
 // What a step gave back, in a line or three under it (Claude Code's "⎿ Read 120 lines"), and
-// a token count in short words.
+// token counts in short words.
 
 import { plural } from '@/lib/text';
+import type { Tokens } from '@/types/model';
 
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
@@ -58,4 +59,11 @@ export function stepSummary(name: string, output: string | undefined, isError?: 
 /** Short words for a token count: 870, 1.2k, 34k. */
 export function tokens(n: number) {
   return n < 1000 ? String(n) : n < 10000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n / 1000)}k`;
+}
+
+/** What an answer used, in a line: "↑ 26k in (18k cached) · ↓ 1.2k out · $0.08". */
+export function usageText(t: Tokens, costUsd = 0) {
+  const read = t.input + t.cacheRead + t.cacheWrite; // (all it read, cached or not)
+  const cost = costUsd >= 0.01 ? ` · $${costUsd.toFixed(2)}` : costUsd > 0 ? ' · <$0.01' : '';
+  return `↑ ${tokens(read)} in${t.cacheRead ? ` (${tokens(t.cacheRead)} cached)` : ''} · ↓ ${tokens(t.output)} out${cost}`;
 }

@@ -34,8 +34,22 @@ pub struct Done {
     pub session_id: Option<String>,
     /// Its last message in the transcript (an edited question after it rewinds to here).
     pub uuid: Option<String>,
-    pub output_tokens: Value,
+    /// What it used (None when Claude Code didn't say).
+    pub tokens: Option<Tokens>,
     pub ms: Value,
+}
+
+/// The tokens a turn used, as Claude Code counts them.
+#[derive(Serialize, Debug, Clone, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Tokens {
+    /// Read afresh (not from its prompt cache).
+    pub input: u64,
+    pub output: u64,
+    /// Read from its prompt cache.
+    pub cache_read: u64,
+    /// Written to its prompt cache.
+    pub cache_write: u64,
 }
 
 /// A turn that couldn't be answered.

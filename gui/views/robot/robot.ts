@@ -299,6 +299,7 @@ tooltips($('#side-panel'));
       unpeek: () => unpeek,
       updateMentions: () => updateMentions,
       updatePalette: () => updatePalette,
+      usageLine: () => usageLine,
       vocabPart: () => vocabPart,
       vocabReady: () => vocabReady,
       waitForBriefs: () => waitForBriefs,
@@ -455,8 +456,17 @@ tooltips($('#side-panel'));
   const { appCard, appResult, asideChip, serverLabel }: AppViewsApi = createAppViews(hub);
 
   // running commentary
-  const { addNote, animates, deniedNote, plain, renderMeta, setStatus, setTabStatus, showAside }: CommentaryApi =
-    createCommentary(hub); // (chat/reply/commentary.ts)
+  const {
+    addNote,
+    animates,
+    deniedNote,
+    plain,
+    renderMeta,
+    setStatus,
+    setTabStatus,
+    showAside,
+    usageLine,
+  }: CommentaryApi = createCommentary(hub); // (chat/reply/commentary.ts)
 
   // asking
   const {

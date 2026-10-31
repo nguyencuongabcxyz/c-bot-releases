@@ -158,6 +158,14 @@ export type AppViewCall = AppView & { id: string; input: unknown; result?: unkno
  *  them (clipboardWrite…). */
 export type AppPage = { url: string; prefersBorder: boolean; permissions: Record<string, unknown> };
 
+/** The tokens a turn used, as Claude Code counts them (main reports.rs Tokens). */
+export type Tokens = {
+  input: number; // (read afresh, not from its prompt cache)
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+};
+
 export type HistoryEntry =
   | { role: 'user'; text: string; files?: FileChip[]; at: number; tag?: string; briefs?: Brief[] }
   | {
@@ -172,6 +180,8 @@ export type HistoryEntry =
       images?: ToolImage[];
       tools?: (StepCall | string)[]; // (just its name, "Skill(…)" for a skill: older answers and resumed conversations)
       uuid?: string; // its last message in Claude Code's transcript (an edited question after it goes back to here)
+      tokens?: Tokens; // what it used (answers since this was kept)
+      costUsd?: number;
       at: number;
     }
   | { role: 'note'; text: string; at: number }
@@ -804,7 +814,7 @@ export type ChatEvent =
       kind?: string;
       uuid?: string | null;
       at?: number | null; // (when it went into the history: its side questions hang from it)
-      outputTokens?: number;
+      tokens?: Tokens | null;
       ms?: number;
     }
   | { type: 'fail'; turnId: string; message: string; cancelled?: boolean; sessionMissing?: boolean }

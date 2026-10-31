@@ -1,5 +1,12 @@
 import { expect, test } from 'vitest';
-import { stepSummary, tokens } from './steps';
+import { stepSummary, tokens, usageText } from './steps';
+
+test('an answer says what it used: all it read, the cached part, what it wrote, the cost', () => {
+  const t = { input: 2, output: 1234, cacheRead: 18488, cacheWrite: 7884 };
+  expect(usageText(t, 0.0812)).toBe('↑ 26k in (18k cached) · ↓ 1.2k out · $0.08');
+  expect(usageText(t, 0.004)).toBe('↑ 26k in (18k cached) · ↓ 1.2k out · <$0.01');
+  expect(usageText({ input: 900, output: 5, cacheRead: 0, cacheWrite: 0 })).toBe('↑ 900 in · ↓ 5 out');
+});
 
 test('a Read says how many lines', () => {
   expect(stepSummary('Read', 'a\nb\nc')).toEqual(['Read 3 lines']);

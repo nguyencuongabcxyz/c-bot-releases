@@ -5,7 +5,8 @@ import { ROBOT_H } from '@/views/robot/constants';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { ChatLogApi } from '../log';
 import type { ChatTab, RobotState } from '@/views/robot/types';
-import { tokens as fmtTokens } from './steps';
+import { tokens as fmtTokens, usageText } from './steps';
+import type { Tokens } from '@/types/model';
 import { $ } from '@/lib/dom';
 import { Icon } from '@/icons/icons';
 
@@ -82,6 +83,14 @@ export function createCommentary(r: CommentaryNeeds) {
     return el;
   }
 
+  /** Under an answer: the tokens it used, and what it cost. */
+  function usageLine(t: Tokens, costUsd?: number) {
+    const el = document.createElement('div');
+    el.className = 'usage';
+    el.textContent = usageText(t, costUsd);
+    return el;
+  }
+
   // (the status line and strip are plain mono text: no leading emoji)
   function plain(text: string) {
     return String(text || '').replace(/^(?:\p{Extended_Pictographic}|\uFE0F|\u200D)+\s*/u, '');
@@ -115,6 +124,6 @@ export function createCommentary(r: CommentaryNeeds) {
   // does the robot act out this tab's events? The tab you're looking at always;
   // a background tab only while the visible one is idle.
   const animates = (tab: ChatTab) => tab === r.active() || !r.active()?.busy;
-  return { addNote, animates, deniedNote, plain, renderMeta, setStatus, setTabStatus, showAside };
+  return { addNote, animates, deniedNote, plain, renderMeta, setStatus, setTabStatus, showAside, usageLine };
 }
 export type CommentaryApi = ReturnType<typeof createCommentary>;

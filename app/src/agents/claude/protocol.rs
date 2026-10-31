@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 
-use crate::agents::ModelChoice;
+use crate::agents::{ModelChoice, Tokens};
 
 /// A line, read: who it's from, and what it is.
 pub(super) struct Line {
@@ -153,10 +153,29 @@ pub(super) enum StreamEvent {
     Other,
 }
 
+/// Tokens used: by a message as it's written (output only), or by a whole turn (its result).
 #[derive(Deserialize, Default)]
 pub(super) struct Usage {
     #[serde(default, deserialize_with = "count")]
     pub output_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "count")]
+    pub input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "count")]
+    pub cache_read_input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "count")]
+    pub cache_creation_input_tokens: Option<u64>,
+}
+
+impl Usage {
+    /// A turn's tokens, from its result (each result counts its own turn); None when it doesn't say.
+    pub fn tokens(&self) -> Option<Tokens> {
+        Some(Tokens {
+            input: self.input_tokens.unwrap_or(0),
+            output: self.output_tokens?,
+            cache_read: self.cache_read_input_tokens.unwrap_or(0),
+            cache_write: self.cache_creation_input_tokens.unwrap_or(0),
+        })
+    }
 }
 
 /// Just what kind of thing it is (a content block, as it starts).
@@ -311,8 +330,8 @@ pub(super) struct Finished {
     pub is_error: bool,
     #[serde(default, deserialize_with = "lenient")]
     pub permission_denials: Vec<Denial>,
-    #[serde(default)]
-    pub usage: Value,
+    #[serde(default, deserialize_with = "lenient")]
+    pub usage: Usage,
     #[serde(default)]
     pub duration_ms: Value,
 }
@@ -484,7 +503,8 @@ mod tests {
             event(json!({ "type": "message_delta", "usage": { "output_tokens": 12 } })).0,
             StreamEvent::MessageDelta {
                 usage: Usage {
-                    output_tokens: Some(12)
+                    output_tokens: Some(12),
+                    ..
                 }
             }
         ));
@@ -557,7 +577,8 @@ mod tests {
     fn the_end_and_the_controls_read_too() {
         let Kind::Result(f) = kind(
             json!({ "type": "result", "total_cost_usd": 0.25, "result": "Done", "is_error": false,
-            "terminal_reason": "completed", "permission_denials": [{ "tool_name": "Bash" }], "usage": { "output_tokens": 9 }, "duration_ms": 1200 }),
+            "terminal_reason": "completed", "permission_denials": [{ "tool_name": "Bash" }], "duration_ms": 1200,
+            "usage": { "output_tokens": 9, "input_tokens": 3, "cache_read_input_tokens": 1500, "cache_creation_input_tokens": 40 } }),
         ) else {
             panic!()
         };
@@ -569,10 +590,31 @@ mod tests {
             ),
             (Some(0.25), "Done", Some("Bash"))
         );
+        let u = &f.usage;
         assert_eq!(
-            (f.usage["output_tokens"].as_u64(), f.duration_ms.as_u64()),
-            (Some(9), Some(1200))
+            (
+                u.output_tokens,
+                u.input_tokens,
+                u.cache_read_input_tokens,
+                u.cache_creation_input_tokens,
+                f.duration_ms.as_u64()
+            ),
+            (Some(9), Some(3), Some(1500), Some(40), Some(1200))
         );
+        assert_eq!(
+            u.tokens(),
+            Some(Tokens {
+                input: 3,
+                output: 9,
+                cache_read: 1500,
+                cache_write: 40
+            })
+        );
+        // (a result that doesn't say what it used)
+        let Kind::Result(f) = kind(json!({ "type": "result", "usage": "?" })) else {
+            panic!()
+        };
+        assert_eq!(f.usage.tokens(), None);
         // (a result with its type left out)
         assert!(
             matches!(kind(json!({ "total_cost_usd": 0.1, "result": "x" })), Kind::Result(f) if f.result == "x")

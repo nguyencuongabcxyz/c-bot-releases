@@ -105,7 +105,7 @@ impl Session {
             denials,
             session_id,
             uuid: i.last_uuid.clone(),
-            output_tokens: f.usage["output_tokens"].clone(),
+            tokens: f.usage.tokens(),
             ms: f.duration_ms,
         };
         i.emit(Event::Done(done));

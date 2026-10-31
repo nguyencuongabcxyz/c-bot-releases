@@ -17,6 +17,7 @@ import type {
   SocialEvent,
   StepCall,
   Task,
+  Tokens,
   ToolImage,
 } from '@/types/model';
 /** A question as it was asked: its words and the files that went with it (asked again when bonked). */
@@ -48,6 +49,8 @@ export type BotOpts = {
   edits?: Diff[];
   apps?: AppCall[];
   images?: ToolImage[];
+  tokens?: Tokens | null;
+  costUsd?: number;
   tab?: ChatTab;
 };
 

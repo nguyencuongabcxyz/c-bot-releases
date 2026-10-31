@@ -58,6 +58,7 @@ export type AskingNeeds = {
   readonly composerPart: ComposerApi;
   readonly dedupePics: ChatMarkdownApi['dedupePics'];
   readonly deniedNote: CommentaryApi['deniedNote'];
+  readonly usageLine: CommentaryApi['usageLine'];
   readonly deskState: OfficeData;
   readonly diffCard: ChatLogApi['diffCard'];
   readonly editBanner: ComposerApi['editBanner'];

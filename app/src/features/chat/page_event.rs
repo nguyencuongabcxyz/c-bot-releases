@@ -101,6 +101,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::agents::Tokens;
 
     #[test]
     fn the_page_gets_its_names_and_fields() {
@@ -136,7 +137,12 @@ mod tests {
             denials: vec!["Bash".into()],
             session_id: Some("s1".into()),
             uuid: None,
-            output_tokens: json!(3),
+            tokens: Some(Tokens {
+                input: 2,
+                output: 3,
+                cache_read: 1500,
+                cache_write: 40,
+            }),
             ms: json!(900),
         };
         assert_eq!(
@@ -146,7 +152,8 @@ mod tests {
                 kind: Some(AskKind::Chat)
             }),
             json!({ "type": "done", "turnId": "t1", "text": "hi", "asides": [], "isError": false, "interrupted": false,
-                "costUsd": 0.5, "denials": ["Bash"], "sessionId": "s1", "uuid": null, "outputTokens": 3, "ms": 900, "at": 42, "kind": "chat" })
+                "costUsd": 0.5, "denials": ["Bash"], "sessionId": "s1", "uuid": null,
+                "tokens": { "input": 2, "output": 3, "cacheRead": 1500, "cacheWrite": 40 }, "ms": 900, "at": 42, "kind": "chat" })
         );
         assert_eq!(
             page(PageEvent::RequestCancelled {

@@ -32,6 +32,7 @@ export type ChatLogNeeds = {
   readonly rawText: ComposerApi['rawText'];
   readonly serverLabel: AppViewsApi['serverLabel'];
   readonly state: RobotState;
+  readonly usageLine: CommentaryApi['usageLine'];
 };
 
 export function createChatLog(r: ChatLogNeeds) {
@@ -146,6 +147,8 @@ export function createChatLog(r: ChatLogNeeds) {
       edits = [],
       apps = [],
       images = [],
+      tokens,
+      costUsd,
       tab = r.current(),
     }: BotOpts = {},
   ) {
@@ -198,6 +201,7 @@ export function createChatLog(r: ChatLogNeeds) {
     say(words.slice(pos));
     if (!el.children.length) el.innerHTML = r.md(words || '…');
     if (denials?.length) el.appendChild(r.deniedNote(denials));
+    if (tokens) el.appendChild(r.usageLine(tokens, costUsd));
     r.dedupePics(el);
     r.rawText.set(el, words);
     r.msgActions(el, 'bot', tab);

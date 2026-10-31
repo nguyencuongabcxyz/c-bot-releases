@@ -648,6 +648,8 @@ fn on_done(e: Ev, d: Done) {
                     ("images", images),
                     ("tools", tools),
                     ("uuid", json!(d.uuid)), // (where an edited question after it rewinds to)
+                    ("tokens", json!(d.tokens)), // (what it used, shown under it)
+                    ("costUsd", json!(d.tokens.as_ref().map(|_| d.cost_usd))),
                 ]),
             );
         }

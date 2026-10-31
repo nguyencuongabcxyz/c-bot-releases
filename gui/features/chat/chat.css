@@ -190,6 +190,8 @@ body.busy .who::before { background: var(--accent); box-shadow: 0 0 0 3px var(--
 .tool.failed { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
 .tool.failed .ic { color: var(--danger); }
 .denied { font-size: 12px; color: var(--danger); margin-top: 6px; }
+/* what an answer used: quiet, under it */
+.usage { font-size: 11px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
 
 /* local files in answers: pictures show, paths and links open the file */
 .local-img {

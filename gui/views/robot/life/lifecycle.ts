@@ -120,6 +120,8 @@ export function createLifeCycle(r: LifeCycleNeeds) {
             edits: h.edits,
             apps: h.apps,
             images: h.images,
+            tokens: h.tokens,
+            costUsd: h.costUsd,
             tab,
           }),
           h.at,
