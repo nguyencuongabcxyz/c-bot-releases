@@ -373,7 +373,10 @@ struct Inner {
     agent_tools: HashSet<String>,        // tool_use ids of Agent calls (each one is a helper agent)
     agent_tasks: HashMap<String, String>, // background task id -> the Agent tool_use id
     agent_running: HashSet<String>,      // Agent tool_use ids still at work
-    cost_so_far: f64,                    // total_cost_usd is cumulative per process
+    // what the conversation it carries on has cost so far, as Claude Code last said (None: not
+    // known). Its total_cost_usd is that, plus what it has cost since: a resumed (or branched)
+    // conversation starts again from what it had cost, not from 0.
+    cost_so_far: Option<f64>,
     last_used: Instant,
     proc: Option<Proc>,
     generation: u64,

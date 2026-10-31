@@ -164,16 +164,32 @@ pub(super) struct Usage {
     pub cache_read_input_tokens: Option<u64>,
     #[serde(default, deserialize_with = "count")]
     pub cache_creation_input_tokens: Option<u64>,
+    /// (a result) its last call to the model, as the API counted it
+    #[serde(default, deserialize_with = "lenient")]
+    pub iterations: Vec<Usage>,
 }
 
 impl Usage {
-    /// A turn's tokens, from its result (each result counts its own turn); None when it doesn't say.
+    /// All it read: afresh, from the prompt cache and into it.
+    fn read(&self) -> u64 {
+        self.input_tokens.unwrap_or(0)
+            + self.cache_read_input_tokens.unwrap_or(0)
+            + self.cache_creation_input_tokens.unwrap_or(0)
+    }
+}
+
+impl Finished {
+    /// A turn's tokens, from its result (each result counts its own turn, summed over its calls
+    /// to the model); None when it doesn't say.
     pub fn tokens(&self) -> Option<Tokens> {
+        let u = &self.usage;
         Some(Tokens {
-            input: self.input_tokens.unwrap_or(0),
-            output: self.output_tokens?,
-            cache_read: self.cache_read_input_tokens.unwrap_or(0),
-            cache_write: self.cache_creation_input_tokens.unwrap_or(0),
+            input: u.input_tokens.unwrap_or(0),
+            output: u.output_tokens?,
+            cache_read: u.cache_read_input_tokens.unwrap_or(0),
+            cache_write: u.cache_creation_input_tokens.unwrap_or(0),
+            calls: self.num_turns.unwrap_or(0),
+            context: u.iterations.last().map_or(0, Usage::read),
         })
     }
 }
@@ -332,6 +348,9 @@ pub(super) struct Finished {
     pub permission_denials: Vec<Denial>,
     #[serde(default, deserialize_with = "lenient")]
     pub usage: Usage,
+    /// How many times it called the model.
+    #[serde(default, deserialize_with = "count")]
+    pub num_turns: Option<u64>,
     #[serde(default)]
     pub duration_ms: Value,
 }
@@ -574,11 +593,51 @@ mod tests {
         );
     }
     #[test]
+    fn a_turns_tokens_are_summed_over_its_calls_and_its_context_is_the_last_ones() {
+        let Kind::Result(f) = kind(json!({ "type": "result", "num_turns": 3,
+            "usage": { "output_tokens": 308, "input_tokens": 6, "cache_read_input_tokens": 69750, "cache_creation_input_tokens": 14353,
+                "iterations": [{ "input_tokens": 2, "cache_read_input_tokens": 28242, "cache_creation_input_tokens": 1930, "output_tokens": 25 }] } }))
+        else {
+            panic!()
+        };
+        assert_eq!(
+            f.tokens(),
+            Some(Tokens {
+                input: 6,
+                output: 308,
+                cache_read: 69750,
+                cache_write: 14353,
+                calls: 3,
+                context: 30174
+            })
+        );
+    }
+
+    #[test]
+    fn a_result_that_doesnt_say_what_it_used_has_no_tokens() {
+        let Kind::Result(f) = kind(json!({ "type": "result", "usage": "?" })) else {
+            panic!()
+        };
+        assert_eq!(f.tokens(), None);
+        // (an older Claude Code: no calls or iterations, the rest as it says)
+        let Kind::Result(f) = kind(json!({ "type": "result", "usage": { "output_tokens": 9 } }))
+        else {
+            panic!()
+        };
+        assert_eq!(
+            f.tokens(),
+            Some(Tokens {
+                output: 9,
+                ..Tokens::default()
+            })
+        );
+    }
+
+    #[test]
     fn the_end_and_the_controls_read_too() {
         let Kind::Result(f) = kind(
             json!({ "type": "result", "total_cost_usd": 0.25, "result": "Done", "is_error": false,
-            "terminal_reason": "completed", "permission_denials": [{ "tool_name": "Bash" }], "duration_ms": 1200,
-            "usage": { "output_tokens": 9, "input_tokens": 3, "cache_read_input_tokens": 1500, "cache_creation_input_tokens": 40 } }),
+            "terminal_reason": "completed", "permission_denials": [{ "tool_name": "Bash" }], "duration_ms": 1200 }),
         ) else {
             panic!()
         };
@@ -586,35 +645,11 @@ mod tests {
             (
                 f.total_cost_usd,
                 f.result.as_str(),
-                f.permission_denials[0].tool_name.as_str()
-            ),
-            (Some(0.25), "Done", Some("Bash"))
-        );
-        let u = &f.usage;
-        assert_eq!(
-            (
-                u.output_tokens,
-                u.input_tokens,
-                u.cache_read_input_tokens,
-                u.cache_creation_input_tokens,
+                f.permission_denials[0].tool_name.as_str(),
                 f.duration_ms.as_u64()
             ),
-            (Some(9), Some(3), Some(1500), Some(40), Some(1200))
+            (Some(0.25), "Done", Some("Bash"), Some(1200))
         );
-        assert_eq!(
-            u.tokens(),
-            Some(Tokens {
-                input: 3,
-                output: 9,
-                cache_read: 1500,
-                cache_write: 40
-            })
-        );
-        // (a result that doesn't say what it used)
-        let Kind::Result(f) = kind(json!({ "type": "result", "usage": "?" })) else {
-            panic!()
-        };
-        assert_eq!(f.usage.tokens(), None);
         // (a result with its type left out)
         assert!(
             matches!(kind(json!({ "total_cost_usd": 0.1, "result": "x" })), Kind::Result(f) if f.result == "x")

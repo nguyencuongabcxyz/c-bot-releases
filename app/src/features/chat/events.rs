@@ -610,8 +610,13 @@ fn on_compact(e: Ev, c: Compact) {
 
 fn on_done(e: Ev, d: Done) {
     let Ev {
-        app, id, tab_id, ..
+        app,
+        id,
+        tab_id,
+        session,
+        ..
     } = e;
+    let cost_so_far = session.cost_so_far();
     let turn_id = d.turn_id.clone();
     let (kind, last_compact, (edits, apps, images, tools)) = {
         let mut b = e.book();
@@ -654,8 +659,15 @@ fn on_done(e: Ev, d: Done) {
             );
         }
         if let Some(sid) = &d.session_id {
-            st.store
-                .update_tab(id, tab_id, patch(vec![("sessionId", json!(sid))]));
+            // (with what it has cost so far: where its next process starts counting from)
+            st.store.update_tab(
+                id,
+                tab_id,
+                patch(vec![
+                    ("sessionId", json!(sid)),
+                    ("sessionCost", json!(cost_so_far)),
+                ]),
+            );
         }
         let mut stats = c["stats"].as_object().cloned().unwrap_or_default();
         let cost = stats.get("costUsd").and_then(Value::as_f64).unwrap_or(0.0) + d.cost_usd;

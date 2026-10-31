@@ -1,10 +1,16 @@
 import { expect, test } from 'vitest';
 import { stepSummary, tokens, usageText } from './steps';
 
-test('an answer says what it used: all it read, the cached part, what it wrote, the cost', () => {
+test('an answer says what it used: its calls, how big the conversation was, what it wrote, the cost', () => {
+  const t = { input: 11, output: 1912, cacheRead: 842090, cacheWrite: 3296, calls: 8, context: 105300 };
+  expect(usageText(t, 0.5012)).toBe('8 calls · 105k context · ↓ 1.9k out · $0.50');
+  expect(usageText({ ...t, calls: 1, context: 900 }, 0.004)).toBe('1 call · 900 context · ↓ 1.9k out · <$0.01');
+  expect(usageText({ ...t, calls: 0, context: 0 })).toBe('↓ 1.9k out'); // (Claude Code didn't say)
+});
+
+test('an answer kept by 2.0.1 says what it read in all, and no cost (it may be the whole conversation’s)', () => {
   const t = { input: 2, output: 1234, cacheRead: 18488, cacheWrite: 7884 };
-  expect(usageText(t, 0.0812)).toBe('↑ 26k in (18k cached) · ↓ 1.2k out · $0.08');
-  expect(usageText(t, 0.004)).toBe('↑ 26k in (18k cached) · ↓ 1.2k out · <$0.01');
+  expect(usageText(t, 3.5)).toBe('↑ 26k in (18k cached) · ↓ 1.2k out');
   expect(usageText({ input: 900, output: 5, cacheRead: 0, cacheWrite: 0 })).toBe('↑ 900 in · ↓ 5 out');
 });
 

@@ -50,6 +50,11 @@ pub struct Tokens {
     pub cache_read: u64,
     /// Written to its prompt cache.
     pub cache_write: u64,
+    /// How many times it called the model (each call reads the whole conversation again, so
+    /// what it read is summed over them).
+    pub calls: u64,
+    /// How big the conversation was at its last call (all it read then): 0 when not known.
+    pub context: u64,
 }
 
 /// A turn that couldn't be answered.

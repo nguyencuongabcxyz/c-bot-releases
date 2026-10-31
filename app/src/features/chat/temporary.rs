@@ -128,6 +128,7 @@ pub fn resume(app: &AppHandle, id: &str, tab_id: &str, session_id: &str) -> Valu
         }) && !busy;
         let fields = patch(vec![
             ("sessionId", json!(session_id)),
+            ("sessionCost", Value::Null), // (what it had cost: not known here)
             ("history", history.clone()),
             ("title", session["title"].clone()),
         ]);

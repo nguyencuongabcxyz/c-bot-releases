@@ -61,9 +61,19 @@ export function tokens(n: number) {
   return n < 1000 ? String(n) : n < 10000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n / 1000)}k`;
 }
 
-/** What an answer used, in a line: "↑ 26k in (18k cached) · ↓ 1.2k out · $0.08". */
+/** What an answer used, in a line: "8 calls · 105k context · ↓ 1.9k out · $0.50". */
 export function usageText(t: Tokens, costUsd = 0) {
-  const read = t.input + t.cacheRead + t.cacheWrite; // (all it read, cached or not)
   const cost = costUsd >= 0.01 ? ` · $${costUsd.toFixed(2)}` : costUsd > 0 ? ' · <$0.01' : '';
-  return `↑ ${tokens(read)} in${t.cacheRead ? ` (${tokens(t.cacheRead)} cached)` : ''} · ↓ ${tokens(t.output)} out${cost}`;
+  if (t.calls == null) {
+    // (kept by 2.0.1: what it read summed over its calls, and a cost that may be the whole
+    // conversation's, so none)
+    const read = t.input + t.cacheRead + t.cacheWrite;
+    return `↑ ${tokens(read)} in${t.cacheRead ? ` (${tokens(t.cacheRead)} cached)` : ''} · ↓ ${tokens(t.output)} out`;
+  }
+  const parts = [
+    t.calls ? plural(t.calls, 'call') : '',
+    t.context ? `${tokens(t.context)} context` : '',
+    `↓ ${tokens(t.output)} out`,
+  ];
+  return parts.filter(Boolean).join(' · ') + cost;
 }

@@ -280,6 +280,11 @@ fn open_terminal(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         return json!({ "ok": false, "error": "I'm still answering here. Stop me first, then we can move to the terminal." });
     }
     chat::close(app, id, tab_id); // the terminal takes over this conversation
+    // (and what it costs there isn't known here: nor, after, is what it has cost in all)
+    with(app, |st| {
+        st.store
+            .update_tab(id, tab_id, patch(vec![("sessionCost", Value::Null)]))
+    });
     let Some(claude_path) = locate::find(settings["claudePath"].as_str().unwrap_or("")) else {
         return json!({ "ok": false, "error": "I can't find the `claude` command." });
     };

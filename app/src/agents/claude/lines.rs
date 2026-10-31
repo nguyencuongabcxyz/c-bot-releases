@@ -76,9 +76,7 @@ impl Session {
         let rest = i.asides.flush();
         i.emit_text(&rest); // (while the turn is still on: the last of its text counts)
         let Some(turn) = i.turn.take() else { return };
-        let total = f.total_cost_usd.unwrap_or(0.0);
-        let cost = (total - i.cost_so_far).max(0.0);
-        i.cost_so_far = total;
+        let cost = turn_cost(&mut i.cost_so_far, f.total_cost_usd);
         let interrupted = turn.interrupted || f.terminal_reason.starts_with("abort");
         let text = match i.text.trim() {
             "" => strip_asides(&f.result).trim().to_string(),
@@ -105,7 +103,7 @@ impl Session {
             denials,
             session_id,
             uuid: i.last_uuid.clone(),
-            tokens: f.usage.tokens(),
+            tokens: f.tokens(),
             ms: f.duration_ms,
         };
         i.emit(Event::Done(done));
@@ -119,6 +117,14 @@ impl Session {
             self.next(&mut i);
         }
     }
+}
+
+/// What a turn cost: its total less what the conversation had cost before (0 when that isn't
+/// known: better nothing than the whole conversation's cost). The total is the new "before".
+fn turn_cost(so_far: &mut Option<f64>, total: Option<f64>) -> f64 {
+    let Some(total) = total else { return 0.0 };
+    let before = so_far.replace(total);
+    before.map_or(0.0, |b| (total - b).max(0.0))
 }
 
 /// The answer to a control request we sent (interrupt, model, effort…): to whoever waits on it.
@@ -397,5 +403,34 @@ impl Inner {
                 chosen,
             }));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_turn_costs_its_total_less_what_came_before() {
+        let mut so_far = Some(0.0);
+        assert_eq!(turn_cost(&mut so_far, Some(0.25)), 0.25);
+        assert_eq!(turn_cost(&mut so_far, Some(0.75)), 0.5);
+        assert_eq!(so_far, Some(0.75));
+    }
+
+    #[test]
+    fn a_resumed_conversation_counts_on_from_what_it_had_cost() {
+        // (Claude Code starts a resumed process from the conversation's old total)
+        let mut so_far = Some(3.0);
+        assert_eq!(turn_cost(&mut so_far, Some(3.5)), 0.5);
+    }
+
+    #[test]
+    fn not_knowing_what_came_before_costs_nothing_rather_than_everything() {
+        let mut so_far = None;
+        assert_eq!(turn_cost(&mut so_far, Some(3.5)), 0.0);
+        assert_eq!(turn_cost(&mut so_far, Some(4.0)), 0.5); // (known from then on)
+        assert_eq!(turn_cost(&mut so_far, None), 0.0);
+        assert_eq!(so_far, Some(4.0));
     }
 }

@@ -142,6 +142,8 @@ mod tests {
                 output: 3,
                 cache_read: 1500,
                 cache_write: 40,
+                calls: 2,
+                context: 900,
             }),
             ms: json!(900),
         };
@@ -153,7 +155,7 @@ mod tests {
             }),
             json!({ "type": "done", "turnId": "t1", "text": "hi", "asides": [], "isError": false, "interrupted": false,
                 "costUsd": 0.5, "denials": ["Bash"], "sessionId": "s1", "uuid": null,
-                "tokens": { "input": 2, "output": 3, "cacheRead": 1500, "cacheWrite": 40 }, "ms": 900, "at": 42, "kind": "chat" })
+                "tokens": { "input": 2, "output": 3, "cacheRead": 1500, "cacheWrite": 40, "calls": 2, "context": 900 }, "ms": 900, "at": 42, "kind": "chat" })
         );
         assert_eq!(
             page(PageEvent::RequestCancelled {

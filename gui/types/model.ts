@@ -164,6 +164,8 @@ export type Tokens = {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  calls?: number; // how many times it called the model (each reads the whole conversation again)
+  context?: number; // how big the conversation was at its last call (answers since 2.0.2)
 };
 
 export type HistoryEntry =

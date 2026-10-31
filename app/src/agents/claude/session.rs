@@ -14,7 +14,6 @@ impl Session {
             me: me.clone(),
             inner: Mutex::new(Inner {
                 opts,
-                session_id,
                 queue: VecDeque::new(),
                 turn: None,
                 displaced: None,
@@ -26,7 +25,8 @@ impl Session {
                 agent_tools: HashSet::new(),
                 agent_tasks: HashMap::new(),
                 agent_running: HashSet::new(),
-                cost_so_far: 0.0,
+                cost_so_far: session_id.is_none().then_some(0.0), // (a new one costs nothing yet)
+                session_id,
                 last_used: Instant::now(),
                 proc: None,
                 generation: 0,
@@ -77,6 +77,15 @@ impl Session {
     pub fn forget_session(&self) {
         self.lock().session_id = None;
     }
+    /// What its conversation has cost so far, as Claude Code last said (kept with the tab, so
+    /// the next process, which starts from it, isn't taken for this turn's cost).
+    pub fn cost_so_far(&self) -> Option<f64> {
+        self.lock().cost_so_far
+    }
+    /// What the conversation it resumes had cost (as cost_so_far said, before).
+    pub fn set_cost_so_far(&self, cost: f64) {
+        self.lock().cost_so_far = Some(cost);
+    }
 
     /// Start its process now, before the first question (the group chat gets everyone's
     /// Claude Code ready before they speak).
@@ -89,7 +98,10 @@ impl Session {
 
     pub(super) fn start(&self, i: &mut Inner) {
         let args = i.command_line();
-        i.cost_so_far = 0.0;
+        // (a new conversation starts from nothing; a resumed one from what it had cost)
+        if i.session_id.is_none() {
+            i.cost_so_far = Some(0.0);
+        }
         i.restart_before_next = false;
         let o = &i.opts;
         let spawned = Command::new(&o.claude_path)

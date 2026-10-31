@@ -372,6 +372,13 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
         events::on_event(&app2, &id2, &tab2, &book2, session, event)
     });
     let session = Session::new(opts, tab.session_id().map(str::to_string), handler);
+    // (what its conversation had cost: Claude Code counts on from there when it resumes it)
+    if let Some(cost) = tab["sessionCost"]
+        .as_f64()
+        .filter(|_| tab.session_id().is_some())
+    {
+        session.set_cost_so_far(cost);
+    }
     let chat = Arc::new(Chat { session, book });
     with(app, |st| st.chats.insert(key, chat.clone()));
     Some(chat)
