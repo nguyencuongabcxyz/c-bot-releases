@@ -278,6 +278,16 @@ export function createLifeCycle(r: LifeCycleNeeds) {
     Sfx.pop();
     setTimeout(() => r.flash('hop', 600), 120);
   }
+  /** Brought back from the island: awake and ready, its chat tucked away waiting for a question;
+   *  or, in the middle of something (working, helpers out, a question for you), its chat open. */
+  function comeOut() {
+    if (!r.state.peek) return;
+    unpeek();
+    const now = islandNow();
+    const doing = now.busy || now.asking;
+    if (!r.state.awake) wake({ sayHi: false, tucked: !doing });
+    else if (doing) openChat();
+  }
 
   // How it is, for the island: said whenever it changes (renderWorking hears most of it),
   // and every few seconds. Straight away, not on a timer: a veiled page's timers may be slow.
@@ -337,6 +347,7 @@ export function createLifeCycle(r: LifeCycleNeeds) {
   return {
     applyCharacter,
     collapse,
+    comeOut,
     islandNews,
     islandReport,
     islandReportAgain,

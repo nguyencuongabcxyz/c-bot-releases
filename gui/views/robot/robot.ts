@@ -118,6 +118,7 @@ tooltips($('#side-panel'));
       closeMenu: () => closeMenu,
       closeTab: () => closeTab,
       collapse: () => collapse,
+      comeOut: () => comeOut,
       compactTab: () => compactTab,
       composerPart: () => composerPart,
       crashMonitor: () => crashMonitor,
@@ -426,6 +427,7 @@ tooltips($('#side-panel'));
   const {
     applyCharacter,
     collapse,
+    comeOut,
     islandNews,
     islandReport,
     islandReportAgain,

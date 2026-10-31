@@ -40,6 +40,7 @@ export type QuickActionsNeeds = {
   readonly canAct: VocabApi['canAct'];
   readonly canActNotes: NotesApi['canActNotes'];
   readonly collapse: LifeCycleApi['collapse'];
+  readonly comeOut: LifeCycleApi['comeOut'];
   readonly cue: IdleAnticsApi['cue'];
   readonly deskState: OfficeData;
   readonly express: FaceApi['express'];
@@ -413,7 +414,7 @@ export function createQuickActions(rw: QuickActionsNeeds) {
 
   ipc.on('robot:action', (action) => {
     if (action === 'peek') rw.peek();
-    else if (action === 'unpeek') rw.unpeek();
+    else if (action === 'unpeek') rw.comeOut();
     else if (action === 'chat') {
       // (the island: out, and its chat open)
       rw.unpeek();
