@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+// (DOMPurify parses with the page's own HTML parser, and happy-dom's mangles it: <p> lost,
+// <script> kept. jsdom parses as a browser does.)
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { describe, expect, test } from 'vitest';

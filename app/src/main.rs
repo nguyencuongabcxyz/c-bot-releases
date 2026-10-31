@@ -8,6 +8,7 @@
 //   agents/     the coding agents that do the work: Claude Code (claude/); personalities
 //   robots/     the robot windows and what they do on the desktop
 //   mcp/        what Claude itself calls: the MCP server, its tools, MCP Apps
+//   context/    the context engine: the code in a robot's folder, indexed for its Claude
 //   workbench/  what you use in and around the chat
 //   features/   what the robots do for you: chat (a tab each, the group chat), words, notes
 //   ui/         the app's own windows and menus: tray, Robot Workshop
@@ -15,6 +16,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agents;
+mod context;
 mod features;
 mod mcp;
 mod platform;

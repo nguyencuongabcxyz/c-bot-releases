@@ -7,6 +7,7 @@ import './theme/theme';
 const VIEWS: Record<string, () => Promise<unknown>> = {
   appview: () => import('./views/big-window/big-window'),
   card: () => import('./views/card/card'),
+  context: () => import('./views/context/context'),
   drone: () => import('./views/drone/drone'),
   groupchat: () => import('./views/groupchat/groupchat'),
   island: () => import('./views/island/island'),

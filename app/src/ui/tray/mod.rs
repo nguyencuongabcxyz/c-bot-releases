@@ -24,6 +24,7 @@ use tauri::{AppHandle, Wry};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::agents::personalities;
+use crate::context;
 use crate::features::chat::group;
 use crate::features::{notes, routines, vocab};
 use crate::robots;

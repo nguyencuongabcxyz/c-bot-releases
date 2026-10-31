@@ -108,6 +108,8 @@ export const Icon = (() => {
     broom:
       '<path d="m13 11 9-9"/><path d="M14.6 12.6c.8.8.9 2.1.2 3L10 22l-8-8 6.4-4.8c.9-.7 2.2-.6 3 .2Z"/><path d="m6.8 10.4 6.8 6.8"/><path d="m5 17 1.5 1.5"/>',
     rotate: '<path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.8 1 6.5 2.8L21 8"/><path d="M21 3v5h-5"/>',
+    sidebar: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+    map: '<path d="M14.1 5.6a2 2 0 0 0 1.8 0l3.7-1.9a1 1 0 0 1 1.4.9v12.8a1 1 0 0 1-.6.9l-4.5 2.3a2 2 0 0 1-1.8 0l-4.2-2.1a2 2 0 0 0-1.8 0l-3.7 1.9A1 1 0 0 1 3 19.4V6.6a1 1 0 0 1 .6-.9l4.5-2.3a2 2 0 0 1 1.8 0z"/><path d="M15 5.8v15"/><path d="M9 3.2v15"/>',
   };
   function Icon(name: string, cls = ''): string {
     const body = P[name];
@@ -169,6 +171,7 @@ export const Icon = (() => {
     '🎓': 'book',
     '🔥': 'flame',
     '🎙': 'mic',
+    '🧭': 'map',
   };
   const LEAD = /^((?:\p{Extended_Pictographic}|↩)(?:\uFE0F|\u200D\p{Extended_Pictographic})*)\s*/u;
   Icon.text = <E extends Element>(el: E, text: unknown): E => {

@@ -269,6 +269,27 @@ export function createHelpers(r: HelpersNeeds) {
     });
   }
 
+  // Another part's own page in the panel (the context engine's): it fills the body, and Back (or
+  // Esc) goes out to the chat. A file opened from it comes Back to it, filled again.
+  const PANEL_VIEW = 'panel:';
+  let panel: { icon: string; title: string; fill: (body: HTMLElement) => void } | null = null;
+  function openPanel(icon: string, title: string, fill: (body: HTMLElement) => void) {
+    if (r.history.isOpen()) r.history.close();
+    clearInterval(helperView.timer);
+    panel = { icon, title, fill };
+    Object.assign(helperView, { id: null, call: null, tab: r.active() ?? null, file: PANEL_VIEW, trail: [] });
+    coverChat();
+    $('#helper-view').hidden = false;
+    const heading = $('#hv-title');
+    heading.innerHTML = Icon(icon, 'sm lead');
+    heading.append(title);
+    heading.removeAttribute('title');
+    const body = $('#hv-body');
+    body.replaceChildren();
+    fill(body);
+    body.scrollTop = 0;
+  }
+
   // running helpers' clocks keep ticking on the card
   setInterval(() => {
     const t = r.active();
@@ -454,6 +475,7 @@ export function createHelpers(r: HelpersNeeds) {
   function backFromView() {
     const prev = helperView.file && helperView.trail.pop();
     if (prev === OUTPUTS_VIEW) openOutputsView({ back: true });
+    else if (prev === PANEL_VIEW && panel) openPanel(panel.icon, panel.title, panel.fill);
     else if (prev) openFileView(prev, { back: true });
     else closeHelper();
   }
@@ -593,6 +615,7 @@ export function createHelpers(r: HelpersNeeds) {
     onAgent,
     openFileView,
     openHelper,
+    openPanel,
     openToolView,
     renderHelpers,
     renderToolView,

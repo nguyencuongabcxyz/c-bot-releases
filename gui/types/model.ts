@@ -267,6 +267,190 @@ export type Character = {
   claudeCommands?: ClaudeCommand[];
   sessionIds?: string[];
   closedTabs?: (Tab & { closedAt: number })[];
+  contextEngine?: boolean; // its folder's code indexed for its Claude (app/src/context), switched on from the chat
+};
+
+/** How the context engine's index of a robot's folder is (app/src/context Status): off; setting
+ * up its database the first time (note: what it's doing); reading its files (done of total);
+ * ready, its chunks getting their vectors for search by meaning (embedded of chunks; note: the
+ * model's download); or it couldn't (error). capped: more files than it reads. calls: who calls
+ * what, once the code graph is built (0 till then); graph: it's built for the code as it is. */
+export type ContextEngineStatus = {
+  phase: 'off' | 'installing' | 'indexing' | 'ready' | 'failed';
+  files: number;
+  chunks: number;
+  embedded: number;
+  symbols: number;
+  calls: number;
+  graph: boolean;
+  done: number;
+  total: number;
+  capped: boolean;
+  note: string | null;
+  error: string | null;
+};
+
+/** Everything about the context engine, for the chat's details panel (app/src/context/details.rs
+ * Details): the robot's own folder (null while the engine is off for it), the store (null while
+ * its database isn't up), every folder the store holds, the models, and where it all is. */
+export type ContextEngineDetails = {
+  folder: ContextFolderDetails | null;
+  store: ContextStoreDetails | null;
+  repos: ContextRepo[];
+  models: ContextModel[];
+  dir: string;
+};
+
+/** The robot's own folder: its index, what's in it, its watch, its git branch. readAt: when it was
+ * last brought up to date (ms since 1970). */
+export type ContextFolderDetails = {
+  root: string;
+  status: ContextEngineStatus;
+  watched: boolean;
+  readAt: number | null;
+  languages: { name: string; files: number }[];
+  docs: number;
+  keywordBytes: number;
+  vectorsInMemory: number;
+  graphBuilt: boolean;
+  git: ContextGit | null;
+};
+
+/** A folder's branch and last commit; changed: files changed and not committed. */
+export type ContextGit = {
+  branch: string;
+  head: string;
+  subject: string;
+  author: string;
+  when: string;
+  changed: number;
+};
+
+/** The engine's PostgreSQL; startedHere: by this C-Bot (which stops it on its way out). */
+export type ContextStoreDetails = {
+  version: string;
+  port: number;
+  dataDir: string;
+  startedHere: boolean;
+  bytes: number;
+  vectors: { model: string; count: number }[];
+};
+
+/** A folder the store holds: robots, the ones with the engine on reading it; current: this
+ * robot's; open: in memory now; kinds: its files by language or kind of document (most first);
+ * bytes: its files', as last read. */
+export type ContextRepo = {
+  root: string;
+  files: number;
+  chunks: number;
+  embedded: number;
+  generation: number;
+  robots: string[];
+  current: boolean;
+  open: boolean;
+  kinds: { name: string; files: number; bytes: number }[];
+  bytes: number;
+};
+
+/** A model the engine runs, or what runs them. */
+export type ContextModel = {
+  role: 'sentence' | 'reranker' | 'runtime';
+  name: string;
+  downloaded: boolean;
+  loaded: boolean;
+  bytes: number;
+};
+
+/** A group of the tools C-Bot gives a robot's Claude Code (app/src/mcp/tools/mod.rs GroupInfo):
+ * on, this robot's conversations get them (the context engine's only while it's on). */
+export type ToolGroupInfo = {
+  group: 'robots' | 'words' | 'notes' | 'routines' | 'terminal' | 'screen' | 'tabs' | 'code';
+  on: boolean;
+  tools: ToolInfo[];
+};
+
+/** A tool: its name as Claude Code calls it (mcp__cbot__…), what it does, and whether using it
+ * asks first (the robot's permission mode decides). */
+export type ToolInfo = { name: string; description: string; asks: boolean };
+
+/** What the Context engine window opens on (app/src/context/window.rs): the folder asked for
+ * (a robot's), as the store names it. */
+export type ContextInit = { focus: string | null };
+
+/** A folder of the store, as the window shows it (window.rs RepoView): loaded, a robot reads it
+ * now (in memory, watched, with its code graph); else what the store knows of it. */
+export type ContextRepoView = { folder: ContextFolderDetails; loaded: boolean };
+
+/** A folder's files (app/src/context/browse.rs IndexedFiles), by path. */
+export type ContextFiles = { root: string; files: ContextFile[] };
+
+/** A file of the index: path, in the folder (with `/`); kind, its language or kind of document;
+ * code: search counts it as code; embedded: its chunks with their vector; defs: its definitions. */
+export type ContextFile = {
+  path: string;
+  kind: string;
+  code: boolean;
+  bytes: number;
+  chunks: number;
+  embedded: number;
+  defs: number;
+};
+
+/** One file of the index opened up (browse.rs FileIndex): full, its path on disk. */
+export type ContextFileIndex = {
+  path: string;
+  full: string;
+  defs: ContextDef[];
+  chunks: ContextChunk[];
+};
+
+/** A definition, as the code tools read it (parse.rs Def): container, what holds it; depth,
+ * inside how many other definitions; sig, how it starts, on one line. */
+export type ContextDef = {
+  name: string;
+  kind:
+    | 'module'
+    | 'class'
+    | 'struct'
+    | 'interface'
+    | 'trait'
+    | 'enum'
+    | 'type'
+    | 'impl'
+    | 'function'
+    | 'method'
+    | 'constructor'
+    | 'property'
+    | 'const'
+    | 'macro';
+  container: string | null;
+  line: number;
+  end: number;
+  depth: number;
+  sig: string;
+};
+
+/** A chunk, as search finds it: its lines (from–to), the definition it's about, and whether it
+ * has its vector (search by meaning). */
+export type ContextChunk = {
+  idx: number;
+  code: boolean;
+  from: number;
+  to: number;
+  symbol: string;
+  text: string;
+  embedded: boolean;
+};
+
+/** What the Context engine window deletes besides one folder's index (app/src/context/wipe.rs):
+ * every index (the downloads stay), or everything, downloads too. */
+export type ContextWipe = 'indexes' | 'everything';
+
+/** What was deleted. */
+export type ContextWiped = {
+  freed: number; // (bytes, on disk)
+  later: boolean; // (some of it was in use: it goes the next time C-Bot starts)
+  robots: string[]; // (the robots the engine was switched off for, by name)
 };
 
 /** What a robot window is told about its robot (main.js robotView). */

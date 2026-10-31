@@ -1,0 +1,19 @@
+/* Highlighted code's colours (highlight.js's classes), on the code background (--code-bg), for
+   every window that shows code: the chat's code blocks and file viewer, the Context engine window. */
+.hljs-comment, .hljs-quote { color: #8b949e; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-built_in, .hljs-type { color: #ff7b72; }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-meta .hljs-string { color: #a5d6ff; }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.language_ { color: #79c0ff; }
+.hljs-title, .hljs-title.function_, .hljs-section { color: #d2a8ff; }
+.hljs-title.class_, .hljs-attr, .hljs-attribute, .hljs-selector-class, .hljs-selector-id { color: #ffa657; }
+.hljs-name, .hljs-tag, .hljs-template-tag { color: #7ee787; }
+.hljs-meta, .hljs-params, .hljs-property { color: #c9d1d9; }
+.hljs-deletion { color: #ffa198; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+/* (the vintage notebook: ink colours) */
+:root[data-theme="vintage"] .hljs-keyword, :root[data-theme="vintage"] .hljs-built_in, :root[data-theme="vintage"] .hljs-literal, :root[data-theme="vintage"] .hljs-type { color: #e0907a; }
+:root[data-theme="vintage"] .hljs-string, :root[data-theme="vintage"] .hljs-regexp { color: #b8c98a; }
+:root[data-theme="vintage"] .hljs-number, :root[data-theme="vintage"] .hljs-symbol { color: #e6c07b; }
+:root[data-theme="vintage"] .hljs-title, :root[data-theme="vintage"] .hljs-section { color: #c9a6d8; }
+:root[data-theme="vintage"] .hljs-comment { color: #9a8c76; }

@@ -12,6 +12,7 @@ These rules are strict. New code follows them; code you touch is brought in line
 | `robots/` | Robot windows and what they do on the desktop (walkers, social, stage, island, maid, planes) |
 | `features/` | What robots do for the user: `chat/` (tabs, side questions, `group/`), `notes/`, `vocab/` |
 | `mcp/` | What Claude itself calls: `server.rs` (the `--robots-mcp` process), `link/`, `tools/` (one file per tool group), `apps/` |
+| `context/` | The context engine: a robot's folder's code read (tree-sitter) into its own PostgreSQL, with what's derived from it (the Tantivy keyword index, usearch vectors from a sentence model run by ONNX Runtime, the code graph); searched, mapped and followed for the code tools in `mcp/tools/code.rs` |
 | `workbench/` | Tools around the chat: quick actions, palette, snip, capture, files, shell, terminal, voice |
 | `ui/` | The app's own windows and menus: `tray/`, `workshop.rs`, `views.rs` |
 | `platform/` | Everything that calls the OS. `common/` (shared types and logic), `windows/` (Win32, WebView2). A future `macos/` or `linux/` offers the same modules with the same functions |
@@ -114,7 +115,7 @@ These rules are strict. New code follows them; code you touch is brought in line
 - Match the surrounding code: its names, its idioms, its comment density.
 - `//!` says what a module is for, in plain words. `///` on what other modules call and on anything whose reason isn't obvious. Comments explain *why*; parenthetical asides `(like this)` are the house style.
 - No dead code, no commented-out code, no `#[allow(...)]`. Fix the warning instead. Where a lint is wrong for one item, put `#[expect(lint, reason = "…")]` on that item (as `Locked::locked` and `mcp/server.rs` do).
-- No new dependency without a reason in the commit. **No pre-release crates** (`-rc`, `-beta`), and don't propose `tauri-specta`.
+- No new dependency without a reason in the commit. **No pre-release crates** (`-rc`, `-beta`), and don't propose `tauri-specta`. The one exception is `ort` (ONNX Runtime, for the context engine's sentence model), pinned to an exact release candidate: its 2.0 line has only ever been one (see `Cargo.toml`).
 
 ## Tests
 

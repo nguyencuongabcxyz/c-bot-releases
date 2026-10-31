@@ -108,7 +108,8 @@ fn stage_menu(app: &AppHandle, chars: &[Value]) -> Item {
     )
 }
 
-/// The features with no hotkey of their own: notes, routines and words (the rest: the action menu).
+/// The features with no hotkey of their own: notes, routines, the context engine and words (the
+/// rest: the action menu).
 fn feature_items(app: &AppHandle, s: &Value) -> Vec<Item> {
     let (palette_keys, palette_ok) = hotkey(app, "paletteHotkey", "Ctrl+Alt+C");
     let palette_label = if palette_ok {
@@ -120,6 +121,7 @@ fn feature_items(app: &AppHandle, s: &Value) -> Vec<Item> {
         item(app, "tray|palette".into(), &palette_label, true),
         notes_menu(app),
         item(app, "tray|routines".into(), "⏰ Routines…", true),
+        item(app, "tray|context".into(), "🧭 Context engine…", true),
         words_menu(app, s),
     ]
 }

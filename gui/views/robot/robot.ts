@@ -16,6 +16,8 @@ import '@/theme/theme.css';
 import '@/theme/base.css';
 import './robot.css';
 import '@/features/chat/chat.css';
+import '@/theme/code.css';
+import '@/features/context/context.css';
 import '@/features/robots/stage/tile.css';
 import type { Settings } from '@/types/model';
 import * as ipc from '@/ipc';
@@ -34,6 +36,7 @@ import { createIdleAntics, type IdleAnticsApi } from './life/antics';
 import { createMentions, type MentionsApi } from '@/features/chat/composer/mentions';
 import { createSlash, type SlashApi } from '@/features/chat/composer/slash';
 import { createBrain, type BrainApi } from '@/features/chat/brain';
+import { createContextEngine } from '@/features/chat/context/engine';
 import { createBonk, type BonkApi } from './life/bonk';
 import { createAttachments, type AttachmentsApi } from '@/features/chat/composer/attachments';
 import { createBriefs, type BriefsApi } from '@/features/chat/brief';
@@ -187,6 +190,7 @@ tooltips($('#side-panel'));
       openEffortMenu: () => openEffortMenu,
       openFileView: () => openFileView,
       openHelper: () => openHelper,
+      openPanel: () => openPanel,
       openHistory: () => openHistory,
       openInApp: () => openInApp,
       openMenu: () => openMenu,
@@ -517,6 +521,7 @@ tooltips($('#side-panel'));
     onAgent,
     openFileView,
     openHelper,
+    openPanel,
     openToolView,
     renderHelpers,
     renderToolView,
@@ -541,6 +546,9 @@ tooltips($('#side-panel'));
     showContext,
     startCompact,
   }: BrainApi = createBrain(hub);
+
+  // the context engine: its folder's code, indexed for its Claude
+  createContextEngine(hub); // (chat/context/engine.ts)
 
   // tabs
   const { activateTab, closeTab, newTab, renderTabs, syncTabs }: TabsApi = createTabs(hub); // (chat/tabs.ts)

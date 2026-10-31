@@ -1,0 +1,25 @@
+<header>
+  <button id="side" type="button" class="cx-btn" title="Repositories (Ctrl+B)" data-icon="sidebar" aria-controls="repos-side"></button>
+  <h1 data-icon="map">Context engine</h1>
+  <span id="where"><b id="repo-name"></b><small id="repo-path"></small></span>
+  <button id="reindex" type="button" class="cx-open" title="Read again" data-icon="rotate">Read again</button>
+  <button id="forget" type="button" class="cx-btn danger" title="Delete index" data-icon="trash"></button>
+  <button id="refresh" type="button" class="cx-btn" title="Refresh" data-icon="refresh"></button>
+</header>
+<div id="layout">
+  <aside id="repos-side" aria-label="Repositories">
+    <h2>Repositories <span id="repo-count"></span></h2>
+    <div id="repos"></div>
+  </aside>
+  <main>
+    <div id="tabs" role="tablist" aria-label="Pages">
+      <button type="button" role="tab" data-tab="overview" data-icon="gauge">Overview</button>
+      <button type="button" role="tab" data-tab="files" data-icon="file">Files</button>
+      <button type="button" role="tab" data-tab="engine" data-icon="cpu">Store &amp; models</button>
+    </div>
+    <p id="notice" role="status" hidden></p>
+    <section id="page-overview" class="page"></section>
+    <section id="page-files" class="page" hidden></section>
+    <section id="page-engine" class="page" hidden></section>
+  </main>
+</div>

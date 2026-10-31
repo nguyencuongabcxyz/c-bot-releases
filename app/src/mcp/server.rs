@@ -1,6 +1,7 @@
 //! C-Bot's MCP server: what gives a robot's Claude Code C-Bot's tools (tools/: the other
-//! robots, the user's words and notes, the shells in its chat, the screen). Claude Code starts it for each
-//! conversation over stdio, as `c-bot.exe --robots-mcp <robot id> <port> <chat tab id>`
+//! robots, the user's words and notes, the shells in its chat, the screen, and the context
+//! engine's when it's on: `--code`). Claude Code starts it for each conversation over stdio, as
+//! `c-bot.exe --robots-mcp <robot id> <port> <chat tab id> [--code]`
 //! (link.rs writes the --mcp-config that says so). There's no Node here, so the app's own exe
 //! serves it, from the very top of main(), before the Tauri builder (whose single-instance
 //! plugin would otherwise hand the launch to the running app and quit).
@@ -21,6 +22,8 @@ use super::tools;
 use crate::runtime::Locked;
 
 pub const FLAG: &str = "--robots-mcp";
+/// The robot has the context engine on: its tools are listed too.
+pub const CODE_FLAG: &str = "--code";
 
 /// What to do with one message from Claude Code.
 #[derive(Debug, PartialEq)]
@@ -38,7 +41,8 @@ pub enum Step {
     Nothing,
 }
 
-pub fn step(msg: &Value) -> Step {
+/// (`code`: the context engine's tools are listed too.)
+pub fn step(msg: &Value, code: bool) -> Step {
     let method = msg["method"].as_str().unwrap_or("");
     let params = &msg["params"];
     let Some(id) = msg.get("id").cloned() else {
@@ -61,7 +65,7 @@ pub fn step(msg: &Value) -> Step {
             )
         }
         "ping" => reply(json!({})),
-        "tools/list" => reply(json!({ "tools": tools::list() })),
+        "tools/list" => reply(json!({ "tools": tools::list(code) })),
         "tools/call" => {
             let args = params
                 .get("arguments")
@@ -106,6 +110,7 @@ struct Server {
     token: String,
     robot: String,
     tab: String, // (the conversation it serves: its chat tab; '' from a config written before)
+    code: bool,
     out: Mutex<std::io::Stdout>,
     open: Mutex<HashMap<String, TcpStream>>, // JSON-RPC id -> its line to the app (to hang up on)
 }
@@ -151,21 +156,27 @@ pub(super) fn exchange(sock: &mut TcpStream, request: &Value) -> Value {
     }
 }
 
-/// `c-bot.exe --robots-mcp <robot id> <port> [<chat tab id>]`: serve the tools on stdin/stdout until
-/// Claude Code closes stdin. Returns the exit code, or None when it's an ordinary launch.
+/// `c-bot.exe --robots-mcp <robot id> <port> [<chat tab id>] [--code]`: serve the tools on
+/// stdin/stdout until Claude Code closes stdin. Returns the exit code, or None when it's an
+/// ordinary launch.
 #[expect(clippy::print_stderr, reason = "a CLI's usage line")]
 pub fn run_if_asked() -> Option<i32> {
     let args: Vec<String> = std::env::args().collect();
     let at = args.iter().position(|a| a == FLAG)?;
     let (Some(robot), Some(port)) = (args.get(at + 1), args.get(at + 2)) else {
-        eprintln!("usage: c-bot --robots-mcp <robot id> <port> [<chat tab id>]");
+        eprintln!("usage: c-bot --robots-mcp <robot id> <port> [<chat tab id>] [--code]");
         return Some(2);
     };
     let server = Arc::new(Server {
         port: port.clone(),
         token: std::env::var("CBOT_TOKEN").unwrap_or_default(),
         robot: robot.clone(),
-        tab: args.get(at + 3).cloned().unwrap_or_default(),
+        tab: args
+            .get(at + 3)
+            .filter(|a| *a != CODE_FLAG)
+            .cloned()
+            .unwrap_or_default(),
+        code: args[at..].iter().any(|a| a == CODE_FLAG),
         out: Mutex::new(std::io::stdout()),
         open: Mutex::new(HashMap::new()),
     });
@@ -179,7 +190,7 @@ pub fn run_if_asked() -> Option<i32> {
         let Ok(msg) = serde_json::from_str::<Value>(line) else {
             continue;
         };
-        match step(&msg) {
+        match step(&msg, server.code) {
             Step::Reply(r) => server.send(&r),
             // (each on its own thread: several robots can be asked at once)
             Step::Call { id, tool, args } => {
@@ -208,14 +219,17 @@ mod tests {
     fn it_introduces_itself_with_the_version_asked_for() {
         let Step::Reply(r) = step(
             &json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": { "protocolVersion": "2025-06-18" } }),
+            false,
         ) else {
             panic!()
         };
         assert_eq!(r["id"], 0);
         assert_eq!(r["result"]["protocolVersion"], "2025-06-18");
         assert_eq!(r["result"]["serverInfo"]["name"], "cbot");
-        let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize" }))
-        else {
+        let Step::Reply(r) = step(
+            &json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize" }),
+            false,
+        ) else {
             panic!()
         };
         assert_eq!(r["result"]["protocolVersion"], "2024-11-05");
@@ -223,8 +237,10 @@ mod tests {
 
     #[test]
     fn it_lists_the_tools_read_only_but_typing_in_a_shell() {
-        let Step::Reply(r) = step(&json!({ "jsonrpc": "2.0", "id": "a", "method": "tools/list" }))
-        else {
+        let Step::Reply(r) = step(
+            &json!({ "jsonrpc": "2.0", "id": "a", "method": "tools/list" }),
+            false,
+        ) else {
             panic!()
         };
         let tools = r["result"]["tools"].as_array().unwrap();
@@ -260,9 +276,32 @@ mod tests {
     }
 
     #[test]
+    fn the_code_tools_are_listed_only_with_the_context_engine_on() {
+        let names = |code| {
+            let Step::Reply(r) = step(
+                &json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+                code,
+            ) else {
+                panic!()
+            };
+            r["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t["name"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        let (off, on) = (names(false), names(true));
+        assert!(!off.iter().any(|n| n == "find_symbol"));
+        assert_eq!(on.len(), off.len() + tools::code::NAMES.len());
+        assert_eq!(&on[off.len()..], tools::code::NAMES);
+    }
+
+    #[test]
     fn a_call_goes_to_the_app_and_comes_back_as_text() {
         let s = step(
             &json!({ "jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": { "name": "ask_robot", "arguments": { "robot": "Bo", "message": "hi" } } }),
+            false,
         );
         assert_eq!(
             s,
@@ -302,12 +341,16 @@ mod tests {
     #[test]
     fn notifications_get_no_answer_but_a_cancel_hangs_up() {
         assert_eq!(
-            step(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })),
+            step(
+                &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+                false
+            ),
             Step::Nothing
         );
         assert_eq!(
             step(
-                &json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": 7 } })
+                &json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": 7 } }),
+                false
             ),
             Step::Cancel(json!(7))
         );
@@ -315,9 +358,10 @@ mod tests {
 
     #[test]
     fn an_unknown_method_is_an_error() {
-        let Step::Reply(r) =
-            step(&json!({ "jsonrpc": "2.0", "id": 3, "method": "resources/list" }))
-        else {
+        let Step::Reply(r) = step(
+            &json!({ "jsonrpc": "2.0", "id": 3, "method": "resources/list" }),
+            false,
+        ) else {
             panic!()
         };
         assert_eq!(r["error"]["code"], -32601);

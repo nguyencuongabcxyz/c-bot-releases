@@ -1,6 +1,6 @@
 [package]
 name = "c-bot"
-version = "1.9.1"
+version = "2.0.0"
 description = "Cartoon desktop robots that are secretly Claude Code"
 edition = "2024"
 rust-version = "1.99"
@@ -56,7 +56,45 @@ windows-sys = { version = "0.61.2", features = [
 # the shell in a robot's chat (shell.rs): a pseudoconsole (ConPTY) to run it in
 portable-pty = "0.9"
 thiserror = "2.0.21"
-log = "0.4.34"
+log = "0.4.35"
+# the context engine (context/): the code in a robot's folder read into symbols, the way
+# editors read it (tree-sitter and its grammars), and walked the way git sees it (ignore)
+tree-sitter = "0.27.1"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-c-sharp = "0.23.5"
+tree-sitter-go = "0.25.0"
+tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.2"
+tree-sitter-java = "0.23.5"
+tree-sitter-cpp = "0.23.4"
+ignore = "0.4.34"
+# the context engine's store (context/store): PostgreSQL, downloaded the first time a robot
+# switches the engine on and run by the app (postgresql_embedded), spoken to with sqlx (the
+# one postgresql_embedded already brings); files told apart by content (blake3)
+postgresql_embedded = { version = "0.22.0", default-features = false, features = ["theseus", "tokio", "tls-rustls-ring"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "runtime-tokio"] }
+blake3 = "1.8.7"
+# (the same tokio Tauri runs: telling whether a thread is one of its own, where waiting on the
+# database must happen on another thread)
+tokio = { version = "1.54.1", default-features = false, features = ["rt"] }
+# its keyword search, an index derived from the store (context/keyword.rs)
+tantivy = "0.27.0"
+# its search by meaning (context/embed, context/vectors.rs): a small multilingual sentence model
+# run by ONNX Runtime (ort; its DLL is downloaded with the model the first time it's needed,
+# out of Microsoft's zip: the zip the updater already brings), its text cut into tokens
+# (tokenizers); its vectors kept at half precision (half) in an HNSW index (usearch).
+# ort is a release candidate, against AGENTS.md: its 2.0 line has only ever been one, and its
+# last stable release (1.16, 2023) can't load a DLL from a path without unsafe code here
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic"] }
+zip = { version = "9.1.3", default-features = false, features = ["deflate"] }
+# (not its defaults: their esaxx is C++ built on the static C runtime, which can't be linked
+# with usearch's)
+tokenizers = { version = "0.22.2", default-features = false, features = ["onig"] }
+half = "2.7.1"
+usearch = "2.26.6"
+# a folder's files watched as they're saved (context/watch.rs), so its index follows them at
+# once instead of walking the folder before each question (the 8 line: 9 is a release candidate)
+notify = { version = "8.2.0", default-features = false }
 
 # (the rules in AGENTS.md that a lint can check; thresholds and bans in clippy.toml)
 [lints.clippy]
@@ -71,6 +109,11 @@ too_many_lines = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 disallowed_methods = "deny"
+
+# (the dependencies built fast in debug builds too: the context engine's keyword index and
+# parsers are unusably slow unoptimized)
+[profile.dev.package."*"]
+opt-level = 2
 
 # a small binary
 [profile.release]

@@ -265,9 +265,18 @@ pub fn mcp_config(app: &AppHandle, id: &str, tab: &str) -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     let file = config_file(app, id, tab);
     let dir = file.parent()?.to_path_buf();
+    let mut args = vec![
+        crate::mcp::server::FLAG.to_string(),
+        id.to_string(),
+        port.to_string(),
+        tab.to_string(),
+    ];
+    if crate::context::on(app, id) {
+        args.push(crate::mcp::server::CODE_FLAG.into()); // (the context engine's tools too)
+    }
     let cfg = json!({ "mcpServers": { "cbot": {
         "command": exe.to_string_lossy(),
-        "args": [crate::mcp::server::FLAG, id, port.to_string(), tab],
+        "args": args,
         "env": { "CBOT_TOKEN": token },
     } } });
     let written =
@@ -421,8 +430,13 @@ mod tests {
 
     #[test]
     fn the_tools_are_the_cbot_ones() {
+        let with_code = tools::allowed(true);
+        assert_eq!(with_code.len(), 26);
+        assert_eq!(with_code[16], "mcp__cbot__code_map");
+        assert_eq!(with_code[24], "mcp__cbot__change_impact");
+        assert_eq!(with_code[25], "mcp__cbot__code_history");
         assert_eq!(
-            tools::allowed(),
+            tools::allowed(false),
             [
                 "mcp__cbot__ask_robot",
                 "mcp__cbot__list_robots",

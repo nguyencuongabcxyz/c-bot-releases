@@ -10,6 +10,14 @@ import type {
   Brief,
   Character,
   ClaudeCommand,
+  ContextEngineDetails,
+  ContextEngineStatus,
+  ContextFileIndex,
+  ContextFiles,
+  ContextInit,
+  ContextRepoView,
+  ContextWipe,
+  ContextWiped,
   ContextUse,
   FileChip,
   FileInfo,
@@ -24,6 +32,7 @@ import type {
   QAItem,
   SessionRow,
   Settings,
+  ToolGroupInfo,
   Transcript,
 } from '@/types/model';
 import type * as P from '@/types/pages';
@@ -67,6 +76,25 @@ export const robotTabBrief = (fromTabId: string, toTabId: string, draft: string)
   invoke<string>('robot_tab_brief', { args: { fromTabId, toTabId, draft } });
 export const robotCompact = (tabId: string, turnId: string) => invoke<AskResult>('robot_compact', { tabId, turnId });
 export const robotRemote = (tabId: string, on: boolean) => invoke<OkOr>('robot_remote', { tabId, on });
+// (the context engine, app/src/context: how its index is, switching it on or off, reading the folder again)
+export const robotContext = () => invoke<ContextEngineStatus>('robot_context');
+export const robotContextSet = (on: boolean) => invoke<ContextEngineStatus>('robot_context_set', { on });
+export const robotContextReindex = () => invoke<ContextEngineStatus>('robot_context_reindex');
+export const robotContextDetails = () => invoke<ContextEngineDetails>('robot_context_details');
+export const robotContextWindow = () => invoke<null>('robot_context_window');
+// (the tools C-Bot gives this robot's Claude Code, by group: the chat's /tools)
+export const robotTools = () => invoke<ToolGroupInfo[]>('robot_tools');
+// (the Context engine window: any folder the store holds, by its root)
+export const contextInit = () => invoke<ContextInit>('context_init');
+export const contextDetails = () => invoke<ContextEngineDetails>('context_details');
+export const contextRepo = (root: string) => invoke<ContextRepoView>('context_repo', { root });
+export const contextFiles = (root: string) => invoke<ContextFiles>('context_files', { root });
+export const contextFile = (root: string, path: string) => invoke<ContextFileIndex>('context_file', { root, path });
+export const contextSource = (root: string, path: string) => invoke<string>('context_source', { root, path });
+export const contextReindex = (root: string) => invoke<null>('context_reindex', { root });
+export const contextOpen = (path: string, reveal: boolean) => invoke<null>('context_open', { path, reveal });
+export const contextForget = (root: string) => invoke<ContextWiped>('context_forget', { root });
+export const contextWipe = (what: ContextWipe) => invoke<ContextWiped>('context_wipe', { what });
 export const robotCancel = (tabId: string) => invoke<string[]>('robot_cancel', { tabId });
 export const robotUnqueue = (tabId: string, turnId: string) => invoke<boolean>('robot_unqueue', { tabId, turnId });
 export const robotSendNow = (tabId: string, turnId: string) => invoke<boolean>('robot_send_now', { tabId, turnId });

@@ -33,6 +33,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::agents::claude::{Session, locate, transcripts};
 use crate::agents::{self, claude, personalities};
+use crate::context;
 use crate::mcp::{apps, link, tools};
 use crate::robots::label_of;
 use crate::runtime::{Locked, with};
@@ -288,11 +289,15 @@ fn patch(pairs: Vec<(&str, Value)>) -> Map<String, Value> {
 
 // ---------------------------------------------------------------- one tab's conversation
 
-/// Its personality, and the other robots it can ask (mcp/link.rs).
+/// Its personality, the other robots it can ask (mcp/link.rs), and the map of its code when
+/// the context engine is on (context/).
 pub fn prompt_for(app: &AppHandle, c: &Value) -> String {
     let id = c.id();
     let mut prompt = personalities::system_prompt_for(c);
-    if let Some(note) = link::note(app, id) {
+    for note in [link::note(app, id), context::note(app, id)]
+        .into_iter()
+        .flatten()
+    {
         prompt.push('\n');
         prompt.push_str(&note);
     }
@@ -345,7 +350,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
             (link::TASK_TIMEOUT_MS + 60_000).to_string(),
         )], // (a handed-off task may take a while)
         allowed_tools: if mcp_config.is_some() {
-            tools::allowed()
+            tools::allowed(context::on(app, id))
         } else {
             vec![]
         },

@@ -14,6 +14,7 @@ import type { AskingApi } from '../reply/ask';
 import type { ChatTab, PaletteCommand, PaletteItem, RobotState } from '@/views/robot/types';
 import * as ipc from '@/ipc';
 import { $ } from '@/lib/dom';
+import { toolsText } from '../tools';
 
 /** What it uses of the robot window (robot.ts's hub). */
 export type SlashNeeds = {
@@ -76,6 +77,7 @@ export function createSlash(r: SlashNeeds) {
     { name: 'note', args: '<text>', description: 'Jot a note down (it goes on my corkboard)' },
     { name: 'notes', description: 'Open my notebook' },
     { name: 'routines', description: 'Prompts I run on a schedule' },
+    { name: 'tools', description: 'The tools C-Bot gives me, and which are on' },
     { name: 'sleep', description: 'Send me to bed' },
     { name: 'help', description: 'What I can do' },
   ];
@@ -182,6 +184,12 @@ export function createSlash(r: SlashNeeds) {
         return true;
       case 'routines':
         ipc.routinesOpen();
+        return true;
+      case 'tools':
+        ipc.robotTools().then(
+          (groups) => r.addBot(toolsText(groups)),
+          (e) => r.addNote(`🛠️ ${String(e)}`),
+        );
         return true;
       case 'sleep':
         r.sleep();

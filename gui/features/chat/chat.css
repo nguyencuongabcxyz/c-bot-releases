@@ -529,6 +529,46 @@ button.tv-doc:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--
 #brain-meter.warm .bm-bar i { background: var(--warn); }
 #brain-meter.full .bm-bar i { background: var(--danger); }
 #brain-meter.full { animation: pulse 1.2s ease-in-out infinite; }
+/* the context engine (chat/context/engine.ts): dim while off, lit while it works, its map green once it's done;
+   while it works a bar under its words, accent while it reads, violet while its chunks get their vectors
+   (sliding when there's no telling how far) */
+#brain-context[data-phase="off"] { color: var(--muted); }
+#brain-context[data-stage] { --stage: var(--accent); }
+#brain-context[data-stage="meaning"] { --stage: var(--violet); }
+#brain-context[data-stage] .ic { color: var(--stage); animation: pulse 1.1s ease-in-out infinite; }
+#brain-context[data-phase="ready"]:not([data-stage]) .ic { color: var(--ok); }
+#brain-context[data-phase="failed"] .ic { color: var(--danger); }
+.bc-bar { display: none; width: 34px; height: 4px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--stage) 18%, var(--line-2)); }
+#brain-context[data-stage] .bc-bar { display: block; }
+.bc-bar i { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--stage); transition: width 0.5s ease-out; }
+#brain-context.vague .bc-bar i { width: 40%; animation: cx-slide 1.2s ease-in-out infinite; }
+@keyframes cx-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+/* and its button in the header: a dot, pulsing while it works, green once it's ready, red if it failed */
+#btn-context { position: relative; }
+#btn-context:is([data-phase="ready"], [data-phase="failed"], [data-stage])::after {
+  content: ""; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
+}
+#btn-context[data-stage]::after { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+#btn-context[data-stage="meaning"]::after { background: var(--violet); }
+#btn-context[data-phase="failed"]::after { background: var(--danger); }
+/* and beside it, a dot for each of its indexes (syntax trees, keywords, vectors, code graph): grey
+   while waiting, accent while it's made, green once ready, red if it failed */
+.bc-idx { display: inline-flex; gap: 2px; }
+.bc-idx i { width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); }
+.bc-idx i.work { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+.bc-idx i.ready { background: var(--ok); }
+.bc-idx i.failed { background: var(--danger); }
+#brain-context[data-phase="off"] .bc-idx { display: none; }
+/* (on, the dots say there's more to it than its ▼; and in a narrow chat its words give way first) */
+#brain-context:not([data-phase="off"]) .caret { display: none; }
+#brain-context { min-width: 0; }
+.bc-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* its panel, in the helper view (chat/context/panel.ts): a bar on top, then this robot's folder
+   (its cards: features/context/context.css) */
+.cx-panel { display: flex; flex-direction: column; height: calc(100% + 16px); margin: -2px -14px -14px; }
+.cx-toolbar { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 14px 8px; border-bottom: 1px solid var(--line); }
+.cx-toolbar .spacer { flex: 1; }
+.cx-page { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 14px 16px; display: flex; flex-direction: column; gap: 10px; scrollbar-gutter: stable; }
 #menu {
   position: absolute; z-index: 8; min-width: 210px; max-width: 300px; max-height: 320px; overflow-y: auto;
   background: var(--panel-bg); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px;
@@ -716,23 +756,6 @@ body.history-open #logs, body.history-open #status, body.history-open #composer,
 }
 .code-copy:hover { color: var(--code-fg); background: color-mix(in srgb, var(--code-fg) 12%, transparent); }
 .code-copy.done { color: #56d364; }
-.hljs-comment, .hljs-quote { color: #8b949e; font-style: italic; }
-.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-built_in, .hljs-type { color: #ff7b72; }
-.hljs-string, .hljs-regexp, .hljs-addition, .hljs-meta .hljs-string { color: #a5d6ff; }
-.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.language_ { color: #79c0ff; }
-.hljs-title, .hljs-title.function_, .hljs-section { color: #d2a8ff; }
-.hljs-title.class_, .hljs-attr, .hljs-attribute, .hljs-selector-class, .hljs-selector-id { color: #ffa657; }
-.hljs-name, .hljs-tag, .hljs-template-tag { color: #7ee787; }
-.hljs-meta, .hljs-params, .hljs-property { color: #c9d1d9; }
-.hljs-deletion { color: #ffa198; }
-.hljs-emphasis { font-style: italic; }
-.hljs-strong { font-weight: 600; }
-/* (the vintage notebook: ink colours) */
-:root[data-theme="vintage"] .hljs-keyword, :root[data-theme="vintage"] .hljs-built_in, :root[data-theme="vintage"] .hljs-literal, :root[data-theme="vintage"] .hljs-type { color: #e0907a; }
-:root[data-theme="vintage"] .hljs-string, :root[data-theme="vintage"] .hljs-regexp { color: #b8c98a; }
-:root[data-theme="vintage"] .hljs-number, :root[data-theme="vintage"] .hljs-symbol { color: #e6c07b; }
-:root[data-theme="vintage"] .hljs-title, :root[data-theme="vintage"] .hljs-section { color: #c9a6d8; }
-:root[data-theme="vintage"] .hljs-comment { color: #9a8c76; }
 
 /* the steps as a timeline: what it did, and under it what came back ("⎿ Read 120 lines") */
 .tools > .step, .tools > .steps-head { flex-basis: 100%; }

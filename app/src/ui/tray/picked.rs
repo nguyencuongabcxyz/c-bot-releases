@@ -76,6 +76,7 @@ fn tray_action(app: &AppHandle, what: &str) {
         "notebook" => notes::open_notebook(app, None, None),
         "note" => notes::open_notebook(app, None, Some("add")),
         "routines" => routines::open_window(app, None),
+        "context" => context::open_window(app, None),
         "words" => vocab::open_words(app),
         "box-word" => {
             thread::sleep(Duration::from_millis(250)); // (after the menu has gone)
@@ -104,6 +105,7 @@ fn robot_action(app: &AppHandle, id: &str, action: &str) {
         "notebook" => notes::open_notebook(app, rid, None),
         "note" => notes::open_notebook(app, rid, Some("add")),
         "routines" => routines::open_window(app, rid),
+        "context" => context::open_window(app, rid),
         "notes-robot" => pick_robot(app, "notesRobot", id),
         "words" => vocab::open_words(app),
         "box-word" => {

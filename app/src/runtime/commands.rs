@@ -4,10 +4,11 @@
 use tauri::Wry;
 use tauri::ipc::Invoke;
 
+use crate::context;
 use crate::features::chat;
 use crate::features::chat::group;
 use crate::features::{notes, routines, vocab};
-use crate::mcp::{apps, link};
+use crate::mcp::{apps, link, tools};
 use crate::robots::{ipc, island, revive, social, stage, walkers};
 use crate::ui::{tray, workshop};
 use crate::workbench::{palette, paste, quick, shell, snip, terminal, voice};
@@ -63,6 +64,23 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         revive::robot_alive,
         revive::robot_revive,
         tray::robot_menu,
+        // the context engine (its folder's code, indexed for its Claude)
+        context::robot_context,
+        context::robot_context_set,
+        context::robot_context_reindex,
+        context::robot_context_details,
+        context::robot_context_window,
+        tools::robot_tools,
+        context::context_init,
+        context::context_details,
+        context::context_repo,
+        context::context_files,
+        context::context_file,
+        context::context_source,
+        context::context_reindex,
+        context::context_open,
+        context::context_forget,
+        context::context_wipe,
         // tools in the chat
         voice::voice_engine,
         voice::voice_start,

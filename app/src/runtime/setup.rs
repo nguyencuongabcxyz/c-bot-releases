@@ -12,6 +12,7 @@ use tauri::{App, AppHandle, Manager, RunEvent};
 
 use super::paths::{self, electron_data_dir};
 use super::{State, hub, logging, migrate, with};
+use crate::context;
 use crate::features::chat::awake;
 use crate::features::{chat, notes, routines, vocab};
 use crate::mcp::{apps, link};
@@ -101,6 +102,7 @@ fn setup_parts(handle: &AppHandle) -> tauri::Result<()> {
     palette::setup(handle);
     link::setup(handle);
     apps::setup(handle);
+    context::setup(handle);
     chat::group::setup(handle);
     terminal::setup(handle);
     shell::setup(handle);
@@ -149,6 +151,7 @@ pub fn on_event(app: &AppHandle, event: RunEvent) {
         RunEvent::Exit => {
             chat::close_all(app);
             shell::close_all(app);
+            context::shutdown(app); // (its database, if C-Bot started it)
             with(app, |st| st.store.flush());
         }
         _ => {}

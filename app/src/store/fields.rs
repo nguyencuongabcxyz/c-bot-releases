@@ -17,6 +17,8 @@ pub trait Fields {
     fn visible(&self) -> bool;
     /// The Claude Code conversation it carries on, once it has one.
     fn session_id(&self) -> Option<&str>;
+    /// The context engine switched on for a robot (off unless the user turned it on).
+    fn context_engine(&self) -> bool;
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -48,6 +50,9 @@ impl Fields for Value {
     fn session_id(&self) -> Option<&str> {
         self["sessionId"].as_str()
     }
+    fn context_engine(&self) -> bool {
+        self["contextEngine"].as_bool().unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -63,10 +68,11 @@ mod tests {
         assert!(c.visible());
         assert_eq!(c.model(), "");
         assert_eq!(c.session_id(), Some("s1"));
-        let odd = json!({ "id": 7, "visible": "yes" });
+        let odd = json!({ "id": 7, "visible": "yes", "contextEngine": "on" });
         assert_eq!(
             (odd.id(), odd.effort(), odd.visible(), odd.session_id()),
             ("", "", false, None)
         );
+        assert!(!odd.context_engine() && json!({ "contextEngine": true }).context_engine());
     }
 }

@@ -1,0 +1,91 @@
+/* The context engine's cards, charts and tables (features/context/details.ts, charts.ts), for the
+   chat's panel and the Context engine window: anything inside .cx. Colours by tone (.t0–.t5: the
+   accent, violet, ok, warn, danger, muted), so they follow the theme and the mode. */
+.cx .t0 { --tone: var(--accent); }
+.cx .t1 { --tone: var(--violet); }
+.cx .t2 { --tone: var(--ok); }
+.cx .t3 { --tone: var(--warn); }
+.cx .t4 { --tone: var(--danger); }
+.cx .t5 { --tone: var(--muted); }
+@keyframes cx-pulse { 50% { opacity: 0.45; } }
+@keyframes cx-pop { from { opacity: 0; transform: translateY(4px); } }
+@keyframes cx-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+.cx-muted { color: var(--muted); font-size: 12px; margin: 0; }
+.cx-path { margin: 6px 0 0; color: var(--muted); font: 11px var(--font-mono); overflow-wrap: anywhere; }
+.cx-btn { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 1px solid var(--line-2); border-radius: var(--r-btn); background: var(--bg); color: var(--fg-2); cursor: pointer; transition: background 0.15s; }
+.cx-btn:hover { background: var(--bg-3); }
+.cx-btn:disabled { opacity: 0.45; cursor: default; }
+.cx-open { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: var(--r-btn); background: var(--bg); color: var(--fg-2); font: 600 12px var(--font-ui); cursor: pointer; }
+.cx-open:hover { background: var(--bg-3); color: var(--fg); }
+.cx-open:disabled { opacity: 0.45; cursor: default; }
+/* the on/off switch */
+.cx-switch { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 6px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--bg); color: var(--muted); font: 600 12px var(--font-ui); cursor: pointer; }
+.cx-switch i { position: relative; width: 26px; height: 15px; border-radius: 8px; background: var(--line-2); transition: background 0.2s; }
+.cx-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--bg); box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); transition: transform 0.2s; }
+.cx-switch.on { color: var(--fg); }
+.cx-switch.on i { background: var(--ok); }
+.cx-switch.on i::after { transform: translateX(11px); }
+
+/* cards */
+.cx-card, .cx-hero { min-width: 0; border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; background: var(--bg-2); box-shadow: var(--shadow); animation: cx-pop 0.3s ease-out both; }
+.cx-card h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.cx-card h3 > span:first-of-type { flex: 1; }
+.cx-card h3 .ic { color: var(--accent); }
+.cx-card > .cx-pill { margin-top: 8px; }
+/* a folder's top: its state, two rings, four numbers */
+.cx-hero { background: linear-gradient(160deg, var(--accent-soft), transparent 70%), var(--bg-2); }
+.cx-hero-top { display: flex; align-items: center; gap: 8px; }
+.cx-hero-top .cx-muted { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-rings { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 10px; }
+.cx-ring { display: grid; grid-template: "ring val" auto "ring label" auto "ring sub" auto / 64px 1fr; column-gap: 10px; align-items: center; min-width: 0; }
+.cx-ring svg { grid-area: ring; width: 64px; height: 64px; transform: rotate(-90deg); }
+.cx-ring circle { fill: none; stroke-width: 5; }
+.cx-ring .track { stroke: color-mix(in srgb, var(--tone) 16%, transparent); }
+.cx-ring .arc { stroke: var(--tone); stroke-linecap: round; transition: stroke-dashoffset 0.8s ease-out; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--tone) 45%, transparent)); }
+.cx-ring.busy .arc { animation: cx-pulse 1.2s ease-in-out infinite; }
+.cx-ring-val { grid-area: val; font: 600 20px var(--font-display); line-height: 1; color: var(--tone); }
+.cx-ring-label { grid-area: label; font-size: 12px; font-weight: 600; }
+.cx-ring-sub { grid-area: sub; font-size: 11px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.cx-tile { padding: 7px 8px; border-radius: var(--r-sm); background: var(--bg); border: 1px solid var(--line); min-width: 0; }
+.cx-tile-val { font: 600 16px var(--font-display); font-variant-numeric: tabular-nums; }
+.cx-tile-label { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+/* its indexes, one a row: a dot, its name, a line about it, a bar while it's made */
+.cx-indexes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.cx-indexes li { display: grid; grid-template-columns: 10px max-content minmax(0, 1fr); align-items: center; column-gap: 8px; row-gap: 4px; font-size: 12.5px; }
+.cx-indexes .cx-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
+.cx-indexes li.work .cx-dot { animation: cx-pulse 1.1s ease-in-out infinite; }
+.cx-indexes li.wait .cx-dot, .cx-indexes li.off .cx-dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-2); }
+.cx-indexes b { font-weight: 600; }
+.cx-indexes .cx-muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.cx-indexes .cx-bar { grid-column: 2 / -1; height: 4px; }
+.cx-indexes li.vague .cx-bar i { animation: cx-slide 1.2s ease-in-out infinite; }
+
+/* pills, bars, stacked bars and their legends */
+.cx-pill { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: var(--r-btn); font-size: 11px; font-weight: 600; white-space: nowrap; color: color-mix(in srgb, var(--tone) 80%, var(--fg)); background: color-mix(in srgb, var(--tone) 14%, transparent); }
+.cx-pill::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
+.cx-pill.busy::before { animation: cx-pulse 1s ease-in-out infinite; }
+.cx-bar { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--tone) 14%, transparent); overflow: hidden; }
+.cx-bar i { display: block; height: 100%; border-radius: 3px; background: var(--tone); transition: width 0.8s ease-out; }
+.cx-stack { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 8px; }
+.cx-stack i { display: block; background: var(--tone); min-width: 3px; transition: width 0.8s ease-out, filter 0.15s; }
+.cx-stack i:hover { filter: brightness(1.15); }
+.cx-legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 3px 10px; font-size: 12px; }
+.cx-legend li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cx-legend li::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--tone); }
+.cx-legend b { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-legend span { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* names and what each is */
+.cx-rows { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
+.cx-rows dt { color: var(--muted); }
+.cx-rows dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.cx-commit { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; margin-bottom: 2px; }
+.cx-commit code { font: 11px var(--font-mono); padding: 1px 5px; border-radius: 4px; background: var(--bg-3); color: var(--accent-ink); }
+.cx-models { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cx-models li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; font-size: 12.5px; }
+.cx-models li .cx-muted { font-size: 11px; overflow-wrap: anywhere; }
+/* what a definition is */
+.cx-kind { flex: none; padding: 0 5px; border-radius: 4px; font: 600 10px/1.6 var(--font-mono); color: var(--accent-ink); background: var(--accent-soft); }
+.cx-kind:is(.k-class, .k-struct, .k-interface, .k-trait, .k-enum, .k-type, .k-impl) { color: color-mix(in srgb, var(--violet) 80%, var(--fg)); background: color-mix(in srgb, var(--violet) 14%, transparent); }
+.cx-kind:is(.k-property, .k-const, .k-module, .k-macro) { color: var(--fg-2); background: var(--bg-3); }

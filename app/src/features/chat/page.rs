@@ -38,6 +38,27 @@ pub fn close_robot(app: &AppHandle, id: &str) {
     }
 }
 
+/// Its conversations that aren't working close, to pick up again on their next question with
+/// what changed (the context engine's tools switched on or off). Remote Control stays on.
+pub fn close_robot_idle(app: &AppHandle, id: &str) {
+    let prefix = format!("{id}|");
+    let idle: Vec<Arc<Chat>> = with(app, |st| {
+        let keys: Vec<String> = st
+            .chats
+            .iter()
+            .filter(|(k, c)| {
+                let s = &c.session;
+                k.starts_with(&prefix) && !s.busy() && s.helpers_running() == 0 && !s.remote()
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        keys.iter().filter_map(|k| st.chats.remove(k)).collect()
+    });
+    for chat in idle {
+        chat.session.close();
+    }
+}
+
 /// A new permission mode from the Workshop or the robot's menu: its live conversations
 /// switch now (the next ones start with it), and its tabs forget the modes picked in them.
 pub fn set_permission_mode(app: &AppHandle, id: &str, mode: &str) {

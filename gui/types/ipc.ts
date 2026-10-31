@@ -2,6 +2,7 @@
 // (gui/ipc/commands.ts has the commands themselves) and every event main sends a window,
 // with its payload (ipc.on is typed from Events, so a wrong name is a compile error).
 import type {
+  ContextEngineStatus,
   FileInfo,
   Layout,
   LinkEvent,
@@ -111,6 +112,11 @@ export interface Events {
   'robot:hush': boolean;
   'robot:screen': { file: FileInfo; source: string };
   'robot:tasks': LinkTask[];
+  // (its context engine: how the index of its folder is, as it changes)
+  'robot:context': ContextEngineStatus;
+  // (the Context engine window: a folder's status as it changes, and the folder to show)
+  'context:status': { root: string; status: ContextEngineStatus };
+  'context:focus': string;
   'robot:vocab': VocabEvent;
   'robot:notes': NotesEvent;
   // (Quick actions at work on text you selected; action: refine, translate, explain, summarise)

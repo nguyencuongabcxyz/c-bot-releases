@@ -44,6 +44,9 @@ Click a robot to wake it and open its chat. Under the hood it *is* your own Clau
 - **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file; click a changed file to see its **Changes**, every diff in turn.
 - **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), 👁 temporary chats that keep nothing, and 🗑 in *Past chats* to delete old conversations: one, the ones you tick, or all of them.
 - **Signed out? Sign back in:** when Claude Code's sign-in runs out, the error comes with a **🔑 Sign in to Claude** button. Your browser opens, you sign in, and the robot asks your question again.
+- **Knows your code:** switch on the context engine from the bar under the chat and the robot reads its folder into an index of its own: TypeScript/JavaScript, C#, Java, C/C++, Go, Python and Rust, their XML/XAML, Razor views, YAML and Dockerfiles, and the docs. It finds code by what it does (in English or Vietnamese), knows who calls what and what a change would touch, and reads fewer whole files. The index follows your files as you save them. The first time, it downloads what it needs. Its button shows how far it's got, with a dot for each index (syntax trees, keywords, vectors, the code graph), and the 🗺 in the header shows this folder's index. **🧭 Context engine…** in a robot's menu (or the tray's) opens a window with everything: every folder it has read, every file with its definitions and chunks, the store and the models. From there you can delete a folder's index, every index, or everything it downloaded too.
+
+  <img src="docs/screenshots/context-engine.png" alt="The context engine's menu under the chat" width="440">
 
 Drag the chat's edges or corner to resize it; double-click to put it back.
 
@@ -192,6 +195,9 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       (robots, words, notes, routines, terminal, screen, tabs: schema and handler
                       together); link.rs the app's end of it and robots asking each other;
                       guard.rs the hook that stops two tabs changing one file; apps.rs MCP Apps
+    context/          the context engine: a robot's folder read (tree-sitter) into its own
+                      PostgreSQL, with a keyword index, vectors and the code graph derived from
+                      it, for the code tools (mcp/tools/code.rs)
     workbench/        what you use in the chat: files.rs, shell.rs, terminal.rs (full Claude
                       Code in a terminal), voice.rs, paste.rs; capture.rs grabs selections;
                       snip, quick, palette

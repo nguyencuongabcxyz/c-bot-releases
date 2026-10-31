@@ -72,6 +72,7 @@ fn robot_menu_of(app: &AppHandle, id: &str, away: bool) -> tauri::Result<Option<
     }
     items.push(notes_menu(app, id, &s));
     items.push(item(app, act(id, "routines"), "⏰ Routines…", true));
+    items.push(item(app, act(id, "context"), "🧭 Context engine…", true));
     items.push(words_menu(app, id, &s));
     items.push(separator(app));
     items.push(settings_menu(app, id, &c));
