@@ -79,8 +79,8 @@ export const robotTabBrief = (fromTabId: string, toTabId: string, draft: string)
 export const robotCompact = (tabId: string, turnId: string) => invoke<AskResult>('robot_compact', { tabId, turnId });
 export const robotRemote = (tabId: string, on: boolean) => invoke<OkOr>('robot_remote', { tabId, on });
 // (a shared chat, features/share: the host's card and suggestion cards, a visitor's suggestions)
-export const shareStart = (tabId: string, fromNow: boolean, toolOutput: boolean) =>
-  invoke<ShareView>('share_start', { args: { tabId, fromNow, toolOutput } });
+export const shareStart = (tabId: string, fromNow: boolean, toolOutput: boolean, internet: boolean) =>
+  invoke<ShareView>('share_start', { args: { tabId, fromNow, toolOutput, internet } });
 export const shareInvite = () => invoke<string>('share_invite');
 export const shareAdmit = (conn: number, yes: boolean) => invoke<void>('share_admit', { conn, yes });
 export const shareAnswer = (id: string, state: SuggestionState) => invoke<void>('share_answer', { id, state });

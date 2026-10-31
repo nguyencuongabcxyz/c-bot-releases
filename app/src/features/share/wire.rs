@@ -162,11 +162,18 @@ pub(super) fn send(w: &mut impl Write, line: &str) -> io::Result<()> {
 
 // ---------------------------------------------------------------- the invite link
 
+/// Where an invite link's host is: on the office network, or in a room on a relay.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum At {
+    Lan(SocketAddr),
+    Relay { relay: String, room: String },
+}
+
 /// What an invite link says: where the host is, the one-time token, and its certificate's
-/// fingerprint (so the guest knows it's talking to that C-Bot and no other).
+/// fingerprint (so the guest knows it's talking to that C-Bot and no other, relay or not).
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Link {
-    pub addr: SocketAddr,
+    pub at: At,
     pub token: String,
     pub fingerprint: String,
 }
@@ -175,31 +182,59 @@ const SCHEME: &str = "cbot://join/";
 
 impl Link {
     pub(super) fn text(&self) -> String {
-        format!("{SCHEME}{}/{}/{}", self.addr, self.token, self.fingerprint)
+        let (t, f) = (&self.token, &self.fingerprint);
+        match &self.at {
+            At::Lan(addr) => format!("{SCHEME}{addr}/{t}/{f}"),
+            At::Relay { relay, room } => format!("{SCHEME}r/{relay}/{room}/{t}/{f}"),
+        }
     }
 
     /// A link as it was pasted or clicked (spaces round it, a trailing slash, the scheme in
-    /// any case). None for anything else, or for a host outside the private network.
+    /// any case). None for anything else, or for a host outside the private network that
+    /// isn't in a relay's room.
     pub fn parse(s: &str) -> Option<Link> {
         let s = s.trim().trim_end_matches('/');
         let rest = s
             .get(..SCHEME.len())
             .filter(|p| p.eq_ignore_ascii_case(SCHEME))
             .map(|_| &s[SCHEME.len()..])?;
-        let mut parts = rest.split('/');
-        let addr: SocketAddr = parts.next()?.parse().ok()?;
-        let token = parts.next()?.to_string();
-        let fingerprint = parts.next()?.to_string();
+        let parts: Vec<&str> = rest.split('/').collect();
         let hex = |t: &str, n: usize| t.len() == n && t.bytes().all(|b| b.is_ascii_hexdigit());
-        if parts.next().is_some() || !hex(&token, 64) || !hex(&fingerprint, 64) {
-            return None;
-        }
-        is_private(addr.ip()).then_some(Link {
-            addr,
-            token,
-            fingerprint,
+        let (at, token, fingerprint) = match parts.as_slice() {
+            [addr, t, f] => {
+                let addr: SocketAddr = addr.parse().ok()?;
+                (is_private(addr.ip()).then_some(At::Lan(addr))?, t, f)
+            }
+            ["r", relay, room, t, f] if is_relay_host(relay) && hex(room, 32) => (
+                At::Relay {
+                    relay: relay.to_ascii_lowercase(),
+                    room: room.to_ascii_lowercase(),
+                },
+                t,
+                f,
+            ),
+            _ => return None,
+        };
+        (hex(token, 64) && hex(fingerprint, 64)).then(|| Link {
+            at,
+            token: token.to_string(),
+            fingerprint: fingerprint.to_string(),
         })
     }
+}
+
+/// A relay's host as a link may name it: a domain name (a port only for one on this PC, to
+/// try a relay running here).
+pub(super) fn is_relay_host(h: &str) -> bool {
+    let (name, port) = h.split_once(':').unwrap_or((h, ""));
+    let named = !name.is_empty()
+        && name.len() <= 253
+        && name.contains('.')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    let local = matches!(name, "localhost" | "127.0.0.1") && port.parse::<u16>().is_ok();
+    (named && port.is_empty()) || local
 }
 
 /// On the office network: private, link-local or this PC. Nothing else may join or be joined.
@@ -470,7 +505,7 @@ mod tests {
     #[test]
     fn a_link_goes_there_and_back() {
         let l = Link {
-            addr: "10.0.4.27:47821".parse().unwrap(),
+            at: At::Lan("10.0.4.27:47821".parse().unwrap()),
             token: T.into(),
             fingerprint: T.into(),
         };
@@ -479,6 +514,25 @@ mod tests {
             Link::parse(&l.text().replace("cbot://", "CBOT://")),
             Some(l)
         );
+    }
+
+    #[test]
+    fn a_relay_link_goes_there_and_back() {
+        let l = Link {
+            at: At::Relay {
+                relay: "cbot-relay.example.workers.dev".into(),
+                room: "0123456789abcdef0123456789abcdef".into(),
+            },
+            token: T.into(),
+            fingerprint: T.into(),
+        };
+        assert!(
+            l.text()
+                .starts_with("cbot://join/r/cbot-relay.example.workers.dev/0123")
+        );
+        assert_eq!(Link::parse(&l.text()), Some(l));
+        let local = format!("cbot://join/r/localhost:8787/{}/{T}/{T}", "a".repeat(32));
+        assert!(Link::parse(&local).is_some());
     }
 
     #[test]
@@ -498,6 +552,29 @@ mod tests {
         );
         assert!(Link::parse(&format!("cbot://join/192.168.1.5:9/{T}/{T}")).is_some());
         assert!(Link::parse(&format!("cbot://join/[fe80::1]:9/{T}/{T}")).is_some());
+    }
+
+    #[test]
+    fn odd_relays_and_rooms_are_refused() {
+        let room = "a".repeat(32);
+        for relay in [
+            "evil.com:8443",
+            "nodots",
+            "a/b.com",
+            "localhost",
+            "user@x.com",
+            "",
+        ] {
+            assert_eq!(
+                Link::parse(&format!("cbot://join/r/{relay}/{room}/{T}/{T}")),
+                None,
+                "{relay}"
+            );
+        }
+        assert_eq!(
+            Link::parse(&format!("cbot://join/r/x.dev/short/{T}/{T}")),
+            None
+        );
     }
 
     #[test]

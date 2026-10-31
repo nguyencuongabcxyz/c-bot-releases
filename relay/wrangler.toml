@@ -1,0 +1,16 @@
+# The relay for C-Bot's shared chats over the internet (app/src/features/share/relay.rs).
+# One Durable Object per shared tab (a "room"): the host's C-Bot and its guests' each connect
+# out to it over a WebSocket, and it passes their bytes along. They're TLS, end to end between
+# the two C-Bots (the guest checks the host's certificate against its invite link), so the
+# relay can't read or change them.
+name = "cbot-relay"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

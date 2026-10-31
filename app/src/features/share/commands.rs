@@ -32,9 +32,10 @@ pub struct StartArgs {
     tab_id: String,
     from_now: bool,
     tool_output: bool,
+    internet: bool,
 }
 
-/// Share one of this robot's tabs on the office network.
+/// Share one of this robot's tabs: on the office network, or over the internet.
 #[tauri::command(async)]
 pub fn share_start(
     app: AppHandle,
@@ -45,6 +46,7 @@ pub fn share_start(
     let o = host::Opts {
         from_now: args.from_now,
         tool_output: args.tool_output,
+        internet: args.internet,
     };
     host::start(&app, &id, &args.tab_id, &o)
 }

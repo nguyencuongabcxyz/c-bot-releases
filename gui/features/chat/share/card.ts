@@ -7,7 +7,7 @@ import { initial } from './cards';
 
 /** What the card can ask for. */
 export type CardActions = {
-  start: (fromNow: boolean, toolOutput: boolean) => void;
+  start: (fromNow: boolean, toolOutput: boolean, internet: boolean) => void;
   invite: () => Promise<string | null>;
   admit: (conn: number, yes: boolean) => void;
   stop: () => void;
@@ -23,8 +23,24 @@ export function startCard(tabTitle: string, a: CardActions): HTMLElement {
   );
   card.append(el('div', 'share-label', 'Network'));
   const net = el('div', 'share-net');
-  net.append(option('🏢 Office (LAN)', 'Same network, encrypted', true), option('🌍 Internet', 'Later', false));
-  card.append(net);
+  const lan = option('🏢 Office (LAN)', 'Same network, straight there');
+  const web = option('🌍 Internet', 'From anywhere, through C-Bot’s relay');
+  let internet = false;
+  const pick = (on: boolean) => {
+    internet = on;
+    lan.classList.toggle('on', !on);
+    web.classList.toggle('on', on);
+    lan.setAttribute('aria-pressed', String(!on));
+    web.setAttribute('aria-pressed', String(on));
+  };
+  lan.addEventListener('click', () => pick(false));
+  web.addEventListener('click', () => pick(true));
+  pick(false);
+  net.append(lan, web);
+  card.append(
+    net,
+    el('p', 'share-sub', 'Either way it’s encrypted end to end: only you and the people you let in can read it.'),
+  );
   card.append(el('div', 'share-label', 'What they see'));
   const [all, allBox] = radio('share-from', 'The whole chat', true);
   const [now] = radio('share-from', 'Only from now on', false);
@@ -48,7 +64,7 @@ export function startCard(tabTitle: string, a: CardActions): HTMLElement {
   card.append(
     buttons([
       ['Cancel', a.close, false],
-      ['Start sharing', () => a.start(!allBox.checked, toolsBox.checked), true],
+      ['Start sharing', () => a.start(!allBox.checked, toolsBox.checked, internet), true],
     ]),
   );
   return card;
@@ -58,7 +74,8 @@ export function startCard(tabTitle: string, a: CardActions): HTMLElement {
 export function sharingCard(v: ShareView, tabTitle: string, a: CardActions): HTMLElement {
   const card = el('div', 'share-pop');
   card.append(el('h3', '', `Sharing “${tabTitle}”`));
-  card.append(el('p', 'share-sub', `${minutesLeft(v.endsAt)} · on ${v.host.ip} (${v.host.pc})`));
+  const where = v.internet ? 'over the internet' : `on ${v.host.ip} (${v.host.pc})`;
+  card.append(el('p', 'share-sub', `${minutesLeft(v.endsAt)} · ${where}`));
   card.append(el('div', 'share-label', 'Invite someone'));
   const row = el('div', 'share-invite');
   const copy = el('button', 'share-btn primary', 'Copy invite link');
@@ -68,7 +85,7 @@ export function sharingCard(v: ShareView, tabTitle: string, a: CardActions): HTM
     const link = await a.invite();
     if (!link) return;
     await navigator.clipboard.writeText(link);
-    said.textContent = 'Copied! Send it to one person. They need C-Bot, on this network.';
+    said.textContent = `Copied! Send it to one person. They need C-Bot${v.internet ? '' : ', on this network'}.`;
   });
   row.append(copy, said);
   card.append(row);
@@ -110,8 +127,9 @@ export function minutesLeft(endsAt: number): string {
   return m === 1 ? '1 min left' : `${m} min left`;
 }
 
-function option(name: string, detail: string, on: boolean): HTMLElement {
-  const o = el('div', on ? 'share-opt on' : 'share-opt off');
+function option(name: string, detail: string): HTMLButtonElement {
+  const o = el('button', 'share-opt');
+  o.type = 'button';
   o.append(el('b', '', name), el('span', '', detail));
   return o;
 }

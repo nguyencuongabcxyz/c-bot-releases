@@ -78,7 +78,7 @@ export function createSharing(r: SharingNeeds) {
     } else {
       const names = view.people.map((p) => p.name).join(', ');
       line.append(el('span', '', names ? `🔗 Shared with ${names}` : '🔗 Sharing: nobody’s in yet'));
-      line.append(el('span', 'share-where', ` · ${minutesLeft(view.endsAt)}`));
+      line.append(el('span', 'share-where', ` · ${view.internet ? 'internet · ' : ''}${minutesLeft(view.endsAt)}`));
       const manage = el('button', 'share-stop', 'Invite…');
       manage.type = 'button';
       manage.addEventListener('click', () => openCard());
@@ -107,10 +107,10 @@ export function createSharing(r: SharingNeeds) {
   // ---------------------------------------------------------------- the card (the host's)
 
   const actions: CardActions = {
-    start: async (fromNow, toolOutput) => {
+    start: async (fromNow, toolOutput, internet) => {
       const tab = r.current();
       try {
-        setView(await ipc.shareStart(tab.id, fromNow, toolOutput));
+        setView(await ipc.shareStart(tab.id, fromNow, toolOutput, internet));
       } catch (e) {
         closeCard();
         r.addNote(`🔗 ${String(e)}`, '', tab);

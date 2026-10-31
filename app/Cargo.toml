@@ -36,6 +36,10 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 # a shared chat over the office network (features/share): TLS, its certificate made fresh for
 # each share (rcgen, on the ring rustls already uses) and pinned by its fingerprint in the link
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
+# and over the internet, through C-Bot's relay (relay/): a WebSocket to it (tungstenite), over
+# rustls with the system's certificates (rustls-native-certs, which reqwest already brings)
+tungstenite = { version = "0.30", default-features = false, features = ["handshake", "rustls-tls-native-roots"] }
+rustls-native-certs = "0.8"
 # a robot's WebView2 itself: hearing its page's process fail, nudging it to draw (revive.rs);
 # the same version Tauri's wry uses
 webview2-com = "0.39.1"

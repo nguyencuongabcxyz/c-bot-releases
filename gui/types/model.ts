@@ -269,6 +269,7 @@ export type ShareView = {
   endsAt: number;
   toolOutput: boolean;
   fromNow: boolean;
+  internet: boolean; // (through C-Bot's relay, not the office network)
   folderName: string;
 };
 

@@ -14,13 +14,15 @@ use tauri::Emitter;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_notification::NotificationExt;
 
-use super::wire::{self, Lines, Link, Msg, Read1};
+use super::relay;
+use super::wire::{self, At, Lines, Link, Msg, Read1};
 use super::*;
 use crate::robots::{self, label_of};
 use crate::runtime::Error;
 
 const TICK: Duration = Duration::from_millis(50);
 const CONNECT_WAIT: Duration = Duration::from_secs(5);
+const HANDSHAKE_WAIT: Duration = Duration::from_secs(15);
 /// How long to wait for the host to let you in (a little longer than they have).
 const LET_IN_WAIT: Duration = Duration::from_secs(200);
 /// How long the visitor stays after the chat ends, so you can read why.
@@ -31,6 +33,7 @@ pub(super) struct Visit {
     host: Person,
     people: Vec<Person>,
     folder_name: String,
+    internet: bool,
     out: Out,
     stop: Stop,
 }
@@ -47,6 +50,7 @@ impl Visit {
             ends_at: 0,
             tool_output: false,
             from_now: false,
+            internet: self.internet,
             folder_name: self.folder_name.clone(),
         }
     }
@@ -92,14 +96,18 @@ fn note(app: &AppHandle, text: &str) {
         .show();
 }
 
-type Tls = StreamOwned<ClientConnection, TcpStream>;
+type Tls = StreamOwned<ClientConnection, Box<dyn Stream>>;
 
 fn visit(app: &AppHandle, link: &Link) {
-    let ip = link.addr.ip();
+    let place = match &link.at {
+        At::Lan(addr) => addr.ip().to_string(),
+        At::Relay { .. } => "over the internet".to_string(),
+    };
     let go = app
         .dialog()
         .message(format!(
-            "Join the shared chat at {ip}?\n\nYou'll watch a colleague's robot and suggest prompts; they decide what's sent. Only join links from people you know."
+            "Join the shared chat {}?\n\nYou'll watch a colleague's robot and suggest prompts; they decide what's sent. Only join links from people you know.",
+            if matches!(link.at, At::Lan(_)) { format!("at {place}") } else { place.clone() }
         ))
         .title("Shared chat")
         .buttons(MessageDialogButtons::OkCancelCustom("Join".into(), "Not now".into()))
@@ -109,11 +117,12 @@ fn visit(app: &AppHandle, link: &Link) {
     }
     let mut tls = match connect(link) {
         Ok(t) => t,
+        Err(e) if matches!(link.at, At::Relay { .. }) => return say(app, &e.to_string()),
         Err(e) => {
             return say(
                 app,
                 &format!(
-                    "Couldn't reach {ip}: {e}\n\nAre you both on the same network? If you are, Windows Firewall on the host's PC may be blocking C-Bot: there, allow C-Bot on private networks (Windows Security → Firewall → Allow an app through firewall)."
+                    "Couldn't reach {place}: {e}\n\nAre you both on the same network? If you are, Windows Firewall on the host's PC may be blocking C-Bot: there, allow C-Bot on private networks (Windows Security → Firewall → Allow an app through firewall)."
                 ),
             );
         }
@@ -124,7 +133,8 @@ fn visit(app: &AppHandle, link: &Link) {
         Ok(w) => w,
         Err(why) => return say(app, &why),
     };
-    let Some((id, rx, stop)) = arrive(app, host.clone(), &robot) else {
+    let internet = matches!(link.at, At::Relay { .. });
+    let Some((id, rx, stop)) = arrive(app, host.clone(), &robot, internet) else {
         return;
     };
     let reason = follow(app, &id, &mut tls, &mut lines, &rx, &stop)
@@ -133,13 +143,25 @@ fn visit(app: &AppHandle, link: &Link) {
     goodbye(app, &id, &reason);
 }
 
+/// To the host: straight there on the office network, or into its room on the relay. Either
+/// way TLS to the host itself, checked against the link's fingerprint.
 fn connect(link: &Link) -> Result<Tls, Error> {
-    let tcp = TcpStream::connect_timeout(&link.addr, CONNECT_WAIT)?;
-    tcp.set_read_timeout(Some(TICK))?;
-    let _ = tcp.set_nodelay(true);
+    let stream: Box<dyn Stream> = match &link.at {
+        At::Lan(addr) => {
+            let tcp = TcpStream::connect_timeout(addr, CONNECT_WAIT)?;
+            tcp.set_read_timeout(Some(TICK))?;
+            let _ = tcp.set_nodelay(true);
+            Box::new(tcp)
+        }
+        At::Relay { relay, room } => Box::new(relay::join_room(relay, room)?),
+    };
     let cc = ClientConnection::new(tls::client(&link.fingerprint)?, tls::name())
         .map_err(|e| Error::from(format!("Couldn't set up encryption: {e}")))?;
-    let mut tls = StreamOwned::new(cc, tcp);
+    let mut tls = StreamOwned::new(cc, stream);
+    handshake(&mut tls).map_err(|e| match e.kind() {
+        io::ErrorKind::InvalidData => Error::from("it isn't the C-Bot the link was for"),
+        _ => Error::from(format!("the encrypted connection didn't start ({e})")),
+    })?;
     let hello = Msg::Hello {
         proto: wire::PROTO,
         token: link.token.clone(),
@@ -150,6 +172,24 @@ fn connect(link: &Link) -> Result<Tls, Error> {
         _ => Error::from(e),
     })?;
     Ok(tls)
+}
+
+/// The TLS handshake, to its end: each read waits only a moment ("nothing yet" until the host
+/// answers, which through the relay takes a few of them), so it's tried again for a while.
+fn handshake(tls: &mut Tls) -> io::Result<()> {
+    let until = Instant::now() + HANDSHAKE_WAIT;
+    while tls.conn.is_handshaking() {
+        match tls.conn.complete_io(&mut tls.sock) {
+            Ok(_) => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) && Instant::now() < until => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
 }
 
 /// Waiting at the door: in (who the host is, their robot), or why not.
@@ -178,6 +218,7 @@ fn arrive(
     app: &AppHandle,
     host: Person,
     robot: &Value,
+    internet: bool,
 ) -> Option<(String, Receiver<String>, Stop)> {
     let id = format!("visit-{}", uuid::Uuid::new_v4());
     let visitor = wire::visitor(&id, robot);
@@ -195,6 +236,7 @@ fn arrive(
                 people: vec![host.clone()],
                 host: host.clone(),
                 folder_name,
+                internet,
                 out,
                 stop: stop.clone(),
             },

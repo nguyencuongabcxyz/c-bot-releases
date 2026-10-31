@@ -8,6 +8,8 @@
 mod commands;
 mod guest;
 mod host;
+mod pipe;
+mod relay;
 mod tls;
 mod wire;
 
@@ -78,6 +80,7 @@ pub struct ShareView {
     pub ends_at: i64,
     pub tool_output: bool,
     pub from_now: bool,
+    pub internet: bool, // (through the relay, not the office network)
     pub folder_name: String,
 }
 
@@ -211,6 +214,11 @@ impl Stop {
         self.0.load(Ordering::Relaxed)
     }
 }
+
+/// A connection to someone, whichever way it goes (a socket on the office network, or a pipe
+/// through the relay): TLS runs over it.
+trait Stream: std::io::Read + std::io::Write + Send {}
+impl<T: std::io::Read + std::io::Write + Send> Stream for T {}
 
 /// Lines waiting to go to one connection (its thread writes them).
 type Out = Sender<String>;

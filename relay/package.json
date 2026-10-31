@@ -1,0 +1,17 @@
+{
+  "name": "cbot-relay",
+  "private": true,
+  "description": "The relay for C-Bot's shared chats over the internet: a Cloudflare Worker that passes encrypted bytes between a host and its guests.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p .",
+    "test": "node test/rooms.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261031.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.156.0"
+  }
+}

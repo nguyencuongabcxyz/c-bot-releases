@@ -73,9 +73,9 @@ Carry the conversation on from [claude.ai/code](https://claude.ai/code) or the C
 
 ### Share a chat with a colleague
 
-Press **🔗** in a robot's chat to share that tab with colleagues on your office network. **Copy invite link** gives you a link for one person; it works once, for ten minutes. When they open it, their C-Bot asks you to let them in, showing their name, PC and address. Once in, your robot comes to visit their desktop, with the whole chat as you see it, live.
+Press **🔗** in a robot's chat to share that tab with colleagues: **🏢 Office** for those on your network, or **🌍 Internet** for anyone, anywhere, through C-Bot's small relay. **Copy invite link** gives you a link for one person; it works once, for ten minutes. When they open it, their C-Bot asks you to let them in, showing their name, PC and address. Once in, your robot comes to visit their desktop, with the whole chat as you see it, live.
 
-They can't ask your robot anything themselves: what they type goes to you as a suggestion, and you **Send** it, **Edit** it first, or **Decline** it. Whatever you send runs on your own Claude Code, in your folder, so nothing they suggest runs without you. What tools read and ran (file contents, command output) stays hidden unless you choose to share it. The link is encrypted and pinned to your C-Bot. Sharing stops when you say, after an hour, or when the network changes, and C-Bot won't share on a network Windows calls Public. If someone sent you a link, you can also pick **🔗 Join a shared chat** from the tray after copying it.
+They can't ask your robot anything themselves: what they type goes to you as a suggestion, and you **Send** it, **Edit** it first, or **Decline** it. Whatever you send runs on your own Claude Code, in your folder, so nothing they suggest runs without you. What tools read and ran (file contents, command output) stays hidden unless you choose to share it. Either way it's encrypted end to end and pinned to your C-Bot: the relay only passes along bytes it can't read. Sharing stops when you say or after an hour. On the office network it also stops when the network changes, and it won't start on a network Windows calls Public (share over the internet instead). If someone sent you a link, you can also pick **🔗 Join a shared chat** from the tray after copying it.
 
 <img src="docs/screenshots/shared-chat.png" alt="A shared tab on your PC, and your robot visiting a colleague's" width="720">
 
@@ -216,14 +216,17 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       group/ the group chat and meeting room; vocab/ English words; notes/
                       notes and reminders; routines/ prompts a robot runs on a schedule
                       (schedule.rs when, runs.rs a run and its result, panel.rs the window);
-                      share/ a tab shared with colleagues on the office network (host.rs
-                      the sharing end, guest.rs the visiting robot, wire.rs what they say,
-                      tls.rs the encryption)
+                      share/ a tab shared with colleagues (host/ the sharing end, on the
+                      office network or through the relay; guest.rs the visiting robot;
+                      wire.rs what they say; tls.rs the encryption; relay.rs and pipe.rs
+                      the way through the relay)
     ui/               the app's own windows and menus: views.rs, place.rs, tray.rs, workshop.rs
     platform/         what needs the operating system, kept by system: windows/ (window,
                       input, clipboard, network, screenshot, presence, power, process,
                       webview), and
                       common/ for what every system shares (types, input logic, images)
+relay/                the relay for shared chats over the internet: a Cloudflare Worker that
+                      passes encrypted bytes between a host and its guests (bun run deploy)
 gui/                  the pages (TypeScript, built by Vite into dist/)
   ipc/                main, through @tauri-apps/api: a typed function per command, events
   views/
