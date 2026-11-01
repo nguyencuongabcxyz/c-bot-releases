@@ -1,6 +1,7 @@
 //! Cutting a file into chunks: what search finds and returns. Code is cut along its
-//! definitions. A function, method or type small enough is one chunk, with the comments and
-//! attributes just above it; a big type is its head (signature, fields) and then its members,
+//! definitions. A function, method or type small enough is one chunk, with the comments,
+//! attributes and decorators just above it (parse/ finds where they start, over any number of
+//! lines); a big type is its head (signature, fields) and then its members,
 //! each in turn; a long body is cut into windows that overlap a little; what lies between
 //! definitions (imports, top-level statements) has chunks of its own; and tiny neighbours are
 //! packed together. A config file is cut the same way along its structure (markup.rs: XML
@@ -93,7 +94,7 @@ fn cover(
         if d.line < at || d.end > to {
             continue; // (one that overlaps what's covered already)
         }
-        let start = with_comments(lines, d.line, at);
+        let start = with_comments(lines, d.head.clamp(at, d.line), at);
         gap(lines, (at, start - 1), path, out);
         let name = if path.is_empty() {
             d.name.clone()
@@ -109,7 +110,7 @@ fn cover(
             });
         } else if let Some(first) = first_member {
             // a big type: its head, then its members, each as small as it goes
-            let head_end = with_comments(lines, first.line, start) - 1;
+            let head_end = with_comments(lines, first.head.clamp(start, first.line), start) - 1;
             windows(lines, (start, head_end), &name, out);
             cover(lines, defs, (head_end + 1, d.end), Some(d), &name, out);
         } else {
@@ -311,6 +312,72 @@ mod tests {
                 (3, 26, "open".into()),
                 (28, 49, "main".into()),
             ]
+        );
+    }
+
+    /// `head`, then `line` n times.
+    fn long(head: &str, line: &str, n: usize) -> String {
+        format!("{head}\n{}", line.repeat(n))
+    }
+
+    #[test]
+    fn a_python_definition_takes_its_decorators_however_long() {
+        let mut src = String::from(
+            "import x\n\n# Routes.\n@app.route(\n    \"/orders\",\n    methods=[\"GET\"],\n)\n@login_required\n",
+        );
+        src.push_str(&long("def orders():", "    work()\n", 15));
+        src.push_str("\n\n@dataclass(\n    frozen=True,\n)\n");
+        src.push_str(&long("class Order:", "    id: int = 0\n", 15));
+        assert_eq!(
+            spans(FileType::Code(Lang::Python), &src),
+            [
+                (1, 1, String::new()),
+                (3, 24, "orders".into()),
+                (27, 45, "Order".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_typescript_class_and_its_methods_take_their_decorators() {
+        let mut src = String::from("@Component({\n  selector: 'app-x',\n})\nexport class X {\n");
+        for name in ["load", "save"] {
+            src.push_str("  @HostListener(\n    'click',\n  )\n");
+            src.push_str(&long(&format!("  {name}() {{"), "    work();\n", 40));
+            src.push_str("  }\n\n");
+        }
+        src.push_str("}\n");
+        assert_eq!(
+            spans(FileType::Code(Lang::TypeScript), &src),
+            [
+                (1, 4, "X".into()),
+                (5, 49, "X › load".into()),
+                (51, 95, "X › save".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_rust_item_takes_its_attributes_over_several_lines() {
+        let mut src = String::from(
+            "/// An order.\n#[derive(\n    Clone,\n    Debug,\n)]\n#[serde(rename_all = \"camelCase\")]\n",
+        );
+        src.push_str(&long("struct Order {", "    a: u32,\n", 15));
+        src.push_str("}\n");
+        assert_eq!(
+            spans(FileType::Code(Lang::Rust), &src),
+            [(1, 23, "Order".into())]
+        );
+    }
+
+    #[test]
+    fn a_comment_after_code_on_its_line_stays_with_that_code() {
+        let mut src = String::from("fn a() {} // one\n");
+        src.push_str(&long("fn b() {", "    work();\n", 15));
+        src.push_str("}\n");
+        assert_eq!(
+            spans(FileType::Code(Lang::Rust), &src),
+            [(1, 1, "a".into()), (2, 18, "b".into())]
         );
     }
 

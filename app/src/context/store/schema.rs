@@ -97,6 +97,15 @@ const MIGRATIONS: &[(i32, &str)] = &[
     CREATE INDEX chunks_by_scope_hash ON chunks (scope_id, hash);
     "#,
     ),
+    (
+        6,
+        // Files with decorators or attributes read again: a definition's chunk now starts at its
+        // first one, however many lines they take (parse::Def's head).
+        r#"
+    UPDATE files SET size = -1, hash = ''::bytea
+    WHERE type IN ('python', 'typescript', 'tsx', 'rust', 'dart', 'php');
+    "#,
+    ),
 ];
 
 pub(super) async fn migrate(pool: &PgPool) -> Result<(), sqlx::Error> {

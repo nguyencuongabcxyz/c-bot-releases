@@ -372,6 +372,7 @@ mod tests {
             container: container.map(str::to_string),
             line,
             end,
+            head: line,
             depth,
             sig: String::new(),
         };

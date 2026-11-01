@@ -18,6 +18,8 @@ pub(super) struct Def {
     pub container: Option<String>, // (what holds it: its class, impl, module…)
     pub line: u32,                 // (its first line, from 1…)
     pub end: u32,                  // (…and its last)
+    #[serde(default)]
+    pub head: u32, // (its first line with the decorators, attributes and comments on it)
     pub depth: u8,                 // (inside how many other definitions)
     pub sig: String,               // (how it starts, up to its body, on one line)
 }
@@ -48,6 +50,20 @@ const WRAPPERS: &[&str] = &[
     "type_declaration",
     "expression_statement",
     "template_declaration",
+];
+
+/// What a definition is decorated with, or commented, before it starts: siblings of it (Rust's
+/// `#[derive]`, a TypeScript method's `@Get()`), or children of a parent it's in (Python's
+/// `decorated_definition`, `@Injectable() export class`). Java's and C#'s are inside it already.
+const DECORATIONS: &[&str] = &[
+    "decorator",
+    "attribute_item",
+    "attribute_list",
+    "annotation",
+    "marker_annotation",
+    "comment",
+    "line_comment",
+    "block_comment",
 ];
 
 thread_local! {
@@ -191,6 +207,7 @@ impl<'a> Reader<'a> {
             container: holder.map(|(_, n, _)| n.clone()),
             line,
             end,
+            head: self.head(node),
             depth: u8::try_from(self.holders.len()).unwrap_or(u8::MAX),
             sig: self.signature(node),
         });
@@ -310,6 +327,40 @@ impl<'a> Reader<'a> {
         let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let trimmed = one_line.trim_end_matches(['{', '(', ' ']);
         cut(trimmed, SIG_MAX)
+    }
+
+    /// The first line of a definition with its decorations (DECORATIONS), however many lines
+    /// they take: only those starting their own line, with no blank line before the next.
+    fn head(&self, node: Node) -> u32 {
+        let decoration = |n: &Node| DECORATIONS.contains(&n.kind());
+        let mut start = node;
+        while let Some(p) = start.parent()
+            && (WRAPPERS.contains(&p.kind()) || p.kind() == "decorated_definition")
+        {
+            let mut c = p.walk();
+            let before: Vec<Node> = p
+                .named_children(&mut c)
+                .take_while(|n| n.id() != start.id())
+                .collect();
+            // (not Go's `type (` above its first type: only comments before it)
+            let same_line = p.start_position().row == start.start_position().row;
+            let decorated = before.iter().any(|n| !n.kind().ends_with("comment"));
+            if !before.iter().all(decoration) || !(same_line || decorated) {
+                break;
+            }
+            start = p;
+        }
+        while let Some(s) = start.prev_named_sibling()
+            && decoration(&s)
+            && s.end_position().row + 1 >= start.start_position().row
+            && self.src[..s.start_byte()]
+                .rsplit('\n')
+                .next()
+                .is_some_and(|l| l.trim().is_empty())
+        {
+            start = s;
+        }
+        row(start.start_position())
     }
 }
 
@@ -741,7 +792,7 @@ mod tests {
         let json = serde_json::to_value(&f).unwrap();
         assert_eq!(
             json["defs"],
-            serde_json::json!([{ "name": "a", "kind": "function", "container": null, "line": 1, "end": 1, "depth": 0, "sig": "fn a()" }])
+            serde_json::json!([{ "name": "a", "kind": "function", "container": null, "line": 1, "end": 1, "head": 1, "depth": 0, "sig": "fn a()" }])
         );
         assert_eq!(json["names"], serde_json::json!([["b", 1]]));
         assert_eq!(json["refs"][0]["name"], "b"); // (and its links, graph/)

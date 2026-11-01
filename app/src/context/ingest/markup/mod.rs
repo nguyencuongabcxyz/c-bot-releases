@@ -50,6 +50,7 @@ fn def(name: String, depth: usize, line: u32, end: u32) -> Def {
         container: None,
         line,
         end,
+        head: line,
         depth: u8::try_from(depth).unwrap_or(u8::MAX),
         sig: String::new(),
     }
