@@ -706,6 +706,28 @@ mod tests {
     }
 
     #[test]
+    fn a_typescript_method_bound_to_be_called_later_is_called() {
+        let g = graph(&[
+            (
+                "src/store.ts",
+                "export interface Store {\n  save(key: string): void;\n}\n",
+            ),
+            (
+                "src/orders.ts",
+                "import { Store } from './store';\nfunction later() {}\nfunction queue(o: object) {}\nexport class Orders {\n  constructor(private readonly store: Store) {}\n  place() {\n    queue({ save: this.store.save.bind(this.store) });\n    const f = later.bind(null);\n  }\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.orders.Orders.place -> src.orders.later",
+                "src.orders.Orders.place -> src.orders.queue",
+                "src.orders.Orders.place -> src.store.Store.save",
+            ]
+        );
+    }
+
+    #[test]
     fn a_bare_call_reaches_the_function_of_its_name_in_its_scope() {
         let g = graph(&[(
             "src/run.spec.ts",

@@ -364,6 +364,12 @@ fn call(w: &mut Walk, node: Node) {
             ) else {
                 return;
             };
+            // (`this.store.save.bind(this.store)`: save runs when what it makes is called, so
+            // it's a caller of save; `call` and `apply` are left be, they're methods' names too.
+            // First, so the arguments given are bind's.)
+            if w.text(property) == "bind" {
+                bound(w, object);
+            }
             w.call(property, w.text(property), Some(object));
             if ITEM_CALLBACKS.contains(&w.text(property)) {
                 item_callback(w, node, object);
@@ -388,6 +394,22 @@ fn call(w: &mut Walk, node: Node) {
         _ => return,
     }
     w.given(args);
+}
+
+/// What `.bind(…)` is called on, as a call of it: `this.store.save`, `handler`.
+fn bound(w: &mut Walk, f: Node) {
+    match f.kind() {
+        "identifier" => w.call(f, w.text(f), None),
+        "member_expression" => {
+            if let (Some(object), Some(property)) = (
+                f.child_by_field_name("object"),
+                f.child_by_field_name("property"),
+            ) {
+                w.call(property, w.text(property), Some(object));
+            }
+        }
+        _ => {}
+    }
 }
 
 /// `items.find((item) => …)`: the callback's untyped first parameter is one of the items, of
