@@ -21,14 +21,14 @@ pub fn list() -> Value {
             "name": "ask_robot",
             "description": concat!(
                 "Send a message to another C-Bot robot (by name) and get its answer. That robot works in its own project folder with its own tools, so ask it about its project: how something works, where something is, a value you need, or to check or do something there. ",
-                "Ask one clear question at a time. To ask several robots, call ask_robot for each of them in the same turn: they all work on it at the same time. ",
+                "Ask one clear question at a time. To ask several robots, call it for each of them in the same turn: they all work on it at the same time. ",
                 "Call this again with a follow-up if its answer is not enough or it asks you something back; it remembers the conversation. ",
                 "Stop once you have what you need, then answer the user yourself. Set new_conversation when you start on an unrelated question."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "robot": { "type": "string", "description": "The other robot's name, as list_robots shows it." },
+                    "robot": { "type": "string", "description": "The other robot's name, as mcp__cbot__list_robots shows it." },
                     "message": { "type": "string", "description": "What you want to ask or tell it. Include the context it needs: it cannot see your conversation." },
                     "new_conversation": { "type": "boolean", "description": "Start a fresh conversation with it instead of following up on the last one." },
                 },
@@ -42,13 +42,13 @@ pub fn list() -> Value {
             "description": concat!(
                 "Hand a piece of work to another C-Bot robot (by name) to do in its own project folder: a change to make, a feature or fix to build there, something to set up or check. ",
                 "It works on it in a tab of its own chat (the user sees it as a task on both robots' desks) and this call returns its report when it is done: what it changed and what you need to know. ",
-                "Use it instead of ask_robot when the other robot has to do work, not just answer. Give a short title and everything it needs in details (it cannot see your conversation): what to do, any names, shapes or values to use, and what done looks like. ",
+                "Use it instead of mcp__cbot__ask_robot when the other robot has to do work, not just answer. Give a short title and everything it needs in details (it cannot see your conversation): what to do, any names, shapes or values to use, and what done looks like. ",
                 "To hand work to several robots, call it for each in the same turn: they work at the same time. Work that depends on another task's result goes after that task is done."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "robot": { "type": "string", "description": "The other robot's name, as list_robots shows it." },
+                    "robot": { "type": "string", "description": "The other robot's name, as mcp__cbot__list_robots shows it." },
                     "title": { "type": "string", "description": "The task in a few words, e.g. \"Add a GET /orders endpoint\". Shown on both desks." },
                     "details": { "type": "string", "description": "What to do, with the context and values it needs, and what done looks like." },
                 },

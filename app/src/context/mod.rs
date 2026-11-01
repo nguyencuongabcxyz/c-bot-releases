@@ -108,14 +108,17 @@ const PROMPT_MAP: usize = 4_500;
 pub const MAP_DEFAULT: usize = 8_000;
 pub const MAP_MAX: usize = 40_000;
 
-/// What every conversation of a robot with the engine on is told about it.
+/// What every conversation of a robot with the engine on is told about it. The tools are named
+/// as Claude Code offers them (`mcp__<server>__<tool>`, the server being `cbot`, mcp/link.rs):
+/// told only `find_references`, Claude calls that first and fails.
 const NOTE: &str = concat!(
     "C-Bot's context engine has indexed the code in this folder (TypeScript/JavaScript, C#, Java, C/C++, Go, Python with Jupyter notebooks, Rust, Dart/Flutter, Zig, PHP, Ruby, shell, PowerShell; Kotlin, Swift, Prisma, Protocol Buffers and Terraform for their definitions only; its XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte, CSS, INI, .properties and .conf; its Markdown, text and Word documents) and keeps it up to date. ",
-    "Use its tools before grepping or reading whole files: code_map for the files and definitions that matter most (focus it on what you're working on), ",
-    "code_outline for the signatures in a file or folder with their lines, find_symbol for where something is defined (body: true to see its code), ",
-    "and search_code to find code or docs by words or meaning when you don't know the names (ask it in English, in the code's words, whatever language the user writes in). Then Read only the lines you need. ",
-    "It also knows who calls what (not yet in the languages read for their definitions only), through imports, fields and types: find_references for a function's or type's callers, call_chain for how one reaches another, ",
-    "file_dependencies for what a file imports and what imports it, type_hierarchy for supertypes, subtypes and overrides, and change_impact before changing something."
+    "Use its tools before grepping or reading whole files: mcp__cbot__code_map for the files and definitions that matter most (focus it on what you're working on), ",
+    "mcp__cbot__code_outline for the signatures in a file or folder with their lines, mcp__cbot__find_symbol for where something is defined (body: true to see its code), ",
+    "and mcp__cbot__search_code to find code or docs by words or meaning when you don't know the names (ask it in English, in the code's words, whatever language the user writes in). Then Read only the lines you need. ",
+    "It also knows who calls what (not yet in the languages read for their definitions only), through imports, fields and types: mcp__cbot__find_references for a function's or type's callers, mcp__cbot__call_chain for how one reaches another, ",
+    "mcp__cbot__file_dependencies for what a file imports and what imports it, mcp__cbot__type_hierarchy for supertypes, subtypes and overrides, and mcp__cbot__change_impact before changing something. ",
+    "mcp__cbot__code_history tells what git remembers: the latest commits to a file, a folder or a symbol's lines, to see why code is the way it is."
 );
 
 /// Where a folder's index is.
@@ -493,6 +496,23 @@ mod tests {
             tauri::async_runtime::spawn(async { block(async { 2 }) }).await
         });
         assert_eq!(inside.unwrap(), 2);
+    }
+
+    #[test]
+    fn the_note_names_every_code_tool_as_claude_code_offers_it() {
+        let named: Vec<&str> = NOTE
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .filter_map(|w| w.strip_prefix("mcp__cbot__"))
+            .collect();
+        let mut sorted = named.clone();
+        sorted.sort_unstable();
+        let mut tools = crate::mcp::tools::code::NAMES;
+        tools.sort_unstable();
+        assert_eq!(sorted, tools);
+        // (and never bare, the way Claude would call it and fail)
+        for tool in crate::mcp::tools::code::NAMES {
+            assert_eq!(NOTE.matches(tool).count(), 1, "{tool}");
+        }
     }
 
     #[test]

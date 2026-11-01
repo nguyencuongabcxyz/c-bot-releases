@@ -28,14 +28,14 @@ pub fn list() -> Value {
         {
             "name": "wait_for_tab",
             "description": concat!(
-                "Wait till another of your tabs (by its title, as list_tabs shows it) has finished what it's working on, then get what it did: its answer and the files it changed. ",
+                "Wait till another of your tabs (by its title, as mcp__cbot__list_tabs shows it) has finished what it's working on, then get what it did: its answer and the files it changed. ",
                 "Use it when you need a file another tab is changing, or its result, before you can go on (you're told so when that happens). ",
                 "Read the files it changed again before you change them. It returns at once if that tab isn't working."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "tab": { "type": "string", "description": "The other tab's title, as list_tabs shows it (the start of it will do)." },
+                    "tab": { "type": "string", "description": "The other tab's title, as mcp__cbot__list_tabs shows it (the start of it will do)." },
                     "wait": { "type": "integer", "description": "Seconds to wait at most (default 600, up to 1800)." },
                 },
                 "required": ["tab"],

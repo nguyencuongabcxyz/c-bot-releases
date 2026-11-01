@@ -278,6 +278,6 @@ pub fn note(app: &AppHandle, id: &str) -> Option<String> {
         map
     });
     Some(format!(
-        "{NOTE}\n\nThe code map (the definitions the rest of the code uses most; code_map for more):\n{map}"
+        "{NOTE}\n\nThe code map (the definitions the rest of the code uses most; mcp__cbot__code_map for more):\n{map}"
     ))
 }

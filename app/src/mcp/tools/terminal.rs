@@ -54,7 +54,7 @@ pub fn list() -> Value {
             "name": "terminal_run",
             "description": concat!(
                 "Run a command in the user's terminal for this conversation (the shell drawer of your chat in C-Bot: PowerShell or Git Bash, in your project folder) and get its output. The user sees it typed and run. ",
-                "It waits until the prompt comes back or the wait runs out; a command still going then (a dev server, a watcher) keeps running there, and terminal_read checks on it later. Use new_shell for something long-running, so the other shells stay free. ",
+                "It waits until the prompt comes back or the wait runs out; a command still going then (a dev server, a watcher) keeps running there, and mcp__cbot__terminal_read checks on it later. Use new_shell for something long-running, so the other shells stay free. ",
                 "Use it when the user wants something run in their terminal, or for things that should keep running where they can see them; for quick checks of your own, your usual tools are fine."
             ),
             "inputSchema": {

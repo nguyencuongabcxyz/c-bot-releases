@@ -575,7 +575,7 @@ export const ShellDrawer = ({
     if (typeof p === 'string') return { text: p, isError: true };
     if (!p)
       return {
-        text: "There are no shells in this conversation's terminal yet (terminal_run or terminal_type opens one).",
+        text: "There are no shells in this conversation's terminal yet (mcp__cbot__terminal_run or mcp__cbot__terminal_type opens one).",
       };
     const n = Math.min(1000, Math.max(1, Math.round(Number(a.args.lines) || 80)));
     const lines = screenLines(p).slice(-n);
@@ -641,7 +641,7 @@ export const ShellDrawer = ({
     const head = {
       finished: `Ran in ${nameOf(t)}; it finished.`,
       ended: `Ran in ${nameOf(t)}; the shell itself ended.`,
-      running: `Ran in ${nameOf(t)}; still running after ${Math.round((Date.now() - sentAt) / 1000)}s (it keeps going there: check on it with terminal_read, shell ${t.n}).`,
+      running: `Ran in ${nameOf(t)}; still running after ${Math.round((Date.now() - sentAt) / 1000)}s (it keeps going there: check on it with mcp__cbot__terminal_read, shell ${t.n}).`,
     }[how];
     return { text: capped(`${head}\n${out.length > shown.length ? '…\n' : ''}${shown.join('\n')}`) };
   }

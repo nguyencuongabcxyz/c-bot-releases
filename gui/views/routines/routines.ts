@@ -38,7 +38,7 @@ showView(markup, { title: 'Routines' });
       'My notes',
       '📒',
       'Plan my day',
-      'Look at my open notes (list_notes) and tell me the three I should do first today, and why. Keep it short.',
+      'Look at my open notes and tell me the three I should do first today, and why. Keep it short.',
     ],
     [
       'Weather',

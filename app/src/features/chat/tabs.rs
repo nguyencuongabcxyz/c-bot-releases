@@ -225,7 +225,7 @@ fn meanwhile_note(busy: &[Activity], folder: &str) -> String {
     }
     let lines: Vec<String> = busy.iter().map(|a| line_for(a, folder)).collect();
     format!(
-        "\n\n[Meanwhile, other tabs of yours are working in this same folder:\n{}\nDon't change a file one of them is changing: wait for it with wait_for_tab (then read the file again), or do the rest first.]",
+        "\n\n[Meanwhile, other tabs of yours are working in this same folder:\n{}\nDon't change a file one of them is changing: wait for it with mcp__cbot__wait_for_tab (then read the file again), or do the rest first.]",
         lines.join("\n")
     )
 }
@@ -251,7 +251,7 @@ fn guard_for(busy: &[Activity], folder: &str, file: &str) -> Option<String> {
         .iter()
         .find(|a| a.files.iter().any(|f| same(folder, f) == target))?;
     Some(format!(
-        "Your other tab “{}” is changing {} right now (it's working on “{}”). Don't change it at the same time: call wait_for_tab with tab “{}” to wait till it's done, then read the file again before you change it. Or do the rest of your work first.",
+        "Your other tab “{}” is changing {} right now (it's working on “{}”). Don't change it at the same time: call mcp__cbot__wait_for_tab with tab “{}” to wait till it's done, then read the file again before you change it. Or do the rest of your work first.",
         other.title,
         shown(folder, file),
         other.asked,
@@ -432,7 +432,10 @@ mod tests {
             why.starts_with("Your other tab “Auth” is changing src/Auth.rs right now"),
             "{why}"
         );
-        assert!(why.contains("wait_for_tab with tab “Auth”"), "{why}");
+        assert!(
+            why.contains("mcp__cbot__wait_for_tab with tab “Auth”"),
+            "{why}"
+        );
         assert_eq!(
             guard_for(&busy, "C:\\proj", "C:\\proj\\src\\other.rs"),
             None
@@ -449,7 +452,7 @@ mod tests {
         );
         assert_eq!(
             note,
-            "\n\n[Meanwhile, other tabs of yours are working in this same folder:\n- “Auth”: working on “fix the login”; now Edit: src/auth.rs; changing src/auth.rs\nDon't change a file one of them is changing: wait for it with wait_for_tab (then read the file again), or do the rest first.]"
+            "\n\n[Meanwhile, other tabs of yours are working in this same folder:\n- “Auth”: working on “fix the login”; now Edit: src/auth.rs; changing src/auth.rs\nDon't change a file one of them is changing: wait for it with mcp__cbot__wait_for_tab (then read the file again), or do the rest first.]"
         );
         assert_eq!(
             line_for(

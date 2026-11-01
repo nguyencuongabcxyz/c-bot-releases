@@ -54,7 +54,7 @@ pub(in crate::context) fn find(
     let found = g.resolve_name(query, kind);
     if found.is_empty() {
         return format!(
-            "Nothing named \"{query}\" is defined here. Try search_code to find it by words."
+            "Nothing named \"{query}\" is defined here. Try mcp__cbot__search_code to find it by words."
         );
     }
     let mut out = String::new();
@@ -200,7 +200,7 @@ pub(in crate::context) fn chain(g: &Graph, from: &str, to: &str, depth: usize) -
         g.resolve_name(to, "").first(),
     ) else {
         return format!(
-            "Couldn't find both \"{from}\" and \"{to}\": try find_symbol for their full names."
+            "Couldn't find both \"{from}\" and \"{to}\": try mcp__cbot__find_symbol for their full names."
         );
     };
     let Some(path) = g.chain(a, b, depth) else {

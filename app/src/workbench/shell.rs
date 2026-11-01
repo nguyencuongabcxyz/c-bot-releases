@@ -396,9 +396,9 @@ pub fn robot_shell_close(
 /// What every robot's Claude should know about the terminal in its chat (system prompt).
 pub const NOTE: &str = concat!(
     "The user has a terminal for this conversation in C-Bot: shells (PowerShell, or Git Bash: bash on its tab) in your folder, in a drawer of your chat, which they can see. ",
-    "When they ask about something in their terminal (an error, a server's output), read it with terminal_read. ",
-    "When they want a command run in their terminal, or something that should keep running where they can see it (a dev server, a watcher), use terminal_run (new_shell for long-running ones); ",
-    "to hand them a command to run themselves, type it with terminal_type. ",
+    "When they ask about something in their terminal (an error, a server's output), read it with mcp__cbot__terminal_read. ",
+    "When they want a command run in their terminal, or something that should keep running where they can see it (a dev server, a watcher), use mcp__cbot__terminal_run (new_shell for long-running ones); ",
+    "to hand them a command to run themselves, type it with mcp__cbot__terminal_type. ",
     "Write commands for the shell they go to; ask for shell_type bash when the user wants Git Bash or the command is bash."
 );
 

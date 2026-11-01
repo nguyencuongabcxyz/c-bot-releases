@@ -62,18 +62,18 @@ pub const TASK_TIMEOUT_MS: u64 = 45 * 60 * 1000;
 /// What every robot's Claude should know about the user's words and notebook.
 const DESK_NOTE: &str = concat!(
     "The user keeps a list of English words they're learning and a notebook of notes in C-Bot. ",
-    "When they ask what words they've saved (or to review or quiz them), use list_words; when they ask you to save or remember a word, use save_words. ",
-    "When they ask about their notes or to-dos, use list_notes; when they ask you to note something down, use add_note.
+    "When they ask what words they've saved (or to review or quiz them), use mcp__cbot__list_words; when they ask you to save or remember a word, use mcp__cbot__save_words. ",
+    "When they ask about their notes or to-dos, use mcp__cbot__list_notes; when they ask you to note something down, use mcp__cbot__add_note.
 ",
-    "When they want something done on a schedule (every morning, every few hours, once at a set time: fetch the news, check their PRs…), add a routine with add_routine; list_routines, remove_routine and run_routine look after the ones they have.
+    "When they want something done on a schedule (every morning, every few hours, once at a set time: fetch the news, check their PRs…), add a routine with mcp__cbot__add_routine; mcp__cbot__list_routines, mcp__cbot__remove_routine and mcp__cbot__run_routine look after the ones they have.
 ",
-    "When they ask what's on their screen, or to look at, check or help with something they're looking at (an error dialog, a page, an app), take a screenshot with the screenshot tool and look at it yourself instead of asking them to describe it."
+    "When they ask what's on their screen, or to look at, check or help with something they're looking at (an error dialog, a page, an app), take a screenshot with mcp__cbot__screenshot and look at it yourself instead of asking them to describe it."
 );
 
 /// What every robot's Claude should know about its other tabs (mcp/tools/tabs.rs).
 const TABS_NOTE: &str = concat!(
     "The user may have other conversations with you (other chat tabs) working in this same folder at the same time. ",
-    "list_tabs shows what each one is doing and the files it's changing; wait_for_tab waits till one is done and tells you what it did. ",
+    "mcp__cbot__list_tabs shows what each one is doing and the files it's changing; mcp__cbot__wait_for_tab waits till one is done and tells you what it did. ",
     "If you're told another tab is changing a file you need, don't change it at the same time: wait for that tab, or do the rest first, then read the file again before changing it."
 );
 
@@ -222,10 +222,10 @@ fn note_for(others: &[(String, String, String)]) -> String {
     format!(
         "Other C-Bot robots on this desktop: {}. {}{}{}{}",
         list.join(", "),
-        "When the user asks you to ask one of them something (or what you need is in their project), use the ask_robot tool: ask one clear question with the context it needs ",
-        "(to ask several robots, call ask_robot for each in the same turn, so they work at the same time), ",
-        "follow up with ask_robot as many times as it takes (it remembers the conversation), and once you have what you need, answer the user yourself, saying what you found out from whom. ",
-        "When the user asks you to get another robot to do work in its project (build, change, fix or set up something there), hand it over with hand_off_task: a short title and full details; you get its report back when it is done, then carry on and tell the user what was done where."
+        "When the user asks you to ask one of them something (or what you need is in their project), use mcp__cbot__ask_robot: ask one clear question with the context it needs ",
+        "(to ask several robots, call mcp__cbot__ask_robot for each in the same turn, so they work at the same time), ",
+        "follow up with mcp__cbot__ask_robot as many times as it takes (it remembers the conversation), and once you have what you need, answer the user yourself, saying what you found out from whom. ",
+        "When the user asks you to get another robot to do work in its project (build, change, fix or set up something there), hand it over with mcp__cbot__hand_off_task: a short title and full details; you get its report back when it is done, then carry on and tell the user what was done where."
     )
 }
 
@@ -425,6 +425,32 @@ mod tests {
             t.starts_with("📋 Task from Captain: Add /orders\n\nCaptain is another C-Bot robot")
         );
         assert!(t.contains("\n\nA GET endpoint.\n\nDo the work here"));
+    }
+
+    #[test]
+    fn the_notes_name_the_tools_as_claude_code_offers_them() {
+        // (told a bare `list_tabs`, Claude calls that first and fails: it's mcp__cbot__list_tabs.
+        // "screenshot" is a word too, so only the names with an underscore are checked)
+        let mut names: Vec<String> = tools::allowed(true);
+        names.push("mcp__cbot__terminal_run".into());
+        let notes = [
+            DESK_NOTE.to_string(),
+            TABS_NOTE.to_string(),
+            shell::NOTE.to_string(),
+            note_for(&bots()[1..]),
+        ];
+        for note in &notes {
+            for full in &names {
+                let bare = full.trim_start_matches("mcp__cbot__");
+                if bare.contains('_') {
+                    assert_eq!(
+                        note.matches(bare).count(),
+                        note.matches(full.as_str()).count(),
+                        "{bare} without its prefix in: {note}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
