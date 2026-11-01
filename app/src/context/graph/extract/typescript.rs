@@ -61,6 +61,10 @@ pub(super) fn visit(w: &mut Walk, node: Node) {
             if let (Some(name), Some(ty)) = (f("name"), f("return_type")) {
                 w.returns(node, w.text(name), w.text(ty));
             }
+            // (`send => send()`: an arrow's one parameter, without parentheses)
+            if let Some(p) = f("parameter").filter(|p| p.kind() == "identifier") {
+                untyped(w, p);
+            }
         }
         "required_parameter" | "optional_parameter" => parameter(w, node),
         "variable_declarator" => declared(w, node),
@@ -285,18 +289,23 @@ fn declared(w: &mut Walk, node: Node) {
     }
 }
 
-/// `p: Store`; inside a constructor, `private store: Store` is a field of the class too.
+/// `p: Store`; inside a constructor, `private store: Store` is a field of the class too. A
+/// parameter of no type the walk can name (`send: () => Promise<void>`, an untyped `x`) is a
+/// local all the same: `send()` calls it, no function of the folder's of that name.
 fn parameter(w: &mut Walk, node: Node) {
-    let (Some(p), Some(t)) = (
-        node.child_by_field_name("pattern"),
-        node.child_by_field_name("type"),
-    ) else {
+    let Some(p) = node
+        .child_by_field_name("pattern")
+        .filter(|p| p.kind() == "identifier")
+    else {
         return;
     };
-    if p.kind() != "identifier" {
-        return;
+    let ty = node
+        .child_by_field_name("type")
+        .map_or("", |t| type_name(w.text(t)))
+        .to_string();
+    if ty.is_empty() {
+        return untyped(w, p);
     }
-    let ty = type_name(w.text(t)).to_string();
     w.bind(w.text(p), &ty);
     let mut c = node.walk();
     let property = node
@@ -304,6 +313,15 @@ fn parameter(w: &mut Walk, node: Node) {
         .any(|n| matches!(n.kind(), "accessibility_modifier" | "readonly"));
     if property {
         w.field(node, w.text(p), &ty);
+    }
+}
+
+/// A parameter of no type the walk knows, unless its scope was given one already (an array
+/// callback's item).
+fn untyped(w: &mut Walk, p: Node) {
+    let name = w.text(p);
+    if !w.scopes.last().is_some_and(|(_, s)| s.contains_key(name)) {
+        w.bind(name, UNTYPED);
     }
 }
 

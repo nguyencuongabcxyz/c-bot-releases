@@ -34,7 +34,8 @@ use crate::context::parse::{Def, walk};
 /// fields from a type or from `this`: `Terminal#log`, `\0this#yard#stacks`.
 const THIS: &str = "\0this";
 const THIS_FIELD: &str = "\0this#";
-/// A local of no type the walk knows (Ruby's): it's a local, so said alone it's no call.
+/// A local of no type the walk knows (Ruby's, an untyped parameter): it's a local, so said
+/// alone it's no call.
 const UNTYPED: &str = "\0?";
 
 /// One file's walk.

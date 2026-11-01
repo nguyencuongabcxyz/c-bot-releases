@@ -180,7 +180,7 @@ impl Graph {
             return self.resolve_type(file, &r.name).map(|t| (t, RefKind::New));
         }
         let found = match &r.via {
-            Via::Bare => self.bare(file, caller, &r.name),
+            Via::Bare => self.bare(file, caller, &r.name, r.line),
             Via::This => self.enclosing(caller).and_then(|t| self.member(t, &r.name)),
             Via::Super => self.enclosing(caller).and_then(|t| {
                 self.supers[t]
@@ -465,8 +465,9 @@ impl Graph {
     }
 
     /// A bare call: a method of the type it's in (C#, Java, C++, Dart, Ruby: through `this`
-    /// unsaid; a property holding a delegate isn't one), else a function or type in reach.
-    fn bare(&self, file: usize, caller: usize, name: &str) -> Option<usize> {
+    /// unsaid; a property holding a delegate isn't one), else a function or type in reach: the
+    /// file's own that the call sees first.
+    fn bare(&self, file: usize, caller: usize, name: &str, line: u32) -> Option<usize> {
         if matches!(
             self.files[file].lang,
             Lang::CSharp | Lang::Java | Lang::Cpp | Lang::Dart | Lang::Ruby
@@ -475,7 +476,59 @@ impl Graph {
             return self.callable(m).then_some(m);
         }
         let free = |s: usize| (self.callable(s) && self.owner[s].is_none()) || self.is_type(s);
-        self.resolve(file, name, &free)
+        if let Some(s) = self.in_scope(file, caller, name, line, &free) {
+            return Some(s);
+        }
+        // (the file's others of the name are nested in definitions the call isn't in)
+        self.resolve(file, name, &|s| free(s) && self.syms[s].file != file)
+    }
+
+    /// Of the file's own symbols of that name `keep` takes, the one a call at `line` in `caller`
+    /// sees: one nested in a definition around the call (the innermost), else one at the file's
+    /// level (or a namespace's). Of several there (a test file defines a helper again in each `describe` block),
+    /// the last defined before the call, else the first; a function's overloads are one.
+    fn in_scope(
+        &self,
+        file: usize,
+        caller: usize,
+        name: &str,
+        line: u32,
+        keep: &dyn Fn(usize) -> bool,
+    ) -> Option<usize> {
+        let around: Vec<usize> =
+            std::iter::successors(Some(caller), |&s| self.syms[s].parent).collect();
+        let (mut nested, mut top): (Option<(usize, usize)>, Vec<usize>) = (None, vec![]);
+        for s in self.files[file].syms.clone() {
+            if self.syms[s].name != name || !keep(s) {
+                continue;
+            }
+            // (a namespace's or an inline module's: as good as the file's level)
+            match self.syms[s]
+                .parent
+                .filter(|&p| self.syms[p].kind != Kind::Module)
+            {
+                None => top.push(s),
+                Some(p) => {
+                    if let Some(depth) = around.iter().position(|&a| a == p)
+                        && nested.is_none_or(|(best, _)| depth < best)
+                    {
+                        nested = Some((depth, s));
+                    }
+                }
+            }
+        }
+        if let Some((_, s)) = nested {
+            return Some(s);
+        }
+        let mut at = top
+            .iter()
+            .rposition(|&s| self.syms[s].line <= line)
+            .unwrap_or(0);
+        // (`function f(a: A): X;` and `function f(b: B): Y;` before its body: its first)
+        while at > 0 && self.syms[top[at - 1]].end + 1 >= self.syms[top[at]].line {
+            at -= 1;
+        }
+        top.get(at).copied()
     }
 
     /// A call through a name: a field of the type it's in (C#'s `_store.Open()`), a type's

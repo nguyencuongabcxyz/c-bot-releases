@@ -691,6 +691,38 @@ mod tests {
     }
 
     #[test]
+    fn a_typescript_parameter_of_any_type_is_no_function_of_its_name() {
+        let g = graph(&[(
+            "src/mail.ts",
+            "export function send() {}\nexport function walk() {}\nexport function later(f: (g: () => void) => void) {}\nexport function retry(send: () => Promise<void>, walk) {\n  send();\n  walk();\n}\nexport function each() {\n  later(walk => walk());\n  send();\n}\n",
+        )]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.mail.each -> src.mail.later",
+                "src.mail.each -> src.mail.send"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_bare_call_reaches_the_function_of_its_name_in_its_scope() {
+        let g = graph(&[(
+            "src/run.spec.ts",
+            "describe('a', () => {\n  const row = () => 1;\n  function check() { row(); }\n});\ndescribe('b', () => {\n  const row = () => 2;\n  function check() { row(); }\n});\nfunction outer() {\n  function walk() {}\n  walk();\n}\nfunction other() { walk(); }\nfunction pad(a: string): string;\nfunction pad(a: number): string;\nfunction pad(a: any): string { return ''; }\nfunction use() { pad(1); }\n",
+        )]);
+        assert_eq!(
+            calls_at(&g),
+            [
+                "src.run.spec.check -> src.run.spec.row:2",
+                "src.run.spec.check -> src.run.spec.row:6",
+                "src.run.spec.outer -> src.run.spec.outer.walk:10",
+                "src.run.spec.use -> src.run.spec.pad:14",
+            ]
+        );
+    }
+
+    #[test]
     fn rust_locals_and_what_comes_from_outside_are_never_the_folders_functions() {
         let g = graph(&[
             (
