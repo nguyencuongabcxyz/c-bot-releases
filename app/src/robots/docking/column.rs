@@ -67,6 +67,40 @@ pub(super) fn give_back(work: Rect, edge: Edge, kept: i32) -> Rect {
     }
 }
 
+/// The robot's back as it's dragged (x, physical px): the side away from where it's going
+/// (its middle, going nowhere yet). It's on the screen its back is on: pushed into the edge
+/// between two screens, it's pushing into that edge till it's crossed over whole.
+pub(super) fn trailing(left: i32, w: i32, heading: i32) -> i32 {
+    match heading.signum() {
+        1 => left + 1,
+        -1 => left + w - 1,
+        _ => left + w / 2,
+    }
+}
+
+/// A window being dragged (its left as the mouse would have it, its width, which way it's
+/// going) and how far past an edge it holds, and for how much more pull (physical px).
+pub(super) struct Hold {
+    pub x: i32,
+    pub w: i32,
+    pub heading: i32,
+    pub hold: i32,
+    pub pull: i32,
+}
+
+/// Its left: pushed into an edge with another screen beyond it (open: none), held past it by
+/// `hold` till pulled `pull` further; else where the mouse has it.
+pub(super) fn held_x(h: Hold, screen: Rect, open: (bool, bool)) -> i32 {
+    let band = |over: i32| over > h.hold && over < h.hold + h.pull;
+    if h.heading > 0 && !open.1 && band(h.x + h.w - screen.right()) {
+        screen.right() + h.hold - h.w
+    } else if h.heading < 0 && !open.0 && band(screen.x - h.x) {
+        screen.x - h.hold
+    } else {
+        h.x
+    }
+}
+
 /// A robot being dragged: the mouse, its window (robot and chat), how far past an edge the
 /// window goes to count as pushed into it (physical px), and which way it's going (-1 left,
 /// 1 right).
@@ -201,6 +235,37 @@ mod tests {
         // the mouse against an edge with another screen beyond: only crossing over
         assert_eq!(pushed(drag(1919, 1000), SCREEN, (true, false)), None);
         assert_eq!(pushed(drag(0, 0), SCREEN, (false, true)), None);
+    }
+
+    #[test]
+    fn the_edge_between_two_screens_holds_it_a_while() {
+        let going = |x: i32, heading: i32| Hold {
+            x,
+            w: 600,
+            heading,
+            hold: 60,
+            pull: 220,
+        };
+        let next_right = (true, false);
+        // not past it by the hold yet: where the mouse has it
+        assert_eq!(held_x(going(1350, 1), SCREEN, next_right), 1350);
+        // past it: held 60 px over
+        assert_eq!(held_x(going(1400, 1), SCREEN, next_right), 1380);
+        assert_eq!(held_x(going(1580, 1), SCREEN, next_right), 1380);
+        // pulled through: on it goes
+        assert_eq!(held_x(going(1700, 1), SCREEN, next_right), 1700);
+        // an outer edge, or going the other way: nothing holds it
+        assert_eq!(held_x(going(1400, 1), SCREEN, (true, true)), 1400);
+        assert_eq!(held_x(going(1400, -1), SCREEN, next_right), 1400);
+        // the left edge the same
+        assert_eq!(held_x(going(-100, -1), SCREEN, (false, true)), -60);
+    }
+
+    #[test]
+    fn the_robot_is_where_its_back_is() {
+        assert_eq!(trailing(1000, 300, 1), 1001);
+        assert_eq!(trailing(1000, 300, -1), 1299);
+        assert_eq!(trailing(1000, 300, 0), 1150);
     }
 
     #[test]

@@ -86,8 +86,10 @@ struct Drag {
     anchor: (i32, i32),
     at: (i32, i32),              // where the window was
     hint: Option<docking::Edge>, // let go now, it docks on this edge
+    hint_on: Rect,               // of this screen (its work area)
     last_x: i32,                 // the window's left as the heading was last read (physical px)
     heading: i32,                // which way it's going: -1 left, 1 right (0: not yet)
+    home: Option<Rect>,          // the screen it's on, held at its edge (docking::resist)
 }
 
 pub struct Robot {

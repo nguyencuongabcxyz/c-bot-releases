@@ -58,8 +58,10 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
                         anchor: r.anchor,
                         at: (at.x, at.y),
                         hint: None,
+                        hint_on: Rect::default(),
                         last_x: at.x,
                         heading: 0,
+                        home: None,
                     });
                 }
             });
@@ -75,6 +77,8 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
                 Some((r.hwnd, d.at.0 + mx, d.at.1 + my))
             });
             if let Some((hwnd, x, y)) = moved {
+                // (pushed into the edge between two screens, it holds there a while)
+                let (x, y) = docking::resist(app, id, (x, y));
                 window::set_position(hwnd, x, y);
                 island::robot_drag(app, "move"); // (the island lights up: drop it there to send it away)
                 docking::drag_hint(app, id, (x, y)); // (and the edge, pushed against it with the chat open)
@@ -100,6 +104,13 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
             let done = with(app, |st| {
                 let r = st.robots.get_mut(id)?;
                 let d = r.drag.take()?;
+                if d.hint.is_some() {
+                    // (onto the screen it's docking on: half over the next one, it'd be tidied
+                    // onto whichever its middle is over)
+                    let (_, rw, _) = place(r.anchor, r.dims);
+                    let on = d.hint_on;
+                    r.anchor.0 = r.anchor.0.clamp(on.x, (on.right() - rw).max(on.x));
+                }
                 r.anchor = clamp_anchor(r.anchor, r.dims);
                 let mut patch = Map::new();
                 patch.insert("position".into(), to_dip(r.anchor));

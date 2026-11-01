@@ -46,6 +46,10 @@ const MIN_H: f64 = 200.0;
 const MARGIN: f64 = 200.0;
 // how far a dragged robot's window goes past the screen's edge to dock there (CSS px)
 const OVERHANG: f64 = 40.0;
+// at the edge between two screens: how far past it the window holds, and how much further the
+// mouse goes to pull it through to the other screen (CSS px)
+const HOLD: f64 = 60.0;
+const BREAK: f64 = 220.0;
 
 /// The edge of its screen a chat is docked on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -341,8 +345,7 @@ pub(super) fn drag_hint(app: &AppHandle, id: &str, at: (i32, i32)) {
     let Some((w, h, robot, heading)) = with(app, |st| {
         let r = st.robots.get_mut(id)?;
         let (_, rw, rh) = place(r.anchor, r.dims);
-        let robot = (r.anchor.0 + rw / 2, r.anchor.1 + rh / 2);
-        let l = r.layout.as_ref()?;
+        let (anchor, l) = (r.anchor, r.layout.as_ref()?);
         let (w, h) = (l.bounds.w, l.bounds.h);
         let d = r.drag.as_mut()?;
         // (which way it's going, over a few px: a twitch back doesn't turn it round)
@@ -350,11 +353,13 @@ pub(super) fn drag_hint(app: &AppHandle, id: &str, at: (i32, i32)) {
             d.heading = (at.0 - d.last_x).signum();
             d.last_x = at.0;
         }
+        let robot = (trailing(anchor.0, rw, d.heading), anchor.1 + rh / 2);
         Some((w, h, robot, d.heading))
     }) else {
         return;
     };
-    // the screen the robot itself is on (the mouse may be on its chat's title bar)
+    // the screen the robot itself is on (the mouse may be on its chat's title bar), till the
+    // back of it has crossed over to the next one too
     let m = window::monitor_near(robot.0, robot.1);
     let open = |x: i32| window::monitor_near(x, robot.1).bounds == m.bounds;
     let edge = pushed(
@@ -376,6 +381,7 @@ pub(super) fn drag_hint(app: &AppHandle, id: &str, at: (i32, i32)) {
         let r = st.robots.get_mut(id)?;
         let edge = edge.filter(|_| r.expanded && r.stage.is_none());
         let d = r.drag.as_mut()?;
+        d.hint_on = m.work;
         (d.hint != edge).then(|| {
             d.hint = edge;
             edge
@@ -384,6 +390,63 @@ pub(super) fn drag_hint(app: &AppHandle, id: &str, at: (i32, i32)) {
     if let Some(edge) = changed {
         let _ = app.emit_to(label_of(id), "robot:dock", json!({ "hint": edge }));
     }
+}
+
+/// The robot dragged with its chat open (its window to go to `at`): pushed into the edge
+/// between two screens, its window holds there, past it by HOLD (glowing: let go to dock), till
+/// the mouse has gone BREAK further, and then it goes on over. The window's place, and the
+/// robot's desk moved to match.
+pub(super) fn resist(app: &AppHandle, id: &str, at: (i32, i32)) -> (i32, i32) {
+    let Some((w, off, rw, heading, home, mid)) = with(app, |st| {
+        let r = st
+            .robots
+            .get(id)
+            .filter(|r| r.expanded && r.stage.is_none())?;
+        let d = r.drag.as_ref()?;
+        let (_, rw, rh) = place(r.anchor, r.dims);
+        let w = r.layout.as_ref()?.bounds.w;
+        Some((
+            w,
+            d.anchor.0 - d.at.0,
+            rw,
+            d.heading,
+            d.home,
+            r.anchor.1 + rh / 2,
+        ))
+    }) else {
+        return at;
+    };
+    let screen_of = |x: i32| window::monitor_near(x, mid);
+    let back = |x: i32| trailing(x + off, rw, heading);
+    let m = home.map_or_else(|| screen_of(back(at.0)), |h| screen_of(h.x + h.w / 2));
+    let open = |x: i32| screen_of(x).bounds == m.bounds;
+    let px = |v: f64| (v * m.scale).round() as i32;
+    let x = held_x(
+        Hold {
+            x: at.0,
+            w,
+            heading,
+            hold: px(HOLD),
+            pull: px(BREAK),
+        },
+        m.bounds,
+        (open(m.bounds.x - 20), open(m.bounds.right() + 20)),
+    );
+    // held, it's still on that screen; else on the one its back is on now
+    let home = if x == at.0 {
+        screen_of(back(x)).bounds
+    } else {
+        m.bounds
+    };
+    with(app, |st| {
+        if let Some(r) = st.robots.get_mut(id) {
+            r.anchor.0 = x + off;
+            if let Some(d) = r.drag.as_mut() {
+                d.home = Some(home);
+            }
+        }
+    });
+    (x, at.1)
 }
 
 // ---------------------------------------------------------------- after a change
