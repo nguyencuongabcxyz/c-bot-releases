@@ -295,7 +295,7 @@ export const groupchatAct = acts<P.GroupChatActs>('groupchat_act', 'p');
 export const meetingInit = () => invoke<P.MeetingInit | null>('meeting_init');
 
 // ---- the robot island (robots/island.rs)
-export const islandInit = () => invoke<{ robots: IslandRobot[]; edge: IslandEdge }>('island_init');
+export const islandInit = () => invoke<{ robots: IslandRobot[]; edge: IslandEdge; tucked?: boolean }>('island_init');
 
 // ---- the stage (robots/stage/mod.rs): its bar
 export const stageInit = () => invoke<StageState>('stage_init');

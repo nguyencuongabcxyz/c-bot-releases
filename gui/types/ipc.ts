@@ -166,6 +166,7 @@ export interface Events {
   'island:robots': IslandRobot[];
   'stage:state': StageState;
   'island:hover': boolean;
+  'island:tuck': boolean; // (over a docked chat: tucked away into a tab at the edge)
   'island:target': 'off' | 'near' | 'over';
   'island:edge': { edge: IslandEdge; dragging: boolean };
   'island:news': IslandNews & { id: string };

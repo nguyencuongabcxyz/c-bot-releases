@@ -235,6 +235,19 @@ fn docked_layout(b: Rect, s: f64, edge: Edge, i: usize, n: usize) -> Layout {
     }
 }
 
+/// Does a docked chat's window take in any of this box (physical px)?
+pub fn covers(app: &AppHandle, b: Rect) -> bool {
+    with(app, |st| {
+        st.robots.values().any(|r| {
+            active(r).is_some()
+                && r.layout.as_ref().is_some_and(|l| {
+                    let c = l.bounds;
+                    c.x < b.right() && b.x < c.right() && c.y < b.bottom() && b.y < c.bottom()
+                })
+        })
+    })
+}
+
 /// It holds a strip of the screen for a stack it's no longer docked in (its chat put away,
 /// sent off, undocked).
 pub(in crate::robots) fn leaving(app: &AppHandle, id: &str) -> bool {

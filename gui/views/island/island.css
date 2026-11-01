@@ -22,13 +22,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
   --r: 16px;
   position: relative; flex: none; overflow: hidden; background: var(--ink); cursor: default;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(120, 140, 180, 0.12);
-  transition: width 0.28s var(--ease), height 0.28s var(--ease), border-radius 0.28s ease;
+  transition: width 0.28s var(--ease), height 0.28s var(--ease), border-radius 0.28s ease, transform 0.24s var(--ease);
 }
 body.mode-panel #island, body.mode-toast #island { --r: 22px; }
 body.edge-top #island { border-radius: 0 0 var(--r) var(--r); }
 body.edge-bottom #island { border-radius: var(--r) var(--r) 0 0; }
 body.edge-left #island { border-radius: 0 var(--r) var(--r) 0; }
 body.edge-right #island { border-radius: var(--r) 0 0 var(--r); }
+/* over a docked chat, at rest: tucked away at the edge, a slim tab showing (island.ts TAB);
+   hovered, it slides back out */
+body.edge-right.tucked #island { transform: translateX(calc(100% - 8px)); }
+body.edge-left.tucked #island { transform: translateX(calc(-100% + 8px)); }
+body.edge-top.tucked #island { transform: translateY(calc(-100% + 8px)); }
+body.edge-bottom.tucked #island { transform: translateY(calc(100% - 8px)); }
+body.tucked #rest { opacity: 0; transition: opacity 0.12s; }
+/* (the tab keeps a hint of what's going on: the work colour while a robot's at it) */
+body.tucked.any-busy #island { background: color-mix(in srgb, var(--busy) 55%, var(--ink)); }
+body.tucked.any-ask #island { background: var(--ask); }
+
 /* a robot dragged round its desk: drop it here to send it away */
 body.target-near #island { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42), 0 0 0 2px color-mix(in srgb, var(--link) 55%, transparent); }
 body.target-over #island { box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), 0 0 0 2.5px var(--link), 0 0 22px color-mix(in srgb, var(--link) 60%, transparent); }

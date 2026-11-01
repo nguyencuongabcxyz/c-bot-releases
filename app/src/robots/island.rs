@@ -11,6 +11,9 @@
 //! and says where the strip is in it (island_box); this puts the window flush against its
 //! edge, and lets clicks through it except over the strip.
 //!
+//! Over a docked chat (robots/docking), it tucks itself away into a slim tab at the edge
+//! (island:tuck), so it doesn't sit on the chat's words; hovered, it slides out as ever.
+//!
 //! Its own lock (no State lock held inside it, nor it inside State's), and no call into a
 //! window while holding it.
 
@@ -48,6 +51,7 @@ struct Island {
     reports: HashMap<String, Value>, // robot id -> how it last said it was
     reminder: HashMap<String, Value>, // robot id -> the notes reminder it holds for you (features/notes/mod.rs)
     sent: Option<Value>,              // the list as the page last had it
+    tucked: bool,                     // over a docked chat: tucked away into a tab (as last told)
 }
 
 fn isl<R>(app: &AppHandle, f: impl FnOnce(&mut Island) -> R) -> R {
@@ -104,6 +108,16 @@ fn place(app: &AppHandle) {
     let job = isl(app, |i| Some((i.hwnd?, i.edge.clone(), i.at, i.size)));
     if let Some((hwnd, edge, at, size)) = job {
         window::set_bounds(hwnd, bounds(app, &edge, at, size));
+        tuck(app);
+    }
+}
+
+/// Over a docked chat it tucks itself away into a tab (or, no longer, comes back out).
+fn tuck(app: &AppHandle) {
+    let over = strip_rect(app).is_some_and(|s| robots::docking::covers(app, s));
+    let changed = isl(app, |i| (i.tucked != over).then(|| i.tucked = over)).is_some();
+    if changed {
+        let _ = app.emit_to(LABEL, "island:tuck", over);
     }
 }
 
@@ -177,6 +191,7 @@ fn make(app: &AppHandle) -> Option<isize> {
                     i.hover = false;
                     i.through = None;
                     i.sent = None;
+                    i.tucked = false;
                 }
             });
         }
@@ -450,11 +465,11 @@ fn dropped(app: &AppHandle, edge: &str, at: (i32, i32)) {
 pub fn island_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Value, Error> {
     only(&window, LABEL)?;
     let list = robots_view(&app);
-    let edge = isl(&app, |i| {
+    let (edge, tucked) = isl(&app, |i| {
         i.sent = Some(list.clone());
-        i.edge.clone()
+        (i.edge.clone(), i.tucked)
     });
-    Ok(json!({ "robots": list, "edge": edge }))
+    Ok(json!({ "robots": list, "edge": edge, "tucked": tucked }))
 }
 
 /// How big it came out (CSS px, its shadow and all).
@@ -631,6 +646,7 @@ pub fn setup(app: &AppHandle) {
         reports: HashMap::new(),
         reminder: HashMap::new(),
         sent: None,
+        tucked: false,
     }));
     changed(app);
 }

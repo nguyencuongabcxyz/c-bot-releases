@@ -20,6 +20,8 @@ showView(markup, { title: 'C-Bot robots' });
   // sized to its layer here. Its window has room for its biggest look all the time
   // (island_size), so opening it never resizes the window (that flickers); main lets clicks
   // through the see-through rest of it, and hovers by where the strip is (island_box).
+  // Over a docked chat (island:tuck) it tucks away at rest, a slim tab left at the edge so it
+  // doesn't sit on the chat's words; then only the tab counts as it, and hovered it slides out.
   // Updates change what's there in place: rebuilt, the rings would jump and hovers flicker.
   const body = document.body;
   const box = $('#island');
@@ -32,12 +34,14 @@ showView(markup, { title: 'C-Bot robots' });
   const CLOSE_AFTER = 380; // ms gone before it slides back
   const HOLD = 350; // ms pressed before it lifts to be moved
   const TOAST_FOR = 7000; // ms a toast stays (not a question or your notes: those wait for you)
+  const TAB = 8; // how much of it shows tucked away (px; island.css's --tab)
 
   let robots: IslandRobot[] = [];
   let edge: IslandEdge = 'top';
   let mode: Mode = 'rest';
   let hovering = false;
   let dragging = false;
+  let overChat = false; // (main says: it's over a docked chat)
   const dots = new Map<string, IslandNews['kind']>(); // news you haven't looked at, by robot
   const queue: Toast[] = [];
   let toast: Toast | null = null;
@@ -121,6 +125,15 @@ showView(markup, { title: 'C-Bot robots' });
 
   const restFaces = new Map<string, { el: HTMLElement }>();
   function renderRest() {
+    // (tucked away, the tab hints at what's going on)
+    body.classList.toggle(
+      'any-busy',
+      robots.some((r) => r.busy),
+    );
+    body.classList.toggle(
+      'any-ask',
+      robots.some((r) => r.asking),
+    );
     keep(
       $('#faces'),
       restFaces,
@@ -372,13 +385,19 @@ showView(markup, { title: 'C-Bot robots' });
       win = { w: W, h: H };
       ipc.islandSize(W, H);
     }
-    // where the strip ends up in it (body's flex puts it there: island.css)
-    const at = [
-      edge === 'left' ? 0 : edge === 'right' ? W - w : (W - w) / 2,
-      edge === 'top' ? 0 : edge === 'bottom' ? H - h : (H - h) / 2,
-      w,
-      h,
-    ].map(Math.round);
+    // where the strip ends up in it (body's flex puts it there: island.css); tucked away, just
+    // the tab that shows at the edge
+    const tucked = overChat && mode === 'rest' && !hovering && !dragging && !press && target === 'off';
+    body.classList.toggle('tucked', tucked);
+    const x = edge === 'left' ? 0 : edge === 'right' ? W - w : (W - w) / 2;
+    const y = edge === 'top' ? 0 : edge === 'bottom' ? H - h : (H - h) / 2;
+    const at = (
+      !tucked
+        ? [x, y, w, h]
+        : vertical()
+          ? [edge === 'left' ? 0 : W - TAB, y, TAB, h]
+          : [x, edge === 'top' ? 0 : H - TAB, w, TAB]
+    ).map(Math.round);
     if (at.join() !== hit) {
       hit = at.join();
       ipc.islandBox(at[0], at[1], at[2], at[3]);
@@ -420,12 +439,19 @@ showView(markup, { title: 'C-Bot robots' });
     clearTimeout(closeTimer);
     if (dragging || press || target !== 'off') return;
     if (mode === 'toast') return holdToast(over);
-    if (over) openTimer = window.setTimeout(() => setMode('panel'), OPEN_AFTER);
-    else
+    if (over) {
+      fit(); // (tucked away: out it slides first)
+      openTimer = window.setTimeout(() => setMode('panel'), OPEN_AFTER);
+    } else
       closeTimer = window.setTimeout(() => {
         if (mode === 'panel') setMode('rest');
+        else fit(); // (back into its tab, over a docked chat)
         nextToast();
       }, CLOSE_AFTER);
+  });
+  ipc.on('island:tuck', (t) => {
+    overChat = t;
+    fit();
   });
 
   // press and hold (or press and pull) anywhere but a button: main moves it from there
@@ -527,6 +553,7 @@ showView(markup, { title: 'C-Bot robots' });
   (async () => {
     const init = await ipc.islandInit();
     robots = init.robots;
+    overChat = !!init.tucked;
     body.classList.add('mode-rest');
     setEdge(init.edge);
   })();
