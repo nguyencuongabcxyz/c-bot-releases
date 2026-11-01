@@ -108,17 +108,18 @@ export function createSharing(r: SharingNeeds) {
     if (!view) return;
     strip.classList.toggle('guest', view.role === 'guest');
     const line = el('div', 'share-line');
-    const talking = el('button', 'share-stop share-talk-btn', unread ? `💬 Talk (${unread})` : '💬 Talk');
+    const talking = Icon.text(el('button', 'share-stop share-talk-btn'), '💬 Talk');
+    if (unread) talking.append(el('span', 'share-unread', String(unread)));
     talking.type = 'button';
     talking.classList.toggle('unread', unread > 0);
     talking.addEventListener('click', () => talk.toggle());
     if (view.role === 'guest') {
-      line.append(el('span', '', `👀 Watching ${view.host.name}’s tab`));
+      line.append(Icon.text(el('span'), `👀 Watching ${view.host.name}’s tab`));
       line.append(el('span', 'share-where', ` · ${view.host.pc} · ${view.host.ip}`));
       line.append(talking, leaveButton());
     } else {
       const names = view.people.map((p) => p.name).join(', ');
-      line.append(el('span', '', names ? `🔗 Shared with ${names}` : '🔗 Sharing: nobody’s in yet'));
+      line.append(Icon.text(el('span'), names ? `👥 Shared with ${names}` : '🔗 Sharing: nobody’s in yet'));
       line.append(el('span', 'share-where', ` · ${view.internet ? 'internet · ' : ''}${minutesLeft(view.endsAt)}`));
       const manage = el('button', 'share-stop', 'Invite…');
       manage.type = 'button';

@@ -3,7 +3,7 @@
    are violet. */
 
 #btn-share.on { color: var(--accent-ink); background: var(--accent-soft); }
-#tabs .tab-shared { color: var(--accent-ink); margin-right: 2px; flex: none; }
+#tabs .tab-shared { color: var(--accent-ink); margin-right: 9px; }
 
 /* ---------------------------------------------------------- the strip */
 
@@ -14,12 +14,15 @@
 #share-strip.guest { background: color-mix(in srgb, var(--violet) 11%, transparent); border-color: color-mix(in srgb, var(--violet) 25%, transparent); }
 .share-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .share-line > span:first-child { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-line > span:first-child .ic { color: var(--accent-ink); }
+#share-strip.guest .share-line > span:first-child .ic { color: var(--violet); }
 .share-where { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 100; } /* (gives way before the name) */
 .share-stop {
   margin-left: auto; flex: none; border: 1px solid var(--line-2); background: var(--panel-bg); color: inherit;
   border-radius: 999px; padding: 1px 10px; font: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap;
 }
 .share-stop + .share-stop { margin-left: 0; }
+.share-stop .ic.lead { margin-right: 4px; }
 .share-stop.danger { color: var(--danger); }
 
 /* ---------------------------------------------------------- people */
@@ -60,7 +63,12 @@
   font: inherit; color: inherit; text-align: left; cursor: pointer;
 }
 .share-opt:hover { border-color: var(--accent); }
-.share-opt-icon { flex: none; font-size: 18px; line-height: 1; }
+.share-opt-icon {
+  flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+  background: var(--bg-2); color: var(--muted); transition: background 0.15s, color 0.15s;
+}
+.share-opt-icon .ic { width: 17px; height: 17px; stroke-width: 1.8; }
+.share-opt.on .share-opt-icon { background: var(--panel-bg); color: var(--accent-ink); }
 .share-opt-words { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
 .share-opt-words :is(b, small) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .share-opt-words b { font-size: 12.5px; }
@@ -69,7 +77,9 @@
 .share-check { display: flex; align-items: flex-start; gap: 7px; font-size: 12.5px; cursor: pointer; }
 .share-check input { margin: 2px 0 0; accent-color: var(--accent); }
 .share-warn { margin: 4px 0 0; color: var(--warn); font-size: 12px; }
-.share-rules { list-style: none; margin: 4px 0; padding: 8px 10px; background: var(--bg-2); border-radius: 10px; font-size: 12px; display: grid; gap: 3px; }
+.share-rules { list-style: none; margin: 4px 0; padding: 9px 11px; background: var(--bg-2); border-radius: 10px; font-size: 12px; display: grid; gap: 5px; }
+.share-rules li { display: flex; align-items: flex-start; }
+.share-rules .ic.lead { margin: 1px 8px 0 0; color: var(--accent-ink); }
 .share-pop > .share-acts { margin-top: 6px; }
 .share-invite { display: flex; align-items: center; gap: 8px; }
 .share-said { color: var(--muted); font-size: 11.5px; }
@@ -139,10 +149,14 @@ body.visiting #send { background: var(--violet); }
 }
 .talk-input:focus { outline: none; border-color: var(--accent); }
 .share-talk-btn.unread { border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.share-unread {
+  margin-left: 5px; min-width: 16px; padding: 0 5px; border-radius: 999px; display: inline-block; text-align: center;
+  background: var(--accent); color: var(--on-accent); font-size: 10px; font-weight: 700; line-height: 15px;
+}
 
 /* ---------------------------------------------------------- decisions and comments (decisions.ts) */
 
-.share-icon { background: var(--bg-3); }
+.share-icon { background: color-mix(in srgb, var(--violet) 16%, transparent); color: var(--violet); }
 .share-plan { margin: 6px 0; max-height: 220px; overflow-y: auto; font-size: 12.5px; }
 .share-plan > :first-child { margin-top: 0; }
 .share-question { margin: 6px 0 4px; font-weight: 600; font-size: 12.5px; }
@@ -157,6 +171,7 @@ body.visiting #send { background: var(--violet); }
   font-size: 12px; color: inherit; background: var(--panel-bg);
 }
 .share-rec-line { font-size: 12px; color: var(--fg-2); margin: 2px 0; }
+.share-rec-line .ic { color: var(--violet); }
 .share-outcome { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--violet); }
 .share-decision.settled { opacity: 0.8; }
 .share-quote {
@@ -171,10 +186,12 @@ body.visiting #send { background: var(--violet); }
   background: var(--panel-bg); color: var(--fg); font: 600 12px var(--font-ui); box-shadow: var(--shadow-pop);
   cursor: pointer;
 }
+.share-pick .ic { color: var(--violet); }
 /* (a visitor has no Claude Code to ask: it comments instead) */
 body.visiting #sq-pick { display: none; }
 .talk-host {
-  margin-left: 5px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
+  margin-left: 5px; padding: 0 7px 0 5px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
   background: var(--accent-soft); color: var(--accent-ink);
 }
+.talk-host .ic.lead { margin-right: 3px; }
 .talk-unfound { color: var(--warn); font-size: 11px; }

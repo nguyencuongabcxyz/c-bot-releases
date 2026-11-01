@@ -54,7 +54,9 @@ describe('decisions in a shared chat', () => {
   it('shows what others recommend, and comments as plain text', () => {
     const card = decisionCard({ requestId: 'r1', kind: 'plan', plan: 'x' }, 'Cuong', md, vi.fn());
     noteRecommendation(card, minh, 'Reject', 'drops a table');
-    expect(card.querySelector('.share-rec-line')?.textContent).toBe('🗳️ Minh: Reject (drops a table)');
+    const line = card.querySelector('.share-rec-line');
+    expect(line?.textContent).toBe('Minh: Reject (drops a table)');
+    expect(line?.querySelector('svg.ic')).not.toBeNull();
     const rec = recommendCard(minh, 'Reject', '<b>why</b>');
     expect(rec.querySelector('b + b, .share-text b')).toBeNull();
     const use = vi.fn();

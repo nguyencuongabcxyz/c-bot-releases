@@ -2,10 +2,11 @@
 
 /* ---------------------------------------------------------------- the ☆ on a tab */
 .tab-star {
-  border: 0; background: none; color: var(--muted); cursor: pointer; padding: 1px; margin-right: -3px;
+  border: 0; background: none; color: var(--muted); cursor: pointer; padding: 1px;
   border-radius: 5px; display: none; place-items: center; line-height: 0; flex-shrink: 0;
 }
 .tab:hover .tab-star, .tab.on .tab-star, .tab.saved .tab-star { display: grid; }
+.tab > .tab-star { margin-right: 4px; }
 .tab-star:hover { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .tab.saved .tab-star { color: var(--warn); }
 /* (lit: the star filled in) */

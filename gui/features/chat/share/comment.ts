@@ -1,13 +1,14 @@
 // On a visiting robot: select a piece of the chat and a 📍 Comment button comes up by it, to say
 // something about exactly that to the people in the chat (where the host's robots offer "Ask
 // about this", which a visitor can't: it has no Claude Code). (share.ts makes one.)
+import { Icon } from '@/icons/icons';
 import { el } from '@/lib/dom';
 
 const QUOTE_MAX = 300;
 
 /** The button by a selection in the chat; `pick` gets what was selected. */
 export function createCommentPick(logs: HTMLElement, pick: (quote: string) => void) {
-  const b = el('button', 'share-pick', '📍 Comment');
+  const b = Icon.text(el('button', 'share-pick'), '📍 Comment');
   b.type = 'button';
   b.hidden = true;
   document.body.append(b);

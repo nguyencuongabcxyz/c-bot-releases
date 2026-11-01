@@ -2,6 +2,7 @@
 // strip with what's been said, commented and recommended, and a line to say something. A
 // comment on a piece of the chat goes from here too, its quote shown above the line. (share.ts
 // makes one.)
+import { Icon } from '@/icons/icons';
 import { $, el } from '@/lib/dom';
 import type { SharePerson } from '@/types/model';
 import { initial } from './cards';
@@ -43,7 +44,7 @@ export function createTalk(r: TalkNeeds) {
     name.title = [l.from.pc, l.from.ip].filter(Boolean).join(' · '); // (where they really are)
     body.append(name);
     // (the host's own words: only the host can mark them so)
-    if (l.from.host) body.append(el('span', 'talk-host', '👑 host'));
+    if (l.from.host) body.append(Icon.text(el('span', 'talk-host'), '👑 host'));
     if (l.kind === 'comment') {
       body.append(el('span', 'talk-about', ` on “${l.quote}”`));
       if (!l.found) body.append(el('span', 'talk-unfound', ' (not found in the chat)'));
@@ -74,7 +75,7 @@ export function createTalk(r: TalkNeeds) {
   function setQuote(q: string) {
     quote = q;
     about.hidden = !q;
-    about.textContent = q ? `📍 Commenting on “${q}”` : '';
+    Icon.text(about, q ? `📍 Commenting on “${q}”` : '');
     input.placeholder = q ? 'Your comment… (Esc: just talk)' : 'Talk to everyone here (not to Claude)…';
   }
 

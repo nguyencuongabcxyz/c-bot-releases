@@ -1,6 +1,7 @@
 // The share card under the header's link button: before sharing, what colleagues will see and
 // the button to start; while sharing, invite links (one per person), who's in, who's asking,
 // and Stop. (share.ts opens it.)
+import { Icon } from '@/icons/icons';
 import { el } from '@/lib/dom';
 import type { SharePerson, ShareView } from '@/types/model';
 import { initial } from './cards';
@@ -23,8 +24,8 @@ export function startCard(tabTitle: string, a: CardActions): HTMLElement {
   );
   card.append(el('div', 'share-label', 'Network'));
   const net = el('div', 'share-net');
-  const lan = option('🏢', 'Office network', 'Same network as you');
-  const web = option('🌍', 'Internet', 'From anywhere');
+  const lan = option('building', 'Office network', 'Same network as you');
+  const web = option('globe', 'Internet', 'From anywhere');
   let internet = false;
   const pick = (on: boolean) => {
     internet = on;
@@ -47,20 +48,22 @@ export function startCard(tabTitle: string, a: CardActions): HTMLElement {
   const [tools, toolsBox] = checkbox('What tools read and ran (file contents, command output)');
   card.append(all, now, tools);
   card.append(
-    el(
-      'p',
-      'share-warn',
+    Icon.text(
+      el('p', 'share-warn'),
       '⚠ They’ll see your messages and the answers, which can hold code, file paths and anything pasted in.',
     ),
   );
   const rules = el('ul', 'share-rules');
-  for (const r of [
-    '💬 Their prompts wait for your Send',
-    '📋 They see Claude’s plans and questions too, and can recommend (you decide)',
-    '🚫 They can’t run anything on your PC',
-    '⏱ It stops after an hour',
-  ])
-    rules.append(el('li', '', r));
+  for (const [icon, text] of [
+    ['chat', 'Their prompts wait for your Send'],
+    ['plan', 'They see Claude’s plans and questions too, and can recommend (you decide)'],
+    ['shield', 'They can’t run anything on your PC'],
+    ['clock', 'It stops after an hour'],
+  ]) {
+    const li = el('li', '', text);
+    li.insertAdjacentHTML('afterbegin', Icon(icon, 'sm lead'));
+    rules.append(li);
+  }
   card.append(rules);
   card.append(
     buttons([
@@ -128,12 +131,14 @@ export function minutesLeft(endsAt: number): string {
   return m === 1 ? '1 min left' : `${m} min left`;
 }
 
-function option(icon: string, name: string, detail: string): HTMLButtonElement {
+function option(icon: 'building' | 'globe', name: string, detail: string): HTMLButtonElement {
   const o = el('button', 'share-opt');
   o.type = 'button';
   const words = el('span', 'share-opt-words');
   words.append(el('b', '', name), el('small', '', detail));
-  o.append(el('span', 'share-opt-icon', icon), words);
+  const tile = el('span', 'share-opt-icon');
+  tile.innerHTML = Icon(icon);
+  o.append(tile, words);
   return o;
 }
 

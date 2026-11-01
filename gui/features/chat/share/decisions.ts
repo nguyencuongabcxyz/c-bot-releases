@@ -3,18 +3,21 @@
 // decides), and what became of it. On the host's: a guest's recommendation, and a comment on a
 // piece of the chat with the button that puts it in your next message. All raw text, but the
 // plan (markdown, through the visitor's renderer: no pictures, no file links).
+import { Icon } from '@/icons/icons';
 import { el } from '@/lib/dom';
 import type { SharePerson, ShareDecision } from '@/types/model';
 import { initial } from './cards';
 
-function head(icon: string, text: string): HTMLElement {
+function head(icon: 'plan' | 'help', text: string): HTMLElement {
   const h = el('div', 'share-head');
-  h.append(el('span', 'share-face share-icon', icon), el('b', '', text));
+  const face = el('span', 'share-face share-icon');
+  face.innerHTML = Icon(icon, 'sm');
+  h.append(face, el('b', '', text));
   return h;
 }
 
 function button(label: string, cls: string, go: () => void): HTMLButtonElement {
-  const b = el('button', cls, label);
+  const b = Icon.text(el('button', cls), label);
   b.type = 'button';
   b.addEventListener('click', go);
   return b;
@@ -42,7 +45,7 @@ export function decisionCard(
     footer(card, `You recommended: ${choice}`);
   };
   if (d.kind === 'plan') {
-    card.append(head('📋', `${host}’s robot has a plan, waiting for ${host}`));
+    card.append(head('plan', `${host}’s robot has a plan, waiting for ${host}`));
     const plan = el('div', 'share-plan');
     plan.innerHTML = md(d.plan); // (sanitized markdown, no pictures or file links)
     card.append(plan, why);
@@ -51,7 +54,7 @@ export function decisionCard(
       button('👍 Approve', 'share-btn primary', () => go('Approve')),
     );
   } else {
-    card.append(head('❓', `${host}’s robot is asking ${host}`));
+    card.append(head('help', `${host}’s robot is asking ${host}`));
     const picked = d.questions.map(() => new Set<string>());
     d.questions.forEach((q, i) => {
       card.append(el('div', 'share-question', q.question));
@@ -106,7 +109,7 @@ export function settleDecision(card: HTMLElement, host: string, outcome: string)
 
 /** Someone else's recommendation, under the card it's about. */
 export function noteRecommendation(card: HTMLElement, from: SharePerson, choice: string, why: string) {
-  const line = el('div', 'share-rec-line', `🗳️ ${from.name}: ${choice}${why ? ` (${why})` : ''}`);
+  const line = Icon.text(el('div', 'share-rec-line'), `🗳️ ${from.name}: ${choice}${why ? ` (${why})` : ''}`);
   card.querySelector('.share-acts')?.before(line);
 }
 
@@ -135,7 +138,8 @@ export function commentCard(
   h.append(el('span', 'share-where', ` · ${from.pc || from.ip}`));
   card.append(h, el('blockquote', 'share-quote', quote));
   // (what a guest quotes is theirs to say: the host looks for it in the chat first)
-  if (!found) card.append(el('div', 'share-warn', '⚠ This quote isn’t in the chat as it stands. Read it with care.'));
+  if (!found)
+    card.append(Icon.text(el('div', 'share-warn'), '⚠ This quote isn’t in the chat as it stands. Read it with care.'));
   card.append(el('div', 'share-text', text));
   const acts = el('div', 'share-acts');
   acts.append(
