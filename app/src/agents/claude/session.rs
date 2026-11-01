@@ -25,6 +25,7 @@ impl Session {
                 agent_tools: HashSet::new(),
                 agent_tasks: HashMap::new(),
                 agent_running: HashSet::new(),
+                quiet_tasks: HashMap::new(),
                 cost_so_far: session_id.is_none().then_some(0.0), // (a new one costs nothing yet)
                 session_id,
                 last_used: Instant::now(),

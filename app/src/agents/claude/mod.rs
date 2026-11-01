@@ -373,6 +373,9 @@ struct Inner {
     agent_tools: HashSet<String>,        // tool_use ids of Agent calls (each one is a helper agent)
     agent_tasks: HashMap<String, String>, // background task id -> the Agent tool_use id
     agent_running: HashSet<String>,      // Agent tool_use ids still at work
+    // commands run in the foreground (a step in the chat already, no card): task id -> its
+    // tool_use id and description, for if it's sent to the background part-way
+    quiet_tasks: HashMap<String, (String, String)>,
     // what the conversation it carries on has cost so far, as Claude Code last said (None: not
     // known). Its total_cost_usd is that, plus what it has cost since: a resumed (or branched)
     // conversation starts again from what it had cost, not from 0.

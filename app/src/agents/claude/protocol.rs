@@ -340,6 +340,12 @@ impl HelperTask {
         matches!(self.task_type.as_str(), "local_bash" | "local_command")
             || self.task_type.starts_with("monitor")
     }
+
+    /// A shell command run in the foreground: Claude waits for it, and the chat shows it as a
+    /// step already.
+    pub fn is_foreground_command(&self) -> bool {
+        self.task_type == "local_bash" && !self.is_backgrounded
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -522,6 +528,24 @@ mod tests {
         // (from before Claude Code said what kind: a helper, as it was)
         let old: HelperTask = serde_json::from_value(json!({ "task_id": "b1" })).expect("a task");
         assert!(!old.is_command());
+    }
+
+    #[test]
+    fn only_a_shell_command_run_in_the_foreground_is_quiet() {
+        let task = |v: Value| -> HelperTask { serde_json::from_value(v).expect("a task") };
+        assert!(
+            task(json!({ "task_type": "local_bash", "is_backgrounded": false }))
+                .is_foreground_command()
+        );
+        assert!(
+            !task(json!({ "task_type": "local_bash", "is_backgrounded": true }))
+                .is_foreground_command()
+        );
+        assert!(!task(json!({ "task_type": "monitor_ws" })).is_foreground_command());
+        assert!(
+            !task(json!({ "task_type": "local_agent", "is_backgrounded": false }))
+                .is_foreground_command()
+        );
     }
 
     #[test]

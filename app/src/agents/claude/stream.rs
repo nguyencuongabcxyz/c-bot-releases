@@ -229,6 +229,9 @@ impl Inner {
     /// The helper (its Agent tool call's id) a task event is about, if it's one we know; it
     /// keeps the conversation alive.
     pub(super) fn helper_of(&mut self, t: &HelperTask) -> Option<String> {
+        if self.quiet_tasks.contains_key(&t.task_id) {
+            return None;
+        }
         let id = if !t.tool_use_id.is_empty() {
             t.tool_use_id.clone()
         } else {
@@ -242,6 +245,13 @@ impl Inner {
     }
 
     pub(super) fn helper_started(&mut self, t: HelperTask) {
+        // (a command Claude waits for: it's a step in the chat already, not a card of its own)
+        if t.is_foreground_command() && !t.task_id.is_empty() {
+            let description = t.description.as_str().unwrap_or("").to_string();
+            self.quiet_tasks
+                .insert(t.task_id, (t.tool_use_id, description));
+            return;
+        }
         let Some(id) = self.helper_of(&t) else { return };
         self.agent_tools.insert(id.clone());
         self.agent_running.insert(id.clone());
@@ -268,6 +278,20 @@ impl Inner {
     }
 
     pub(super) fn helper_updated(&mut self, t: HelperTask) {
+        let sent_off = [&t.patch["isBackgrounded"], &t.patch["is_backgrounded"]]
+            .iter()
+            .any(|v| v.as_bool() == Some(true));
+        if sent_off && let Some((tool_use_id, description)) = self.quiet_tasks.remove(&t.task_id) {
+            // a command sent to the background part-way: a card from now on
+            return self.helper_started(HelperTask {
+                task_id: t.task_id,
+                tool_use_id,
+                description: json!(description),
+                task_type: "local_bash".into(),
+                is_backgrounded: true,
+                ..Default::default()
+            });
+        }
         let Some(id) = self.helper_of(&t) else { return };
         if let Some(status) = t.patch["status"].as_str() {
             self.emit(Event::Agent(AgentEvent::Status {
