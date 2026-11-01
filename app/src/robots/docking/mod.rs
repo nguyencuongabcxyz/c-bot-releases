@@ -226,6 +226,16 @@ fn docked_layout(b: Rect, s: f64, edge: Edge, i: usize, n: usize) -> Layout {
     }
 }
 
+/// It holds a strip of the screen for a stack it's no longer docked in (its chat put away,
+/// sent off, undocked).
+pub(in crate::robots) fn leaving(app: &AppHandle, id: &str) -> bool {
+    with(app, |st| {
+        st.robots
+            .get(id)
+            .is_some_and(|r| r.kept.is_some() && active(r).is_none())
+    })
+}
+
 /// Is its chat docked now?
 pub fn is_docked(app: &AppHandle, id: &str) -> bool {
     with(app, |st| {

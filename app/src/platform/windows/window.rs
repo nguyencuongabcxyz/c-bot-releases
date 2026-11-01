@@ -1,24 +1,30 @@
-//! Windows and screens through Win32: placing, showing without the focus, keeping on top,
-//! veiling; the screen a point is on, the cursor; and other apps' windows (in front, their
-//! titles). Straight to Windows, so they work from any thread without a round trip through
+//! Windows and screens through Win32: placing (and pinning in place), showing without the
+//! focus, keeping on top, veiling; the screen a point is on, the cursor; and other apps'
+//! windows (in front, their titles). Straight to Windows, so they work from any thread without a round trip through
 //! the event loop (Tauri's own getters wait on the main thread).
 
-use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     CreateRectRgn, GetMonitorInfoW, GetWindowRgnBox, MONITOR_DEFAULTTONEAREST,
     MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromPoint, RGN_ERROR, SetWindowRgn,
 };
 use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
+use windows_sys::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowLongPtrW,
     GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HWND_TOPMOST, IsWindow,
     IsWindowVisible, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
     SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
-    SWP_NOZORDER, SetForegroundWindow, SetWindowPos, ShowWindow, WS_EX_TOPMOST,
+    SWP_NOZORDER, SetForegroundWindow, SetWindowPos, ShowWindow, WINDOWPOS, WM_NCDESTROY,
+    WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
 };
 
 pub use crate::platform::common::types::Monitor;
 pub use crate::platform::common::types::Rect;
+use crate::runtime::Locked;
 
 fn rect(r: RECT) -> Rect {
     Rect {
@@ -241,4 +247,58 @@ pub fn title_of(hwnd: isize) -> String {
     // SAFETY: the buffer and its length in UTF-16 units.
     let n = unsafe { GetWindowTextW(hwnd as HWND, buf.as_mut_ptr(), buf.len() as i32) };
     String::from_utf16_lossy(&buf[..n.clamp(0, buf.len() as i32) as usize])
+}
+
+// ---------------------------------------------------------------- pinned in place
+
+/// Windows pinned where they are: hwnd -> its place (physical px).
+static PINNED: LazyLock<Mutex<HashMap<isize, Rect>>> = LazyLock::new(Default::default);
+
+// (our subclass's id on a window)
+const PIN_WATCH: usize = 0xC0B0;
+
+/// Watch the window so pin() holds for it. Once, on the thread that made the window (the
+/// UI thread): a window's messages can only be watched from there.
+pub fn watch_moves(hwnd: isize) {
+    // SAFETY: our own window, on its own thread; the procedure lives as long as the program.
+    unsafe { SetWindowSubclass(hwnd as HWND, Some(pinned_proc), PIN_WATCH, 0) };
+}
+
+/// Keep the window at `at` whatever else moves it (Windows keeps windows inside a screen's
+/// work area as an app bar takes some of it), or (None) let it go. Set before placing it there.
+pub fn pin(hwnd: isize, at: Option<Rect>) {
+    let mut pinned = PINNED.locked();
+    match at {
+        Some(r) => pinned.insert(hwnd, r),
+        None => pinned.remove(&hwnd),
+    };
+}
+
+unsafe extern "system" fn pinned_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    _data: usize,
+) -> LRESULT {
+    if msg == WM_WINDOWPOSCHANGING
+        && let Some(r) = PINNED.locked().get(&(hwnd as isize)).copied()
+    {
+        // SAFETY: WM_WINDOWPOSCHANGING's lparam is the WINDOWPOS being applied, ours to change.
+        let wp = unsafe { &mut *(lparam as *mut WINDOWPOS) };
+        if wp.flags & SWP_NOMOVE == 0 {
+            (wp.x, wp.y) = (r.x, r.y);
+        }
+        if wp.flags & SWP_NOSIZE == 0 {
+            (wp.cx, wp.cy) = (r.w, r.h);
+        }
+    }
+    if msg == WM_NCDESTROY {
+        pin(hwnd as isize, None);
+        // SAFETY: our own subclass, taken off as its window goes.
+        unsafe { RemoveWindowSubclass(hwnd, Some(pinned_proc), PIN_WATCH) };
+    }
+    // SAFETY: the message as it came, on to the window's own procedure.
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }

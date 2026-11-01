@@ -187,6 +187,11 @@ pub(super) fn object(msg: Value) -> Map<String, Value> {
 /// on the stage), and tell the page. Docked or not any more, the other docked chats make
 /// room or close up.
 pub fn apply_layout(app: &AppHandle, id: &str) {
+    if docking::leaving(app, id) {
+        // (the strip its stack kept goes back to the screen first: laid out after, it would be
+        // squeezed out of where its chat was, and jump back as the screen's room came back)
+        docking::settled(app);
+    }
     match lay_out(app, id) {
         Some(Laid { stack: true, .. }) => docking::reflow(app, id),
         Some(Laid { docked: true, .. }) => docking::settled(app),
@@ -248,6 +253,9 @@ pub(super) fn lay_out(app: &AppHandle, id: &str) -> Option<Laid> {
         Some((r.hwnd, msg, bounds, veil, hide, laid))
     });
     let (hwnd, msg, bounds, veil, hide, laid) = job?;
+    // (docked, it stays put: Windows moves a window out of the strip its stack keeps, as the
+    // strip is taken from the screen's work area)
+    window::pin(hwnd, laid.docked.then_some(bounds));
     let _ = app.emit_to(label_of(id), "robot:layout", msg);
     // (sent away, it's veiled where it is: moved back to its desk first, it would show there
     // for a moment; it goes back there as it comes out)

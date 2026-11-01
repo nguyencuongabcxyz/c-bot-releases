@@ -216,7 +216,11 @@ pub fn resize_robot(app: &AppHandle, id: &str, size: &str) {
 pub fn refit(app: &AppHandle) {
     let ids = with(app, |st| {
         for r in st.robots.values_mut() {
-            r.anchor = clamp_anchor(r.anchor, r.dims);
+            // (docked, its desk is under the strip its stack keeps: left where it is, for when
+            // it's back)
+            if docking::active(r).is_none() {
+                r.anchor = clamp_anchor(r.anchor, r.dims);
+            }
         }
         st.robots.keys().cloned().collect::<Vec<_>>()
     });

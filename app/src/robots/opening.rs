@@ -118,6 +118,8 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
         )
     });
     revive::watch(app, &win, id);
+    // (so it can be pinned in place while docked: watched from the UI thread, which made it)
+    let _ = app.run_on_main_thread(move || window::watch_moves(hwnd));
     let (app2, id2) = (app.clone(), id.to_string());
     win.on_window_event(move |e| match e {
         tauri::WindowEvent::Destroyed => closed(&app2, &id2, hwnd),
