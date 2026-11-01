@@ -64,6 +64,15 @@ export function createComposer(r: ComposerNeeds) {
     r.input.style.height = `${Math.min(r.input.scrollHeight, 120)}px`;
     r.input.style.overflowY = r.input.scrollHeight > 120 ? 'auto' : 'hidden';
   }
+  // the chat made wider or narrower (by you, on the stage, docked): the words (or the
+  // placeholder) wrap afresh, so the box is measured again (only for a new width: its own
+  // height changing is what autosize does)
+  let inputW = 0;
+  new ResizeObserver(() => {
+    if (r.input.clientWidth === inputW) return;
+    inputW = r.input.clientWidth;
+    autosize();
+  }).observe(r.input);
 
   // ↑ / ↓ in the composer: what you asked before in this tab, as in a terminal (and Claude Code).
   // Only from the first line going up (or the last going down), so a long message still moves.
