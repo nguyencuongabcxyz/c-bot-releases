@@ -71,7 +71,6 @@ body.busy .who::before { background: var(--accent); box-shadow: 0 0 0 3px var(--
   cursor: pointer; display: grid; place-items: center; padding: 0; transition: background 0.12s, color 0.12s;
 }
 .actions button:hover, .icon-btn:hover { background: var(--bg-2); color: var(--fg); }
-#btn-bonk:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 /* Remote Control on: lit, with a green dot once claude.ai or the app is connected */
 #btn-remote { position: relative; }
 #btn-remote.on { color: var(--accent-ink); background: var(--accent-soft); }

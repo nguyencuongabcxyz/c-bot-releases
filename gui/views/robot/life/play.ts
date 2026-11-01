@@ -165,7 +165,6 @@ export function createPlay(r: PlayNeeds) {
     if (res.queued) ipc.robotSendNow(tab.id, turnId);
   }
 
-  $('#btn-bonk').addEventListener('click', r.bonkRobot);
   $('#btn-bonk-working').addEventListener('click', (e) => {
     e.stopPropagation(); // don't also open the chat
     r.bonkRobot();

@@ -118,7 +118,7 @@
 /* ---------------------------------------------------------- a visiting robot's chat */
 
 /* (it has no folder and no Claude Code here: only the chat, read-only, and the box to suggest) */
-body.visiting :is(#btn-shell, #btn-remote, #btn-share, #btn-history, #btn-context, #btn-bonk, #btn-reset, #folder),
+body.visiting :is(#btn-shell, #btn-remote, #btn-share, #btn-history, #btn-context, #btn-reset, #folder),
 body.visiting :is(#btn-attach, #btn-screen, #btn-mic, #brainbar, #attachments, #screen-asks),
 body.visiting #tabs :is(.tab-add, .tab-x),
 body.visiting #logs .msg-actions {
