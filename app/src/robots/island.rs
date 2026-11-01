@@ -66,10 +66,12 @@ fn edge_near(p: (i32, i32)) -> &'static str {
     EDGES[i]
 }
 
-/// Flush against its edge, centred on its point along it, kept on the screen.
-fn bounds(edge: &str, at: (i32, i32), size: (f64, f64)) -> Rect {
+/// Flush against its edge, centred on its point along it, kept on the screen: the screen's
+/// work area, with what docked chats keep of it given back (it's in front of them, at the
+/// screen's very edge, not stranded beside them).
+fn bounds(app: &AppHandle, edge: &str, at: (i32, i32), size: (f64, f64)) -> Rect {
     let m = window::monitor_near(at.0, at.1);
-    let wa = m.work;
+    let wa = robots::docking::screen_room(app, &m);
     let w = ((size.0 * m.scale).round() as i32).min(wa.w);
     let h = ((size.1 * m.scale).round() as i32).min(wa.h);
     let x = (at.0 - w / 2).max(wa.x).min(wa.right() - w);
@@ -99,9 +101,9 @@ fn default_spot() -> (String, (i32, i32)) {
 }
 
 fn place(app: &AppHandle) {
-    let job = isl(app, |i| Some((i.hwnd?, bounds(&i.edge, i.at, i.size))));
-    if let Some((hwnd, b)) = job {
-        window::set_bounds(hwnd, b);
+    let job = isl(app, |i| Some((i.hwnd?, i.edge.clone(), i.at, i.size)));
+    if let Some((hwnd, edge, at, size)) = job {
+        window::set_bounds(hwnd, bounds(app, &edge, at, size));
     }
 }
 
@@ -269,12 +271,14 @@ pub fn gone(app: &AppHandle, id: &str) {
     changed(app);
 }
 
-/// Back in front of the other always-on-top windows (a docked chat came over it).
+/// Back in front of the other always-on-top windows (a docked chat came over it), at the
+/// screen's very edge (the strip docked chats keep may have changed).
 pub fn raise(app: &AppHandle) {
     if app.try_state::<Mutex<Island>>().is_none() {
         return;
     }
     if let Some(hwnd) = isl(app, |i| i.hwnd) {
+        place(app);
         window::set_topmost(hwnd);
     }
 }
@@ -357,7 +361,7 @@ pub fn cursor(app: &AppHandle, at: (i32, i32)) {
     enum Do {
         Nothing,
         Hover(Option<bool>, Option<bool>), // (hovered now or not, if that changed; clicks through or not, if that did)
-        Move(isize, Rect, Option<String>),
+        Move(isize, String, (f64, f64), Option<String>),
         Dropped(String, (i32, i32)),
     }
     let job = isl(app, |i| {
@@ -373,7 +377,7 @@ pub fn cursor(app: &AppHandle, at: (i32, i32)) {
             let turned = (edge != i.edge).then(|| edge.to_string());
             i.edge = edge.into();
             i.at = at;
-            return Do::Move(hwnd, bounds(&i.edge, i.at, i.size), turned);
+            return Do::Move(hwnd, i.edge.clone(), i.size, turned);
         }
         // over the strip itself (a couple of px round it), not the see-through rest
         let b = window::window_rect(hwnd);
@@ -410,7 +414,7 @@ pub fn cursor(app: &AppHandle, at: (i32, i32)) {
                 let _ = app.emit_to(LABEL, "island:hover", over);
             }
         }
-        Do::Move(hwnd, b, turned) => {
+        Do::Move(hwnd, edge, size, turned) => {
             if let Some(edge) = turned {
                 let _ = app.emit_to(
                     LABEL,
@@ -418,7 +422,7 @@ pub fn cursor(app: &AppHandle, at: (i32, i32)) {
                     json!({ "edge": edge, "dragging": true }),
                 );
             }
-            window::set_bounds(hwnd, b);
+            window::set_bounds(hwnd, bounds(app, &edge, at, size));
         }
         Do::Dropped(edge, at) => dropped(app, &edge, at),
     }

@@ -163,6 +163,15 @@ fn room(st: &State, m: &window::Monitor, edge: Edge) -> Rect {
     give_back(m.work, edge, kept)
 }
 
+/// A screen's work area with what docked chats keep of it given back, on both its edges
+/// (what's in front of them, as the island, goes by the screen's very edge).
+pub fn screen_room(app: &AppHandle, m: &window::Monitor) -> Rect {
+    with(app, |st| {
+        let work = room(st, m, Edge::Left);
+        room(st, &window::Monitor { work, ..*m }, Edge::Right)
+    })
+}
+
 /// How wide an edge's chats are (CSS px).
 fn width(st: &State, edge: Edge) -> f64 {
     st.store.settings()["dockWidth"][edge.key()]
@@ -385,7 +394,6 @@ pub(super) fn reflow(app: &AppHandle, skip: &str) {
 /// The docked chats are where they go: the island back in front of them, and (setting
 /// dockReserve) each stack's room kept for it.
 pub(super) fn settled(app: &AppHandle) {
-    island::raise(app);
     let on = with(app, |st| {
         st.store.settings()["dockReserve"].as_bool() == Some(true)
     });
@@ -416,6 +424,7 @@ pub(super) fn settled(app: &AppHandle) {
             None => appbar::release(hwnd),
         }
     }
+    island::raise(app); // (after: it goes by the strips as they are now)
 }
 
 /// Setting dockReserve turned on or off: each stack keeps its room, or gives it back.
