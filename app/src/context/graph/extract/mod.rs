@@ -3,21 +3,30 @@
 //! hands each node to its language's reader, which says what it imports, calls, makes, extends
 //! or declares. What a call goes through (its receiver) is told apart here, the same way for
 //! every language: `this`/`self`, a field of it, a typed local, a name, or nothing.
-//!   rust.rs typescript.rs python.rs go.rs csharp.rs java.rs cpp.rs   each language's node kinds
+//!   rust.rs typescript.rs python.rs go.rs csharp.rs java.rs cpp.rs dart.rs zig.rs php.rs
+//!   ruby.rs shell.rs powershell.rs                                 each language's node kinds
 
 mod cpp;
 mod csharp;
+mod dart;
 mod go;
 mod java;
+mod php;
+mod powershell;
 mod python;
+mod ruby;
 mod rust;
+mod shell;
 mod typescript;
+mod zig;
 
 use std::collections::HashMap;
 
 use tree_sitter::{Node, Tree};
 
-use super::facts::{Heir, Heritage, Import, Links, Member, Receiver, Ref, RefKind, Via};
+use super::facts::{
+    CLOSURE_ARG, Heir, Heritage, Import, Links, Member, Receiver, Ref, RefKind, Via,
+};
 use crate::context::langs::{Kind, Lang};
 use crate::context::parse::{Def, walk};
 
@@ -25,6 +34,8 @@ use crate::context::parse::{Def, walk};
 /// fields from a type or from `this`: `Terminal#log`, `\0this#yard#stacks`.
 const THIS: &str = "\0this";
 const THIS_FIELD: &str = "\0this#";
+/// A local of no type the walk knows (Ruby's): it's a local, so said alone it's no call.
+const UNTYPED: &str = "\0?";
 
 /// One file's walk.
 pub(super) struct Walk<'a> {
@@ -38,6 +49,10 @@ pub(super) struct Walk<'a> {
 
 /// A file's links, from its tree and its definitions (parse.rs).
 pub(in crate::context) fn links(lang: Lang, tree: &Tree, src: &str, defs: &[Def]) -> Links {
+    // (one read for what it defines only has none: no walk)
+    if !lang.linked() {
+        return Links::default();
+    }
     let mut w = Walk {
         lang,
         src,
@@ -66,9 +81,14 @@ impl<'a> Walk<'a> {
             Lang::CSharp => csharp::visit(self, node),
             Lang::Java => java::visit(self, node),
             Lang::Cpp => cpp::visit(self, node),
+            Lang::Dart => dart::visit(self, node),
+            Lang::Zig => zig::visit(self, node),
+            Lang::Php => php::visit(self, node),
+            Lang::Ruby => ruby::visit(self, node),
+            Lang::Bash => shell::visit(self, node),
+            Lang::PowerShell => powershell::visit(self, node),
             // (only what they define, for now: no imports, calls or heritage)
-            Lang::Kotlin | Lang::Swift | Lang::Php | Lang::Ruby | Lang::Bash | Lang::PowerShell => {
-            }
+            Lang::Kotlin | Lang::Swift | Lang::Prisma | Lang::Proto | Lang::Hcl => {}
         }
     }
 
@@ -137,6 +157,9 @@ impl<'a> Walk<'a> {
     /// for a call in a chain over several lines).
     fn call(&mut self, node: Node, name: &str, object: Option<Node>) {
         let via = match object {
+            // (`field("name")` where field is a local closure: the closure, no function of the
+            // folder's of that name)
+            None if self.local(name).is_some() => return,
             None => Via::Bare,
             Some(o) => self.via(o),
         };
@@ -156,7 +179,12 @@ impl<'a> Walk<'a> {
     }
 
     fn reference(&mut self, node: Node, kind: RefKind, name: &str, via: Via) {
-        let name = bare(name);
+        // (Go's `ast.File{}` keeps its package: the graph looks the type up there)
+        let name = if self.lang == Lang::Go && kind == RefKind::New {
+            go::go_type(name)
+        } else {
+            bare(name)
+        };
         if name.is_empty() {
             return;
         }
@@ -182,18 +210,31 @@ impl<'a> Walk<'a> {
             };
             object = inner;
         }
-        if object.kind() == "super" {
+        // (C#'s `base` too)
+        if matches!(object.kind(), "super" | "base") {
             return Via::Super;
         }
+        // (Ruby's `Store`: a constant)
         let named = matches!(
             object.kind(),
-            "identifier" | "type_identifier" | "package_identifier" | "namespace_identifier"
+            "identifier"
+                | "type_identifier"
+                | "package_identifier"
+                | "namespace_identifier"
+                | "constant"
         );
         if named && !self.is_this(object) && self.local(self.text(object)).is_none() {
             return Via::Name(self.text(object).to_string());
         }
+        // (C#'s `Result<Order>.Failure()`: a generic type's static method)
+        if self.lang == Lang::CSharp && object.kind() == "generic_name" {
+            let name = self.text(object).split('<').next().unwrap_or("").trim();
+            return Via::Name(name.to_string());
+        }
         match self.type_of(object) {
             Some(t) if t == THIS => Via::This,
+            // (an untyped local, or a field of one)
+            Some(t) if t.starts_with(UNTYPED) => Via::Unknown,
             Some(t) => match t.strip_prefix(THIS_FIELD) {
                 Some(fields) => Via::Field(fields.to_string()),
                 None => Via::Typed(t),
@@ -223,10 +264,55 @@ impl<'a> Walk<'a> {
         }
         match node.kind() {
             "identifier" | "type_identifier" | "package_identifier" => {
-                return self.local(self.text(node)).map(str::to_string);
+                let name = self.text(node);
+                // (Dart: a field of the class said without `this`)
+                if self.lang == Lang::Dart
+                    && self.local(name).is_none()
+                    && dart::own_field(self, name, Self::line(node))
+                {
+                    return Some(format!("{THIS_FIELD}{name}"));
+                }
+                // (Rust: a `const` or `static` of the file, `const ALL: [FileType; 31]`)
+                if self.lang == Lang::Rust && self.local(name).is_none() {
+                    return self.constant(name);
+                }
+                return self.local(name).map(str::to_string);
             }
             "parenthesized_expression" | "non_null_expression" | "await_expression" => {
                 return self.type_of(node.named_child(0)?);
+            }
+            // (Zig's `try x`, `x.?`)
+            "try_expression" | "null_coercion_expression" if self.lang == Lang::Zig => {
+                return self.type_of(node.named_child(0)?);
+            }
+            "call_expression" if self.lang == Lang::Go => return go::returned(self, node),
+            // (Go's `n.(*ast.CallExpr)`: what it's asserted to be)
+            "type_assertion_expression" => {
+                let ty = go::go_type(self.text(node.child_by_field_name("type")?));
+                return Some(ty.to_string()).filter(|t| !t.is_empty());
+            }
+            "call" if self.lang == Lang::Python => return python::returned(self, node),
+            "invocation_expression" if self.lang == Lang::CSharp => {
+                return csharp::returned(self, node);
+            }
+            "call_expression" if self.lang == Lang::Dart => return dart::returned(self, node),
+            "call_expression" if self.lang == Lang::Zig => return zig::returned(self, node),
+            // (a PHP `$s`, a PowerShell `$s`: the local `s`; Ruby's `@store`: a field)
+            "variable_name" | "variable" => {
+                return self
+                    .local(self.text(node).trim_start_matches('$'))
+                    .map(str::to_string);
+            }
+            "instance_variable" => {
+                let name = self.text(node).trim_start_matches('@');
+                return Some(format!("{THIS_FIELD}{name}"));
+            }
+            "call" if self.lang == Lang::Ruby => return ruby::returned(self, node),
+            "object_creation_expression" if self.lang == Lang::Php => {
+                return php::created(self, node).map(str::to_string);
+            }
+            "pipeline" | "invokation_expression" if self.lang == Lang::PowerShell => {
+                return powershell::made_by(self, node);
             }
             // (`lanes[i]`: an item, of the type the walk gives the array's)
             "subscript_expression" if matches!(self.lang, Lang::TypeScript | Lang::Tsx) => {
@@ -272,9 +358,41 @@ impl<'a> Walk<'a> {
             _ => {}
         }
         if let Some((base, field)) = self.member(node) {
-            return Some(format!("{}#{}", self.type_of(base)?, self.text(field)));
+            let of = match self.type_of(base) {
+                Some(t) => t,
+                // (a type's static member: `MasterViewModel.Instance`)
+                None if self.static_holder(base) => self.text(base).to_string(),
+                None => return None,
+            };
+            return Some(format!("{of}#{}", self.text(field)));
         }
         self.constructed(node)
+    }
+
+    /// The declared type of a `const` or `static` the file defines (`static CACHED:
+    /// Mutex<Option<Found>> = …` is Found, as calls through it go).
+    fn constant(&self, name: &str) -> Option<String> {
+        let def = self
+            .defs
+            .iter()
+            .find(|d| d.kind == Kind::Const && d.name == name)?;
+        let declared = def.sig.split_once(':')?.1;
+        let ty = type_name(declared.split('=').next().unwrap_or(declared));
+        (!ty.is_empty()).then(|| ty.to_string())
+    }
+
+    /// A name that's a type's, its static members reached through it: capitalized, no local's,
+    /// in a language that reaches them with a dot (C#, Java, Dart, Python; not TypeScript, whose
+    /// `Checks.Weight` is a namespace's).
+    fn static_holder(&self, node: Node) -> bool {
+        matches!(
+            self.lang,
+            Lang::CSharp | Lang::Java | Lang::Dart | Lang::Python
+        ) && matches!(node.kind(), "identifier" | "type_identifier")
+            && self
+                .text(node)
+                .starts_with(|c: char| c.is_ascii_uppercase())
+            && self.local(self.text(node)).is_none()
     }
 
     /// The type a `new X()` makes, when the object is one (in brackets or not).
@@ -288,7 +406,10 @@ impl<'a> Walk<'a> {
             "new_expression" => node
                 .child_by_field_name("constructor")
                 .or_else(|| node.child_by_field_name("type"))?,
-            "object_creation_expression" => node.child_by_field_name("type")?,
+            // (Dart's `const Text('x')` too)
+            "object_creation_expression" | "const_object_expression" => {
+                node.child_by_field_name("type")?
+            }
             _ => return None,
         };
         Some(type_name(self.text(ty)).to_string())
@@ -298,6 +419,8 @@ impl<'a> Walk<'a> {
     fn is_this(&self, node: Node) -> bool {
         match node.kind() {
             "this" | "self" | "this_expression" => true,
+            // (PHP's `$this`, PowerShell's)
+            "variable_name" | "variable" => self.text(node).eq_ignore_ascii_case("$this"),
             "identifier" => {
                 let t = self.text(node);
                 (self.lang == Lang::Python && (t == "self" || t == "cls"))
@@ -320,6 +443,22 @@ impl<'a> Walk<'a> {
             (Lang::CSharp, "member_access_expression") => Some((csharp::object(node)?, f("name")?)),
             (Lang::Java, "field_access") => Some((f("object")?, f("field")?)),
             (Lang::Cpp, "field_expression") => Some((f("argument")?, f("field")?)),
+            (Lang::Dart, "member_expression") => Some((f("object")?, f("property")?)),
+            (Lang::Zig, "field_expression") => Some((f("object")?, f("member")?)),
+            (Lang::Php, "member_access_expression" | "nullsafe_member_access_expression") => {
+                Some((f("object")?, f("name")?))
+            }
+            // (`@store.items`: a call of no arguments, as Ruby reads a field)
+            (Lang::Ruby, "call") if f("arguments").is_none() => {
+                Some((f("receiver")?, f("method")?))
+            }
+            (Lang::PowerShell, "member_access") => {
+                let mut c = node.walk();
+                let name = node
+                    .named_children(&mut c)
+                    .find(|n| n.kind() == "member_name")?;
+                Some((node.named_child(0)?, name))
+            }
             _ => None,
         }
     }

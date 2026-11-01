@@ -6,6 +6,11 @@
 
 use serde::{Deserialize, Serialize};
 
+/// A type that's what a function gives the closure it's handed: `\0arg:with:1:0` is what
+/// `with`'s second argument, a closure, is given first (Rust's `with(app, |st| …)`, from
+/// `f: impl FnOnce(&mut State)`). The graph reads it off the function's signature.
+pub(in crate::context) const CLOSURE_ARG: &str = "\0arg:";
+
 /// An import, as written.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::context) struct Import {

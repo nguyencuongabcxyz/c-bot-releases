@@ -42,7 +42,7 @@ pub(super) fn outline(ix: &Code, rel: &str) -> Result<String, String> {
         .collect();
     if files.is_empty() {
         return Err(format!(
-            "There's no code file or folder \"{rel}\" here (the context engine reads TypeScript/JavaScript, C#, Java, C/C++, Go, Python, Rust, Kotlin, Swift, PHP, Ruby, shell and PowerShell)."
+            "There's no code file or folder \"{rel}\" here (the context engine reads TypeScript/JavaScript, C#, Java, C/C++, Go, Python, Rust, Dart, Zig, Kotlin, Swift, PHP, Ruby, shell, PowerShell, Prisma, Protocol Buffers and Terraform)."
         ));
     }
     let mut out = String::new();
@@ -81,7 +81,8 @@ fn split_query(q: &str) -> (Option<&str>, &str) {
 
 /// A definition's code (lines `line` to `end` of a file), with its line numbers.
 fn body_of(root: &Path, rel: &str, line: u32, end: u32) -> String {
-    let Ok(text) = std::fs::read_to_string(root.join(rel)) else {
+    // (a notebook's Python, a document's Markdown: the lines the index has)
+    let Some(text) = ingest::read_code(&root.join(rel)) else {
         return "  (couldn't read the file)\n".into();
     };
     let lines: Vec<&str> = text.lines().collect();

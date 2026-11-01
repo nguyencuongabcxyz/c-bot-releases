@@ -27,7 +27,7 @@ pub(super) fn visit(w: &mut Walk, node: Node) {
         }
         "method_invocation" => {
             if let Some(name) = f("name") {
-                w.call(node, w.text(name), f("object"));
+                w.call(name, w.text(name), f("object"));
                 w.given(arguments(node));
             }
         }

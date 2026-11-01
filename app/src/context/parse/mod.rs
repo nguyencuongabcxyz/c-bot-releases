@@ -1,6 +1,12 @@
 //! Reading one file through its syntax tree: what it defines (each with its signature, what
 //! holds it and its lines) and the names it uses; and, for find_references, the lines where it
 //! uses one name.
+//!   languages.rs   the languages whose definitions need a closer look
+
+mod languages;
+
+pub(in crate::context) use languages::zig_import;
+use languages::*;
 
 use super::*;
 
@@ -139,10 +145,12 @@ impl<'a> Reader<'a> {
         if let Some((kind, name_node)) = self.definition(node)
             && (kind != Kind::Property || self.in_a_type())
         {
-            let mut name = clean_name(self.text(name_node));
-            if self.lang == Lang::PowerShell {
-                name = name.trim_start_matches('$').to_string(); // (a property's $Size)
-            }
+            let name = match self.lang {
+                Lang::Hcl => hcl_name(node, self.src),
+                // (a property's $Size)
+                Lang::PowerShell => clean_name(self.text(name_node).trim_start_matches('$')),
+                _ => clean_name(self.text(name_node)),
+            };
             if !name.is_empty() {
                 self.define(node, kind, name_node, name);
                 return;
@@ -235,6 +243,18 @@ impl<'a> Reader<'a> {
             (Lang::Java, "field_declaration" | "constant_declaration") => {
                 Some((kind, field("declarator")?.child_by_field_name("name")?))
             }
+            // (`private readonly IStore _store;`: named in its variable's declarator)
+            (Lang::CSharp, "field_declaration" | "event_field_declaration") => {
+                let mut c = node.walk();
+                let variables = node
+                    .named_children(&mut c)
+                    .find(|n| n.kind() == "variable_declaration")?;
+                let mut c = variables.walk();
+                let declarator = variables
+                    .named_children(&mut c)
+                    .find(|n| n.kind() == "variable_declarator")?;
+                Some((kind, declarator.child_by_field_name("name")?))
+            }
             (Lang::Java, "package_declaration") => Some((kind, node.named_child(0)?)),
             (Lang::Cpp, _) => cpp_definition(node, kind),
             (Lang::Kotlin, _) => kotlin_definition(node, kind),
@@ -256,6 +276,11 @@ impl<'a> Reader<'a> {
                 (at.kind() == "program").then_some((kind, field("name")?))
             }
             (Lang::PowerShell, _) => powershell_definition(node, kind),
+            (Lang::Dart, _) => dart_definition(node, kind),
+            (Lang::Zig, _) => zig_definition(node, kind, self.src),
+            (Lang::Prisma, _) => prisma_definition(node, kind),
+            (Lang::Proto, _) => proto_definition(node, kind),
+            (Lang::Hcl, _) => hcl_definition(node, self.src),
             _ => Some((kind, field("name")?)),
         }
     }
@@ -428,86 +453,6 @@ fn top_level(node: Node, root: &str) -> bool {
     false
 }
 
-// ---------------------------------------------------------------- read for their definitions only
-
-/// A child that's just this word (`init`, `class`): a keyword.
-fn keyword<'t>(node: Node<'t>, word: &str) -> Option<Node<'t>> {
-    let mut c = node.walk();
-    node.children(&mut c).find(|n| n.kind() == word)
-}
-
-/// A property at the top of the file is a constant; in a type, a property.
-fn property_or_const(node: Node, root: &str) -> Kind {
-    if node.parent().is_some_and(|p| p.kind() == root) {
-        Kind::Const
-    } else {
-        Kind::Property
-    }
-}
-
-/// What a Kotlin node defines: an interface or enum (`class_declaration`s too), a property
-/// (named in its variable), a constructor (named by its keyword), a package.
-fn kotlin_definition(node: Node<'_>, kind: Kind) -> Option<(Kind, Node<'_>)> {
-    let field = |f: &str| node.child_by_field_name(f);
-    match node.kind() {
-        "class_declaration" => {
-            let kind = if keyword(node, "interface").is_some() {
-                Kind::Interface
-            } else if keyword(node, "enum_class_body").is_some() {
-                Kind::Enum
-            } else {
-                kind
-            };
-            Some((kind, field("name")?))
-        }
-        "property_declaration" => {
-            let name = keyword(node, "variable_declaration")?.named_child(0)?;
-            Some((property_or_const(node, "source_file"), name))
-        }
-        "secondary_constructor" => Some((kind, keyword(node, "constructor")?)),
-        "type_alias" => Some((kind, field("type")?)),
-        "package_header" => Some((kind, node.named_child(0)?)),
-        _ => Some((kind, field("name")?)),
-    }
-}
-
-/// What a Swift node defines: a class_declaration is a class, struct, enum or actor, or an
-/// extension (of the type it names: its methods go with it, as a Rust impl's do); a property
-/// is named in its pattern; an init by its keyword.
-fn swift_definition(node: Node<'_>, kind: Kind) -> Option<(Kind, Node<'_>)> {
-    let field = |f: &str| node.child_by_field_name(f);
-    match node.kind() {
-        "class_declaration" => {
-            let kind = [
-                ("struct", Kind::Struct),
-                ("enum", Kind::Enum),
-                ("extension", Kind::Impl),
-            ]
-            .into_iter()
-            .find(|(word, _)| keyword(node, word).is_some())
-            .map_or(kind, |(_, k)| k);
-            Some((kind, field("name")?))
-        }
-        "property_declaration" => {
-            let name = field("name")?.child_by_field_name("bound_identifier")?;
-            Some((property_or_const(node, "source_file"), name))
-        }
-        "init_declaration" => Some((kind, keyword(node, "init")?)),
-        _ => Some((kind, field("name")?)),
-    }
-}
-
-/// What a PowerShell node defines, named by its first name (its grammar has no name fields);
-/// a property's without its `$`.
-fn powershell_definition(node: Node<'_>, kind: Kind) -> Option<(Kind, Node<'_>)> {
-    let name = match node.kind() {
-        "function_statement" => keyword(node, "function_name")?,
-        "class_property_definition" => keyword(node, "variable")?,
-        _ => keyword(node, "simple_name")?,
-    };
-    Some((kind, name))
-}
-
 // ----------------------------------------------------------------
 
 /// A defined name as people say it: an impl's type without its path or generics.
@@ -529,7 +474,7 @@ pub(super) fn cut(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
-    fn defs(lang: Lang, src: &str) -> Vec<String> {
+    pub(super) fn defs(lang: Lang, src: &str) -> Vec<String> {
         read(lang, src)
             .unwrap()
             .defs
@@ -640,6 +585,19 @@ mod tests {
     }
 
     #[test]
+    fn csharp_fields_and_events_are_members_too() {
+        let src = "public class Debouncer\n{\n    private readonly IStore _store, _other;\n    public event EventHandler Done;\n    private int _count = 0;\n}\n";
+        assert_eq!(
+            defs(Lang::CSharp, src),
+            [
+                "class Debouncer @1-6: public class Debouncer",
+                "property Debouncer._store @3-3: private readonly IStore _store, _other;",
+                "property Debouncer.Done @4-4: public event EventHandler Done;",
+                "property Debouncer._count @5-5: private int _count = 0;",
+            ]
+        );
+    }
+    #[test]
     fn go_definitions() {
         let src = "package shop\n\nconst (\n\tMax = 3\n)\n\ntype Order struct {\n\tID int\n}\n\ntype Store interface {\n\tFind(id int) Order\n}\n\nfunc (s *DB) Find(id int) Order {\n\tconst local = 1\n\treturn Order{}\n}\n\nfunc New() *DB { return nil }\n";
         assert_eq!(
@@ -718,52 +676,6 @@ mod tests {
     }
 
     #[test]
-    fn kotlin_definitions() {
-        let src = "package shop.orders\n\nclass Store(val n: Int) : Base() {\n    val size: Int = 0\n    constructor() : this(0)\n    fun open(p: String): Int = go(p)\n}\n\ninterface Api {\n    fun ping()\n}\n\nenum class Mood {\n    HAPPY\n}\n\nobject Registry {\n}\n\ntypealias Id = String\nval MAX = 3\nfun main() {\n    val x = 1\n}\n";
-        assert_eq!(
-            defs(Lang::Kotlin, src),
-            [
-                "module shop.orders @1-1: package shop.orders",
-                "class Store @3-7: class Store(val n: Int) : Base()",
-                "property Store.size @4-4: val size: Int = 0",
-                "constructor Store.constructor @5-5: constructor() : this(0)",
-                "method Store.open @6-6: fun open(p: String): Int = go(p)",
-                "interface Api @9-11: interface Api",
-                "method Api.ping @10-10: fun ping()",
-                "enum Mood @13-15: enum class Mood",
-                "class Registry @17-18: object Registry",
-                "type Id @20-20: typealias Id = String",
-                "const MAX @21-21: val MAX = 3",
-                "function main @22-24: fun main()",
-            ]
-        );
-    }
-
-    #[test]
-    fn swift_definitions_and_what_extends_a_type() {
-        let src = "class Store: Base {\n    var size: Int = 0\n    init(n: Int) {}\n    func open(p: String) -> Int { return go(p) }\n}\nstruct Point { let x: Int }\nenum Mood { case happy }\nprotocol Api { func ping() }\nextension Store {\n    func more() {}\n}\ntypealias Id = String\nlet MAX = 3\nfunc main() {\n    let x = 1\n}\n";
-        assert_eq!(
-            defs(Lang::Swift, src),
-            [
-                "class Store @1-5: class Store: Base",
-                "property Store.size @2-2: var size: Int = 0",
-                "constructor Store.init @3-3: init(n: Int)",
-                "method Store.open @4-4: func open(p: String) -> Int",
-                "struct Point @6-6: struct Point",
-                "property Point.x @6-6: let x: Int",
-                "enum Mood @7-7: enum Mood",
-                "interface Api @8-8: protocol Api",
-                "method Api.ping @8-8: func ping()",
-                "impl Store @9-11: extension Store",
-                "method Store.more @10-10: func more()",
-                "type Id @12-12: typealias Id = String",
-                "const MAX @13-13: let MAX = 3",
-                "function main @14-16: func main()",
-            ]
-        );
-    }
-
-    #[test]
     fn php_definitions() {
         let src = "<?php\nnamespace App\\Models;\n\nclass Store extends Base implements Api {\n    const MAX = 3;\n    private int $size = 0;\n    public function open(string $p): int { return go($p); }\n}\ninterface Api { public function ping(); }\ntrait Logs { function log() {} }\nenum Mood { case Happy; }\nfunction main() {}\n";
         assert_eq!(
@@ -810,21 +722,6 @@ mod tests {
                 "const TARGET @3-3: TARGET=y",
                 "function build @4-7: function build()",
                 "function deploy @8-10: deploy()",
-            ]
-        );
-    }
-
-    #[test]
-    fn powershell_functions_and_classes() {
-        let src = "function Get-Store {\n  param($x)\n}\nclass Store : Base {\n  [int]$Size\n  [int] Open([string]$p) { return 1 }\n}\nenum Mood { Happy }\n";
-        assert_eq!(
-            defs(Lang::PowerShell, src),
-            [
-                "function Get-Store @1-3: function Get-Store",
-                "class Store @4-7: class Store : Base",
-                "property Store.Size @5-5: [int]$Size",
-                "method Store.Open @6-6: [int] Open([string]$p) { return 1 }",
-                "enum Mood @8-8: enum Mood { Happy }",
             ]
         );
     }

@@ -159,7 +159,7 @@ fn call(w: &mut Walk, node: Node) {
             ) else {
                 return;
             };
-            w.call(node, w.text(field), Some(object));
+            w.call(field, w.text(field), Some(object));
         }
         "qualified_identifier" => {
             let (Some(scope), Some(name)) = (
@@ -172,7 +172,7 @@ fn call(w: &mut Walk, node: Node) {
                 "template_function" => name.child_by_field_name("name").unwrap_or(name),
                 _ => name,
             };
-            w.call(node, w.text(name), Some(scope));
+            w.call(name, w.text(name), Some(scope));
         }
         _ => return,
     }

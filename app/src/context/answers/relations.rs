@@ -31,7 +31,7 @@ struct Lines {
 impl Lines {
     fn get(&mut self, root: &Path, path: &str, line: u32) -> String {
         let lines = self.files.entry(path.to_string()).or_insert_with(|| {
-            std::fs::read_to_string(root.join(path))
+            ingest::read_code(&root.join(path))
                 .map(|t| t.lines().map(str::to_string).collect())
                 .unwrap_or_default()
         });

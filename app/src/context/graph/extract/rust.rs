@@ -35,7 +35,12 @@ pub(super) fn visit(w: &mut Walk, node: Node) {
             if let (Some(p), Some(t)) = (f("pattern"), f("type"))
                 && p.kind() == "identifier"
             {
-                w.bind(w.text(p), type_name(w.text(t)));
+                // (`say: &dyn Fn(&str)`: a local, whatever its type)
+                let ty = match type_name(w.text(t)) {
+                    "" => UNTYPED,
+                    ty => ty,
+                };
+                w.bind(w.text(p), ty);
             }
         }
         "let_declaration" => let_type(w, node),
@@ -87,15 +92,49 @@ pub(super) fn visit(w: &mut Walk, node: Node) {
     }
 }
 
+/// A closure given to a function (`with(app, |st| …)`): each untyped parameter is what that
+/// function's signature says the closure is given (`f: impl FnOnce(&mut State)`: State), a
+/// path the graph reads the signature for (CLOSURE_ARG).
+fn closure_params(w: &mut Walk, node: Node, function: &str) {
+    let Some(args) = node.child_by_field_name("arguments") else {
+        return;
+    };
+    let mut c = args.walk();
+    let args: Vec<Node> = args
+        .named_children(&mut c)
+        .filter(|a| a.kind() != "line_comment" && a.kind() != "block_comment")
+        .collect();
+    for (i, closure) in args
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.kind() == "closure_expression")
+    {
+        let Some(params) = closure.child_by_field_name("parameters") else {
+            continue;
+        };
+        let mut c = params.walk();
+        let names: Vec<Node> = params.named_children(&mut c).collect();
+        for (k, p) in names.iter().enumerate() {
+            if p.kind() == "identifier" {
+                let ty = format!("{CLOSURE_ARG}{function}:{i}:{k}");
+                w.bind_in(*closure, w.text(*p), &ty);
+            }
+        }
+    }
+}
+
 fn call(w: &mut Walk, node: Node, callee: Node) {
     match callee.kind() {
-        "identifier" => w.call(node, w.text(callee), None),
+        "identifier" => {
+            w.call(node, w.text(callee), None);
+            closure_params(w, node, w.text(callee));
+        }
         "field_expression" => {
             if let (Some(value), Some(field)) = (
                 callee.child_by_field_name("value"),
                 callee.child_by_field_name("field"),
             ) {
-                w.call(node, w.text(field), Some(value));
+                w.call(field, w.text(field), Some(value));
                 if CALLBACKS.contains(&w.text(field)) {
                     item_callbacks(w, node, value);
                 }
@@ -115,8 +154,14 @@ fn call(w: &mut Walk, node: Node, callee: Node) {
                     // (Store::new, crate::store::open: the path's last part)
                     let via = super::bare(w.text(path));
                     w.reference(node, RefKind::Call, name, Via::Name(via.to_string()));
+                    if !type_like(via) {
+                        closure_params(w, node, name);
+                    }
                 }
-                None => w.call(node, name, None),
+                None => {
+                    w.call(node, name, None);
+                    closure_params(w, node, name);
+                }
             }
         }
         "generic_function" => {
@@ -141,6 +186,13 @@ fn let_type(w: &mut Walk, node: Node) {
         (Some(t), _) => type_name(w.text(t)).to_string(),
         (None, Some(v)) => made_type(w, v),
         _ => String::new(),
+    };
+    // (a local of no type the walk knows is a local all the same: `let t = util::text;` or
+    // `let field = |f| …` makes `t(…)` and `field(…)` calls of it, no function of that name)
+    let ty = if ty.is_empty() {
+        UNTYPED.to_string()
+    } else {
+        ty
     };
     bind_pattern(w, p, &ty);
 }
@@ -250,6 +302,23 @@ fn made_type(w: &Walk, value: Node) -> String {
     }
 }
 
+/// A path with the module the file brought in under another name put back: `os::window` is
+/// `windows::window` after `use windows as os;` (a platform's module, picked by `cfg`).
+fn unaliased(w: &Walk, path: &str) -> String {
+    let (first, rest) = path.split_once("::").unwrap_or((path, ""));
+    let module = w.out.imports.iter().find_map(|i| {
+        let [(name, local)] = i.names.as_slice() else {
+            return None;
+        };
+        (i.spec.is_empty() && local == first && name != local).then_some(name.as_str())
+    });
+    match (module, rest) {
+        (Some(m), "") => m.to_string(),
+        (Some(m), rest) => format!("{m}::{rest}"),
+        (None, _) => path.to_string(),
+    }
+}
+
 /// A `use` tree as imports: each leaf under the module path it's in.
 fn use_tree(w: &mut Walk, node: Node, prefix: &str, line: u32) {
     let join = |a: &str, b: &str| {
@@ -260,7 +329,8 @@ fn use_tree(w: &mut Walk, node: Node, prefix: &str, line: u32) {
         }
     };
     let leaf = |w: &mut Walk, path: &str, alias: Option<&str>| {
-        let (module, name) = path.rsplit_once("::").unwrap_or(("", path));
+        let path = unaliased(w, path);
+        let (module, name) = path.rsplit_once("::").unwrap_or(("", &path));
         let local = alias.unwrap_or(name).to_string();
         w.import(Import {
             spec: module.to_string(),
@@ -303,7 +373,7 @@ fn use_tree(w: &mut Walk, node: Node, prefix: &str, line: u32) {
                 .map(|p| join(prefix, w.text(p)))
                 .unwrap_or_else(|| prefix.to_string());
             w.import(Import {
-                spec: path,
+                spec: unaliased(w, &path),
                 all: true,
                 line,
                 ..Import::default()

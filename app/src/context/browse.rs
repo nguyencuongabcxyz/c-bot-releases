@@ -164,6 +164,12 @@ pub fn context_source(
     let size = std::fs::metadata(&at)
         .map_err(|e| format!("Couldn't read {}: {e}", at.display()))?
         .len();
+    // (a notebook or a Word document shows the text the index read in it, however big it is)
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".ipynb") || lower.ends_with(".docx") {
+        return ingest::read_code(&at)
+            .ok_or_else(|| format!("Couldn't read {}.", at.display()).into());
+    }
     if size > SOURCE_MAX {
         return Err(format!(
             "{path} is too big to show here ({} MB).",

@@ -190,7 +190,8 @@ impl Graph {
             Via::Field(fields) => self
                 .enclosing(caller)
                 .and_then(|t| self.through(t, fields.split('#')))
-                .and_then(|t| self.member(t, &r.name)),
+                .and_then(|t| self.member_or_impl(t, &r.name))
+                .or_else(|| self.outside_impl(file, &r.name)),
             Via::Typed(path) => {
                 let mut parts = path.split('#');
                 let first = parts.next().unwrap_or("");
@@ -198,18 +199,23 @@ impl Graph {
                     // (a hub's member is the function its API holds; a member the type doesn't
                     // show, in another part of a partial class say: as a call through anything
                     // else)
-                    Some(Some(t)) => match self.member(t, &r.name) {
+                    Some(Some(t)) => match self.member_or_impl(t, &r.name) {
                         Some(m) if self.callable(m) => Some(m),
                         m => self
                             .api_function(t, &r.name)
                             .or(m)
+                            .or_else(|| self.outside_impl(file, &r.name))
                             .or_else(|| self.chained(file, &r.name)),
                     },
-                    // (a field whose type isn't the folder's own)
-                    Some(None) => None,
+                    // (a field whose type isn't the folder's own: but a method the folder gives
+                    // what holds it may be called, `embedded_at.locked()` of a Mutex<Option<i64>>)
+                    Some(None) => self.outside_impl(file, &r.name),
                     // (a type that isn't the folder's own, a library's: `ILogger<T>`'s LogWarning
                     // is no method here of that name, but an extension method of it may be)
-                    None if !first.ends_with("()") => self.extension(file, &r.name, first),
+                    // (or a method the folder gives it: `impl Fields for Value`, `c.folder()`)
+                    None if !first.ends_with("()") => self
+                        .extension(file, &r.name, first)
+                        .or_else(|| self.outside_impl_for(file, &r.name, first)),
                     None => self.chained(file, &r.name),
                 }
             }
@@ -252,6 +258,93 @@ impl Graph {
             self.owner[s].is_some()
                 && self.callable(s)
                 && family(lang, self.files[self.syms[s].file].lang)
+        });
+        let first = found.next()?;
+        found
+            .all(|s| self.owner[s] == self.owner[first])
+            .then_some(first)
+    }
+
+    /// A member of a type, else, for an interface or a trait that doesn't declare it (one
+    /// that extends a library's: `INavigationService : IMvxNavigationService`), the member of
+    /// the name its one implementation in the folder has (`NavigationService.Navigate`).
+    fn member_or_impl(&self, ty: usize, name: &str) -> Option<usize> {
+        if let Some(m) = self.member(ty, name) {
+            return Some(m);
+        }
+        if !matches!(self.syms[ty].kind, Kind::Interface | Kind::Trait) {
+            return None;
+        }
+        let mut seen = HashSet::new();
+        let mut queue: VecDeque<usize> = self.subs[ty].iter().map(|(s, _)| *s).collect();
+        let mut found: Vec<usize> = vec![];
+        while let Some(t) = queue.pop_front() {
+            if !seen.insert(t) {
+                continue;
+            }
+            found.extend(
+                self.members_of(t)
+                    .iter()
+                    .copied()
+                    .filter(|&m| self.syms[m].name == name && self.callable(m)),
+            );
+            queue.extend(self.subs[t].iter().map(|(s, _)| *s));
+        }
+        let first = *found.first()?;
+        found
+            .iter()
+            .all(|&m| self.owner[m] == self.owner[first])
+            .then_some(first)
+    }
+    /// The same for a type from outside named so (`Value` of `impl Fields for Value`): only an
+    /// impl for that type.
+    fn outside_impl_for(&self, file: usize, name: &str, ty: &str) -> Option<usize> {
+        if self.files[file].lang != Lang::Rust {
+            return None;
+        }
+        let ty = ty.rsplit("::").next().unwrap_or(ty);
+        self.by_name.get(name)?.iter().copied().find(|&s| {
+            self.callable(s)
+                && self.files[self.syms[s].file].lang == Lang::Rust
+                && self.owner[s]
+                    .is_some_and(|o| self.syms[o].kind == Kind::Impl && self.syms[o].name == ty)
+        })
+    }
+
+    /// A Rust call through a name that's a module path's start (`super::bare()`,
+    /// `self::open()`, `crate::x()`: that module's own), or a `static` or `const` (`CACHED`,
+    /// `static CACHED: Mutex<Option<Found>>`: its type's method, else one the folder gives a
+    /// type from outside, `locked()`).
+    fn rust_named(&self, code: &Code, file: usize, n: &str, name: &str) -> Option<usize> {
+        if matches!(n, "super" | "self" | "crate") {
+            let modules::Target::Files(files) = modules::resolve(self, &self.settings, file, n)
+            else {
+                return None;
+            };
+            return self.exported(code, &files, name, 0).first().copied();
+        }
+        let constant = self.resolve(file, n, &|s| self.syms[s].kind == Kind::Const)?;
+        let sig = &self.syms[constant].sig;
+        let declared = sig.split_once(':')?.1;
+        let declared = declared.split('=').next().unwrap_or(declared);
+        let ty = crate::context::graph::extract::type_name(declared);
+        let at = self.syms[constant].file;
+        // (`Mutex<Option<Found>>` is Found as calls go; `locked()` is Mutex's, the folder's impl)
+        self.resolve_type(at, ty)
+            .and_then(|t| self.member_or_impl(t, name))
+            .or_else(|| self.outside_impl(file, name))
+    }
+    /// A Rust method of the name the folder gives a type from outside (`impl<T> Locked<T> for
+    /// Mutex<T>`: `self.code.locked()`, where code is a `Mutex<Code>` and Code has no locked),
+    /// when one impl alone has one.
+    fn outside_impl(&self, file: usize, name: &str) -> Option<usize> {
+        if self.files[file].lang != Lang::Rust {
+            return None;
+        }
+        let mut found = self.by_name.get(name)?.iter().copied().filter(|&s| {
+            self.callable(s)
+                && self.files[self.syms[s].file].lang == Lang::Rust
+                && self.owner[s].is_some_and(|o| self.syms[o].kind == Kind::Impl)
         });
         let first = found.next()?;
         found
@@ -317,8 +410,19 @@ impl Graph {
         found.next().is_none().then_some(first)
     }
 
-    /// Where a typed path starts: a type, or what a free function returns (`build()`).
+    /// Where a typed path starts: a type, what a free function returns (`build()`), or what a
+    /// function gives the closure it's handed (CLOSURE_ARG).
     fn start(&self, file: usize, first: &str) -> Option<usize> {
+        if let Some(rest) = first.strip_prefix(CLOSURE_ARG) {
+            let mut parts = rest.rsplitn(3, ':');
+            let param: usize = parts.next()?.parse().ok()?;
+            let arg: usize = parts.next()?.parse().ok()?;
+            let function = parts.next()?;
+            let free = |s: usize| self.callable(s) && self.owner[s].is_none();
+            let f = self.resolve(file, function, &free)?;
+            let ty = closure_param(&self.syms[f].sig, arg, param)?;
+            return self.resolve_type(self.syms[f].file, ty);
+        }
         match first.strip_suffix("()") {
             Some(f) => {
                 let free = |s: usize| self.callable(s) && self.owner[s].is_none();
@@ -360,11 +464,13 @@ impl Graph {
         )
     }
 
-    /// A bare call: a method of the type it's in (C#, Java, C++: through `this` unsaid; a
-    /// property holding a delegate isn't one), else a function or type in reach.
+    /// A bare call: a method of the type it's in (C#, Java, C++, Dart, Ruby: through `this`
+    /// unsaid; a property holding a delegate isn't one), else a function or type in reach.
     fn bare(&self, file: usize, caller: usize, name: &str) -> Option<usize> {
-        if matches!(self.files[file].lang, Lang::CSharp | Lang::Java | Lang::Cpp)
-            && let Some(m) = self.enclosing(caller).and_then(|t| self.member(t, name))
+        if matches!(
+            self.files[file].lang,
+            Lang::CSharp | Lang::Java | Lang::Cpp | Lang::Dart | Lang::Ruby
+        ) && let Some(m) = self.enclosing(caller).and_then(|t| self.member(t, name))
         {
             return self.callable(m).then_some(m);
         }
@@ -380,7 +486,7 @@ impl Graph {
         if let Some((at, ty)) = self.enclosing(caller).and_then(|t| self.field_type(t, n)) {
             return self
                 .resolve_type(at, &ty)
-                .and_then(|t| self.member(t, name));
+                .and_then(|t| self.member_or_impl(t, name));
         }
         let ty = self.resolve_type(file, n);
         if let Some(m) = ty.and_then(|t| self.member(t, name)) {
@@ -389,8 +495,28 @@ impl Graph {
         if let Some(m) = self.in_namespace(file, n, name) {
             return Some(m);
         }
+        // (Rust: a module brought in by name, `use crate::platform::window;`, that's a `mod
+        // window;` somewhere, re-exported or not: what its own file has)
+        if self.files[file].lang == Lang::Rust
+            && let Some(m) = self.resolve(file, n, &|s| self.syms[s].kind == Kind::Module)
+            && self.syms[m].line == self.syms[m].end
+            && let modules::Target::Files(files) = modules::resolve(
+                self,
+                &self.settings,
+                self.syms[m].file,
+                &format!("self::{n}"),
+            )
+            && let Some(&found) = self.exported(code, &files, name, 0).first()
+        {
+            return Some(found);
+        }
         if ty.is_some() {
             return None;
+        }
+        if self.files[file].lang == Lang::Rust
+            && let Some(found) = self.rust_named(code, file, n, name)
+        {
+            return Some(found);
         }
         let in_files = |files: &[usize]| self.exported(code, files, name, 0).first().copied();
         if let Some(files) = self.scopes[file].modules.get(n) {
@@ -419,9 +545,78 @@ impl Graph {
     }
 }
 
+/// What a Rust function's signature says its `arg`th parameter, a closure, is given as its
+/// `param`th: `State` of `fn with<R>(app: &App, f: impl FnOnce(&mut State) -> R)` for (1, 0);
+/// the same when the closure's type is a generic's (`f: F` with `F: FnMut(&Store)`).
+fn closure_param(sig: &str, arg: usize, param: usize) -> Option<&str> {
+    let open = top_level(sig, '(')?;
+    let params = split_top(&sig[open + 1..]);
+    let ty = params.get(arg)?.split_once(':')?.1.trim();
+    let ty = ty.strip_prefix("impl ").unwrap_or(ty).trim();
+    fn fn_args(bound: &str) -> Option<&str> {
+        let after = &bound[bound.find("Fn")?..];
+        Some(&after[after.find('(')? + 1..])
+    }
+    let args = match fn_args(ty) {
+        Some(a) => a,
+        // (`f: F`: F's bound, in the generics or a where clause)
+        None => {
+            let bound = format!("{ty}: ");
+            let at = sig.find(&bound)?;
+            fn_args(&sig[at + bound.len()..])?
+        }
+    };
+    let given = split_top(args);
+    let ty = given.get(param)?;
+    let ty = crate::context::graph::extract::type_name(ty);
+    (!ty.is_empty()).then_some(ty)
+}
+
+/// Where the first `c` outside angle brackets is (a function's parameters, past its generics).
+fn top_level(s: &str, c: char) -> Option<usize> {
+    let mut depth = 0i32;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '<' => depth += 1,
+            '>' => depth -= 1,
+            ch if ch == c && depth == 0 => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// What's at the top of a list that a `)` ends, split at its commas: `a: A, f: impl Fn(B, C)`
+/// is `a: A` and `f: impl Fn(B, C)`.
+fn split_top(s: &str) -> Vec<&str> {
+    let mut parts = vec![];
+    let (mut depth, mut from) = (0i32, 0);
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' | '<' | '[' => depth += 1,
+            ')' | ']' if depth == 0 => {
+                parts.push(s[from..i].trim());
+                return parts.into_iter().filter(|p| !p.is_empty()).collect();
+            }
+            '>' if depth > 0 && !s[..i].ends_with('-') => depth -= 1,
+            ')' | ']' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(s[from..i].trim());
+                from = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(s[from..].trim());
+    parts.into_iter().filter(|p| !p.is_empty()).collect()
+}
+
 /// The type a C# extension method extends: its first parameter's, after `this`.
 fn receiver(sig: &str) -> Option<&str> {
-    let after = sig.split_once("(this ")?.1;
+    // (`AddX(this IServiceCollection s`, or `AddX(` with `this` on the next line)
+    let after = sig
+        .match_indices('(')
+        .find_map(|(i, _)| sig[i + 1..].trim_start().strip_prefix("this "))?;
     let ty = after.split_whitespace().next()?;
     // (`IServiceCollection` of `IServiceCollection services`; `ILogger<T>` is ILogger)
     let bare = ty.split('<').next().unwrap_or(ty);
@@ -525,5 +720,229 @@ mod tests {
             Some("ILogger")
         );
         assert_eq!(receiver("public void Open(Store s)"), None);
+        // (its parameters on lines of their own: the signature read as one line)
+        assert_eq!(
+            receiver(
+                "public static IServiceCollection AddMcp( this IServiceCollection services, Action<O> a)"
+            ),
+            Some("IServiceCollection")
+        );
+    }
+}
+
+/// How many of a real folder's calls the graph follows, language by language: of the calls
+/// whose name the folder defines something callable of (in the language's family), those it
+/// resolves; and the kinds of call it misses most, with examples. Run on a folder with
+/// `CBOT_AUDIT=<folder> cargo test audit -- --ignored --nocapture`.
+#[cfg(test)]
+mod live_tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::context::{ingest, parse};
+
+    #[test]
+    #[ignore]
+    fn audit_how_many_calls_resolve() {
+        let Ok(dir) = std::env::var("CBOT_AUDIT") else {
+            return;
+        };
+        let root = Path::new(&dir);
+        let (found, _) = ingest::find(root);
+        let mut code = Code::default();
+        for f in found {
+            let Some(lang) = f.ty.lang() else {
+                continue;
+            };
+            let Some(text) = ingest::read_code(&root.join(&f.rel)) else {
+                continue;
+            };
+            if let Some(facts) = parse::read(lang, &text) {
+                code.put(&f.rel, f.ty, facts);
+            }
+        }
+        let g = Graph::build(&code, root);
+        if let Ok(out) = std::env::var("CBOT_AUDIT_DUMP") {
+            dump(&g, Path::new(&out));
+        } // (lang -> (candidates, resolved)); (lang, how) -> misses, with a few examples
+        let mut tally: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+        let mut misses: BTreeMap<(String, String), (usize, Vec<String>)> = BTreeMap::new();
+        let mut by_name: BTreeMap<(String, String), usize> = BTreeMap::new();
+        for (i, f) in g.files.iter().enumerate() {
+            let Some(file) = code.files.get(&f.path) else {
+                continue;
+            };
+            for r in &file.links.refs {
+                let Some(caller) = r.within.map(|w| f.syms.start + w as usize) else {
+                    continue;
+                };
+                if !f.syms.contains(&caller) || !ours(&g, i, caller, r) {
+                    continue;
+                }
+                let lang = format!("{:?}", f.lang);
+                let t = tally.entry(lang.clone()).or_default();
+                t.0 += 1;
+                if g.callee(&code, i, caller, r).is_some() {
+                    t.1 += 1;
+                    continue;
+                }
+                let how = match (&r.kind, &r.via) {
+                    (RefKind::New, _) => "new".to_string(),
+                    (_, Via::Field(_)) => "field".into(),
+                    (_, Via::Typed(_)) => "typed".into(),
+                    (_, Via::Name(_)) => "name".into(),
+                    (_, v) => format!("{v:?}").to_lowercase(),
+                };
+                *by_name.entry((lang.clone(), r.name.clone())).or_default() += 1;
+                if std::env::var("CBOT_AUDIT_NAMES")
+                    .is_ok_and(|n| n.split(',').any(|x| x == r.name || x == "*"))
+                {
+                    println!("MISS {} {:?} at {}:{}", r.name, r.via, f.path, r.line);
+                }
+                let m = misses.entry((lang, how)).or_default();
+                m.0 += 1;
+                if m.1.len() < 6 {
+                    m.1.push(format!("{} {:?} at {}:{}", r.name, r.via, f.path, r.line));
+                }
+            }
+        }
+        for (lang, (all, resolved)) in &tally {
+            let share = 100.0 * *resolved as f64 / (*all).max(1) as f64;
+            println!("{lang}: {resolved}/{all} calls resolved ({share:.1}%)");
+        }
+        lost_imports(&g, &code);
+        let mut names: Vec<_> = by_name.into_iter().collect();
+        names.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        let top: Vec<String> = names
+            .iter()
+            .take(40)
+            .map(|((l, n), c)| format!("{l}:{n}={c}"))
+            .collect();
+        println!("most missed names: {}", top.join(", "));
+        let mut worst: Vec<_> = misses.into_iter().collect();
+        worst.sort_by_key(|(_, (n, _))| std::cmp::Reverse(*n));
+        for ((lang, how), (n, examples)) in worst.into_iter().take(16) {
+            println!("  {lang} {how}: {n} missed");
+            for e in examples {
+                println!("      {e}");
+            }
+        }
+    }
+
+    /// The graph as two tables, to hold against another's (a SCIP index's): its symbols (index,
+    /// path, first and last line, name, kind) and its call edges (caller, callee, kind, lines).
+    fn dump(g: &Graph, dir: &Path) {
+        let mut syms = String::new();
+        for (i, s) in g.syms.iter().enumerate() {
+            let kind = s.kind.word();
+            let path = &g.files[s.file].path;
+            syms.push_str(&format!(
+                "{i}\t{path}\t{}\t{}\t{}\t{kind}\n",
+                s.line, s.end, s.name
+            ));
+        }
+        let mut edges = String::new();
+        for (caller, out) in g.calls_out.iter().enumerate() {
+            for e in out {
+                let lines: Vec<String> = e.lines.iter().map(u32::to_string).collect();
+                let kind = format!("{:?}", e.kind);
+                edges.push_str(&format!(
+                    "{caller}\t{}\t{kind}\t{}\n",
+                    e.to,
+                    lines.join(",")
+                ));
+            }
+        }
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::write(dir.join("syms.tsv"), syms);
+        let _ = std::fs::write(dir.join("edges.tsv"), edges);
+    }
+    /// The imports of the folder's own that go nowhere, by language: a module it can't find,
+    /// or one taken for a package from outside though the folder has a folder of its name.
+    fn lost_imports(g: &Graph, code: &Code) {
+        let mut imports: BTreeMap<String, (usize, usize, Vec<String>)> = BTreeMap::new();
+        for (i, f) in g.files.iter().enumerate() {
+            let Some(file) = code.files.get(&f.path) else {
+                continue;
+            };
+            for imp in &file.links.imports {
+                let e = imports.entry(format!("{:?}", f.lang)).or_default();
+                e.0 += 1;
+                // (nowhere, or "from outside" though the folder has a folder of that name at its
+                // top: `src/x` taken for a package)
+                let lost = match modules::resolve(g, &g.settings, i, &imp.spec) {
+                    modules::Target::Nowhere => true,
+                    modules::Target::External(p) => g.by_dir.keys().any(|d| *d == p),
+                    modules::Target::Files(_) => false,
+                };
+                if lost {
+                    e.1 += 1;
+                    if e.2.len() < 4 {
+                        e.2.push(format!("{} in {}", imp.spec, f.path));
+                    }
+                }
+            }
+        }
+        for (lang, (all, nowhere, examples)) in &imports {
+            println!("{lang}: {nowhere}/{all} imports go nowhere {examples:?}");
+        }
+    }
+
+    /// Whether a call is one the graph should follow: to a name the folder defines something
+    /// callable of, through something of the folder's own (a type, a module it imports, a
+    /// field or a value of one of its types, `this`), not a library's (`fmt.Errorf`,
+    /// `DateTime.ToString`, Go's `len`).
+    fn ours(g: &Graph, file: usize, caller: usize, r: &Ref) -> bool {
+        let lang = g.files[file].lang;
+        let defined = |keep: &dyn Fn(usize) -> bool| {
+            g.by_name.get(&r.name).is_some_and(|named| {
+                named
+                    .iter()
+                    .any(|&s| keep(s) && family(lang, g.files[g.syms[s].file].lang))
+            })
+        };
+        let member = |s: usize| g.callable(s) && g.owner[s].is_some();
+        if r.kind == RefKind::New {
+            return defined(&|s| g.is_type(s));
+        }
+        // (a method said alone is the type's own only where `this` goes unsaid)
+        let unsaid = matches!(
+            lang,
+            Lang::CSharp | Lang::Java | Lang::Cpp | Lang::Dart | Lang::Ruby
+        );
+        match &r.via {
+            Via::Bare => {
+                defined(&|s| (g.callable(s) && (g.owner[s].is_none() || unsaid)) || g.is_type(s))
+            }
+            Via::This | Via::Super | Via::Unknown => defined(&member),
+            Via::Field(fields) => {
+                g.enclosing(caller)
+                    .and_then(|t| g.through(t, fields.split('#')))
+                    .is_some()
+                    && defined(&member)
+            }
+            // (the whole path the folder's own: `helper.OsType.ToString()` through a library's
+            // enum isn't)
+            Via::Typed(path) => {
+                let mut parts = path.split('#');
+                let first = parts.next().unwrap_or("");
+                g.start(file, first)
+                    .and_then(|t| g.through(t, parts))
+                    .is_some()
+                    && defined(&member)
+            }
+            Via::Name(n) => {
+                let folder_type = g.resolve_type(file, n).is_some();
+                let module = g.scopes[file].modules.contains_key(n.as_str());
+                let field = g
+                    .enclosing(caller)
+                    .and_then(|t| g.field_type(t, n))
+                    .and_then(|(at, ty)| g.resolve_type(at, &ty))
+                    .is_some();
+                (folder_type || module || field || n.contains('.'))
+                    && defined(&|s| g.callable(s) || g.is_type(s))
+            }
+            Via::Command => true,
+        }
     }
 }

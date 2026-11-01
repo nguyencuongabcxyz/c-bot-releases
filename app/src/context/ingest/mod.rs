@@ -2,11 +2,13 @@
 //! its files are new, changed or gone since the store last saw them (size and time first, then
 //! what they hold), and reading each changed one once into what the store keeps of it: its
 //! chunks and its code facts. Several files are read at once.
-//!   files.rs    finding the files, and reading one
-//!   chunk.rs    cutting a file into chunks
-//!   markup.rs   a config file's structure (XML, YAML, Dockerfile), to cut it along
+//!   files.rs       finding the files, and reading one
+//!   documents.rs   the text of a notebook (its Python) and of a Word document (Markdown)
+//!   chunk.rs       cutting a file into chunks
+//!   markup/        a config file's structure (XML, YAML, INI, Dockerfile…), to cut it along
 
 mod chunk;
+mod documents;
 mod files;
 mod markup;
 

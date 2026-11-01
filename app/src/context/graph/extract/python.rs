@@ -8,16 +8,23 @@ use super::*;
 pub(super) fn visit(w: &mut Walk, node: Node) {
     let f = |name: &str| node.child_by_field_name(name);
     match node.kind() {
-        "function_definition" | "lambda" => w.open(node),
+        "function_definition" => {
+            w.open(node);
+            // (what it returns, for a call on what it gives back: `build_store().close()`)
+            if let (Some(name), Some(ty)) = (f("name"), f("return_type")) {
+                w.returns(node, w.text(name), py_type(w.text(ty)));
+            }
+        }
+        "lambda" => w.open(node),
         "typed_parameter" => {
             let name = node.named_child(0).filter(|n| n.kind() == "identifier");
             if let (Some(name), Some(ty)) = (name, f("type")) {
-                w.bind(w.text(name), type_name(w.text(ty)));
+                w.bind(w.text(name), py_type(w.text(ty)));
             }
         }
         "typed_default_parameter" => {
             if let (Some(name), Some(ty)) = (f("name"), f("type")) {
-                w.bind(w.text(name), type_name(w.text(ty)));
+                w.bind(w.text(name), py_type(w.text(ty)));
             }
         }
         "assignment" => assignment(w, node),
@@ -30,7 +37,7 @@ pub(super) fn visit(w: &mut Walk, node: Node) {
                         callee.child_by_field_name("object"),
                         callee.child_by_field_name("attribute"),
                     ) {
-                        w.call(node, w.text(attr), Some(object));
+                        w.call(attr, w.text(attr), Some(object));
                     }
                 }
                 _ => {}
@@ -77,7 +84,7 @@ fn assignment(w: &mut Walk, node: Node) {
     };
     let declared = node
         .child_by_field_name("type")
-        .map(|t| type_name(w.text(t)).to_string());
+        .map(|t| py_type(w.text(t)).to_string());
     let ty = declared
         .or_else(|| right.map(|r| made_type(w, r)))
         .unwrap_or_default();
@@ -107,18 +114,68 @@ fn assignment(w: &mut Walk, node: Node) {
     }
 }
 
-/// The type a value has as far as the syntax goes: a capitalized call (`Store()`), or a local
-/// whose type is known.
+/// The type a value has as far as the syntax goes: a capitalized call (`Store()`), what a
+/// function or method returns (`build_store()`, `repo.find()`), or a local whose type is known.
 fn made_type(w: &Walk, value: Node) -> String {
     match value.kind() {
-        "call" => value
-            .child_by_field_name("function")
-            .map(|f| super::bare(w.text(f)).to_string())
-            .filter(|t| t.starts_with(char::is_uppercase))
-            .unwrap_or_default(),
+        "call" => returned(w, value).unwrap_or_default(),
         "identifier" => w.local(w.text(value)).unwrap_or("").to_string(),
+        "await" => value
+            .named_child(0)
+            .map(|v| made_type(w, v))
+            .unwrap_or_default(),
         _ => String::new(),
     }
+}
+
+/// The type a call gives: what calling a class makes (`Store()`), else what the function
+/// returns (`build_store()`), or the method (`repo.find()`, a class's `Store.open()`).
+pub(super) fn returned(w: &Walk, node: Node) -> Option<String> {
+    let callee = node.child_by_field_name("function")?;
+    match callee.kind() {
+        "identifier" if w.local(w.text(callee)).is_none() => {
+            let name = w.text(callee);
+            Some(if name.starts_with(char::is_uppercase) {
+                name.to_string()
+            } else {
+                format!("{name}()")
+            })
+        }
+        "attribute" => {
+            let object = callee.child_by_field_name("object")?;
+            let method = w.text(callee.child_by_field_name("attribute")?);
+            if method.starts_with(char::is_uppercase) {
+                return Some(method.to_string()); // (`models.Store()`: a class of a module)
+            }
+            let of = match w.type_of(object) {
+                Some(t) => t,
+                None if object.kind() == "identifier" => w.text(object).to_string(),
+                None => return None,
+            };
+            Some(format!("{of}#{method}()"))
+        }
+        _ => None,
+    }
+}
+
+/// A Python annotation as calls through it go: `Store`, `"Store"` (said ahead), `Optional[Store]`
+/// and `Store | None` are Store.
+fn py_type(ty: &str) -> &str {
+    let mut t = ty.trim().trim_matches(['"', '\'']).trim();
+    if let Some(inner) = t
+        .strip_prefix("Optional[")
+        .and_then(|r| r.strip_suffix(']'))
+    {
+        t = inner.trim();
+    }
+    if t.contains('|') {
+        t = t
+            .split('|')
+            .map(str::trim)
+            .find(|p| *p != "None")
+            .unwrap_or("");
+    }
+    type_name(t)
 }
 
 /// A module name, and the name it's imported under (`import a.b as c`).

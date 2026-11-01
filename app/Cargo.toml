@@ -80,6 +80,11 @@ tree-sitter-php = "0.25.1"
 tree-sitter-ruby = "0.23.1"
 tree-sitter-bash = "0.25.1"
 tree-sitter-powershell = "0.26.6"
+tree-sitter-dart = "0.3.0"
+tree-sitter-zig = "1.1.2"
+tree-sitter-proto = "0.6.0"
+tree-sitter-hcl = "1.1.0"
+tree-sitter-prisma-io = "1.6.0"
 ignore = "0.4.34"
 # the context engine's store (context/store): PostgreSQL, downloaded the first time a robot
 # switches the engine on and run by the app (postgresql_embedded), spoken to with sqlx (the

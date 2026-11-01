@@ -8,12 +8,14 @@
 //!   extract/     reading them from its syntax tree, language by language
 //!   modules.rs   where an import goes: files of the folder, or a package from outside
 //!   build.rs     putting the graph together: symbols, scopes, members and heritage, calls
+//!   lookup.rs    finding a type or a member by name, as a file sees it
 //!   queries.rs   walking it: callers, call chains, dependencies, hierarchies, impact
 
 mod build;
 mod calls;
 mod extract;
 mod facts;
+mod lookup;
 mod modules;
 mod queries;
 
@@ -63,6 +65,8 @@ struct Scope {
     names: HashMap<String, Vec<usize>>,
     modules: HashMap<String, Vec<usize>>,
     wild: Vec<usize>,
+    /// Names it brought in from outside the folder (`use std::path::Path`): never the folder's.
+    outside: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -81,6 +85,7 @@ pub(in crate::context) struct Graph {
     scopes: Vec<Scope>,
     owner: Vec<Option<usize>>, // (a member -> the type it's a member of)
     members: HashMap<usize, Vec<usize>>, // (a type -> its members)
+    partners: HashMap<usize, Vec<usize>>, // (a C# partial type -> its other parts)
     declaration: HashMap<usize, usize>, // (C++: a method defined outside its class -> its declaration)
     fields: HashMap<(usize, String), String>, // ((a type, a field) -> the field's declared type)
     pub supers: Vec<Vec<(usize, Heir)>>,
@@ -325,6 +330,472 @@ mod tests {
         out
     }
 
+    #[test]
+    fn dart_calls_through_fields_unsaid_this_a_states_widget_and_what_returns() {
+        let g = graph(&[
+            (
+                "lib/data/store.dart",
+                "class Store {\n  void open() { check(); }\n  void check() {}\n  static Store named() => Store();\n}\n",
+            ),
+            (
+                "lib/page.dart",
+                "import 'data/store.dart';\nimport 'package:flutter/material.dart';\nclass Page extends StatefulWidget {\n  final Store store;\n  const Page({required this.store});\n  @override\n  State<Page> createState() => _PageState();\n}\nclass _PageState extends State<Page> {\n  late final Store cache = Store();\n  void refresh() {\n    widget.store.open();\n    cache.open();\n    final s = Store.named();\n    s.check();\n    helper();\n  }\n  void helper() {}\n  Widget build(BuildContext context) {\n    refresh();\n    return Text('x');\n  }\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "lib.data.store.Store.named -> lib.data.store.Store (new)",
+                "lib.data.store.Store.open -> lib.data.store.Store.check",
+                "lib.page.Page.createState -> lib.page._PageState (new)",
+                "lib.page._PageState.build -> lib.page._PageState.refresh",
+                "lib.page._PageState.cache -> lib.data.store.Store (new)",
+                "lib.page._PageState.refresh -> lib.data.store.Store.check",
+                "lib.page._PageState.refresh -> lib.data.store.Store.named",
+                "lib.page._PageState.refresh -> lib.data.store.Store.open",
+                "lib.page._PageState.refresh -> lib.page._PageState.helper",
+            ]
+        );
+        let page = g.file_of("lib/page.dart").unwrap();
+        assert_eq!(g.imports[page].len(), 1);
+        assert!(g.externals[page].contains("flutter"));
+    }
+
+    #[test]
+    fn zig_calls_through_imports_typed_selves_and_what_returns() {
+        let g = graph(&[
+            (
+                "src/store.zig",
+                "pub const Store = struct {\n    n: u32,\n    pub fn init() Store {\n        return Store{ .n = 0 };\n    }\n    pub fn open(self: *Store) void {\n        _ = self;\n    }\n};\n",
+            ),
+            ("src/util.zig", "pub fn trim() void {}\n"),
+            (
+                "src/main.zig",
+                "const std = @import(\"std\");\nconst Store = @import(\"store.zig\").Store;\nconst util = @import(\"util.zig\");\nconst Order = struct {\n    store: *Store,\n    fn total(self: *Order) void {\n        self.store.open();\n        util.trim();\n    }\n};\nfn run() !void {\n    var s = Store.init();\n    s.open();\n    var o = try make();\n    o.total();\n    std.debug.print(\"x\", .{});\n}\nfn make() !Order {\n    return undefined;\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.main.Order.total -> src.store.Store.open",
+                "src.main.Order.total -> src.util.trim",
+                "src.main.run -> src.main.Order.total",
+                "src.main.run -> src.main.make",
+                "src.main.run -> src.store.Store.init",
+                "src.main.run -> src.store.Store.open",
+                "src.store.Store.init -> src.store.Store (new)",
+            ]
+        );
+        let main = g.file_of("src/main.zig").unwrap();
+        assert_eq!(g.imports[main].len(), 2);
+        assert!(g.externals[main].contains("std"));
+    }
+    #[test]
+    fn php_calls_through_namespaces_this_typed_parameters_and_scopes() {
+        let g = graph(&[
+            (
+                "src/Models/Store.php",
+                "<?php\nnamespace App\\Models;\nclass Store {\n    public function open(): void { $this->check(); }\n    public function check(): void {}\n    public static function make(): Store { return new Store(); }\n}\n",
+            ),
+            (
+                "src/Http/Base.php",
+                "<?php\nnamespace App\\Http;\nclass Base {\n    public function boot(): void {}\n}\n",
+            ),
+            (
+                "src/Http/Mailer.php",
+                "<?php\nnamespace App\\Http;\nclass Mailer {\n    public function send(): void {}\n}\n",
+            ),
+            ("src/Http/helpers.php", "<?php\nfunction helper() {}\n"),
+            (
+                "src/Http/Api.php",
+                "<?php\nnamespace App\\Http;\nuse App\\Models\\Store;\nrequire_once __DIR__ . '/helpers.php';\nclass Api extends Base {\n    private Store $store;\n    public function __construct(private Mailer $mailer) {}\n    public function get(Store $s): void {\n        $this->store->open();\n        $s->check();\n        Store::make();\n        $o = new Store();\n        $o->open();\n        $this->mailer->send();\n        self::ping();\n        parent::boot();\n        helper();\n    }\n    public static function ping(): void {}\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "Api.get -> Api.ping",
+                "Api.get -> Base.boot",
+                "Api.get -> Mailer.send",
+                "Api.get -> Store (new)",
+                "Api.get -> Store.check",
+                "Api.get -> Store.make",
+                "Api.get -> Store.open",
+                "Api.get -> helper",
+                "Store.make -> Store (new)",
+                "Store.open -> Store.check",
+            ]
+        );
+    }
+
+    #[test]
+    fn ruby_calls_through_unsaid_self_instance_variables_mixins_and_super() {
+        let g = graph(&[
+            (
+                "app/models/store.rb",
+                "class Store\n  def open\n    check\n  end\n  def check; end\n  def self.make\n    Store.new\n  end\nend\n",
+            ),
+            (
+                "app/services/api.rb",
+                "require_relative '../models/store'\nmodule Logs\n  def log; end\nend\nclass Base\n  def get(id); end\nend\nclass Api < Base\n  include Logs\n  def initialize\n    @store = Store.new\n  end\n  def get(id)\n    @store.open\n    Store.make\n    local = Store.new\n    local.check\n    helper\n    log\n    super\n  end\n  def helper; end\nend\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "app.models.store.Store.make -> app.models.store.Store (new)",
+                "app.models.store.Store.open -> app.models.store.Store.check",
+                "app.services.api.Api.get -> app.models.store.Store (new)",
+                "app.services.api.Api.get -> app.models.store.Store.check",
+                "app.services.api.Api.get -> app.models.store.Store.make",
+                "app.services.api.Api.get -> app.models.store.Store.open",
+                "app.services.api.Api.get -> app.services.api.Api.helper",
+                "app.services.api.Api.get -> app.services.api.Base.get",
+                "app.services.api.Api.get -> app.services.api.Logs.log",
+                "app.services.api.Api.initialize -> app.models.store.Store (new)",
+            ]
+        );
+        let api = g.file_of("app/services/api.rb").unwrap();
+        assert_eq!(g.imports[api].len(), 1);
+    }
+
+    #[test]
+    fn a_shell_script_calls_the_functions_it_defines_and_sources() {
+        let g = graph(&[
+            ("scripts/lib.sh", "log_info() {\n  echo \"$1\"\n}\n"),
+            (
+                "scripts/deploy.sh",
+                "source ./lib.sh\nbuild() {\n  make all\n}\ndeploy() {\n  build\n  log_info done\n  ./other.sh\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "scripts.deploy.deploy -> scripts.deploy.build",
+                "scripts.deploy.deploy -> scripts.lib.log_info",
+            ]
+        );
+    }
+
+    #[test]
+    fn powershell_calls_commands_methods_and_static_members() {
+        let g = graph(&[
+            (
+                "tools/Store.psm1",
+                "class Store {\n  [void] Open() { $this.Check() }\n  [void] Check() {}\n  static [Store] Make() { return [Store]::new() }\n}\nfunction Get-Thing { }\n",
+            ),
+            (
+                "tools/deploy.ps1",
+                "Import-Module ./Store.psm1\nfunction Invoke-Deploy {\n  param([Store]$s)\n  Get-Thing -Name x\n  $s.Open()\n  $o = [Store]::new()\n  [Store]::Make()\n  $o.Check()\n}\nclass Api {\n  [Store]$Store\n  [void] Run() { $this.Store.Open() }\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "tools.Store.Store.Make -> tools.Store.Store (new)",
+                "tools.Store.Store.Open -> tools.Store.Store.Check",
+                "tools.deploy.Api.Run -> tools.Store.Store.Open",
+                "tools.deploy.Invoke-Deploy -> tools.Store.Get-Thing",
+                "tools.deploy.Invoke-Deploy -> tools.Store.Store (new)",
+                "tools.deploy.Invoke-Deploy -> tools.Store.Store.Check",
+                "tools.deploy.Invoke-Deploy -> tools.Store.Store.Make",
+                "tools.deploy.Invoke-Deploy -> tools.Store.Store.Open",
+            ]
+        );
+    }
+    #[test]
+    fn go_keeps_a_types_package_and_follows_what_calls_return() {
+        let dir = std::env::temp_dir().join(format!("cbot-go-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("go.mod"), "module example.com/app\n").unwrap();
+        let mut code = Code::default();
+        let files = [
+            (
+                "pkg/store/store.go",
+                "package store\ntype Store struct{}\nfunc New() (*Store, error) { return &Store{}, nil }\nfunc (s *Store) Open() *Tx { return nil }\ntype Tx struct{}\nfunc (t *Tx) Commit() {}\n",
+            ),
+            (
+                "cmd/main.go",
+                "package main\nimport (\n\t\"testing\"\n\t\"example.com/app/pkg/store\"\n)\ntype T struct{}\nfunc (T) Errorf() {}\nfunc run(t *testing.T) {\n\ts, err := store.New()\n\t_ = err\n\ttx := s.Open()\n\ttx.Commit()\n\tt.Errorf()\n\tvar f *store.Store\n\tf.Open()\n\tx := store.Store{}\n\tx.Open()\n}\n",
+            ),
+        ];
+        for (path, src) in files {
+            let ty = FileType::of(path).unwrap();
+            code.put(path, ty, parse::read(Lang::Go, src).unwrap());
+        }
+        let g = Graph::build(&code, &dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        // (and none to main's own T: t is a testing.T)
+        assert_eq!(
+            calls(&g),
+            [
+                "cmd.main.run -> pkg.store.store.New",
+                "cmd.main.run -> pkg.store.store.Store (new)",
+                "cmd.main.run -> pkg.store.store.Store.Open",
+                "cmd.main.run -> pkg.store.store.Tx.Commit",
+                "pkg.store.store.New -> pkg.store.store.Store (new)",
+            ]
+        );
+    }
+
+    #[test]
+    fn csharp_partial_types_are_one_and_calls_follow_what_methods_return() {
+        let g = graph(&[
+            (
+                "Shop/Page.cs",
+                "namespace Shop;\npublic partial class Page\n{\n    public void Load()\n    {\n        Refresh();\n        var s = Repo().Find();\n        s.Open();\n        Ioc.Resolve<IAuth>().Check();\n    }\n    public Repo Repo() { return new Repo(); }\n}\n",
+            ),
+            (
+                "Shop/Page.Refresh.cs",
+                "namespace Shop;\npublic partial class Page\n{\n    void Refresh() { }\n}\npublic class Repo { public Store Find() { return null; } }\npublic class Store { public void Open() { } }\npublic interface IAuth { void Check(); }\npublic static class Ioc { public static T Resolve<T>() { return default; } }\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "Page.Load -> IAuth.Check",
+                "Page.Load -> Ioc.Resolve",
+                "Page.Load -> Page.Refresh",
+                "Page.Load -> Page.Repo",
+                "Page.Load -> Repo.Find",
+                "Page.Load -> Store.Open",
+                "Page.Repo -> Repo (new)",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_rust_method_given_to_a_type_from_outside_is_found_through_what_holds_it() {
+        let g = graph(&[
+            (
+                "src/state.rs",
+                "pub trait Locked<T> { fn locked(&self) -> T; }\nimpl<T> Locked<T> for std::sync::Mutex<T> {\n    fn locked(&self) -> T { todo!() }\n}\n",
+            ),
+            (
+                "src/folder.rs",
+                "use crate::state::Locked;\nuse std::sync::Mutex;\npub struct Code;\npub struct Folder {\n    code: Mutex<Code>,\n    at: Mutex<Option<i64>>,\n}\nimpl Folder {\n    fn go(&self) {\n        self.code.locked();\n        self.at.locked();\n    }\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            ["src.folder.Folder.go -> src.state.Mutex.locked"]
+        );
+    }
+
+    #[test]
+    fn a_python_folder_without_an_init_is_a_package_of_its_modules() {
+        let g = graph(&[
+            ("pkg/sub/mod_a.py", "def helper():\n    pass\n"),
+            (
+                "app.py",
+                "import pkg.sub\nfrom pkg.sub import mod_a\ndef run():\n    mod_a.helper()\n",
+            ),
+        ]);
+        assert_eq!(calls(&g), ["app.run -> pkg.sub.mod_a.helper"]);
+        let app = g.file_of("app.py").unwrap();
+        assert!(g.externals[app].is_empty());
+        assert_eq!(g.imports[app].len(), 1);
+    }
+    #[test]
+    fn a_rust_closure_is_given_what_the_functions_signature_says() {
+        let g = graph(&[
+            (
+                "src/state.rs",
+                "pub struct App;\npub struct Store;\nimpl Store {\n    pub fn list(&self) {}\n}\npub struct State {\n    pub store: Store,\n}\npub fn with<R>(app: &App, f: impl FnOnce(&mut State) -> R) -> R {\n    todo!()\n}\npub fn each<F: FnMut(&Store)>(f: F) {}\n",
+            ),
+            (
+                "src/details.rs",
+                "use crate::state::{each, with, App};\nfn repos(app: &App) {\n    with(app, |st| {\n        st.store.list();\n    });\n    each(|s| s.list());\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.details.repos -> src.state.Store.list",
+                "src.details.repos -> src.state.each",
+                "src.details.repos -> src.state.with",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_rust_module_re_exported_through_an_alias_is_followed_to_its_file() {
+        let g = graph(&[
+            (
+                "src/platform/mod.rs",
+                "mod windows;\nuse windows as os;\npub use os::{window};\n",
+            ),
+            ("src/platform/windows/mod.rs", "pub mod window;\n"),
+            ("src/platform/windows/window.rs", "pub fn set_bounds() {}\n"),
+            (
+                "src/notes.rs",
+                "use crate::platform::window;\nfn place() {\n    window::set_bounds();\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            ["src.notes.place -> src.platform.windows.window.set_bounds"]
+        );
+    }
+
+    #[test]
+    fn csharp_follows_base_statics_aliases_and_an_interfaces_one_implementation() {
+        let g = graph(&[
+            (
+                "Core/Base.cs",
+                "namespace Core;\npublic class BaseViewModel\n{\n    public virtual void OnActive() { }\n    protected INavigationService NavigationService { get; }\n}\npublic interface INavigationService : IMvxNavigationService { }\npublic class NavigationService : MvxNavigationService, INavigationService\n{\n    public override Task Navigate<T>() { return null; }\n}\npublic class MasterViewModel\n{\n    public static MasterViewModel Instance { get; }\n    public void ShowMessage(string m) { }\n}\npublic class Result<T>\n{\n    public static Result<T> Failure(string code) { return null; }\n}\n",
+            ),
+            (
+                "Data/OrderHelper.cs",
+                "namespace Data.Helpers;\npublic static class OrderHelper\n{\n    public static void GetCreator() { }\n}\n",
+            ),
+            (
+                "Web/OrderHelper.cs",
+                "namespace Web.Helper;\npublic static class OrderHelper\n{\n    public static void Other() { }\n}\n",
+            ),
+            (
+                "Core/AboutViewModel.cs",
+                "using Core;\nusing OrderHelper = Data.Helpers.OrderHelper;\nnamespace Core;\npublic class AboutViewModel : BaseViewModel\n{\n    public override void OnActive()\n    {\n        base.OnActive();\n        MasterViewModel.Instance.ShowMessage(\"x\");\n        NavigationService.Navigate<AboutViewModel>();\n        Result<int>.Failure(\"e\");\n        OrderHelper.GetCreator();\n    }\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "AboutViewModel.OnActive -> BaseViewModel.OnActive",
+                "AboutViewModel.OnActive -> MasterViewModel.ShowMessage",
+                "AboutViewModel.OnActive -> NavigationService.Navigate",
+                "AboutViewModel.OnActive -> OrderHelper.GetCreator",
+                "AboutViewModel.OnActive -> Result.Failure",
+            ]
+        );
+    }
+    #[test]
+    fn typescript_knows_a_value_after_instanceof() {
+        let g = graph(&[
+            (
+                "src/errors.ts",
+                "export class ServiceError extends Error {\n  errorPayload() { return {}; }\n}\nexport class NotFound extends ServiceError {}\n",
+            ),
+            (
+                "src/guard.ts",
+                "import { NotFound } from './errors';\nexport function canActivate() {\n  try {\n    run();\n  } catch (error) {\n    if (error instanceof NotFound && error.message) {\n      throw new Error(error.errorPayload());\n    }\n  }\n}\nfunction run() {}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.guard.canActivate -> src.errors.ServiceError.errorPayload",
+                "src.guard.canActivate -> src.guard.run",
+            ]
+        );
+    }
+
+    #[test]
+    fn rust_locals_and_what_comes_from_outside_are_never_the_folders_functions() {
+        let g = graph(&[
+            (
+                "src/robots/planes.rs",
+                "struct Path;\nimpl Path {\n    fn new() -> Path { Path }\n}\n",
+            ),
+            (
+                "src/other.rs",
+                "pub fn field() {}\npub fn say() {}\npub fn t() {}\n",
+            ),
+            (
+                "src/locate.rs",
+                "use std::path::Path;\nfn locate(say: &dyn Fn(&str)) {\n    let field = |f: &str| f.len();\n    field(\"name\");\n    say(\"hi\");\n    let t = crate::util::text;\n    t(1);\n    Path::new(\"x\");\n}\n",
+            ),
+        ]);
+        assert!(calls(&g).is_empty(), "{:?}", calls(&g));
+    }
+
+    #[test]
+    fn rust_follows_a_parents_uses_statics_module_paths_and_impls_for_outside_types() {
+        let g = graph(&[
+            ("src/util.rs", "pub fn text() {}\npub fn bare() {}\n"),
+            (
+                "src/state.rs",
+                "pub trait Locked<T> { fn locked(&self) -> T; }\nimpl<T> Locked<T> for std::sync::Mutex<T> {\n    fn locked(&self) -> T { todo!() }\n}\npub trait Fields { fn folder(&self) -> &str; }\nimpl Fields for serde_json::Value {\n    fn folder(&self) -> &str { \"\" }\n}\n",
+            ),
+            (
+                "src/group/mod.rs",
+                "mod commands;\nuse crate::util::text;\nfn helper() {}\n",
+            ),
+            (
+                "src/group/commands.rs",
+                "use super::*;\nuse std::sync::Mutex;\nuse serde_json::Value;\nstatic CACHED: Mutex<Option<u8>> = Mutex::new(None);\nfn act(c: &Value) {\n    text();\n    super::helper();\n    CACHED.locked();\n    c.folder();\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.group.commands.act -> src.group.helper",
+                "src.group.commands.act -> src.state.Mutex.locked",
+                "src.group.commands.act -> src.state.Value.folder",
+                "src.group.commands.act -> src.util.text",
+            ]
+        );
+    }
+    #[test]
+    fn python_follows_what_functions_and_methods_return() {
+        let g = graph(&[
+            (
+                "src/store.py",
+                "from typing import Optional\nclass Store:\n    def close(self) -> None:\n        pass\n    def child(self) -> \"Store\":\n        return self\nclass Repo:\n    def find(self) -> Optional[Store]:\n        return None\ndef build_store(settings) -> Store:\n    return Store()\n",
+            ),
+            (
+                "src/app.py",
+                "from src.store import build_store, Repo\ndef run(settings, repo: Repo):\n    store = build_store(settings)\n    store.close()\n    found = repo.find()\n    found.child().close()\n",
+            ),
+        ]);
+        assert_eq!(
+            calls(&g),
+            [
+                "src.app.run -> src.store.Repo.find",
+                "src.app.run -> src.store.Store.child",
+                "src.app.run -> src.store.Store.close",
+                "src.app.run -> src.store.build_store",
+                "src.store.build_store -> src.store.Store (new)",
+            ]
+        );
+    }
+    #[test]
+    fn go_follows_assertions_ranges_iterators_generics_dot_imports_and_new() {
+        let dir = std::env::temp_dir().join(format!("cbot-go2-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("go.mod"), "module example.com/app\n").unwrap();
+        let mut code = Code::default();
+        let files = [
+            (
+                "inspector/inspector.go",
+                "package inspector\nimport \"iter\"\ntype Inspector struct{}\ntype Cursor struct{}\nfunc (i *Inspector) Root() Cursor { return Cursor{} }\nfunc (c Cursor) Preorder() iter.Seq[Cursor] { return nil }\nfunc (c Cursor) Node() int { return 0 }\nfunc Check() {}\n",
+            ),
+            ("inspector/other.go", "package inspector\nfunc copy() {}\n"),
+            (
+                "pass/pass.go",
+                "package pass\nimport (\n\t. \"example.com/app/inspector\"\n)\ntype Sparse struct{}\nfunc (s *Sparse) Len() int { return 0 }\nfunc info[T any](name string) int { return 0 }\nvar fields = []int{info[*Sparse](\"x\")}\nfunc run(p any, all []*Sparse) {\n\tvar (\n\t\tins = p.(*Inspector)\n\t)\n\tfor c := range ins.Root().Preorder() {\n\t\tc.Node()\n\t}\n\tfor _, s := range all {\n\t\ts.Len()\n\t}\n\tn := new(Sparse)\n\tn.Len()\n\tCheck()\n\tcopy(nil, nil)\n}\n",
+            ),
+        ];
+        for (path, src) in files {
+            let ty = FileType::of(path).unwrap();
+            code.put(path, ty, parse::read(Lang::Go, src).unwrap());
+        }
+        let g = Graph::build(&code, &dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        // (and none to inspector's copy: a name said alone is the builtin, not another package's)
+        assert_eq!(
+            calls(&g),
+            [
+                "inspector.inspector.Inspector.Root -> inspector.inspector.Cursor (new)",
+                "pass.pass.fields -> pass.pass.info",
+                "pass.pass.run -> inspector.inspector.Check",
+                "pass.pass.run -> inspector.inspector.Cursor.Node",
+                "pass.pass.run -> inspector.inspector.Cursor.Preorder",
+                "pass.pass.run -> inspector.inspector.Inspector.Root",
+                "pass.pass.run -> pass.pass.Sparse.Len",
+            ]
+        );
+    }
     #[test]
     fn java_calls_across_a_package_and_its_imports() {
         let g = graph(&[

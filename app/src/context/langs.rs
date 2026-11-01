@@ -1,9 +1,11 @@
 //! The files the context engine reads: code in the languages it knows (their tree-sitter
 //! grammar, which of their syntax nodes define something, and what, or name something); the
 //! files that set code up or lay out its pages (XML and XAML, Razor views, YAML, Dockerfiles,
-//! JSON, TOML, SQL, HTML with Vue and Svelte, CSS), cut along their structure and searched with
-//! the code; and documents, read for search only. Kotlin, Swift, PHP, Ruby, shell and
-//! PowerShell are read for what they define and the names they use, not yet for their links.
+//! JSON, TOML, SQL, HTML with Vue and Svelte, CSS, INI and properties), cut along their
+//! structure and searched with the code; and documents (Markdown, text, Word), read for search
+//! only. Kotlin and Swift are read for what they define and the names they use, not yet for
+//! their links; so are the schemas (Prisma, Protocol Buffers, Terraform). A Jupyter notebook
+//! is read as the Python it holds (ingest/files.rs).
 
 use serde::{Deserialize, Serialize};
 
@@ -19,14 +21,19 @@ pub(super) enum Lang {
     Rust,
     Java,
     Cpp, // (and C: the C++ grammar reads it too)
-    // (what they define, and their names: no links to the rest yet, graph/ leaves them be)
-    Kotlin,
-    Swift,
     Php,
     Ruby,
     Bash,
     #[serde(rename = "powershell")]
     PowerShell,
+    Dart, // (and Flutter's widgets)
+    Zig,
+    // (what they define, and their names: no links to the rest yet, graph/ leaves them be)
+    Kotlin,
+    Swift,
+    Prisma,
+    Proto,
+    Hcl, // (Terraform)
 }
 
 /// A file that sets code up rather than runs: searched with the code, no definitions of its own.
@@ -41,6 +48,7 @@ pub(super) enum Config {
     Sql,
     Html, // (Vue's and Svelte's components too)
     Css,  // (SCSS, Less)
+    Ini,  // (.properties, and .conf: nginx's blocks, Apache's sections too)
 }
 
 /// What a file is to the engine: code in a language, a config file, or a document.
@@ -81,7 +89,7 @@ impl Lang {
             "tsx" | "js" | "jsx" | "mjs" | "cjs" => Lang::Tsx,
             "cs" => Lang::CSharp,
             "go" => Lang::Go,
-            "py" | "pyi" => Lang::Python,
+            "py" | "pyi" | "ipynb" => Lang::Python, // (a notebook: read as its cells' Python)
             "rs" => Lang::Rust,
             "java" => Lang::Java,
             "cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h++" | "ipp" | "inl" | "tpp"
@@ -92,6 +100,11 @@ impl Lang {
             "rb" | "rake" | "gemspec" => Lang::Ruby,
             "sh" | "bash" | "zsh" => Lang::Bash,
             "ps1" | "psm1" | "psd1" => Lang::PowerShell,
+            "dart" => Lang::Dart,
+            "zig" => Lang::Zig,
+            "prisma" => Lang::Prisma,
+            "proto" => Lang::Proto,
+            "tf" | "tfvars" | "hcl" => Lang::Hcl,
             _ => return None,
         })
     }
@@ -112,6 +125,11 @@ impl Lang {
             Lang::Ruby => tree_sitter_ruby::LANGUAGE.into(),
             Lang::Bash => tree_sitter_bash::LANGUAGE.into(),
             Lang::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
+            Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
+            Lang::Zig => tree_sitter_zig::LANGUAGE.into(),
+            Lang::Prisma => tree_sitter_prisma_io::LANGUAGE.into(),
+            Lang::Proto => tree_sitter_proto::LANGUAGE.into(),
+            Lang::Hcl => tree_sitter_hcl::LANGUAGE.into(),
         }
     }
 
@@ -130,7 +148,21 @@ impl Lang {
             Lang::Ruby => "Ruby",
             Lang::Bash => "Shell",
             Lang::PowerShell => "PowerShell",
+            Lang::Dart => "Dart/Flutter",
+            Lang::Zig => "Zig",
+            Lang::Prisma => "Prisma",
+            Lang::Proto => "Protocol Buffers",
+            Lang::Hcl => "Terraform/HCL",
         }
+    }
+
+    /// Whether the graph follows its links (imports, calls, heritage), or it's read for what it
+    /// defines only.
+    pub(super) fn linked(self) -> bool {
+        !matches!(
+            self,
+            Lang::Kotlin | Lang::Swift | Lang::Prisma | Lang::Proto | Lang::Hcl
+        )
     }
 
     /// What a node of this kind defines, when it's a definition. Some need a closer look
@@ -159,6 +191,11 @@ impl Lang {
                 _ => None,
             },
             Lang::PowerShell => powershell_def(node),
+            Lang::Dart => dart_def(node),
+            Lang::Zig => zig_def(node),
+            Lang::Prisma => prisma_def(node),
+            Lang::Proto => proto_def(node),
+            Lang::Hcl => (node == "block").then_some(Kind::Class), // (by its type: parse/)
         }
     }
 
@@ -187,6 +224,8 @@ impl Lang {
             Lang::Ruby => matches!(node, "identifier" | "constant"),
             Lang::Bash => matches!(node, "word" | "variable_name"), // (a command is a word)
             Lang::PowerShell => matches!(node, "simple_name" | "command_name"),
+            Lang::Dart => matches!(node, "identifier" | "type_identifier"),
+            Lang::Zig | Lang::Prisma | Lang::Proto | Lang::Hcl => node == "identifier",
         }
     }
 }
@@ -207,8 +246,9 @@ impl FileType {
         }
         let ext = name.rsplit_once('.')?.1;
         match ext {
-            "xml" | "xaml" | "axaml" | "csproj" | "vbproj" | "fsproj" | "vcxproj" | "props"
-            | "targets" | "config" | "xsd" | "wxs" => Some(FileType::Config(Config::Xml)),
+            // (.axml: a Xamarin Android layout)
+            "xml" | "xaml" | "axaml" | "axml" | "csproj" | "vbproj" | "fsproj" | "vcxproj"
+            | "props" | "targets" | "config" | "xsd" | "wxs" => Some(FileType::Config(Config::Xml)),
             "cshtml" | "razor" => Some(FileType::Config(Config::Razor)),
             "yaml" | "yml" => Some(FileType::Config(Config::Yaml)),
             "json" | "jsonc" | "json5" => Some(FileType::Config(Config::Json)),
@@ -216,7 +256,9 @@ impl FileType {
             "sql" => Some(FileType::Config(Config::Sql)),
             "html" | "htm" | "vue" | "svelte" => Some(FileType::Config(Config::Html)),
             "css" | "scss" | "less" => Some(FileType::Config(Config::Css)),
-            "md" | "mdx" | "markdown" => Some(FileType::Markdown),
+            "ini" | "properties" | "conf" => Some(FileType::Config(Config::Ini)),
+            // (.mdc: Cursor's rules; a Word document is read as Markdown: ingest/files.rs)
+            "md" | "mdx" | "markdown" | "mdc" | "docx" => Some(FileType::Markdown),
             "txt" | "rst" | "adoc" => Some(FileType::Text),
             _ => None,
         }
@@ -239,6 +281,11 @@ impl FileType {
             FileType::Code(Lang::Ruby) => "ruby",
             FileType::Code(Lang::Bash) => "bash",
             FileType::Code(Lang::PowerShell) => "powershell",
+            FileType::Code(Lang::Dart) => "dart",
+            FileType::Code(Lang::Zig) => "zig",
+            FileType::Code(Lang::Prisma) => "prisma",
+            FileType::Code(Lang::Proto) => "proto",
+            FileType::Code(Lang::Hcl) => "hcl",
             FileType::Config(Config::Xml) => "xml",
             FileType::Config(Config::Razor) => "razor",
             FileType::Config(Config::Yaml) => "yaml",
@@ -248,6 +295,7 @@ impl FileType {
             FileType::Config(Config::Sql) => "sql",
             FileType::Config(Config::Html) => "html",
             FileType::Config(Config::Css) => "css",
+            FileType::Config(Config::Ini) => "ini",
             FileType::Markdown => "markdown",
             FileType::Text => "text",
         }
@@ -270,6 +318,7 @@ impl FileType {
             FileType::Config(Config::Sql) => "SQL",
             FileType::Config(Config::Html) => "HTML/Vue/Svelte",
             FileType::Config(Config::Css) => "CSS",
+            FileType::Config(Config::Ini) => "INI/properties",
             FileType::Markdown => "Markdown",
             FileType::Text => "Text",
         }
@@ -288,7 +337,7 @@ impl FileType {
     }
 }
 
-const ALL: [FileType; 25] = [
+const ALL: [FileType; 31] = [
     FileType::Code(Lang::TypeScript),
     FileType::Code(Lang::Tsx),
     FileType::Code(Lang::CSharp),
@@ -303,6 +352,11 @@ const ALL: [FileType; 25] = [
     FileType::Code(Lang::Ruby),
     FileType::Code(Lang::Bash),
     FileType::Code(Lang::PowerShell),
+    FileType::Code(Lang::Dart),
+    FileType::Code(Lang::Zig),
+    FileType::Code(Lang::Prisma),
+    FileType::Code(Lang::Proto),
+    FileType::Code(Lang::Hcl),
     FileType::Config(Config::Xml),
     FileType::Config(Config::Razor),
     FileType::Config(Config::Yaml),
@@ -312,6 +366,7 @@ const ALL: [FileType; 25] = [
     FileType::Config(Config::Sql),
     FileType::Config(Config::Html),
     FileType::Config(Config::Css),
+    FileType::Config(Config::Ini),
     FileType::Markdown,
     FileType::Text,
 ];
@@ -343,7 +398,7 @@ fn cs_def(node: &str) -> Option<Kind> {
         "method_declaration" => Kind::Method,
         "local_function_statement" => Kind::Function,
         "constructor_declaration" => Kind::Constructor,
-        "property_declaration" => Kind::Property,
+        "property_declaration" | "field_declaration" | "event_field_declaration" => Kind::Property,
         "namespace_declaration" | "file_scoped_namespace_declaration" => Kind::Module,
         _ => return None,
     })
@@ -472,6 +527,58 @@ fn powershell_def(node: &str) -> Option<Kind> {
     })
 }
 
+/// (A class member's `declaration` is a field, an abstract method or a constructor, and a
+/// method_declaration a constructor too: parse/ tells them apart. An extension's methods go
+/// with the type it extends, as an impl's do.)
+fn dart_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "class_declaration" => Kind::Class,
+        "mixin_declaration" => Kind::Trait,
+        "enum_declaration" => Kind::Enum,
+        "extension_declaration" | "extension_type_declaration" => Kind::Impl,
+        "type_alias" => Kind::Type,
+        "function_declaration" => Kind::Function,
+        "method_declaration" => Kind::Method,
+        "declaration" => Kind::Property,
+        "top_level_variable_declaration" => Kind::Const,
+        _ => return None,
+    })
+}
+
+/// (A type is a `const` holding a struct, enum, union or error set; any other `const` or `var`
+/// counts at the top of the file: parse/ tells them apart.)
+fn zig_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "variable_declaration" => Kind::Const,
+        "function_declaration" | "test_declaration" => Kind::Function,
+        "container_field" => Kind::Property,
+        _ => return None,
+    })
+}
+
+fn prisma_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "model_declaration" | "view_declaration" => Kind::Class,
+        "type_declaration" => Kind::Struct,
+        "enum_declaration" => Kind::Enum,
+        "datasource_declaration" | "generator_declaration" => Kind::Module,
+        "column_declaration" => Kind::Property,
+        _ => return None,
+    })
+}
+
+fn proto_def(node: &str) -> Option<Kind> {
+    Some(match node {
+        "message" => Kind::Struct,
+        "enum" => Kind::Enum,
+        "service" => Kind::Interface,
+        "rpc" => Kind::Method,
+        "field" | "map_field" | "oneof" => Kind::Property,
+        "package" => Kind::Module,
+        _ => return None,
+    })
+}
+
 impl Kind {
     pub(super) fn word(self) -> &'static str {
         match self {
@@ -549,6 +656,19 @@ mod tests {
     }
 
     #[test]
+    fn dart_zig_the_schemas_and_notebooks_are_known() {
+        assert_eq!(Lang::of("lib/main.dart"), Some(Lang::Dart));
+        assert_eq!(Lang::of("src/main.zig"), Some(Lang::Zig));
+        assert_eq!(Lang::of("prisma/schema.prisma"), Some(Lang::Prisma));
+        assert_eq!(Lang::of("api/shop.proto"), Some(Lang::Proto));
+        assert_eq!(Lang::of("infra/main.tf"), Some(Lang::Hcl));
+        assert_eq!(Lang::of("infra/prod.tfvars"), Some(Lang::Hcl));
+        assert_eq!(Lang::of("nb/Train.ipynb"), Some(Lang::Python));
+        assert!(Lang::Rust.linked() && !Lang::Prisma.linked());
+        assert_eq!(serde_json::json!(Lang::Hcl), "hcl");
+    }
+
+    #[test]
     fn config_files_are_known_by_their_extension_or_name() {
         let config = |p: &str| match FileType::of(p) {
             Some(FileType::Config(c)) => Some(c),
@@ -576,6 +696,13 @@ mod tests {
         assert_eq!(config("src/Card.svelte"), Some(Config::Html));
         assert_eq!(config("styles/site.scss"), Some(Config::Css));
         assert_eq!(config("theme.less"), Some(Config::Css));
+        assert_eq!(config("Resources/layout/main.axml"), Some(Config::Xml));
+        assert_eq!(config("setup.ini"), Some(Config::Ini));
+        assert_eq!(
+            config("src/main/resources/application.properties"),
+            Some(Config::Ini)
+        );
+        assert_eq!(config("deploy/nginx.conf"), Some(Config::Ini));
         assert!(FileType::of("ci.yml").is_some_and(FileType::is_code));
         assert!(!FileType::Markdown.is_code());
     }
@@ -584,6 +711,11 @@ mod tests {
     fn documents_are_read_too_and_every_type_goes_by_its_id() {
         assert_eq!(FileType::of("docs/a.MD"), Some(FileType::Markdown));
         assert_eq!(FileType::of("notes.txt"), Some(FileType::Text));
+        assert_eq!(
+            FileType::of(".cursor/rules/api.mdc"),
+            Some(FileType::Markdown)
+        );
+        assert_eq!(FileType::of("docs/Policy.DOCX"), Some(FileType::Markdown));
         assert_eq!(FileType::of("a.rs"), Some(FileType::Code(Lang::Rust)));
         assert_eq!(FileType::of("a.png"), None);
         for t in ALL {

@@ -98,10 +98,55 @@ pub(super) fn visit(w: &mut Walk, node: Node) {
             }
         }
         "type_alias_declaration" => alias(w, node),
+        "if_statement" => narrowed(w, node),
+        // (an `if`'s block where a value is known an instance of a type: its own scope)
+        "statement_block" if w.pending.contains_key(&node.id()) => w.open(node),
         "class_declaration" | "abstract_class_declaration" | "interface_declaration" => {
             heritage(w, node)
         }
         _ => {}
+    }
+}
+
+/// `if (error instanceof ServiceError) { error.errorPayload(); }` (with more after `&&` too):
+/// in its block the value is one of that type.
+fn narrowed(w: &mut Walk, node: Node) {
+    let (Some(condition), Some(block)) = (
+        node.child_by_field_name("condition"),
+        node.child_by_field_name("consequence"),
+    ) else {
+        return;
+    };
+    if block.kind() != "statement_block" {
+        return;
+    }
+    let mut test = condition;
+    loop {
+        match test.kind() {
+            "parenthesized_expression" => match test.named_child(0) {
+                Some(inner) => test = inner,
+                None => return,
+            },
+            "binary_expression" => {
+                let op = test.child_by_field_name("operator").map(|o| w.text(o));
+                let (Some(left), Some(right)) = (
+                    test.child_by_field_name("left"),
+                    test.child_by_field_name("right"),
+                ) else {
+                    return;
+                };
+                match op {
+                    Some("&&") => test = left,
+                    Some("instanceof") if left.kind() == "identifier" => {
+                        let ty = super::bare(w.text(right)).to_string();
+                        w.bind_in(block, w.text(left), &ty);
+                        return;
+                    }
+                    _ => return,
+                }
+            }
+            _ => return,
+        }
     }
 }
 

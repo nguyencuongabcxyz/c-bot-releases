@@ -10,8 +10,11 @@ pub(in crate::context) const MAX_FILES: usize = 30_000;
 /// …and at most this many files and folders looked through to find them (a robot's folder
 /// can be a whole drive or a home folder).
 const MAX_SEEN: usize = 300_000;
-/// Bigger files are data or generated, not code to read.
+/// Bigger files are data or generated, not code to read…
 const MAX_BYTES: u64 = 1024 * 1024;
+/// …but a notebook's outputs and a Word document's pictures make them big, and only their
+/// text is read (documents.rs).
+const DOCUMENT_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Folders never read, even without a .gitignore saying so.
 const SKIP_DIRS: &[&str] = &[
@@ -27,6 +30,8 @@ const SKIP_DIRS: &[&str] = &[
     "__pycache__",
     ".venv",
     "venv",
+    "zig-out",
+    "zig-cache",
     ".next",
     ".nuxt",
     ".turbo",
@@ -34,13 +39,21 @@ const SKIP_DIRS: &[&str] = &[
     "coverage",
 ];
 
+/// Hidden folders read all the same: what they hold is written for the robots (Cursor's rules,
+/// .mdc).
+const READ_HIDDEN: &[&str] = &[".cursor"];
+
+/// A hidden file or folder the engine doesn't read (`.git`, `.venv`, `.env`).
+fn hidden(name: &str) -> bool {
+    name.starts_with('.') && !READ_HIDDEN.contains(&name)
+}
+
 /// A path in the folder that's somewhere the engine never reads: in a folder it skips, or a
 /// hidden one (as the walk skips them).
 pub(in crate::context) fn skipped(rel: &str) -> bool {
     let mut dirs: Vec<&str> = rel.split('/').collect();
     dirs.pop();
-    dirs.iter()
-        .any(|d| d.starts_with('.') || SKIP_DIRS.contains(d))
+    dirs.iter().any(|d| hidden(d) || SKIP_DIRS.contains(d))
 }
 
 /// Generated files that only get in the way (lock files too: thousands of versions).
@@ -51,9 +64,22 @@ const SKIP_ENDINGS: &[&str] = &[
     ".designer.cs",
     ".g.cs",
     ".g.i.cs",
+    ".g.dart",
+    ".freezed.dart",
     "package-lock.json",
     "pnpm-lock.yaml",
 ];
+
+/// Whether a file is too big to read, for its kind.
+fn too_big(rel: &str, len: u64) -> bool {
+    let lower = rel.to_ascii_lowercase();
+    let document = lower.ends_with(".ipynb") || lower.ends_with(".docx");
+    len > if document {
+        DOCUMENT_MAX_BYTES
+    } else {
+        MAX_BYTES
+    }
+}
 
 /// How a file was when it was read: changed (perhaps) when either is different.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,14 +106,15 @@ pub(in crate::context) struct Content {
 /// The files the engine reads in a folder, by path; and whether there were more than it looks at.
 pub(in crate::context) fn find(root: &Path) -> (Vec<Found>, bool) {
     let walker = ignore::WalkBuilder::new(root)
-        .hidden(true)
+        .hidden(false) // (the filter skips them: all but READ_HIDDEN)
         .git_ignore(true)
         .git_exclude(true)
         .git_global(false)
         .require_git(false) // (a .gitignore counts in a folder that isn't a repository too)
         .filter_entry(|e| {
-            !(e.file_type().is_some_and(|t| t.is_dir())
-                && SKIP_DIRS.contains(&e.file_name().to_string_lossy().as_ref()))
+            let name = e.file_name().to_string_lossy();
+            let dir = e.file_type().is_some_and(|t| t.is_dir());
+            e.depth() == 0 || !(hidden(&name) || (dir && SKIP_DIRS.contains(&name.as_ref())))
         })
         .build();
     let mut found = vec![];
@@ -113,7 +140,7 @@ pub(in crate::context) fn find(root: &Path) -> (Vec<Found>, bool) {
         let Ok(meta) = entry.metadata() else {
             continue;
         };
-        if meta.len() > MAX_BYTES {
+        if too_big(&rel, meta.len()) {
             continue;
         }
         if found.len() == MAX_FILES {
@@ -139,14 +166,11 @@ pub(in crate::context) fn find_these(root: &Path, paths: &[String]) -> Vec<Found
             let ty = FileType::of(rel)?;
             let name = rel.rsplit('/').next().unwrap_or(rel);
             let lower = rel.to_ascii_lowercase();
-            if name.starts_with('.')
-                || skipped(rel)
-                || SKIP_ENDINGS.iter().any(|e| lower.ends_with(e))
-            {
+            if hidden(name) || skipped(rel) || SKIP_ENDINGS.iter().any(|e| lower.ends_with(e)) {
                 return None;
             }
             let meta = std::fs::metadata(root.join(rel)).ok()?;
-            if !meta.is_file() || meta.len() > MAX_BYTES || git_ignores(root, rel) {
+            if !meta.is_file() || too_big(rel, meta.len()) || git_ignores(root, rel) {
                 return None;
             }
             let stamp = Stamp {
@@ -260,7 +284,7 @@ pub(in crate::context) fn asked_path(root: &Path, path: &str) -> Option<String> 
 pub(in crate::context) fn read(path: &Path) -> Option<Content> {
     let bytes = std::fs::read(path).ok()?;
     let hash = blake3::hash(&bytes).as_bytes().to_vec();
-    let text = String::from_utf8(bytes).ok().filter(|t| !minified(t));
+    let text = documents::text_of(path, bytes).filter(|t| !minified(t));
     Some(Content { hash, text })
 }
 
@@ -295,9 +319,20 @@ mod tests {
         write("web/app.min.js", "x");
         write(".gitignore", "ignored/\n");
         write("logo.png", "x");
+        write(".venv/lib/x.py", "x = 1");
+        write(".cursor/rules/api.mdc", "# Rules");
         let (found, capped) = find(&dir);
         let rels: Vec<&str> = found.iter().map(|f| f.rel.as_str()).collect();
-        assert_eq!(rels, ["src/app.ts", "src/main.rs", "src/notes.md"]);
+        assert_eq!(
+            rels,
+            [
+                ".cursor/rules/api.mdc",
+                "src/app.ts",
+                "src/main.rs",
+                "src/notes.md"
+            ]
+        );
+        let found = &found[1..];
         assert!(!capped);
         assert_eq!(found[1].ty, FileType::Code(Lang::Rust));
         assert_eq!(found[2].ty, FileType::Markdown);
@@ -328,9 +363,13 @@ mod tests {
         write("web/gen/keep.ts", "x");
         write("web/app.min.js", "x");
         write("target/c.rs", "x");
+        write(".venv/d.py", "x");
+        write(".cursor/rules/e.mdc", "x");
         write(".gitignore", "ignored/\n");
         write("web/.gitignore", "gen/\n!gen/keep.ts\n");
         let asked: Vec<String> = [
+            ".cursor/rules/e.mdc",
+            ".venv/d.py",
             "src/main.rs",
             "src/.hidden.ts",
             "ignored/a.py",
@@ -351,7 +390,7 @@ mod tests {
         let walked: Vec<String> = walked.into_iter().map(|f| f.rel).collect();
         // (keep.ts too: a `!` can't let a file back in from a folder that's ignored)
         assert_eq!(rels, walked);
-        assert_eq!(rels, ["src/main.rs"]);
+        assert_eq!(rels, [".cursor/rules/e.mdc", "src/main.rs"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -13,10 +13,13 @@ const RESOLVERS: &[&str] = &["GetService", "GetRequiredService", "Resolve", "Get
 pub(super) fn visit(w: &mut Walk, node: Node) {
     let f = |name: &str| node.child_by_field_name(name);
     match node.kind() {
-        "method_declaration"
-        | "constructor_declaration"
-        | "local_function_statement"
-        | "lambda_expression" => w.open(node),
+        "method_declaration" | "local_function_statement" => {
+            w.open(node);
+            if let (Some(name), Some(ty)) = (f("name"), f("returns").or_else(|| f("type"))) {
+                w.returns(node, w.text(name), w.text(ty));
+            }
+        }
+        "constructor_declaration" | "lambda_expression" => w.open(node),
         "parameter" => {
             if let (Some(ty), Some(name)) = (f("type"), f("name")) {
                 w.bind(w.text(name), type_name(w.text(ty)));
@@ -39,6 +42,24 @@ pub(super) fn visit(w: &mut Walk, node: Node) {
             if let Some(ty) = f("type") {
                 w.made(node, type_name(w.text(ty)));
                 w.given(arguments(node));
+            }
+        }
+        // (`using OrderHelper = Shop.Data.OrderHelper;`: that type under this name)
+        "using_directive" if w.text(node).contains('=') => {
+            let text = w.text(node).trim_start_matches("global").trim();
+            let text = text.trim_start_matches("using").trim_end_matches(';');
+            let Some((alias, target)) = text.split_once('=') else {
+                return;
+            };
+            let (alias, target) = (alias.trim(), target.trim());
+            let target = target.split('<').next().unwrap_or(target);
+            if let Some((space, name)) = target.rsplit_once('.') {
+                w.import(Import {
+                    spec: space.to_string(),
+                    names: vec![(name.to_string(), alias.to_string())],
+                    line: Walk::line(node),
+                    ..Import::default()
+                });
             }
         }
         "using_directive" => {
@@ -76,7 +97,7 @@ fn invocation(w: &mut Walk, node: Node) {
             else {
                 return;
             };
-            w.call(node, w.text(named(name)), Some(object));
+            w.call(name, w.text(named(name)), Some(object));
         }
         "conditional_access_expression" => {
             // (`a?.B()`: B through a; `a?.b.C()`: C through a's b)
@@ -99,7 +120,7 @@ fn invocation(w: &mut Walk, node: Node) {
             let (Some(object), Some(name)) = (object, name) else {
                 return;
             };
-            w.call(node, w.text(named(name)), Some(object));
+            w.call(name, w.text(named(name)), Some(object));
         }
         _ => return,
     }
@@ -123,11 +144,12 @@ fn arguments(node: Node) -> usize {
     })
 }
 
-/// A member access's object: its `expression`, or the `this` it starts from.
+/// A member access's object: its `expression`, or the `this` or `base` it starts from.
 pub(super) fn object(node: Node) -> Option<Node> {
     node.child_by_field_name("expression").or_else(|| {
         let mut c = node.walk();
-        node.children(&mut c).find(|n| n.kind() == "this")
+        node.children(&mut c)
+            .find(|n| matches!(n.kind(), "this" | "base"))
     })
 }
 
@@ -138,31 +160,60 @@ fn inferred<'a>(w: &Walk<'a>, value: Node) -> &'a str {
     match value.kind() {
         "object_creation_expression" | "cast_expression" => text(value.child_by_field_name("type")),
         "as_expression" => text(value.child_by_field_name("right")),
-        "invocation_expression" => {
-            let name = value
-                .child_by_field_name("function")
-                .and_then(|f| match f.kind() {
-                    "member_access_expression" => f.child_by_field_name("name"),
-                    _ => Some(f),
-                })
-                .filter(|n| n.kind() == "generic_name");
-            let Some(name) = name else { return "" };
-            if !name
-                .named_child(0)
-                .is_some_and(|n| RESOLVERS.contains(&w.text(n)))
-            {
-                return "";
-            }
-            let args = name.named_child(1);
-            match args.map(|a| (a.named_child_count(), a.named_child(0))) {
-                Some((1, ty)) => text(ty),
-                _ => "",
-            }
-        }
+        "invocation_expression" => resolved(w, value).unwrap_or(""),
         "await_expression" | "parenthesized_expression" => {
             value.named_child(0).map_or("", |v| inferred(w, v))
         }
         _ => "",
+    }
+}
+
+/// What a DI container's `GetRequiredService<Store>()`, `Resolve<IAuth>()` gives: its type
+/// argument.
+fn resolved<'a>(w: &Walk<'a>, call: Node) -> Option<&'a str> {
+    let name = call
+        .child_by_field_name("function")
+        .and_then(|f| match f.kind() {
+            "member_access_expression" => f.child_by_field_name("name"),
+            _ => Some(f),
+        })
+        .filter(|n| n.kind() == "generic_name")?;
+    if !name
+        .named_child(0)
+        .is_some_and(|n| RESOLVERS.contains(&w.text(n)))
+    {
+        return None;
+    }
+    match name
+        .named_child(1)
+        .map(|a| (a.named_child_count(), a.named_child(0)))
+    {
+        Some((1, Some(ty))) => Some(w.text(ty)),
+        _ => None,
+    }
+}
+
+/// The type a call gives: a DI container's `Resolve<IAuth>()` its type argument; else what the
+/// method returns (a method of the type it's in, `Find()`; through a value, `repo.Find()`; a
+/// static one, `Store.Make()`), as a path the graph follows.
+pub(super) fn returned(w: &Walk, node: Node) -> Option<String> {
+    if let Some(ty) = resolved(w, node) {
+        return Some(type_name(ty).to_string()).filter(|t| !t.is_empty());
+    }
+    let callee = node.child_by_field_name("function")?;
+    match callee.kind() {
+        "identifier" | "generic_name" => Some(format!("{THIS_FIELD}{}()", w.text(named(callee)))),
+        "member_access_expression" => {
+            let object = object(callee)?;
+            let method = w.text(named(callee.child_by_field_name("name")?));
+            let of = match w.type_of(object) {
+                Some(t) => t,
+                None if object.kind() == "identifier" => w.text(object).to_string(),
+                None => return None,
+            };
+            Some(format!("{of}#{method}()"))
+        }
+        _ => None,
     }
 }
 
@@ -187,14 +238,18 @@ fn variables(w: &mut Walk, node: Node) {
         let ty = if declared == "var" {
             let mut c = d.walk();
             let value = d.named_children(&mut c).find(|n| n.id() != name.id());
-            value.map_or("", |v| inferred(w, v))
+            // (`var s = repo.Find()`: what Find returns, when nothing simpler says)
+            value.map_or(String::new(), |v| match type_name(inferred(w, v)) {
+                "" => w.type_of(v).unwrap_or_default(),
+                t => t.to_string(),
+            })
         } else {
-            declared
+            type_name(declared).to_string()
         };
         if field {
-            w.field(node, w.text(name), ty);
+            w.field(node, w.text(name), &ty);
         } else {
-            w.bind(w.text(name), type_name(ty));
+            w.bind(w.text(name), &ty);
         }
     }
 }
