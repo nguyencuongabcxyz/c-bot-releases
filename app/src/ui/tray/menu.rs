@@ -265,6 +265,12 @@ fn settings_menu(app: &AppHandle, s: &Value) -> Item {
             ),
             check(
                 app,
+                "flip|dockReserve".into(),
+                "📌 Docked chats keep windows off their edge",
+                s["dockReserve"].as_bool() == Some(true),
+            ),
+            check(
+                app,
                 "toggle|startAtLogin".into(),
                 "🚀 Start with Windows",
                 on(s, "startAtLogin"),

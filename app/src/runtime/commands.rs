@@ -9,7 +9,7 @@ use crate::features::chat;
 use crate::features::chat::group;
 use crate::features::{notes, routines, share, vocab};
 use crate::mcp::{apps, link, tools};
-use crate::robots::{ipc, island, revive, social, stage, walkers};
+use crate::robots::{docking, ipc, island, revive, social, stage, walkers};
 use crate::ui::{tray, workshop};
 use crate::workbench::{palette, paste, quick, shell, snip, terminal, voice};
 
@@ -143,6 +143,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         island::robot_island,
         stage::stage_pick,
         stage::stage_tile,
+        docking::robot_dock,
+        docking::robot_dock_split,
         stage::stage_split,
         stage::stage_swap,
         stage::stage_init,

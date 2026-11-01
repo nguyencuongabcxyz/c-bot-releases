@@ -3,6 +3,7 @@
 // with its payload (ipc.on is typed from Events, so a wrong name is a compile error).
 import type {
   ContextEngineStatus,
+  DockEdge,
   FileInfo,
   Layout,
   LinkEvent,
@@ -111,6 +112,8 @@ export interface Events {
   'robot:settings': Settings;
   'robot:action': string;
   'robot:stage': StageEvent;
+  // (dragged with its chat open: the edge it docks on if let go now)
+  'robot:dock': { hint: DockEdge | null };
   'robot:hush': boolean;
   'robot:screen': { file: FileInfo; source: string };
   'robot:tasks': LinkTask[];

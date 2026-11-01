@@ -85,6 +85,7 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
         },
     );
     let chat_w = c["chatWidth"].as_f64().unwrap_or(CHAT_W);
+    let dock = serde_json::from_value(c["dock"].clone()).ok();
     let peek = away_on_island(app, id, &c);
     if peek {
         walkers::veil(app, hwnd, true);
@@ -110,15 +111,21 @@ pub fn open(app: &AppHandle, id: &str, index: usize) -> tauri::Result<()> {
                 forwarded: None,
                 eyes: None,
                 stage: None,
+                dock,
+                dock_drag: None,
+                kept: None,
             },
         )
     });
     revive::watch(app, &win, id);
     let (app2, id2) = (app.clone(), id.to_string());
-    win.on_window_event(move |e| {
-        if let tauri::WindowEvent::Destroyed = e {
-            closed(&app2, &id2, hwnd);
+    win.on_window_event(move |e| match e {
+        tauri::WindowEvent::Destroyed => closed(&app2, &id2, hwnd),
+        // (docked, its window came over the island: the island back in front)
+        tauri::WindowEvent::Focused(true) if docking::is_docked(&app2, &id2) => {
+            island::raise(&app2);
         }
+        _ => {}
     });
     island::changed(app);
     Ok(())
@@ -142,14 +149,12 @@ fn away_on_island(app: &AppHandle, id: &str, c: &Value) -> bool {
 /// Its window's gone: it's forgotten, and what went with it closes too.
 fn closed(app: &AppHandle, id: &str, hwnd: isize) {
     // (only if it's still this window: built again, a new one may be there already)
-    let mine = with(app, |st| {
+    let gone = with(app, |st| {
         let mine = st.robots.get(id).is_some_and(|r| r.hwnd == hwnd);
-        if mine {
-            st.robots.remove(id);
-        }
-        mine
+        if mine { st.robots.remove(id) } else { None }
     });
-    if mine {
+    if let Some(r) = gone {
+        docking::closed(app, id, &r); // (docked: the others close up)
         revive::forget(app, id);
         walkers::close(app, id); // (put away while out for a walk: the walker goes too)
         shell::close(app, id); // (and the shell in its chat)

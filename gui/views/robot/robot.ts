@@ -19,6 +19,7 @@ import '@/features/chat/chat.css';
 import '@/theme/code.css';
 import '@/features/context/context.css';
 import '@/features/robots/stage/tile.css';
+import '@/features/robots/dock/dock.css';
 import '@/features/chat/share/share.css';
 import '@/features/chat/saved/saved.css';
 import type { Settings } from '@/types/model';
@@ -34,6 +35,7 @@ import { createNotes, type NotesApi } from '@/features/notes/robot';
 import { createRoutines, type RoutinesApi } from '@/features/routines/robot';
 import { createVocab, type VocabApi } from '@/features/vocab/robot';
 import { createStage, type StageApi } from '@/features/robots/stage/tile';
+import { createDock } from '@/features/robots/dock/dock';
 import { createIdleAntics, type IdleAnticsApi } from './life/antics';
 import { createMentions, type MentionsApi } from '@/features/chat/composer/mentions';
 import { createSlash, type SlashApi } from '@/features/chat/composer/slash';
@@ -636,6 +638,7 @@ tooltips($('#side-panel'));
   // the stage (app/src/robots/stage/mod.rs)
   const stagePart: StageApi = createStage(hub); // (robots/stage/tile.ts)
   const { setStaged } = stagePart;
+  createDock(hub); // (robots/dock/dock.ts: docked at the screen's edge)
   // ------------------------------------------------------------ main-process events
 
   createWindowLayout(hub); // (layout.ts)

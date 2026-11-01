@@ -6,7 +6,7 @@ use super::*;
 // ---------------------------------------------------------------- the grid
 
 /// `total` px shared out by weight (the last one takes what rounding left over).
-pub(super) fn split_px(total: i32, weights: &[f64]) -> Vec<i32> {
+pub(in crate::robots) fn split_px(total: i32, weights: &[f64]) -> Vec<i32> {
     let sum = weights.iter().sum::<f64>().max(1e-9);
     let mut used = 0;
     weights
@@ -26,7 +26,7 @@ pub(super) fn split_px(total: i32, weights: &[f64]) -> Vec<i32> {
 
 /// The gap after item k moved by d px: the item on the side it moved away from grows, and
 /// the ones on the other side give way, the nearest first, each down to min.
-pub(super) fn give(sizes: &[i32], k: usize, d: i32, min: i32) -> Vec<i32> {
+pub(in crate::robots) fn give(sizes: &[i32], k: usize, d: i32, min: i32) -> Vec<i32> {
     let mut s = sizes.to_vec();
     if k + 1 >= s.len() || d == 0 {
         return s;

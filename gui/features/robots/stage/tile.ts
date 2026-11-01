@@ -3,6 +3,8 @@
 // goes in the title bar. Drag a gap and main shares the room out again; drag the title bar
 // onto another tile and they change places. In the spotlight it's big, the others strips
 // beside it (just the latest of their chat: click one to bring it to the spotlight).
+// Docked at the screen's edge (robots/dock/dock.ts) it looks the same: its gaps are the
+// docked stack's, and its Back to desk undocks it.
 // (robot.ts calls createStage with its hub.)
 import type { ComposerApi } from '@/features/chat/composer/composer';
 import type { AskingApi } from '@/features/chat/reply/ask';
@@ -14,7 +16,7 @@ import * as ipc from '@/ipc';
 import { $ } from '@/lib/dom';
 import { onDrag } from '@/lib/drag';
 import type { StageEvent } from '@/types/ipc';
-import type { FileInfo, StageTileInfo } from '@/types/model';
+import type { DockEdge, FileInfo, StageTileInfo } from '@/types/model';
 
 /** What it uses of the robot window (robot.ts's hub). */
 export type StageNeeds = {
@@ -37,10 +39,15 @@ export function createStage(r: StageNeeds) {
   // onto another tile and they change places. In the spotlight it's big, the others strips
   // beside it (just the latest of their chat: click one to bring it to the spotlight).
   let staged = false;
+  let dockedOn: DockEdge | null = null; // (docked: a tile of the stack on that edge, not of the stage)
   const edges = [...document.querySelectorAll<HTMLElement>('.stage-edge')];
   function setStaged(tile: StageTileInfo | null, inset: number) {
     staged = !!tile;
+    dockedOn = tile?.dock ?? null;
     r.body.classList.toggle('staged', staged);
+    r.body.classList.toggle('docked', !!dockedOn);
+    r.body.classList.toggle('docked-left', dockedOn === 'left');
+    r.body.classList.toggle('docked-right', dockedOn === 'right');
     r.body.classList.toggle('stage-spot', !!tile?.spot);
     r.body.classList.toggle('stage-strip', !!tile?.strip);
     if (!tile) r.body.classList.remove('stage-target');
@@ -56,6 +63,9 @@ export function createStage(r: StageNeeds) {
       e.hidden = !split;
     }
   }
+  // a gap is the stage's, or the docked stack's
+  const splitStep = (step: Parameters<typeof ipc.stageSplit>[0]) =>
+    dockedOn ? ipc.robotDockSplit(step) : ipc.stageSplit(step);
   for (const edge of edges) {
     const across = edge.dataset.side === 'left' || edge.dataset.side === 'right';
     onDrag(edge, (e) => {
@@ -64,29 +74,29 @@ export function createStage(r: StageNeeds) {
       e.preventDefault();
       r.body.classList.add('resizing');
       if (!across) r.body.classList.add('resizing-v');
-      ipc.stageSplit({ phase: 'start', split });
+      splitStep({ phase: 'start', split });
       return {
-        move: ({ dx, dy }) => ipc.stageSplit({ phase: 'move', split, d: across ? dx : dy }),
+        move: ({ dx, dy }) => splitStep({ phase: 'move', split, d: across ? dx : dy }),
         end: () => {
           r.body.classList.remove('resizing', 'resizing-v');
-          ipc.stageSplit({ phase: 'end', split });
+          splitStep({ phase: 'end', split });
           r.scrollDown();
         },
       };
     });
     edge.addEventListener('dblclick', () => {
-      if (edge.dataset.split) ipc.stageSplit({ phase: 'even', split: edge.dataset.split });
+      if (edge.dataset.split) splitStep({ phase: 'even', split: edge.dataset.split });
     });
   }
   $('#btn-spot').addEventListener('click', () => ipc.stageTile('spot'));
-  $('#btn-unstage').addEventListener('click', () => ipc.stageTile('leave'));
+  $('#btn-unstage').addEventListener('click', () => (dockedOn ? ipc.robotDock('undock') : ipc.stageTile('leave')));
   // its title bar: drag it onto another tile to change places; double-click: the spotlight
   const header = $('#panel > header');
   const onButton = (e: Event) => !!(e.target as HTMLElement).closest('button');
   onDrag(
     header,
     (e) => {
-      if (!staged || onButton(e)) return;
+      if (!staged || dockedOn || onButton(e)) return; // (docked: robots/dock/dock.ts)
       return {
         begin: () => {
           r.body.classList.add('swapping');
@@ -102,7 +112,7 @@ export function createStage(r: StageNeeds) {
     { threshold: 6 },
   );
   header.addEventListener('dblclick', (e) => {
-    if (staged && !onButton(e)) ipc.stageTile('spot');
+    if (staged && !dockedOn && !onButton(e)) ipc.stageTile('spot');
   });
   // a strip beside the spotlight: a click brings it there
   $('#panel').addEventListener('click', (e) => {
@@ -146,6 +156,10 @@ export function createStage(r: StageNeeds) {
     setStaged,
     get staged() {
       return staged;
+    },
+    /** Docked at the screen's edge: which one. */
+    get dockedOn() {
+      return dockedOn;
     },
     set staged(v) {
       staged = v;

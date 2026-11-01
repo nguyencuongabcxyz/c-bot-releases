@@ -318,7 +318,7 @@ fn rep(app: &AppHandle, id: &str) -> Rep {
 }
 
 fn showing(app: &AppHandle, id: &str) -> bool {
-    robots::is_showing(app, id)
+    robots::is_showing(app, id) && !robots::docking::is_docked(app, id) // (docked: its desk is empty)
 }
 
 /// Robots out on the desktop that have told us lately how they are.

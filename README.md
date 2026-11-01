@@ -97,6 +97,14 @@ To work with several robots at once, put them **▦ on stage**: Ctrl+click the r
 
 ![Three robots on stage, answering one question](docs/screenshots/stage.png)
 
+### Docked chats
+
+Want a chat to sit right at the screen's edge? With its chat open, press **Dock to edge** in the chat's title bar, or drag the robot into the left or right edge of the screen and let go when the chat glows. The chat docks flush against that edge, the full height of the screen, with the robot's face in its title bar. Drag its inner edge to make it wider. Dock a second robot on the same edge and they stack, one above the other; drag the gap between them to share the height. Press **Back to desk**, or drag the title bar away from the edge, to undock it.
+
+A docked chat goes back to the robot's desk when you tuck it away, send the robot to the island or put it on stage, and docks again when the chat comes back. To keep other windows off a docked chat's edge, turn on **📌 Docked chats keep windows off their edge** in the tray's Settings. Maximised windows then stop beside the chat instead of going under it.
+
+![Two robots' chats docked on the right edge of the screen](docs/screenshots/docked.png)
+
 ### The robot island
 
 Too many desks? Turn on **🏝️ Robot island** in the tray: every robot's face sits in a strip at the screen's edge. Drag a robot onto it (or press 🏝️ in its chat) to send it away; its desk keeps its place for when it comes back. Hover the island to bring robots out or send them away. Robots that are away keep working, and the island tells you when one finishes, hits a snag or needs you. It also passes on their word cards.
@@ -205,7 +213,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       describes its steps; locate.rs finds it; transcripts.rs past conversations
     robots/           the robot windows (mod.rs: layout, drag, resize, click-through); ipc/
                       a robot window's commands about itself (tabs.rs its tabs); stage/ several chats tiled
-                      over a screen; island.rs the island at the screen's edge; walkers/,
+                      over a screen; docking/ chats docked at the screen's edge (column.rs the
+                      stack's geometry); island.rs the island at the screen's edge; walkers/,
                       social/, maid.rs robots away from their desks; topmost.rs, screens.rs
     mcp/              what Claude itself calls: server.rs C-Bot's MCP server; tools/ its tools
                       (robots, words, notes, routines, terminal, screen, tabs: schema and handler
@@ -230,7 +239,7 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       the way through the relay)
     ui/               the app's own windows and menus: views.rs, place.rs, tray.rs, workshop.rs
     platform/         what needs the operating system, kept by system: windows/ (window,
-                      input, clipboard, network, screenshot, presence, power, process,
+                      appbar, input, clipboard, network, screenshot, presence, power, process,
                       webview), and
                       common/ for what every system shares (types, input logic, images)
 relay/                the relay for shared chats over the internet: a Cloudflare Worker that
@@ -246,7 +255,8 @@ gui/                  the pages (TypeScript, built by Vite into dist/)
                       questions, past chats, saved/ saved chats, share/ a shared chat
     notes/  vocab/    what the robot does with your notes, and with English words
     routines/         what the robot does when one of your routines runs
-    robots/           robots noticing and asking each other, and the robot as a stage tile
+    robots/           robots noticing and asking each other, the robot as a stage tile, and
+                      dock/ its chat docked at the screen's edge
     workbench/        quick actions, snip, the shell drawer, the file viewer
     mcp/              MCP Apps: a tool's own page, shown in the chat
   office3d/           the 3D desk and robot (Three.js)

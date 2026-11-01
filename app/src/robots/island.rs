@@ -269,6 +269,16 @@ pub fn gone(app: &AppHandle, id: &str) {
     changed(app);
 }
 
+/// Back in front of the other always-on-top windows (a docked chat came over it).
+pub fn raise(app: &AppHandle) {
+    if app.try_state::<Mutex<Island>>().is_none() {
+        return;
+    }
+    if let Some(hwnd) = isl(app, |i| i.hwnd) {
+        window::set_topmost(hwnd);
+    }
+}
+
 /// Where the strip is on screen (physical px): what's for a robot that's away goes beside it
 /// (hub::robot_rect: the word card, the notebook…).
 pub fn strip_rect(app: &AppHandle) -> Option<Rect> {

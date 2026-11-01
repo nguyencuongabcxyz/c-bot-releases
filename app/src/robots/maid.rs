@@ -120,7 +120,7 @@ fn tell(app: &AppHandle, id: &str, payload: Value) {
 }
 
 fn showing(app: &AppHandle, id: &str) -> bool {
-    robots::is_showing(app, id)
+    robots::is_showing(app, id) && !robots::docking::is_docked(app, id) // (docked: its desk is empty)
 }
 
 fn centre(r: Rect) -> (i32, i32) {

@@ -1,5 +1,6 @@
 // Where main has put the window (robot:layout): the robot's spot on the screen, the chat panel's
-// room beside it (or the stage's tile), which side it opens on; and the panel's pop-in, played
+// room beside it (or the stage's tile, or docked at the screen's edge), which side it opens on;
+// and the panel's pop-in, played
 // again once the window shows at its new size.
 // (robot.ts calls createWindowLayout with its hub.)
 import type { ChatSizeApi } from '@/features/chat/size';
@@ -32,7 +33,8 @@ export function createWindowLayout(r: WindowLayoutNeeds) {
     r.state.robotY = l.robotY;
     root.setProperty('--robot-x', `${l.robotX}px`);
     root.setProperty('--robot-y', `${l.robotY}px`);
-    r.setStaged(l.placement === 'stage' ? (l.stage ?? {}) : null, l.inset ?? 4);
+    const tiled = l.placement === 'stage' || l.placement === 'dock'; // (docked: a tile of its own, the stage's look)
+    r.setStaged(tiled ? (l.stage ?? {}) : null, l.inset ?? 4);
     if (l.panel && r.stagePart.staged) {
       root.setProperty('--panel-x', `${l.panel.x}px`);
       root.setProperty('--panel-w', `${l.panel.w}px`);

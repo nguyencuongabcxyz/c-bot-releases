@@ -37,7 +37,7 @@ use crate::runtime::util::only;
 use crate::runtime::{part, with};
 use crate::ui::{tray, views};
 
-use grid::*;
+pub(in crate::robots) use grid::{give, split_px};
 
 pub const LABEL: &str = "stage";
 /// How far each tile's chat sits inside its window (CSS px): two of these make the gap.
@@ -565,6 +565,7 @@ fn send(app: &AppHandle, prompt: &str, paths: &[String]) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use super::grid::arrange;
     use super::*;
 
     fn ids(n: usize) -> Vec<String> {

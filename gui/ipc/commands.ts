@@ -336,6 +336,9 @@ export const stageTile = (action: 'spot' | 'leave') => tell('stage_tile', { acti
 export const stageSplit = (step: { phase: 'start' | 'move' | 'end' | 'even'; split: string; d?: number }) =>
   tell('stage_split', { step });
 export const stageSwap = (phase: 'start' | 'move' | 'end') => tell('stage_swap', { phase });
+export const robotDock = (action: 'dock' | 'undock') => tell('robot_dock', { action });
+export const robotDockSplit = (step: { phase: 'start' | 'move' | 'end' | 'even'; split: string; d?: number }) =>
+  tell('robot_dock_split', { step });
 export const stageAct = (action: 'start' | 'clear' | 'unpick' | 'exit' | 'add' | 'even' | 'chip', id?: string) =>
   tell('stage_act', { action, id });
 export const islandAct = (

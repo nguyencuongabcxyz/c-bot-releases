@@ -13,6 +13,8 @@ export type Settings = {
   claudePath: string;
   muted?: boolean;
   island?: boolean; // the robot island at the screen's edge (on unless false)
+  dockWidth?: Partial<Record<DockEdge, number>>; // how wide the docked chats on each edge are (CSS px)
+  dockReserve?: boolean; // docked chats keep their edge's room for themselves (off unless true)
   sounds: SoundLevel;
   theme?: string;
   themeMode?: string;
@@ -305,6 +307,7 @@ export type Character = {
   activeTab: string;
   visible: boolean;
   peek?: boolean; // sent away to the robot island (its window veiled, still at work)
+  dock?: Docked | null; // docked at the screen's edge while its chat is open (app/src/robots/docking)
   position: Point | null;
   stats: { questions: number; pokes: number; costUsd: number };
   createdAt: number;
@@ -526,22 +529,31 @@ export type Layout = {
   bounds: Box;
   robotX: number;
   robotY: number;
-  placement: 'none' | 'left' | 'right' | 'tuck-above' | 'tuck-below' | 'hidden' | 'stage';
+  placement: 'none' | 'left' | 'right' | 'tuck-above' | 'tuck-below' | 'hidden' | 'stage' | 'dock';
   side?: 'left' | 'right'; // (tucked away: the side the chat opens on)
   panel?: { x: number; w: number };
   maxChatW?: number;
-  stage?: StageTileInfo; // (on the stage: its tile)
-  inset?: number; // (on the stage: how far the chat sits in from the window's edges)
+  stage?: StageTileInfo; // (on the stage or docked: its tile)
+  inset?: number; // (on the stage or docked: how far the chat sits in from the window's edges)
   sideW?: number; // (the side panel open beside the chat: the part of the panel's room that's its)
 };
 
-/** A robot's tile on the stage (robots/stage/mod.rs): the gaps on its edges you can drag (each named,
- * as stage_split knows them), or that it's in the spotlight or a strip beside it. */
+/** A robot's tile on the stage (robots/stage/mod.rs), or docked (robots/docking): the gaps on its edges
+ * you can drag (each named, as stage_split or robot_dock_split knows them), that it's in the
+ * spotlight or a strip beside it, or the screen's edge it's docked on. */
 export type StageTileInfo = {
   edges?: Partial<Record<'left' | 'right' | 'top' | 'bottom', string | null>>;
   spot?: boolean;
   strip?: boolean;
+  dock?: DockEdge;
 };
+
+/** The edge of its screen a chat is docked on. */
+export type DockEdge = 'left' | 'right';
+
+/** Where a robot is docked (robots/docking): its edge, its place along it (0 the top, 1 the bottom)
+ * and its share of the height. */
+export type Docked = { edge: DockEdge; at: number; weight: number };
 
 /** A file or folder fed to the robot (main.js inspectPath). */
 export type FileInfo = { path: string; name: string; isDir: boolean; size: number; isImage: boolean; thumb?: string };

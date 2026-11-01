@@ -176,21 +176,39 @@ fn robot_only(bounds: Rect, placement: &'static str, bounds_msg: impl Fn(Rect) -
     }
 }
 
-fn object(msg: Value) -> Map<String, Value> {
+pub(super) fn object(msg: Value) -> Map<String, Value> {
     match msg {
         Value::Object(o) => o,
         _ => unreachable!("built with json!({{…}})"),
     }
 }
 
-/// Lay the window out for how the robot is now (asleep, awake, chat open, sent away, on the
-/// stage), and tell the page.
+/// Lay the window out for how the robot is now (asleep, awake, chat open, docked, sent away,
+/// on the stage), and tell the page. Docked or not any more, the other docked chats make
+/// room or close up.
 pub fn apply_layout(app: &AppHandle, id: &str) {
+    match lay_out(app, id) {
+        Some(Laid { stack: true, .. }) => docking::reflow(app, id),
+        Some(Laid { docked: true, .. }) => docking::settled(app),
+        _ => {}
+    }
+}
+
+/// What laying a robot's window out did to the docked chats.
+pub(super) struct Laid {
+    docked: bool, // it's docked
+    stack: bool,  // it came into a stack, left one or changed size in it
+}
+
+/// apply_layout, for this robot alone.
+pub(super) fn lay_out(app: &AppHandle, id: &str) -> Option<Laid> {
     let job = with(app, |st| {
+        let docked = docking::layout_in(st, id);
         let r = st.robots.get_mut(id)?;
-        let layout = match &r.stage {
-            Some(t) => stage_layout(t),
-            None => layout_for(
+        let layout = match (&r.stage, docked) {
+            (Some(t), _) => stage_layout(t),
+            (None, Some(l)) => l,
+            (None, None) => layout_for(
                 r.anchor,
                 r.expanded,
                 r.tucked,
@@ -199,6 +217,16 @@ pub fn apply_layout(app: &AppHandle, id: &str) {
                 r.dims,
             ), // (the panel makes room for both)
         };
+        let was = r
+            .layout
+            .as_ref()
+            .filter(|l| l.placement == "dock")
+            .map(|l| l.bounds);
+        let docked = layout.placement == "dock";
+        let laid = Laid {
+            docked,
+            stack: (was.is_some() || docked) && was != docked.then_some(layout.bounds),
+        };
         r.seq += 1;
         let mut msg = layout.msg.clone();
         msg.insert("expanded".into(), json!(r.expanded));
@@ -206,18 +234,20 @@ pub fn apply_layout(app: &AppHandle, id: &str) {
         msg.insert("masked".into(), json!(false));
         msg.insert(
             "sideW".into(),
-            json!(if r.stage.is_some() { 0.0 } else { r.side_w }),
+            json!(if r.stage.is_some() || docked {
+                0.0
+            } else {
+                r.side_w
+            }),
         );
         let bounds = layout.bounds;
         let hide = layout.placement == "hidden";
         let veil = (hide != r.veiled).then_some(hide);
         r.veiled = hide;
         r.layout = Some(layout);
-        Some((r.hwnd, msg, bounds, veil, hide))
+        Some((r.hwnd, msg, bounds, veil, hide, laid))
     });
-    let Some((hwnd, msg, bounds, veil, hide)) = job else {
-        return;
-    };
+    let (hwnd, msg, bounds, veil, hide, laid) = job?;
     let _ = app.emit_to(label_of(id), "robot:layout", msg);
     // (sent away, it's veiled where it is: moved back to its desk first, it would show there
     // for a moment; it goes back there as it comes out)
@@ -227,4 +257,5 @@ pub fn apply_layout(app: &AppHandle, id: &str) {
     if let Some(hide) = veil {
         walkers::veil(app, hwnd, hide);
     }
+    Some(laid)
 }

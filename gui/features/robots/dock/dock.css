@@ -1,0 +1,24 @@
+/* Docked at the screen's edge (app/src/robots/docking, robots/dock/dock.ts): the stage's look
+   (robots/stage/tile.css), flush against the edge; the Dock button; and the glow while the robot
+   is pushed against an edge with its chat open. */
+
+/* ------------------------------------------------------------- the Dock button */
+#btn-dock { display: none; }
+body.expanded:not(.staged) #btn-dock { display: inline-flex; }
+
+/* ------------------------------------------------------------- docked */
+/* flush against the screen's edge: square on that side */
+body.docked-left #panel { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
+body.docked-right #panel { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
+body.docked #btn-spot { display: none; }
+body.undocking, body.undocking * { cursor: grabbing !important; user-select: none !important; }
+body.undocking #panel { opacity: 0.85; }
+
+/* ------------------------------------------------------------- pushed against an edge */
+body.dragging:is(.dock-hint-left, .dock-hint-right) #panel {
+  outline: 3px dashed var(--accent); outline-offset: -3px;
+  box-shadow: var(--shadow-pop), 0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+body.dragging:is(.dock-hint-left, .dock-hint-right) #bot-host {
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 80%, transparent));
+}

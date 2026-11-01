@@ -1,9 +1,9 @@
 //! The tray icon and its menu (menu.rs), and a robot's right-click menu (robot.rs) (main.js
 //! refreshTray and robot:menu); what a picked item does is picked.rs. Menu item ids are
 //! "<where>|<what>…": tray|<action>[|<id>], robot|<id>|<action>[|<arg>], and
-//! set|<setting>|<value> / toggle|<setting> for the settings either menu changes. Radio
-//! items are check items (Tauri has no radios): the menu is rebuilt after every change, so
-//! the tick always lands on the one picked.
+//! set|<setting>|<value> / toggle|<setting> / flip|<setting> (one off unless turned on) for the
+//! settings either menu changes. Radio items are check items (Tauri has no radios): the menu
+//! is rebuilt after every change, so the tick always lands on the one picked.
 
 mod menu;
 mod picked;

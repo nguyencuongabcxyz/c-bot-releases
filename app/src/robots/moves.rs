@@ -50,11 +50,14 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
     match p["phase"].as_str() {
         Some("start") => {
             with(app, |st| {
-                if let Some(r) = st.robots.get_mut(id).filter(|r| r.stage.is_none()) {
+                // (not on the stage, nor docked: their title bars do other things)
+                let free = |r: &&mut Robot| r.stage.is_none() && docking::active(r).is_none();
+                if let Some(r) = st.robots.get_mut(id).filter(free) {
                     let at = window::window_rect(r.hwnd);
                     r.drag = Some(Drag {
                         anchor: r.anchor,
                         at: (at.x, at.y),
+                        hint: None,
                     });
                 }
             });
@@ -72,6 +75,7 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
             if let Some((hwnd, x, y)) = moved {
                 window::set_position(hwnd, x, y);
                 island::robot_drag(app, "move"); // (the island lights up: drop it there to send it away)
+                docking::drag_hint(app, id); // (and the edge, pushed against it with the chat open)
             }
         }
         Some("end") if island::robot_drag(app, "end") => {
@@ -93,14 +97,18 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
         Some("end") => {
             let done = with(app, |st| {
                 let r = st.robots.get_mut(id)?;
-                r.drag.take()?;
+                let d = r.drag.take()?;
                 r.anchor = clamp_anchor(r.anchor, r.dims);
                 let mut patch = Map::new();
                 patch.insert("position".into(), to_dip(r.anchor));
-                st.store.update(id, patch)
+                st.store.update(id, patch);
+                Some(d.hint)
             });
-            if done.is_some() {
-                apply_layout(app, id); // re-flow the chat if it was dragged near an edge
+            match done {
+                // let go pushed against the screen's edge: docked there, where the mouse is
+                Some(Some(edge)) => docking::dock(app, id, edge, window::cursor().1),
+                Some(None) => apply_layout(app, id), // re-flow the chat if it was dragged near an edge
+                None => {}
             }
         }
         _ => {}

@@ -15,6 +15,12 @@ fn toggle(app: &AppHandle, key: &str) {
     set(app, key, json!(!now));
 }
 
+/// A setting that's off unless turned on, flipped.
+fn flip(app: &AppHandle, key: &str) {
+    let now = settings(app)[key].as_bool() == Some(true);
+    set(app, key, json!(!now));
+}
+
 /// A setting that names a robot: this one, or (this one already) none.
 fn pick_robot(app: &AppHandle, key: &str, id: &str) {
     let now = settings(app)[key] == id;
@@ -26,6 +32,7 @@ pub(super) fn picked(app: &AppHandle, id: &str) {
     match parts.as_slice() {
         ["set", key, value] => set(app, key, json!(value)),
         ["toggle", key] => toggle(app, key),
+        ["flip", key] => flip(app, key),
         ["tray", "robot", id] => {
             let visible = with(app, |st| st.store.get(id).is_some_and(|c| c.visible()));
             hub::set_visible(app, id, !visible);

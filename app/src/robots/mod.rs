@@ -10,6 +10,7 @@
 //! those wait on the main thread, which may itself be waiting for the lock.
 
 mod cursor;
+pub mod docking;
 pub mod ipc;
 pub mod island;
 mod layout;
@@ -83,7 +84,8 @@ fn dims_of(size: &str) -> (f64, f64) {
 
 struct Drag {
     anchor: (i32, i32),
-    at: (i32, i32), // where the window was
+    at: (i32, i32),              // where the window was
+    hint: Option<docking::Edge>, // let go now, it docks on this edge
 }
 
 pub struct Robot {
@@ -104,6 +106,9 @@ pub struct Robot {
     forwarded: Option<(i32, i32)>, // the cursor, as last passed on to the page
     eyes: Option<(i32, i32)>,      // the cursor, as last told for the eyes
     stage: Option<StageTile>,      // on the stage (stage.rs): its window is this tile
+    dock: Option<docking::Docked>, // docked at the screen's edge while its chat is open (docking/)
+    dock_drag: Option<docking::GapDrag>,
+    kept: Option<docking::Kept>, // the strip of its screen its window keeps for its stack
 }
 
 /// A robot's tile on the stage: its window (physical px), and what the page needs to know
@@ -135,6 +140,15 @@ pub fn desk_rect(app: &AppHandle, id: &str) -> Option<Rect> {
             w: (r.dims.0 * s).round() as i32,
             h: (r.dims.1 * s).round() as i32,
         })
+    })
+}
+
+/// Its docked chat's window (physical px), if it's docked now.
+pub fn docked_rect(app: &AppHandle, id: &str) -> Option<Rect> {
+    with(app, |st| {
+        let r = st.robots.get(id)?;
+        docking::active(r)?;
+        r.layout.as_ref().map(|l| l.bounds)
     })
 }
 

@@ -46,14 +46,16 @@ pub fn robot_busy(app: &AppHandle, id: &str) -> bool {
 }
 
 /// Where the robot is on screen (physical px): out walking, where it walks; away on the
-/// island, the island (what's for it goes there); else its desk.
+/// island, the island (what's for it goes there); docked, its chat; else its desk.
 pub fn robot_rect(app: &AppHandle, id: &str) -> Option<Rect> {
     if robots::is_away(app, id)
         && let Some(r) = crate::robots::island::strip_rect(app)
     {
         return Some(r);
     }
-    walkers::bounds(app, id).or_else(|| robots::desk_rect(app, id))
+    walkers::bounds(app, id)
+        .or_else(|| robots::docked_rect(app, id))
+        .or_else(|| robots::desk_rect(app, id))
 }
 
 fn distance_to_cursor(r: Rect) -> f64 {
@@ -162,6 +164,9 @@ pub fn set_settings(app: &AppHandle, patch: Map<String, Value>) -> Value {
     }
     if keys.iter().any(|k| k == "startAtLogin") {
         apply_login_item(app);
+    }
+    if keys.iter().any(|k| k == "dockReserve") {
+        robots::docking::reserve_changed(app);
     }
     // (which robot's corkboard shows the notes)
     if keys.iter().any(|k| k == "notesBoard" || k == "notesRobot") {

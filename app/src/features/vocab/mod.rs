@@ -141,7 +141,10 @@ fn distance(r: Rect, (cx, cy): (i32, i32)) -> f64 {
 /// With none out on the desk, one away on the robot island (it asks from there).
 fn free_robot(app: &AppHandle) -> Option<String> {
     let free = |id: &str| {
-        robots::is_showing(app, id) && !walkers::has(app, id) && !hub::robot_busy(app, id)
+        robots::is_showing(app, id)
+            && !walkers::has(app, id)
+            && !robots::docking::is_docked(app, id)
+            && !hub::robot_busy(app, id)
     };
     let tutor = settings(app)["vocabTutor"]
         .as_str()
