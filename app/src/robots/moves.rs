@@ -58,6 +58,8 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
                         anchor: r.anchor,
                         at: (at.x, at.y),
                         hint: None,
+                        last_x: at.x,
+                        heading: 0,
                     });
                 }
             });
@@ -75,7 +77,7 @@ pub fn drag(app: &AppHandle, id: &str, p: &Value) {
             if let Some((hwnd, x, y)) = moved {
                 window::set_position(hwnd, x, y);
                 island::robot_drag(app, "move"); // (the island lights up: drop it there to send it away)
-                docking::drag_hint(app, id); // (and the edge, pushed against it with the chat open)
+                docking::drag_hint(app, id, (x, y)); // (and the edge, pushed against it with the chat open)
             }
         }
         Some("end") if island::robot_drag(app, "end") => {

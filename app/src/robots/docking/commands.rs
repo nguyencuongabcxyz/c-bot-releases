@@ -65,6 +65,8 @@ pub fn robot_dock_split(
     });
     if moved {
         reflow(&app, "");
+    } else if step.phase == Phase::End {
+        settled(&app); // (the stack's strip, kept still while it was dragged, catches up)
     }
     Ok(())
 }

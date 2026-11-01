@@ -44,6 +44,8 @@ use column::*;
 const MIN_H: f64 = 200.0;
 // the least of the screen left beside a docked chat (CSS px)
 const MARGIN: f64 = 200.0;
+// how far a dragged robot's window goes past the screen's edge to dock there (CSS px)
+const OVERHANG: f64 = 40.0;
 
 /// The edge of its screen a chat is docked on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -300,14 +302,41 @@ pub fn undock(app: &AppHandle, id: &str) {
     }
 }
 
-/// The robot dragged round with its chat open: the edge it'd dock on if let go now (the mouse
-/// pushed against an outer edge of the screen), told to its page as that changes (it glows).
-pub(super) fn drag_hint(app: &AppHandle, id: &str) {
-    let c = window::cursor();
-    let m = window::monitor_near(c.0, c.1);
-    let open = |x: i32| window::monitor_near(x, c.1).bounds == m.bounds;
+/// The robot dragged round with its chat open (its window now at `at`): the edge it'd dock on
+/// if let go now (the window pushed past an outer edge of the screen, robot or chat first, or
+/// the mouse against it), told to its page as that changes (it glows).
+pub(super) fn drag_hint(app: &AppHandle, id: &str, at: (i32, i32)) {
+    let Some((w, h, robot, heading)) = with(app, |st| {
+        let r = st.robots.get_mut(id)?;
+        let (_, rw, rh) = place(r.anchor, r.dims);
+        let robot = (r.anchor.0 + rw / 2, r.anchor.1 + rh / 2);
+        let l = r.layout.as_ref()?;
+        let (w, h) = (l.bounds.w, l.bounds.h);
+        let d = r.drag.as_mut()?;
+        // (which way it's going, over a few px: a twitch back doesn't turn it round)
+        if (at.0 - d.last_x).abs() >= 3 {
+            d.heading = (at.0 - d.last_x).signum();
+            d.last_x = at.0;
+        }
+        Some((w, h, robot, d.heading))
+    }) else {
+        return;
+    };
+    // the screen the robot itself is on (the mouse may be on its chat's title bar)
+    let m = window::monitor_near(robot.0, robot.1);
+    let open = |x: i32| window::monitor_near(x, robot.1).bounds == m.bounds;
     let edge = pushed(
-        c,
+        Push {
+            cursor: window::cursor(),
+            window: Rect {
+                x: at.0,
+                y: at.1,
+                w,
+                h,
+            },
+            past: (OVERHANG * m.scale).round() as i32,
+            heading,
+        },
         m.bounds,
         (open(m.bounds.x - 20), open(m.bounds.right() + 20)),
     );
@@ -351,6 +380,15 @@ pub(super) fn settled(app: &AppHandle) {
         st.store.settings()["dockReserve"].as_bool() == Some(true)
     });
     let jobs = with(app, |st| {
+        // (a stack being made wider or narrower: its strip follows as it's let go, not at every
+        // step, which would shove every maximised window round the screen each time)
+        if st
+            .robots
+            .values()
+            .any(|r| r.dock_drag.as_ref().is_some_and(|g| g.gap == Gap::Width))
+        {
+            return vec![];
+        }
         let want: HashMap<String, Kept> = if on { wanted(st) } else { HashMap::new() };
         let mut jobs = vec![];
         for (id, r) in st.robots.iter_mut() {

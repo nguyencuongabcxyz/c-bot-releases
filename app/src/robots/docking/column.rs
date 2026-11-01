@@ -67,12 +67,29 @@ pub(super) fn give_back(work: Rect, edge: Edge, kept: i32) -> Rect {
     }
 }
 
-/// The mouse pushed against an edge of its screen, with no other screen beyond it
-/// (open: left, right): that edge.
-pub(super) fn pushed(cursor: (i32, i32), screen: Rect, open: (bool, bool)) -> Option<Edge> {
-    if open.0 && cursor.0 <= screen.x + 1 {
+/// A robot being dragged: the mouse, its window (robot and chat), how far past an edge the
+/// window goes to count as pushed into it (physical px), and which way it's going (-1 left,
+/// 1 right).
+pub(super) struct Push {
+    pub cursor: (i32, i32),
+    pub window: Rect,
+    pub past: i32,
+    pub heading: i32,
+}
+
+/// Pushed into an edge of the robot's screen: its window past it (whichever comes first, the
+/// robot or its chat), or the mouse against it. That edge. With another screen beyond the edge
+/// (open: left, right: none), only while going that way: carried over to the other screen, it
+/// isn't pushed into the edge it left by.
+pub(super) fn pushed(p: Push, screen: Rect, open: (bool, bool)) -> Option<Edge> {
+    let (c, w) = (p.cursor, p.window);
+    let left =
+        (w.x <= screen.x - p.past && (open.0 || p.heading < 0)) || (open.0 && c.0 <= screen.x + 1);
+    let right = (w.right() >= screen.right() + p.past && (open.1 || p.heading > 0))
+        || (open.1 && c.0 >= screen.right() - 2);
+    if left {
         Some(Edge::Left)
-    } else if open.1 && cursor.0 >= screen.right() - 2 {
+    } else if right {
         Some(Edge::Right)
     } else {
         None
@@ -158,13 +175,65 @@ mod tests {
         assert_eq!(give_back(SCREEN, Edge::Right, 0), SCREEN);
     }
 
+    // a robot with its chat (900 px wide), dragged right
+    fn drag(cursor_x: i32, window_x: i32) -> Push {
+        Push {
+            cursor: (cursor_x, 500),
+            window: Rect {
+                x: window_x,
+                y: 0,
+                w: 900,
+                h: 1040,
+            },
+            past: 40,
+            heading: 1,
+        }
+    }
+
     #[test]
     fn pushed_against_an_outer_edge() {
-        assert_eq!(pushed((0, 500), SCREEN, (true, true)), Some(Edge::Left));
-        assert_eq!(pushed((1919, 500), SCREEN, (true, true)), Some(Edge::Right));
-        assert_eq!(pushed((1900, 500), SCREEN, (true, true)), None);
-        // another screen beyond: it's only crossing over
-        assert_eq!(pushed((1919, 500), SCREEN, (true, false)), None);
-        assert_eq!(pushed((0, 500), SCREEN, (false, true)), None);
+        assert_eq!(pushed(drag(0, 0), SCREEN, (true, true)), Some(Edge::Left));
+        assert_eq!(
+            pushed(drag(1919, 1800), SCREEN, (true, true)),
+            Some(Edge::Right)
+        );
+        assert_eq!(pushed(drag(900, 500), SCREEN, (true, true)), None);
+        // the mouse against an edge with another screen beyond: only crossing over
+        assert_eq!(pushed(drag(1919, 1000), SCREEN, (true, false)), None);
+        assert_eq!(pushed(drag(0, 0), SCREEN, (false, true)), None);
+    }
+
+    #[test]
+    fn between_two_screens_only_going_that_way() {
+        // another screen beyond the right edge: pushed into it going right
+        assert_eq!(
+            pushed(drag(1100, 1060), SCREEN, (true, false)),
+            Some(Edge::Right)
+        );
+        // but coming over from the screen on the left (going right), its chat still back
+        // there: it isn't pushed into this screen's left edge
+        assert_eq!(pushed(drag(100, -300), SCREEN, (false, true)), None);
+        // pushed back left into that edge: it is
+        let back = Push {
+            heading: -1,
+            ..drag(100, -300)
+        };
+        assert_eq!(pushed(back, SCREEN, (false, true)), Some(Edge::Left));
+    }
+
+    #[test]
+    fn the_chat_reaching_the_edge_first_pushes_too() {
+        // the chat on the robot's right, its far side 40 px past the screen's right edge
+        assert_eq!(
+            pushed(drag(1100, 1060), SCREEN, (true, true)),
+            Some(Edge::Right)
+        );
+        // only touching it: not yet
+        assert_eq!(pushed(drag(1060, 1020), SCREEN, (true, true)), None);
+        // the window past the left edge
+        assert_eq!(
+            pushed(drag(100, -40), SCREEN, (true, true)),
+            Some(Edge::Left)
+        );
     }
 }
