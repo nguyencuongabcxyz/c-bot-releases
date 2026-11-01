@@ -121,6 +121,9 @@ body.busy .who::before { background: var(--accent); box-shadow: 0 0 0 3px var(--
 .tab-add:hover:not(:disabled) { background: var(--bg-2); color: var(--fg); }
 .tab-add:disabled { opacity: 0.35; cursor: default; }
 .tab-reopen { font-size: 14px; }
+/* a tab held and dragged to another place (tabs/drag.ts): it rides over the strip, the others slide aside */
+#tabs.reordering .tab { transition: transform 0.15s ease; }
+#tabs.reordering .tab.dragging { transition: none; z-index: 1; cursor: grabbing; color: var(--fg); background: var(--bg-2); box-shadow: var(--shadow-pop); }
 /* "“…” closed · Undo" after closing a tab */
 #undo {
   position: absolute; left: 50%; top: 84px; transform: translateX(-50%); z-index: 8; display: flex; align-items: center; gap: 10px;
@@ -574,13 +577,20 @@ button.tv-doc:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--
 .cx-toolbar { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 14px 8px; border-bottom: 1px solid var(--line); }
 .cx-toolbar .spacer { flex: 1; }
 .cx-page { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 14px 16px; display: flex; flex-direction: column; gap: 10px; scrollbar-gutter: stable; }
-#menu {
+#menu, #tab-menu {
   position: absolute; z-index: 8; min-width: 210px; max-width: 300px; max-height: 320px; overflow-y: auto;
   background: var(--panel-bg); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px;
   box-shadow: var(--shadow-pop);
 }
 .menu-item { display: flex; flex-direction: column; padding: 6px 10px; border-radius: 7px; cursor: pointer; }
 .menu-item:hover { background: var(--bg-2); }
+.menu-item.off { opacity: 0.45; cursor: default; }
+.menu-item.off:hover { background: none; }
+/* a tab's right-click menu (tabs/menu.ts): short rows, the shortcut on the right */
+#tab-menu { min-width: 180px; }
+#tab-menu .menu-item.has-icon { grid-template-columns: 18px 1fr auto; }
+#tab-menu .menu-item.has-icon .ic { grid-row: auto; }
+#tab-menu .menu-item.has-icon small { grid-column: 3; font: 10.5px var(--font-mono); }
 .menu-item.on { background: var(--accent-soft); }
 .menu-item b { font-size: 12.5px; font-weight: 600; }
 /* an item with a line icon: the icon on the left, the name and the line under it beside it */

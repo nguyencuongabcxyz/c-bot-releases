@@ -9,7 +9,7 @@ import type { FaceApi } from '@/views/robot/life/face';
 import type { AskingApi } from './reply/ask';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { PlansApi } from './plan/card';
-import type { TabsApi } from './tabs';
+import type { TabsApi } from './tabs/tabs';
 import type { ChatLogApi } from './log';
 import { Sfx } from '@/views/robot/sound';
 import type { ChatTab, PendingQuestion, RobotState } from '@/views/robot/types';

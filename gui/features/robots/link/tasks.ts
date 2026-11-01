@@ -3,7 +3,7 @@
 // A click opens the chat (the task's own tab, on the robot doing it). A finished task's
 // tag stays a little while (main drops it), and the one who handed it off says so.
 // (robot.ts calls createHandedOffTasks with its hub.)
-import type { TabsApi } from '@/features/chat/tabs';
+import type { TabsApi } from '@/features/chat/tabs/tabs';
 import type { IdleAnticsApi } from '@/views/robot/life/antics';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { DeskActivityApi } from '@/views/robot/life/desk';

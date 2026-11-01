@@ -40,6 +40,10 @@ Click a robot to wake it and open its chat. Under the hood it *is* your own Clau
 
   <img src="docs/screenshots/tab-brief.png" alt="A message that brings in a brief from another tab" width="440">
 - **Tabs mind each other:** a robot's tabs can work in its folder at the same time without tripping over each other. A tab that starts work hears which others are busy, and on which files. It can check on them (`list_tabs`) or wait for one to finish and hear what it did (`wait_for_tab`). If it tries to change a file another tab is changing right now, the edit is stopped and it's told to wait for that tab, then read the file again.
+- **Tabs your way:** hold a tab and drag it to another place in the strip. Right-click a tab to close it, the others, or all of them; **Undo** brings them all back.
+- **Saved chats:** click the ☆ on a tab (or **Ctrl+S**, or `/save`) to keep its conversation for later, under a name and an emoji you choose. **🔖** in the header (**Ctrl+O**, or `/saved`) lists them: type to find one, and click it or press **Alt+1…9** to pick it up again where it left off. *Past chats* shows the saved ones first, with a ☆ on every row, and clearing the history leaves them alone.
+
+  <img src="docs/screenshots/saved-chats.png" alt="The saved chats list, opened from the chat's header" width="440">
 - **Steps, folded:** what it did folds under one line (*"Read 2 files, ran 1 command · 4 steps"*) that says what it's on while it works. Open a step to see the command or file and what came back, and its thinking too.
 - **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file; click a changed file to see its **Changes**, every diff in turn.
 - **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), 👁 temporary chats that keep nothing, and 🗑 in *Past chats* to delete old conversations: one, the ones you tick, or all of them.
@@ -76,6 +80,10 @@ Carry the conversation on from [claude.ai/code](https://claude.ai/code) or the C
 Press **🔗** in a robot's chat to share that tab with colleagues: **🏢 Office** for those on your network, or **🌍 Internet** for anyone, anywhere, through C-Bot's small relay. **Copy invite link** gives you a link for one person; it works once, for ten minutes. When they open it, their C-Bot asks you to let them in, showing their name, PC and address. Once in, your robot walks onto their desktop, with a 🔗 badge so it's clearly a visitor, and shows the whole chat as you see it, live. When the share ends it waves goodbye and walks off.
 
 They can't ask your robot anything themselves: what they type goes to you as a suggestion, your robot raises its hand, and you **Send** it, **Edit** it first, or **Decline** it. Whatever you send runs on your own Claude Code, in your folder, so nothing they suggest runs without you. What tools read and ran (file contents, command output) stays hidden unless you choose to share it. Either way it's encrypted end to end and pinned to your C-Bot: the relay only passes along bytes it can't read. Sharing stops when you say or after an hour. On the office network it also stops when the network changes, and it won't start on a network Windows calls Public (share over the internet instead). If someone sent you a link, you can also pick **🔗 Join a shared chat** from the tray after copying it.
+
+Working it out together: **💬 Talk** opens a line for the people in the chat (Claude never sees it). On the visiting robot, select a piece of the chat and **📍 Comment** on exactly that; the host gets it as a card, with **Add to my message**. When the host's robot asks a question or brings a plan, guests see it too and **recommend** what to do, with a reason; the host still decides, and everyone sees what was decided. Only the host is marked 👑 in Talk (a guest who takes the host's name is shown as a guest), a comment that quotes something not in the chat is flagged, and a comment you add to your message goes in as a quote, so you and Claude can tell it isn't your own words. Good for pair programming, digging into a bug together, or an old hand watching over someone new to it.
+
+<img src="docs/screenshots/shared-chat-together.png" alt="Talking and commenting in a shared chat, on the host's PC and a guest's" width="720">
 
 <img src="docs/screenshots/shared-chat.png" alt="A shared tab on your PC, and your robot visiting a colleague's" width="720">
 
@@ -195,8 +203,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
     agents/           the coding agents that do the work, and the robots' personalities;
       claude/         Claude Code: session.rs runs it, stream.rs reads its stream, steps.rs
                       describes its steps; locate.rs finds it; transcripts.rs past conversations
-    robots/           the robot windows (mod.rs: layout, drag, resize, click-through); ipc.rs
-                      a robot window's commands about itself; stage/ several chats tiled
+    robots/           the robot windows (mod.rs: layout, drag, resize, click-through); ipc/
+                      a robot window's commands about itself (tabs.rs its tabs); stage/ several chats tiled
                       over a screen; island.rs the island at the screen's edge; walkers/,
                       social/, maid.rs robots away from their desks; topmost.rs, screens.rs
     mcp/              what Claude itself calls: server.rs C-Bot's MCP server; tools/ its tools
@@ -211,8 +219,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       snip, quick, palette
     features/         what the robots do for you: chat/ a robot's tabs (page.rs what its page
                       asks; side.rs side questions; brief.rs briefs from one tab for another;
-                      tabs.rs what each tab is up to, for the others; temporary.rs; awake.rs
-                      the PC kept awake for Remote Control) and
+                      tabs.rs what each tab is up to, for the others; saved.rs saved chats;
+                      temporary.rs; awake.rs the PC kept awake for Remote Control) and
                       group/ the group chat and meeting room; vocab/ English words; notes/
                       notes and reminders; routines/ prompts a robot runs on a schedule
                       (schedule.rs when, runs.rs a run and its result, panel.rs the window);
@@ -235,7 +243,7 @@ gui/                  the pages (TypeScript, built by Vite into dist/)
     …                 one folder per other window (island, stage, notebook, routines, words, quick, …)
   features/           what the robot window is built from (views/ shows, features/ handles)
     chat/             a robot's chat: the log, replies, the box you type in, plans, side
-                      questions, past chats, share/ a shared chat
+                      questions, past chats, saved/ saved chats, share/ a shared chat
     notes/  vocab/    what the robot does with your notes, and with English words
     routines/         what the robot does when one of your routines runs
     robots/           robots noticing and asking each other, and the robot as a stage tile

@@ -570,6 +570,19 @@ impl Store {
         Some(tab)
     }
 
+    /// Move a tab to another place among its robot's tabs (`to` past the end: the last place).
+    pub fn move_tab(&mut self, id: &str, tab_id: &str, to: usize) {
+        let Some(tabs) = self.tabs_mut(id) else {
+            return;
+        };
+        let Some(from) = tabs.iter().position(|t| str_of(t, "id") == tab_id) else {
+            return;
+        };
+        let tab = tabs.remove(from);
+        tabs.insert(to.min(tabs.len()), tab);
+        self.save();
+    }
+
     pub fn update_tab(
         &mut self,
         id: &str,
@@ -807,6 +820,39 @@ mod tests {
         let bo = store.get("bo").unwrap();
         assert_eq!(bo["sessionIds"], json!(["b"]));
         assert_eq!(bo["closedTabs"], json!([{ "id": "t2", "sessionId": "c" }]));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_tab_moves_to_its_new_place() {
+        let dir = scratch("move-tab");
+        let bo = json!({ "id": "bo", "name": "Bo", "tabs": [{ "id": "a" }, { "id": "b" }, { "id": "c" }] });
+        fs::write(
+            dir.join("c-bot.json"),
+            json!({ "characters": [bo], "settings": {} }).to_string(),
+        )
+        .unwrap();
+        let mut store = Store::open(&dir, None);
+        let order = |s: &Store| -> Vec<String> {
+            s.get("bo").unwrap()["tabs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| str_of(t, "id").to_string())
+                .collect()
+        };
+        store.move_tab("bo", "a", 2);
+        assert_eq!(order(&store), ["b", "c", "a"]);
+        store.move_tab("bo", "a", 0);
+        assert_eq!(order(&store), ["a", "b", "c"]);
+        store.move_tab("bo", "b", 99);
+        assert_eq!(order(&store), ["a", "c", "b"], "past the end: last");
+        store.move_tab("bo", "nope", 0);
+        assert_eq!(
+            order(&store),
+            ["a", "c", "b"],
+            "an unknown tab changes nothing"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }

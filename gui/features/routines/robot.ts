@@ -3,7 +3,7 @@
 // time), like any question; the answer goes back when the turn's done (routineAnswer, from
 // the done / fail events), and main shows it. With the chat open you stay in the tab you
 // were in. (robot.ts calls createRoutines with its hub.)
-import type { TabsApi } from '@/features/chat/tabs';
+import type { TabsApi } from '@/features/chat/tabs/tabs';
 import type { AskingApi } from '@/features/chat/reply/ask';
 import type { DeskActivityApi } from '@/views/robot/life/desk';
 import type { FaceApi } from '@/views/robot/life/face';

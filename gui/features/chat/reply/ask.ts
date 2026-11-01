@@ -26,7 +26,7 @@ import type { RobotMessagesApi } from '@/features/robots/link/asks';
 import type { MentionsApi } from '../composer/mentions';
 import type { AttachmentsApi } from '../composer/attachments';
 import type { BriefsApi } from '../brief';
-import type { TabsApi } from '../tabs';
+import type { TabsApi } from '../tabs/tabs';
 import type { QuickActionsApi } from '@/features/workbench/quick/robot';
 import { Sfx } from '@/views/robot/sound';
 import type { ChatTab, Part, Reply, RobotState, TextPart } from '@/views/robot/types';

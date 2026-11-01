@@ -112,6 +112,53 @@ pub fn share_leave(app: AppHandle, window: WebviewWindow) -> Result<(), Error> {
     Ok(())
 }
 
+/// Say something to the people in the shared chat (not to Claude): the host or a visitor.
+#[tauri::command(async)]
+pub fn share_talk(app: AppHandle, window: WebviewWindow, text: String) -> Result<(), Error> {
+    let id = sender(&window)?;
+    if shares(&app, |s| s.host.as_ref().is_some_and(|h| h.robot == id)) {
+        return host::host_talk(&app, &id, &text);
+    }
+    let id = visiting(&app, &window)?;
+    guest::to_host(&app, &id, &wire::Msg::Talk { text })
+}
+
+/// A visitor's comment on a piece of the chat (what they selected).
+#[tauri::command(async)]
+pub fn share_comment(
+    app: AppHandle,
+    window: WebviewWindow,
+    quote: String,
+    text: String,
+) -> Result<(), Error> {
+    let id = visiting(&app, &window)?;
+    guest::to_host(&app, &id, &wire::Msg::Comment { quote, text })
+}
+
+/// A visitor's recommendation on a plan or a question waiting for the host.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendArgs {
+    request_id: String,
+    choice: String,
+    why: Option<String>,
+}
+
+#[tauri::command(async)]
+pub fn share_recommend(
+    app: AppHandle,
+    window: WebviewWindow,
+    args: RecommendArgs,
+) -> Result<(), Error> {
+    let id = visiting(&app, &window)?;
+    let m = wire::Msg::Recommend {
+        request_id: args.request_id,
+        choice: args.choice,
+        why: args.why.unwrap_or_default(),
+    };
+    guest::to_host(&app, &id, &m)
+}
+
 /// The tray's "Join a shared chat": with the invite link you copied.
 pub fn join_copied(app: &AppHandle) {
     let text = crate::platform::clipboard::text();

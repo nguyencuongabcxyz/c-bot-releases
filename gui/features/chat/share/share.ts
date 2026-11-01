@@ -5,11 +5,11 @@
 // suggestion. (robot.ts calls createSharing with its hub.)
 import { $, el } from '@/lib/dom';
 import type { ChatTab, RobotState } from '@/views/robot/types';
-import type { ChatEvent, ShareView } from '@/types/model';
+import type { ChatEvent, SharePerson, ShareView } from '@/types/model';
 import type { AskingApi } from '../reply/ask';
 import type { CommentaryApi } from '../reply/commentary';
 import type { ChatLogApi } from '../log';
-import type { TabsApi } from '../tabs';
+import type { TabsApi } from '../tabs/tabs';
 import type { PlansApi } from '../plan/card';
 import type { DeskActivityApi } from '@/views/robot/life/desk';
 import type { FaceApi } from '@/views/robot/life/face';
@@ -19,6 +19,10 @@ import { Sfx } from '@/views/robot/sound';
 import * as ipc from '@/ipc';
 import { mineCard, setMine, suggestionCard, type SuggestionChoice } from './cards';
 import { type CardActions, minutesLeft, personRow, sharingCard, startCard } from './card';
+import { createTalk } from './talk';
+import { commentCard, decisionCard, noteRecommendation, recommendCard, settleDecision } from './decisions';
+import { createCommentPick } from './comment';
+import type { ChatMarkdownApi } from '../reply/local-files';
 
 type ShareEvent = Extract<ChatEvent, { type: `share-${string}` }>;
 
@@ -42,6 +46,7 @@ export type SharingNeeds = {
   readonly strikePose: DeskActivityApi['strikePose'];
   readonly pendingQuestion: PlansApi['pendingQuestion'];
   readonly wake: LifeCycleApi['wake'];
+  readonly md: ChatMarkdownApi['md'];
 };
 
 export function createSharing(r: SharingNeeds) {
@@ -51,6 +56,26 @@ export function createSharing(r: SharingNeeds) {
   const mine = new Map<string, HTMLElement>(); // (a visitor's own suggestions, by id)
   let pop: HTMLElement | null = null;
   let ticker: number | undefined;
+
+  let unread = 0; // (said in the people's panel while it's shut)
+  const talk = createTalk({
+    send: async (text, quote) => {
+      try {
+        if (quote) await ipc.shareComment(quote, text);
+        else await ipc.shareTalk(text);
+        return true;
+      } catch (e) {
+        const tab = sharedTab();
+        if (tab) r.addNote(`🔗 ${String(e)}`, '', tab);
+        return false;
+      }
+    },
+    unread: (n) => {
+      unread = n;
+      renderStrip();
+    },
+  });
+  const decisions = new Map<string, HTMLElement>(); // (a visitor's decision cards, by request)
 
   const sharedTab = () => (view ? r.tabs.get(view.tabId) : undefined);
   const hosting = () => view?.role === 'host';
@@ -83,10 +108,14 @@ export function createSharing(r: SharingNeeds) {
     if (!view) return;
     strip.classList.toggle('guest', view.role === 'guest');
     const line = el('div', 'share-line');
+    const talking = el('button', 'share-stop share-talk-btn', unread ? `💬 Talk (${unread})` : '💬 Talk');
+    talking.type = 'button';
+    talking.classList.toggle('unread', unread > 0);
+    talking.addEventListener('click', () => talk.toggle());
     if (view.role === 'guest') {
       line.append(el('span', '', `👀 Watching ${view.host.name}’s tab`));
       line.append(el('span', 'share-where', ` · ${view.host.pc} · ${view.host.ip}`));
-      line.append(leaveButton());
+      line.append(talking, leaveButton());
     } else {
       const names = view.people.map((p) => p.name).join(', ');
       line.append(el('span', '', names ? `🔗 Shared with ${names}` : '🔗 Sharing: nobody’s in yet'));
@@ -97,7 +126,7 @@ export function createSharing(r: SharingNeeds) {
       const stop = el('button', 'share-stop danger', 'Stop sharing');
       stop.type = 'button';
       stop.addEventListener('click', () => ipc.shareStop());
-      line.append(manage, stop);
+      line.append(talking, manage, stop);
     }
     strip.append(line);
     for (const q of view.asking)
@@ -159,7 +188,83 @@ export function createSharing(r: SharingNeeds) {
     if (ev.type === 'share-taken-back') return takenBack(ev.id, tab);
     if (ev.type === 'share-suggestion') return onSuggestion(ev);
     if (ev.type === 'share-arrived') return arrived();
-    return ended(ev.reason, tab);
+    if (ev.type === 'share-ended') return ended(ev.reason, tab);
+    return onPeople(ev, tab);
+  }
+
+  // ---------------------------------------------------------------- the people in it
+
+  /** What the people in the chat said, and (on a visitor) what waits for the host. */
+  function onPeople(ev: ShareEvent, tab: ChatTab) {
+    if (ev.type === 'share-talk') {
+      talk.add({ kind: 'talk', from: ev.from, text: ev.text, mine: ev.mine });
+      if (!ev.mine) Sfx.pop();
+    } else if (ev.type === 'share-comment') {
+      talk.add({ kind: 'comment', from: ev.from, quote: ev.quote, text: ev.text, found: ev.found });
+      if (hosting())
+        toLog(
+          tab,
+          commentCard(ev.from, ev.quote, ev.text, ev.found, () => useComment(ev.from.name, ev.quote, ev.text)),
+        );
+    } else if (ev.type === 'share-recommend') {
+      talk.add({ kind: 'recommend', from: ev.from, choice: ev.choice, why: ev.why });
+      if (hosting()) recommended(tab, ev.requestId, ev.from, ev.choice, ev.why);
+      else {
+        const card = decisions.get(ev.requestId);
+        if (card && !card.classList.contains('recommended')) noteRecommendation(card, ev.from, ev.choice, ev.why);
+      }
+    } else if (ev.type === 'share-decision') {
+      const d = ev.decision;
+      const card = decisionCard(d, view?.host.name ?? 'The host', r.md, async (choice, why) => {
+        try {
+          await ipc.shareRecommend(d.requestId, choice, why);
+          return true;
+        } catch (e) {
+          r.addNote(`🔗 ${String(e)}`, '', tab);
+          return false;
+        }
+      });
+      decisions.get(d.requestId)?.remove();
+      decisions.set(d.requestId, card);
+      toLog(tab, card);
+      Sfx.ask();
+    } else if (ev.type === 'share-decided') {
+      const card = decisions.get(ev.requestId);
+      if (card) settleDecision(card, view?.host.name ?? 'The host', ev.outcome);
+      decisions.delete(ev.requestId);
+    }
+  }
+
+  function toLog(tab: ChatTab, card: HTMLElement) {
+    tab.log.append(card);
+    r.scrollDown(tab);
+    Sfx.ask();
+  }
+
+  const recs = new Map<string, HTMLElement>(); // (the host's recommendation cards: one per guest per decision)
+
+  /** A guest's recommendation: a card, the same guest's last one on that decision replaced. */
+  function recommended(tab: ChatTab, requestId: string, from: SharePerson, choice: string, why: string) {
+    const key = `${requestId}|${from.name}|${from.pc}|${from.ip}`;
+    const card = recommendCard(from, choice, why);
+    const was = recs.get(key);
+    recs.set(key, card);
+    if (was?.isConnected) was.replaceWith(card);
+    else toLog(tab, card);
+  }
+
+  /** A guest's comment, into what you're typing: quoted, so you (and Claude) can tell it isn't
+   * your own words. You send it, if you like. */
+  function useComment(from: string, quote: string, text: string) {
+    const quoted = (s: string) =>
+      s
+        .split('\n')
+        .map((l) => `> ${l}`)
+        .join('\n');
+    const said = `${quoted(`${from} (a guest in this chat) commented on “${quote}”:`)}\n${quoted(text)}\n\n`;
+    r.input.value = r.input.value.trim() ? `${r.input.value.trim()}\n\n${said}` : said;
+    r.autosize();
+    r.input.focus();
   }
 
   function onState(v: ShareView) {
@@ -233,6 +338,9 @@ export function createSharing(r: SharingNeeds) {
     for (const c of cards.values()) c.remove();
     cards.clear();
     handDown();
+    talk.reset();
+    decisions.clear();
+    recs.clear();
     const visiting = view?.role === 'guest';
     closeCard();
     setView(null);
@@ -255,6 +363,7 @@ export function createSharing(r: SharingNeeds) {
     badge.hidden = false;
     r.input.placeholder = `Suggest a prompt to ${v.host.name}…`;
     $('#send').title = 'Suggest';
+    createCommentPick($('#logs'), (quote) => talk.open(quote));
     // (nothing in a visitor's chat opens a file here: the paths are on someone else's PC)
     $('#logs').addEventListener(
       'click',

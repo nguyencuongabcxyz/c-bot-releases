@@ -2,13 +2,14 @@
 // Claude Code as-is, so its own commands and skills work too.
 // (robot.ts calls createSlash with its hub.)
 import type { PastChatsApi } from '../past/resume';
+import type { SavedChatsApi } from '../saved/saved';
 import type { ShellsApi } from '@/features/workbench/shell/drawer';
 import type { CommentaryApi } from '../reply/commentary';
 import type { BrainApi } from '../brain';
 import type { RemoteControlApi } from '../remote';
 import type { ChatLogApi } from '../log';
 import type { MentionsApi } from './mentions';
-import type { TabsApi } from '../tabs';
+import type { TabsApi } from '../tabs/tabs';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { AskingApi } from '../reply/ask';
 import type { ChatTab, PaletteCommand, PaletteItem, RobotState } from '@/views/robot/types';
@@ -33,12 +34,14 @@ export type SlashNeeds = {
   readonly openEffortMenu: BrainApi['openEffortMenu'];
   readonly openHistory: PastChatsApi['openHistory'];
   readonly openModelMenu: BrainApi['openModelMenu'];
+  readonly openSaved: SavedChatsApi['openSaved'];
   readonly pickEffort: BrainApi['pickEffort'];
   readonly pickModel: BrainApi['pickModel'];
   readonly remoteNote: RemoteControlApi['remoteNote'];
   readonly setBrain: BrainApi['setBrain'];
   readonly showContext: BrainApi['showContext'];
   readonly sleep: LifeCycleApi['sleep'];
+  readonly starTab: SavedChatsApi['starTab'];
   readonly state: RobotState;
   readonly submit: AskingApi['submit'];
   readonly toggleRemote: RemoteControlApi['toggleRemote'];
@@ -52,6 +55,8 @@ export function createSlash(r: SlashNeeds) {
   const LOCAL_COMMANDS = [
     { name: 'resume', args: '[search]', description: 'Pick up a past conversation' },
     { name: 'history', description: 'Browse past conversations' },
+    { name: 'save', args: '[name]', description: 'Save this chat to come back to (Ctrl+S)' },
+    { name: 'saved', args: '[search]', description: 'Open a saved chat (Ctrl+O)' },
     { name: 'new', description: 'Start another conversation in a new tab' },
     { name: 'temp', description: 'A temporary chat: nothing kept, gone when you close it' },
     { name: 'clear', description: 'Wipe this tab and start over' },
@@ -94,7 +99,7 @@ export function createSlash(r: SlashNeeds) {
       ...lines,
       '- any other `/command` (like your skills) goes straight to Claude Code',
       '',
-      'Tabs: ＋ or Ctrl+T for a new one, Ctrl+Tab to switch, Ctrl+W to close (↺ or Ctrl+Shift+T brings it back), double-click a tab to rename it.',
+      'Tabs: ＋ or Ctrl+T for a new one, Ctrl+Tab to switch, Ctrl+W to close (↺ or Ctrl+Shift+T brings it back), double-click a tab to rename it, ☆ (Ctrl+S) saves its chat to come back to (Ctrl+O).',
       'Drag me anywhere, click me for a poke, right-click for options. Esc sends me to sleep.',
     ].join('\n');
   }
@@ -123,6 +128,12 @@ export function createSlash(r: SlashNeeds) {
       case 'history':
       case 'conversations':
         r.openHistory(arg);
+        return true;
+      case 'save':
+        r.starTab(r.current(), arg);
+        return true;
+      case 'saved':
+        r.openSaved(arg);
         return true;
       case 'remote-control':
       case 'remote':

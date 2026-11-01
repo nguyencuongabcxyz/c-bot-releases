@@ -1,7 +1,9 @@
 // "Past conversations" view inside the speech bubble: every Claude Code
-// conversation in the robot's folder, a read-only preview, Resume, and the bin.
-import { $ } from '@/lib/dom';
-import type { SessionRow } from '@/types/model';
+// conversation in the robot's folder (the saved ones first, each with its ☆), a read-only
+// preview, Resume, and the bin.
+import { $, el, iconButton } from '@/lib/dom';
+import { ago } from '@/lib/time';
+import type { SavedRow, SessionRow } from '@/types/model';
 import { Icon } from '@/icons/icons';
 import { planSummary } from '../plan/modes';
 import * as ipc from '@/ipc';
@@ -33,27 +35,26 @@ export const HistoryView = ({
   const deleteBtn = $('#h-delete');
   const pickedBar = $('#h-picked');
   let sessions: SessionRow[] = [];
+  let saved = new Map<string, SavedRow>(); // (by session, in the order they were saved)
   let shown: SessionRow[] = []; // (the list as it's drawn: all, or what the search matches)
   let showing: SessionRow | null = null; // session being previewed
   let confirmElsewhere = false;
   const picked = new Set<string>(); // ticked to delete
   let lastPick = -1; // (where a Shift+click ticks from)
 
-  function ago(ms: number) {
-    const s = (Date.now() - ms) / 1000;
-    if (s < 60) return 'just now';
-    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-    if (s < 2 * 86400) return 'yesterday';
-    if (s < 7 * 86400) return `${Math.floor(s / 86400)} days ago`;
-    return new Date(ms).toLocaleDateString();
-  }
-
   function renderList() {
     const q = search.value.trim().toLowerCase();
-    shown = q ? sessions.filter((s) => `${s.title} ${s.preview}`.toLowerCase().includes(q)) : sessions;
+    const found = q
+      ? sessions.filter((s) => `${nameOf(s)} ${s.title} ${s.preview}`.toLowerCase().includes(q))
+      : sessions;
+    // (the saved ones first, as they were saved; then the rest, newest first)
+    const order = [...saved.keys()];
+    shown = [
+      ...found.filter((s) => saved.has(s.id)).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)),
+      ...found.filter((s) => !saved.has(s.id)),
+    ];
     lastPick = -1;
-    clearBtn.disabled = !sessions.some((s) => s.byRobot && !s.tabId);
+    clearBtn.disabled = !sessions.some((s) => s.byRobot && !s.tabId && !saved.has(s.id));
     list.innerHTML = '';
     renderPicked();
     if (!shown.length) {
@@ -65,7 +66,24 @@ export const HistoryView = ({
       list.appendChild(empty);
       return;
     }
-    list.append(...shown.map(row));
+    shown.forEach((s, i) => {
+      // (headings only once there are saved ones to set apart)
+      const first = !i || saved.has(shown[i - 1].id) !== saved.has(s.id);
+      if (first && saved.has(shown[0].id)) list.appendChild(el('div', 'h-sec', saved.has(s.id) ? 'Saved' : 'Recent'));
+      list.appendChild(row(s, i));
+    });
+  }
+
+  const nameOf = (s: SessionRow) => {
+    const sv = saved.get(s.id);
+    return sv ? `${sv.emoji ? `${sv.emoji} ` : ''}${sv.name}` : s.title;
+  };
+
+  // ☆ on a row: save it (under its title) or unsave it
+  async function star(s: SessionRow) {
+    const rows = saved.has(s.id) ? await ipc.robotUnsave(s.id) : await ipc.robotSave({ sessionId: s.id });
+    saved = new Map(rows.map((r) => [r.id, r]));
+    renderList();
   }
 
   // a row: its tick (none for one open in a tab: it stays), and the conversation to preview
@@ -85,7 +103,7 @@ export const HistoryView = ({
     item.className = `h-item${s.current ? ' current' : ''}`;
     item.innerHTML =
       '<div class="h-row"><span class="h-name"></span><span class="h-when"></span></div><div class="h-sub"></div>';
-    $('.h-name', item).textContent = s.title;
+    $('.h-name', item).textContent = nameOf(s);
     $('.h-when', item).textContent = ago(s.updatedAt);
     const bits = [];
     if (s.current) bits.push('● this tab');
@@ -101,7 +119,10 @@ export const HistoryView = ({
     });
     item.title = s.preview ? `Last: ${s.preview}` : s.title;
     item.addEventListener('click', () => openPreview(s));
-    entry.append(box, item);
+    const on = saved.has(s.id);
+    const starBtn = iconButton(`h-star${on ? ' on' : ''}`, on ? 'Unsave' : 'Save chat', 'star');
+    starBtn.addEventListener('click', () => star(s).catch((e) => alert(String(e))));
+    entry.append(box, item, starBtn);
     return entry;
   }
 
@@ -262,14 +283,35 @@ export const HistoryView = ({
   }
 
   async function reload() {
-    sessions = await ipc.robotSessions();
+    const [all, rows] = await Promise.all([ipc.robotSessions(), ipc.robotSaved()]);
+    saved = new Map(rows.map((r) => [r.id, r]));
+    // (a saved one too old to be among the newest listed still is)
+    const listed = new Set(all.map((s) => s.id));
+    const older = rows.filter((r) => !r.gone && !listed.has(r.id)).map(asSession);
+    sessions = [...all, ...older];
     renderList();
   }
+
+  const asSession = (r: SavedRow): SessionRow => ({
+    id: r.id,
+    title: r.title || r.name,
+    preview: '',
+    messages: r.messages,
+    updatedAt: r.updatedAt ?? r.savedAt,
+    size: 0,
+    byRobot: true,
+    active: false,
+    current: r.current,
+    tabId: r.tabId,
+  });
 
   // the bin: in the list, every conversation it had; in a preview, that one
   // (ones open in a tab stay: main keeps them)
   clearBtn.addEventListener('click', async () => {
-    if (!confirm(`Delete all your past conversations with ${robotName()}? They can’t be brought back.`)) return;
+    if (
+      !confirm(`Delete all your past conversations with ${robotName()} but the saved ones? They can’t be brought back.`)
+    )
+      return;
     await ipc.robotForgetSessions();
     picked.clear();
     await reload();

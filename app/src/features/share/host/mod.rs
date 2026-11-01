@@ -5,7 +5,10 @@
 //! when the network (or the relay) goes.
 
 mod lan;
+mod people;
 mod serve;
+
+pub(super) use people::{all_decided, decided, decision, host_talk};
 
 use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener};
@@ -45,6 +48,7 @@ pub(super) struct Host {
     guests: Vec<Guest>,
     fails: HashMap<String, u32>,                 // (by address)
     suggestions: HashMap<String, (u64, String)>, // the host's id for it -> (connection, the guest's id)
+    decisions: Vec<Value>, // plans and questions waiting for the host, as guests see them
     stop: Stop,
 }
 
@@ -56,11 +60,13 @@ struct Guest {
     answer: Option<mpsc::Sender<bool>>,
     stop: Stop,
     recent: Vec<Instant>, // (when it last suggested)
+    said: Vec<Instant>,   // (when it last talked, commented or recommended)
 }
 
 impl Host {
     pub(super) fn view(&self) -> ShareView {
         let mut host = me();
+        host.host = true;
         host.ip = match &self.net {
             Net::Lan(addr) => addr.ip().to_string(),
             Net::Relay { .. } => "the internet".into(),
@@ -178,6 +184,7 @@ pub(super) fn start(app: &AppHandle, robot: &str, tab: &str, o: &Opts) -> Result
             guests: Vec::new(),
             fails: HashMap::new(),
             suggestions: HashMap::new(),
+            decisions: Vec::new(),
             stop: stop.clone(),
         });
         s.next

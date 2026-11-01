@@ -56,6 +56,7 @@ pub(super) fn serve(
             answer: Some(yes),
             stop: stop.clone(),
             recent: Vec::new(),
+            said: Vec::new(),
         });
         Some(conn)
     });
@@ -147,9 +148,10 @@ fn hello(
             .collect::<String>()
     };
     Some(Person {
-        name: cut(me.name),
+        name: crate::features::share::people::guest_name(&cut(me.name), &super::me().name),
         pc: cut(me.pc),
         ip: String::new(),
+        host: false,
     })
 }
 
@@ -193,6 +195,9 @@ fn welcome(app: &AppHandle, conn: u64, tls: &mut Tls) {
         }
         .line(),
     );
+    for decision in people::waiting(app) {
+        let _ = wire::send(tls, &Msg::Decision { decision }.line());
+    }
     if busy {
         let ev = json!({ "type": "turn-start", "turnId": "live", "tabId": tab });
         let _ = wire::send(tls, &Msg::Event { event: ev }.line());
@@ -222,6 +227,9 @@ fn run(
             Read1::Line(l) => match serde_json::from_str::<Msg>(&l) {
                 Ok(Msg::Suggest { id, text }) => suggested(app, conn, &id, &text),
                 Ok(Msg::TakeBack { id }) => taken_back(app, conn, &id),
+                Ok(m @ (Msg::Talk { .. } | Msg::Comment { .. } | Msg::Recommend { .. })) => {
+                    people::from_guest(app, conn, m);
+                }
                 Ok(Msg::Ping) => {}
                 _ => return, // (leaving, or something a guest may not say)
             },

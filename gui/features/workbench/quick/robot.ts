@@ -13,7 +13,7 @@ import type { VocabApi } from '@/features/vocab/robot';
 import type { NotesApi } from '@/features/notes/robot';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { FaceApi } from '@/views/robot/life/face';
-import type { TabsApi } from '@/features/chat/tabs';
+import type { TabsApi } from '@/features/chat/tabs/tabs';
 import type { RobotMessagesApi } from '@/features/robots/link/asks';
 import type { TerminalModeApi } from '../terminal';
 import type { PlayApi } from '@/views/robot/life/play';

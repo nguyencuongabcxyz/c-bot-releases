@@ -41,7 +41,7 @@ These rules are strict. New code follows them; code you touch is brought in line
   - Longer is only acceptable for flat tables: command lists, key maps, JSON schemas, dispatch `match`es whose arms are one-line calls. Mark one with `#[expect(clippy::too_many_lines, reason = "…")]` (as `runtime/commands.rs` does).
   - A test that checks several cases is several tests.
   - A `match` over kinds of messages or events dispatches to one function per kind (see `agents/claude/lines.rs`, `features/chat/events.rs`).
-- **Files:** at most ~700 lines of code (tests not counted). Past that, split into child modules by section. Over it today: `features/chat/events.rs` (one function per event); split it before it grows. Also near the limit: `robots/ipc.rs`, `features/chat/page.rs`, `robots/island.rs`.
+- **Files:** at most ~700 lines of code (tests not counted). Past that, split into child modules by section. Over it today: `features/chat/events.rs` (one function per event); split it before it grows. Also near the limit: `robots/ipc/mod.rs`, `features/chat/page.rs`, `robots/island.rs`.
 
 ## State and locks
 

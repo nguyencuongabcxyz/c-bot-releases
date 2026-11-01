@@ -20,6 +20,7 @@ import '@/theme/code.css';
 import '@/features/context/context.css';
 import '@/features/robots/stage/tile.css';
 import '@/features/chat/share/share.css';
+import '@/features/chat/saved/saved.css';
 import type { Settings } from '@/types/model';
 import * as ipc from '@/ipc';
 
@@ -54,7 +55,7 @@ import { createFace, type FaceApi } from './life/face';
 import { createChatMarkdown, type ChatMarkdownApi } from '@/features/chat/reply/local-files';
 import { createQuickActions, type QuickActionsApi } from '@/features/workbench/quick/robot';
 import { createChatSize, type ChatSizeApi } from '@/features/chat/size';
-import { createTabs, type TabsApi } from '@/features/chat/tabs';
+import { createTabs, type TabsApi } from '@/features/chat/tabs/tabs';
 import { createHelpers, type HelpersApi } from '@/features/chat/agents';
 import { createPlay, type PlayApi } from './life/play';
 import { createComposer, type ComposerApi } from '@/features/chat/composer/composer';
@@ -64,6 +65,7 @@ import { createCommentary, type CommentaryApi } from '@/features/chat/reply/comm
 import { createLifeCycle, type LifeCycleApi } from './life/lifecycle';
 import { lazy } from '@/lib/lazy';
 import { createPastChats, type PastChatsApi } from '@/features/chat/past/resume';
+import { createSavedChats, type SavedChatsApi } from '@/features/chat/saved/saved';
 import { createSidePanel, type SidePanelApi } from '@/features/chat/side/panel';
 import { createShells, type ShellsApi } from '@/features/workbench/shell/drawer';
 import { createWindowLayout } from './layout';
@@ -160,6 +162,7 @@ tooltips($('#side-panel'));
       imageUrl: () => imageUrl,
       input: () => input,
       islandNews: () => islandNews,
+      isSaved: () => isSaved,
       islandOn: () => islandOn,
       islandReport: () => islandReport,
       islandReportAgain: () => islandReportAgain,
@@ -198,6 +201,7 @@ tooltips($('#side-panel'));
       openHistory: () => openHistory,
       openInApp: () => openInApp,
       openMenu: () => openMenu,
+      openSaved: () => openSaved,
       openModelMenu: () => openModelMenu,
       openNotesFromBoard: () => openNotesFromBoard,
       openTerminal: () => openTerminal,
@@ -246,6 +250,7 @@ tooltips($('#side-panel'));
       renderToolView: () => renderToolView,
       renderWorking: () => renderWorking,
       restingActivity: () => restingActivity,
+      resumed: () => resumed,
       reviewPlan: () => reviewPlan,
       robot: () => robot,
       runLocalCommand: () => runLocalCommand,
@@ -277,6 +282,7 @@ tooltips($('#side-panel'));
       stagePart: () => stagePart,
       startCompact: () => startCompact,
       startReply: () => startReply,
+      starTab: () => starTab,
       state: () => state,
       statusMeta: () => statusMeta,
       statusRow: () => statusRow,
@@ -590,7 +596,10 @@ tooltips($('#side-panel'));
   const { sides }: SidePanelApi = createSidePanel(hub); // (chat/side/panel.ts)
   // ------------------------------------------------------------ past conversations
 
-  const { history, openHistory }: PastChatsApi = createPastChats(hub); // (chat/past/resume.ts)
+  const { history, openHistory, resumed }: PastChatsApi = createPastChats(hub); // (chat/past/resume.ts)
+
+  // saved chats
+  const { isSaved, openSaved, starTab }: SavedChatsApi = createSavedChats(hub); // (chat/saved/saved.ts)
 
   // ------------------------------------------------------------ ambient life
 

@@ -11,6 +11,7 @@ pub mod group;
 mod page;
 mod page_event;
 mod past;
+mod saved;
 pub mod side;
 mod sign_in;
 pub mod tabs;
@@ -19,6 +20,7 @@ mod temporary;
 pub use page::*;
 pub(in crate::features) use page_event::PageEvent;
 pub use past::*;
+pub use saved::*;
 pub use sign_in::*;
 pub use temporary::*;
 

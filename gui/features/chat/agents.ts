@@ -7,7 +7,7 @@ import type { CommentaryApi } from './reply/commentary';
 import type { DeskActivityApi } from '@/views/robot/life/desk';
 import type { FaceApi } from '@/views/robot/life/face';
 import type { ChatMarkdownApi } from './reply/local-files';
-import type { TabsApi } from './tabs';
+import type { TabsApi } from './tabs/tabs';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { ChatLogApi } from './log';
 import { Sfx } from '@/views/robot/sound';

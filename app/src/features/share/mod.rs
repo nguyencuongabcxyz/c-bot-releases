@@ -8,6 +8,7 @@
 mod commands;
 mod guest;
 mod host;
+mod people;
 mod pipe;
 mod relay;
 mod tls;
@@ -120,6 +121,15 @@ pub fn forward(app: &AppHandle, id: &str, tab_id: &str, ev: &Value) {
     }) else {
         return;
     };
+    // (plans and questions waiting for you: the guests see them to weigh in, not to answer)
+    match ev["type"].as_str() {
+        Some("question" | "plan") => host::decision(app, ev),
+        Some("request-cancelled") => {
+            host::decided(app, ev["requestId"].as_str().unwrap_or(""), "cancelled");
+        }
+        Some("done" | "fail") => host::all_decided(app),
+        _ => {}
+    }
     let Some(ev) = wire::for_guests(ev, shown) else {
         return;
     };
@@ -135,6 +145,23 @@ pub fn forward(app: &AppHandle, id: &str, tab_id: &str, ev: &Value) {
             let _ = tx.send(line.clone());
         }
     }
+}
+
+/// You decided about a plan or a question in the shared tab: the guests hear what (outcome:
+/// "approved", "answered: Yes"…).
+pub fn decided(app: &AppHandle, id: &str, tab_id: &str, request_id: &str, outcome: &str) {
+    if shares(app, |s| {
+        s.host
+            .as_ref()
+            .is_some_and(|h| h.robot == id && h.tab == tab_id)
+    }) {
+        host::decided(app, request_id, outcome);
+    }
+}
+
+/// What the host said about a question, in words for the guests.
+pub fn answered(answers: &Value) -> String {
+    people::answered(answers)
 }
 
 /// You asked the shared tab something: the guests see your message (or a guest's, sent).
@@ -200,6 +227,7 @@ fn me() -> Person {
         name: wire::short_name(&std::env::var("USERNAME").unwrap_or_default()),
         pc: std::env::var("COMPUTERNAME").unwrap_or_default(),
         ip: String::new(),
+        host: false,
     }
 }
 

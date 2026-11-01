@@ -1,19 +1,20 @@
 // Bring the renderer's tabs in line with the main process's list.
 // (robot.ts calls createTabs with its hub.)
 import type { ShellsApi } from '@/features/workbench/shell/drawer';
-import type { SidePanelApi } from './side/panel';
-import type { CommentaryApi } from './reply/commentary';
+import type { SidePanelApi } from '../side/panel';
+import type { CommentaryApi } from '../reply/commentary';
 import type { DeskActivityApi } from '@/views/robot/life/desk';
-import type { BrainApi } from './brain';
-import type { RemoteControlApi } from './remote';
-import type { TodoCardApi } from './todo';
-import type { ComposerApi } from './composer/composer';
-import type { HelpersApi } from './agents';
+import type { BrainApi } from '../brain';
+import type { RemoteControlApi } from '../remote';
+import type { TodoCardApi } from '../todo';
+import type { ComposerApi } from '../composer/composer';
+import type { HelpersApi } from '../agents';
 import type { FaceApi } from '@/views/robot/life/face';
-import type { SlashApi } from './composer/slash';
+import type { SlashApi } from '../composer/slash';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
-import type { ChatLogApi } from './log';
-import type { AskingApi } from './reply/ask';
+import type { ChatLogApi } from '../log';
+import type { AskingApi } from '../reply/ask';
+import type { SavedChatsApi } from '../saved/saved';
 import { Sfx } from '@/views/robot/sound';
 import type { ChatTab, RobotState } from '@/views/robot/types';
 import * as ipc from '@/ipc';
@@ -21,6 +22,8 @@ import { $ } from '@/lib/dom';
 import type { OfficeData } from '@/office3d/protocol';
 import type { RobotView } from '@/types/model';
 import { Icon } from '@/icons/icons';
+import { createTabDrag } from './drag';
+import { createTabMenu } from './menu';
 
 /** What it uses of the robot window (robot.ts's hub). */
 export type TabsNeeds = {
@@ -38,6 +41,7 @@ export type TabsNeeds = {
   readonly helperView: HelpersApi['helperView'];
   readonly hidePalette: SlashApi['hidePalette'];
   readonly input: HTMLTextAreaElement;
+  readonly isSaved: SavedChatsApi['isSaved'];
   readonly keepPlace: ChatLogApi['keepPlace'];
   lastMainActive: string | null;
   readonly loadBrain: BrainApi['loadBrain'];
@@ -54,6 +58,7 @@ export type TabsNeeds = {
   readonly shell: ShellsApi['shell'];
   readonly showPop: DeskActivityApi['showPop'];
   readonly sides: SidePanelApi['sides'];
+  readonly starTab: SavedChatsApi['starTab'];
   readonly startReply: AskingApi['startReply'];
   readonly state: RobotState;
   readonly syncChrome: AskingApi['syncChrome'];
@@ -186,8 +191,17 @@ export function createTabs(r: TabsNeeds) {
     idle: '',
   };
 
+  // (the strip in its order, without tabs main hasn't sent yet)
+  const order = () =>
+    r
+      .character()
+      .tabs.map((t) => t.id)
+      .filter((id) => r.tabs.has(id));
+  const drag = createTabDrag({ strip: r.tabStrip, dropped: moveTab });
+  const menu = createTabMenu({ order, closeTab, closeTabs });
+
   function renderTabs() {
-    if (!r.state.character) return;
+    if (!r.state.character || drag.dragging) return; // (redrawn when it's let go)
     r.deskState.helpers = String(r.helpersOut()); // the little bots circling the desk
     r.tabStrip.innerHTML = '';
     for (const { id } of r.state.character.tabs) {
@@ -196,20 +210,38 @@ export function createTabs(r: TabsNeeds) {
       const s = statusOf(t);
       const el = document.createElement('div');
       const temp = !!t.data?.temporary;
-      el.className = `tab s-${s}${t.id === r.activeId ? ' on' : ''}${temp ? ' temporary' : ''}${t.data?.remote ? ' remote' : ''}${t.data?.shared ? ' shared' : ''}`;
+      const saved = !temp && r.isSaved(t);
+      el.className = `tab s-${s}${t.id === r.activeId ? ' on' : ''}${temp ? ' temporary' : ''}${t.data?.remote ? ' remote' : ''}${t.data?.shared ? ' shared' : ''}${saved ? ' saved' : ''}`;
+      el.dataset.id = t.id;
       el.setAttribute('role', 'tab');
       el.setAttribute('aria-selected', String(t.id === r.activeId));
       el.title = `${temp ? 'Temporary chat (nothing is kept): ' : ''}${t.title}${STATUS_LABEL[s] ? ` (${STATUS_LABEL[s]})` : ''}\nDouble-click to rename`;
       el.innerHTML = `${temp ? Icon('eye', 'sm tab-temp') : ''}${t.data?.shared ? Icon('link', 'sm tab-shared') : ''}<span class="tab-dot"></span><span class="tab-title"></span><button class="tab-x" type="button" title="Close tab (Ctrl+W)">×</button>`;
       $('.tab-title', el).textContent = t.title;
+      if (!temp) {
+        // ☆ save this chat (★ saved: its name and emoji, or unsave)
+        const star = document.createElement('button');
+        star.type = 'button';
+        star.className = 'tab-star';
+        star.title = saved ? 'Saved chat (Ctrl+S)' : 'Save chat (Ctrl+S)';
+        star.innerHTML = Icon('star', 'sm');
+        star.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (t.id !== r.activeId) activateTab(t.id);
+          r.starTab(t);
+        });
+        el.prepend(star);
+      }
       el.addEventListener('click', (e) => {
         if (!(e.target as Element).closest('.tab-x') && t.id !== r.activeId) activateTab(t.id);
       });
       el.addEventListener('dblclick', (e) => {
-        if (!(e.target as Element).closest('.tab-x')) renameTab(t.id, $<HTMLElement>('.tab-title', el));
+        if (!(e.target as Element).closest('.tab-x, .tab-star')) renameTab(t.id, $<HTMLElement>('.tab-title', el));
       });
       el.addEventListener('auxclick', (e) => e.button === 1 && closeTab(t.id)); // middle-click closes
+      el.addEventListener('contextmenu', (e) => menu.show(t.id, e));
       $('.tab-x', el).addEventListener('click', () => closeTab(t.id));
+      drag.draggable(el, t.id);
       r.tabStrip.appendChild(el);
     }
     const add = document.createElement('button');
@@ -240,6 +272,18 @@ export function createTabs(r: TabsNeeds) {
     }
     r.tabStrip.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     r.renderRemote();
+  }
+
+  // A tab let go after a drag: it's picked, and main keeps its new place (the strip shows it now).
+  function moveTab(id: string, to: number) {
+    const tabs = r.character().tabs;
+    const from = tabs.findIndex((t) => t.id === id);
+    if (from >= 0 && from !== to) {
+      tabs.splice(to, 0, ...tabs.splice(from, 1));
+      ipc.robotTabMove(id, to);
+    }
+    if (id !== r.activeId) activateTab(id);
+    else renderTabs();
   }
 
   async function newTab({ temporary = false } = {}) {
@@ -273,18 +317,47 @@ export function createTabs(r: TabsNeeds) {
     if (hadChat && !temp) offerUndo(`“${t.title}” closed`);
   }
 
+  // Close several tabs (the others, or all), with one question first if any are working or temporary.
+  async function closeTabs(ids: string[]) {
+    const list = ids.flatMap((id) => r.tabs.get(id) || []);
+    if (!list.length) return;
+    const hasChat = (t: ChatTab) => !!(t.data?.history?.length || t.data?.sessionId);
+    const busy = list.filter((t) => t.busy).length;
+    const temps = list.filter((t) => t.data?.temporary && hasChat(t)).length;
+    const why = [
+      busy &&
+        (busy === 1 ? 'One is still working: it will be stopped.' : `${busy} are still working: they will be stopped.`),
+      temps &&
+        (temps === 1 ? 'A temporary chat will be gone for good.' : `${temps} temporary chats will be gone for good.`),
+    ].filter(Boolean);
+    if (why.length && !confirm(`Close ${list.length === 1 ? 'this tab' : `${list.length} tabs`}? ${why.join(' ')}`))
+      return;
+    let back = 0;
+    let snag = '';
+    // (the last first: Undo brings them back in the order they were in)
+    for (const t of [...list].reverse()) {
+      const res = await ipc.robotTabClose(t.id);
+      if (!res.ok) snag = res.error;
+      else if (hasChat(t) && !t.data?.temporary) back++;
+    }
+    if (snag) r.showPop(snag, 2600);
+    if (back) offerUndo(back === 1 ? '1 tab closed' : `${back} tabs closed`, back);
+  }
+
   // Closing a tab (× or Ctrl+W) can be taken back: Undo for a few seconds, then ↺ / Ctrl+Shift+T.
   const undoBar = document.createElement('div');
   undoBar.id = 'undo';
   undoBar.hidden = true;
   undoBar.innerHTML = '<span></span><button type="button">Undo</button>';
   $('#panel').appendChild(undoBar);
+  let undoCount = 1; // (how many tabs went: Undo brings them all back)
   $('button', undoBar).addEventListener('click', () => {
     undoBar.hidden = true;
-    reopenTab();
+    reopenTabs(undoCount);
   });
   let undoTimer = 0;
-  function offerUndo(text: string) {
+  function offerUndo(text: string, count = 1) {
+    undoCount = count;
     $('span', undoBar).textContent = text;
     undoBar.hidden = false;
     clearTimeout(undoTimer);
@@ -297,6 +370,20 @@ export function createTabs(r: TabsNeeds) {
     r.flash('hop', 600);
     Sfx.send();
     r.showPop(`“${res.title}” is back!`, 1800);
+  }
+
+  async function reopenTabs(count: number) {
+    if (count === 1) return reopenTab();
+    let back = 0;
+    for (let i = 0; i < count; i++) {
+      const res = await ipc.robotTabReopen();
+      if (!res.ok) break;
+      back++;
+    }
+    if (!back) return;
+    r.flash('hop', 600);
+    Sfx.send();
+    r.showPop(`${back} tabs are back!`, 1800);
   }
 
   function renameTab(id: string, titleEl: HTMLElement) {
@@ -328,18 +415,15 @@ export function createTabs(r: TabsNeeds) {
   // Ctrl+T new · Ctrl+W close · Ctrl+Tab / Ctrl+Shift+Tab switch · Ctrl+1…8 jump
   document.addEventListener('keydown', (e) => {
     if (!r.state.awake || !e.ctrlKey || e.altKey) return;
-    const order = r
-      .character()
-      .tabs.map((t) => t.id)
-      .filter((id) => r.tabs.has(id));
+    const ids = order();
     const id = r.activeId;
-    const i = id === null ? -1 : order.indexOf(id);
+    const i = id === null ? -1 : ids.indexOf(id);
     if ((e.key === 't' || e.key === 'T') && e.shiftKey) reopenTab();
     else if (e.key === 't' || e.key === 'T') newTab();
     else if (e.key === 'w' || e.key === 'W') {
       if (id !== null) closeTab(id); // (none: nothing to close)
-    } else if (e.key === 'Tab') activateTab(order[(i + (e.shiftKey ? order.length - 1 : 1)) % order.length]);
-    else if (/^[1-8]$/.test(e.key) && order[Number(e.key) - 1]) activateTab(order[Number(e.key) - 1]);
+    } else if (e.key === 'Tab') activateTab(ids[(i + (e.shiftKey ? ids.length - 1 : 1)) % ids.length]);
+    else if (/^[1-8]$/.test(e.key) && ids[Number(e.key) - 1]) activateTab(ids[Number(e.key) - 1]);
     else return;
     e.preventDefault();
   });

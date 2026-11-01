@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter};
 use crate::agents::claude::{self, Session, locate, transcripts};
 use crate::agents::{Event, Fail};
 use crate::features::chat::{self, Chat};
+use crate::features::share;
 use crate::robots::label_of;
 use crate::runtime::util::patch;
 use crate::runtime::{Locked, with};
@@ -114,6 +115,9 @@ pub fn ask(
     let text = text.trim();
     if text.is_empty() {
         return fail("Ask me something first.");
+    }
+    if share::is_visitor(app, id) {
+        return fail("I'm only visiting: I have no Claude Code here to ask.");
     }
     let Some((c, tab, settings)) = with(app, |st| {
         Some((

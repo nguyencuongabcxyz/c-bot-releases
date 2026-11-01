@@ -116,3 +116,65 @@ body.visiting #logs .msg-actions {
 }
 body.visiting #composer { border-color: var(--violet); }
 body.visiting #send { background: var(--violet); }
+
+/* ---------------------------------------------------------- the people talking (talk.ts) */
+
+#share-talk {
+  flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px;
+  border-bottom: 1px solid var(--line); background: var(--bg-2);
+}
+.talk-list { max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.talk-list:empty::before { content: "Say something to everyone here. Claude doesn't see it."; color: var(--muted); font-size: 12px; }
+.talk-msg { display: flex; gap: 7px; align-items: flex-start; font-size: 12.5px; }
+.talk-msg.mine .share-face { background: var(--accent); }
+.talk-body { min-width: 0; }
+.talk-body b { font-size: 12px; }
+.talk-about { color: var(--muted); font-size: 11.5px; }
+.talk-recommend .talk-about { color: var(--fg-2); }
+.talk-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.talk-quote { font-size: 11.5px; color: var(--violet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talk-input {
+  width: 100%; resize: none; border: 1px solid var(--line-2); border-radius: 10px; padding: 6px 10px; font: inherit;
+  font-size: 12.5px; color: inherit; background: var(--panel-bg);
+}
+.talk-input:focus { outline: none; border-color: var(--accent); }
+.share-talk-btn.unread { border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+/* ---------------------------------------------------------- decisions and comments (decisions.ts) */
+
+.share-icon { background: var(--bg-3); }
+.share-plan { margin: 6px 0; max-height: 220px; overflow-y: auto; font-size: 12.5px; }
+.share-plan > :first-child { margin-top: 0; }
+.share-question { margin: 6px 0 4px; font-weight: 600; font-size: 12.5px; }
+.share-options { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.share-opt-pick {
+  border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel-bg); color: inherit; padding: 2px 10px;
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.share-opt-pick.on { border-color: var(--violet); background: color-mix(in srgb, var(--violet) 14%, transparent); }
+.share-why {
+  width: 100%; margin: 6px 0; border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 9px; font: inherit;
+  font-size: 12px; color: inherit; background: var(--panel-bg);
+}
+.share-rec-line { font-size: 12px; color: var(--fg-2); margin: 2px 0; }
+.share-outcome { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--violet); }
+.share-decision.settled { opacity: 0.8; }
+.share-quote {
+  margin: 6px 0 4px; padding: 2px 0 2px 9px; border-left: 3px solid var(--violet); color: var(--fg-2); font-size: 12px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------- comment on a selection (comment.ts) */
+
+.share-pick {
+  position: fixed; z-index: 40; border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 11px;
+  background: var(--panel-bg); color: var(--fg); font: 600 12px var(--font-ui); box-shadow: var(--shadow-pop);
+  cursor: pointer;
+}
+/* (a visitor has no Claude Code to ask: it comments instead) */
+body.visiting #sq-pick { display: none; }
+.talk-host {
+  margin-left: 5px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.talk-unfound { color: var(--warn); font-size: 11px; }

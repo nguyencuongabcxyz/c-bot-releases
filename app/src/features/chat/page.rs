@@ -582,6 +582,9 @@ pub fn answer(
     }
     let ok =
         chat_of(app, id, tab_id).is_some_and(|c| c.session.answer(request_id, answers.clone()));
+    if ok {
+        share::decided(app, id, tab_id, request_id, &share::answered(answers));
+    }
     if ok && let Some(items) = items.as_array() {
         let items: Vec<Value> = items.iter().take(8).cloned().collect();
         with(app, |st| {
@@ -618,6 +621,12 @@ pub fn decide_plan(
     {
         return json!({ "ok": false });
     }
+    let outcome = if go_mode.is_some() {
+        "approved"
+    } else {
+        "sent back, with notes"
+    };
+    share::decided(app, id, tab_id, request_id, outcome);
     let plan: String = plan.chars().take(20000).collect();
     with(app, |st| {
         if let Some(mode) = go_mode {

@@ -129,9 +129,11 @@ allow_attributes_without_reason = "deny"
 disallowed_methods = "deny"
 
 # (the dependencies built fast in debug builds too: the context engine's keyword index and
-# parsers are unusably slow unoptimized)
+# parsers are unusably slow unoptimized), without their debug info: it was most of target/'s
+# size, and nobody steps into other people's crates
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
 
 # a small binary
 [profile.release]

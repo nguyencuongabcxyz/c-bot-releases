@@ -117,6 +117,36 @@ pub(in crate::features) enum PageEvent {
         #[serde(skip_serializing_if = "String::is_empty")]
         why: String,
     },
+    /// Someone in the shared chat said something to the people in it (mine: the host's own).
+    ShareTalk {
+        from: Person,
+        text: String,
+        mine: bool,
+    },
+    /// Someone commented on a piece of the chat (quoted).
+    ShareComment {
+        from: Person,
+        quote: String,
+        text: String,
+        /// The quote is really in the chat (the host looked).
+        found: bool,
+    },
+    /// Someone recommends what to do about a plan or a question waiting for the host.
+    ShareRecommend {
+        request_id: String,
+        from: Person,
+        choice: String,
+        why: String,
+    },
+    /// For a guest: a plan or a question waiting for the host (only what it asks).
+    ShareDecision {
+        decision: Value,
+    },
+    /// For a guest: what the host did about it.
+    ShareDecided {
+        request_id: String,
+        outcome: String,
+    },
     /// For a guest: the visiting robot has walked in to its desk.
     ShareArrived,
     /// The shared chat ended, and why.
@@ -233,6 +263,7 @@ mod tests {
             name: "Minh".into(),
             pc: "PC-MINH".into(),
             ip: "10.0.0.2".into(),
+            host: false,
         };
         assert_eq!(
             page(PageEvent::ShareSuggest {
@@ -241,8 +272,39 @@ mod tests {
                 text: "hi".into(),
                 hidden: false
             }),
-            json!({ "type": "share-suggest", "id": "3-a", "from": { "name": "Minh", "pc": "PC-MINH", "ip": "10.0.0.2" },
+            json!({ "type": "share-suggest", "id": "3-a", "from": { "name": "Minh", "pc": "PC-MINH", "ip": "10.0.0.2", "host": false },
                 "text": "hi", "hidden": false })
+        );
+        let minh = || Person {
+            name: "Minh".into(),
+            pc: "PC-MINH".into(),
+            ip: "10.0.0.2".into(),
+            host: false,
+        };
+        assert_eq!(
+            page(PageEvent::ShareTalk {
+                from: minh(),
+                text: "hi".into(),
+                mine: false
+            })["type"],
+            "share-talk"
+        );
+        assert_eq!(
+            page(PageEvent::ShareRecommend {
+                request_id: "r1".into(),
+                from: minh(),
+                choice: "Reject".into(),
+                why: "it drops the table".into()
+            }),
+            json!({ "type": "share-recommend", "requestId": "r1", "from": { "name": "Minh", "pc": "PC-MINH", "ip": "10.0.0.2", "host": false },
+                "choice": "Reject", "why": "it drops the table" })
+        );
+        assert_eq!(
+            page(PageEvent::ShareDecided {
+                request_id: "r1".into(),
+                outcome: "approved".into()
+            }),
+            json!({ "type": "share-decided", "requestId": "r1", "outcome": "approved" })
         );
         assert_eq!(
             page(PageEvent::ShareArrived),

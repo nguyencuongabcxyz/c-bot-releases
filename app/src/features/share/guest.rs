@@ -327,8 +327,82 @@ fn heard(app: &AppHandle, id: &str, m: Msg) {
                 tell(app, id, &tab, PageEvent::ShareState { state });
             }
         }
-        _ => {}
+        m => heard_people(app, id, &tab, m),
     }
+}
+
+/// What the people in the chat said, and the decisions waiting for the host: on to the
+/// visitor's page (checked again here, whatever the other end sent).
+fn heard_people(app: &AppHandle, id: &str, tab: &str, m: Msg) {
+    use super::people::{self, CHOICE_MAX, QUOTE_MAX, TALK_MAX, WHY_MAX};
+    let me = me();
+    let ev = match m {
+        Msg::Talked { from, text } => {
+            let Some(text) = people::said(&text, TALK_MAX) else {
+                return;
+            };
+            let mine = from.name == me.name && from.pc == me.pc;
+            PageEvent::ShareTalk { from, text, mine }
+        }
+        Msg::Commented {
+            from,
+            quote,
+            text,
+            found,
+        } => {
+            let (Some(quote), Some(text)) = (
+                people::said(&quote, QUOTE_MAX),
+                people::said(&text, TALK_MAX),
+            ) else {
+                return;
+            };
+            PageEvent::ShareComment {
+                from,
+                quote,
+                text,
+                found,
+            }
+        }
+        Msg::Recommended {
+            from,
+            request_id,
+            choice,
+            why,
+        } => {
+            let Some(choice) = people::said(&choice, CHOICE_MAX) else {
+                return;
+            };
+            PageEvent::ShareRecommend {
+                request_id,
+                from,
+                choice,
+                why: people::maybe(&why, WHY_MAX),
+            }
+        }
+        Msg::Decision { decision } => {
+            let Some(decision) = people::decision_for_guests(&decision) else {
+                return;
+            };
+            PageEvent::ShareDecision { decision }
+        }
+        Msg::Decided {
+            request_id,
+            outcome,
+        } => PageEvent::ShareDecided {
+            request_id,
+            outcome: people::maybe(&outcome, CHOICE_MAX),
+        },
+        _ => return,
+    };
+    tell(app, id, tab, ev);
+}
+
+/// Something for the host from the visiting robot's chat (talk, a comment, a recommendation).
+pub(super) fn to_host(app: &AppHandle, id: &str, m: &Msg) -> Result<(), Error> {
+    let out = shares(app, |s| s.visits.get(id).map(|v| v.out.clone()))
+        .ok_or_else(|| Error::from("The shared chat has ended."))?;
+    out.send(m.line())
+        .map_err(|_| Error::from("The shared chat has ended."))
 }
 
 /// The chat's over: the visitor says why, then goes home.

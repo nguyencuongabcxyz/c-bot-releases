@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Bumped when the messages change: a C-Bot on another version is told to update.
-pub(super) const PROTO: u32 = 1;
+pub(super) const PROTO: u32 = 2;
 /// The longest line a guest may send (a suggestion is a few lines of text).
 pub(super) const GUEST_LINE_MAX: usize = 16 * 1024;
 /// The longest line the host may send (a step's pictures, when tool output is shared).
@@ -25,6 +25,10 @@ pub struct Person {
     pub pc: String,
     #[serde(default)]
     pub ip: String,
+    /// The one sharing (set by the host, which builds every Person its guests see: a guest
+    /// can't claim it).
+    #[serde(default)]
+    pub host: bool,
 }
 
 /// Where a guest's suggestion is at.
@@ -42,7 +46,7 @@ pub enum Suggestion {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "t", rename_all = "kebab-case", rename_all_fields = "camelCase")]
 pub(super) enum Msg {
-    // ---- guest -> host (the only four a guest may send once it's in)
+    // ---- guest -> host (all a guest may send once it's in)
     Hello {
         proto: u32,
         token: String,
@@ -57,6 +61,22 @@ pub(super) enum Msg {
     },
     Leave,
     Ping,
+    /// To the people in the chat, not to Claude.
+    Talk {
+        text: String,
+    },
+    /// About a piece of the chat (what they selected, quoted).
+    Comment {
+        quote: String,
+        text: String,
+    },
+    /// What they'd do about a plan or a question waiting for the host.
+    Recommend {
+        request_id: String,
+        choice: String,
+        #[serde(default)]
+        why: String,
+    },
     // ---- host -> guest
     Welcome {
         host: Person,
@@ -84,6 +104,34 @@ pub(super) enum Msg {
     },
     End {
         reason: String,
+    },
+    /// What someone said, commented or recommended (to everyone in, its sender too).
+    Talked {
+        from: Person,
+        text: String,
+    },
+    Commented {
+        from: Person,
+        quote: String,
+        text: String,
+        /// The quote is really in the chat (the host looked).
+        #[serde(default)]
+        found: bool,
+    },
+    Recommended {
+        from: Person,
+        request_id: String,
+        choice: String,
+        why: String,
+    },
+    /// A plan or a question waiting for the host (people.rs decision_for_guests), and what
+    /// became of it.
+    Decision {
+        decision: Value,
+    },
+    Decided {
+        request_id: String,
+        outcome: String,
     },
 }
 
@@ -587,6 +635,17 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&m).unwrap(),
             json!({ "t": "suggestion", "id": "s1", "state": "sent" })
+        );
+        let m: Msg =
+            serde_json::from_str(r#"{"t":"recommend","requestId":"r1","choice":"Approve"}"#)
+                .unwrap();
+        assert_eq!(
+            m,
+            Msg::Recommend {
+                request_id: "r1".into(),
+                choice: "Approve".into(),
+                why: String::new()
+            }
         );
         let m: Msg = serde_json::from_str(r#"{"t":"take-back","id":"x"}"#).unwrap();
         assert_eq!(m, Msg::TakeBack { id: "x".into() });

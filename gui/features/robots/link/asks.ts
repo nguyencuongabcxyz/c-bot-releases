@@ -4,7 +4,7 @@
 // answer goes back when the turn's done (linkAnswer, from the done / fail events).
 // (robot.ts calls createRobotMessages with its hub.)
 import type { DeskActivityApi } from '@/views/robot/life/desk';
-import type { TabsApi } from '@/features/chat/tabs';
+import type { TabsApi } from '@/features/chat/tabs/tabs';
 import type { AskingApi } from '@/features/chat/reply/ask';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import { Sfx } from '@/views/robot/sound';

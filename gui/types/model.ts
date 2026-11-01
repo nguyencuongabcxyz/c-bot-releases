@@ -252,7 +252,22 @@ export type Tab = {
 
 /** Someone at either end of a shared chat: their name, PC and address on the network
  * (app/src/features/share/wire.rs Person). */
-export type SharePerson = { name: string; pc: string; ip: string };
+export type SharePerson = { name: string; pc: string; ip: string; host?: boolean }; // (host: the one sharing; only the host sets it)
+
+/** A plan or a question waiting for a shared chat's host, as its guests see it (only what it
+ * asks: app/src/features/share/people.rs). */
+export type ShareDecision =
+  | { requestId: string; kind: 'plan'; plan: string }
+  | {
+      requestId: string;
+      kind: 'question';
+      questions: {
+        question: string;
+        header: string;
+        multiSelect: boolean;
+        options: { label: string; description: string }[];
+      }[];
+    };
 
 /** Where a guest's suggestion is at. */
 export type SuggestionState = 'waiting' | 'sent' | 'editing' | 'declined' | 'refused';
@@ -304,6 +319,7 @@ export type Character = {
   chatHeight?: number | null; // (none: the height of the screen)
   claudeCommands?: ClaudeCommand[];
   sessionIds?: string[];
+  saved?: SavedChat[]; // conversations starred to come back to (app/src/features/chat/saved.rs), newest first
   closedTabs?: (Tab & { closedAt: number })[];
   contextEngine?: boolean; // its folder's code indexed for its Claude (app/src/context), switched on from the chat
 };
@@ -556,6 +572,19 @@ export type SessionRow = {
   active: boolean;
   current: boolean;
   tabId: string | null;
+};
+
+/** A conversation saved to come back to (the ☆ on a tab): its session, and the name you gave it. */
+export type SavedChat = { id: string; name: string; emoji: string; savedAt: number };
+
+/** A saved chat as its conversation is now (robot_saved): gone when its transcript is. */
+export type SavedRow = SavedChat & {
+  title: string | null;
+  updatedAt: number | null;
+  messages: number | null;
+  gone: boolean;
+  tabId: string | null;
+  current: boolean;
 };
 
 /** A message of a past conversation, as read from Claude Code's transcript (main sessions.js). */
@@ -856,6 +885,11 @@ export type ChatEvent =
   | { type: 'share-taken-back'; id: string }
   | { type: 'share-suggestion'; id: string; state: SuggestionState; why?: string }
   | { type: 'share-arrived' }
+  | { type: 'share-talk'; from: SharePerson; text: string; mine: boolean }
+  | { type: 'share-comment'; from: SharePerson; quote: string; text: string; found: boolean }
+  | { type: 'share-recommend'; requestId: string; from: SharePerson; choice: string; why: string }
+  | { type: 'share-decision'; decision: ShareDecision }
+  | { type: 'share-decided'; requestId: string; outcome: string }
   | { type: 'share-ended'; reason: string }
   | { type: 'mirror'; kind: 'prompt' | 'question' | 'text' | 'idle' }
   | { type: 'mirror'; kind: 'tool'; name: string; detail: string }

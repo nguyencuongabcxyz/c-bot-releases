@@ -6,7 +6,7 @@
 
 /* square corners everywhere: paper, not plastic (the pages round things a lot, hence !important) */
 [data-theme="vintage"] :is(button, input, select, textarea, .chip, .tool, .file-chip, .pos, .badge, .count, .q-key, .q-header, kbd, code) { border-radius: var(--r) !important; }
-[data-theme="vintage"] :is(#card, #panel, #book, .menu, #menu, #palette, .note-menu, #working, #undo, .toast, .q-card, #todo, #helpers, .diff, .app-card, pre, .row, .stat, #composer, #add, #tabs, #filters, .form, #tip, #older, #dream-ex, #quiz-hint, #quiz-result, .reminder, .msg.user, .qa-summary, .hv-prompt, .local-img) { border-radius: var(--r-lg) !important; }
+[data-theme="vintage"] :is(#card, #panel, #book, .menu, #menu, #tab-menu, #palette, .note-menu, #working, #undo, .toast, .q-card, #todo, #helpers, .diff, .app-card, pre, .row, .stat, #composer, #add, #tabs, #filters, .form, #tip, #older, #dream-ex, #quiz-hint, #quiz-result, .reminder, .msg.user, .qa-summary, .hv-prompt, .local-img) { border-radius: var(--r-lg) !important; }
 [data-theme="vintage"] :is(#card, #panel, #book) { border-color: var(--line-2); }
 
 /* the typewriter: labels, tabs and buttons in spaced capitals */

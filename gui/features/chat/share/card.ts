@@ -56,6 +56,7 @@ export function startCard(tabTitle: string, a: CardActions): HTMLElement {
   const rules = el('ul', 'share-rules');
   for (const r of [
     '💬 Their prompts wait for your Send',
+    '📋 They see Claude’s plans and questions too, and can recommend (you decide)',
     '🚫 They can’t run anything on your PC',
     '⏱ It stops after an hour',
   ])

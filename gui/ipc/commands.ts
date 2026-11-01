@@ -28,6 +28,7 @@ import type {
   NotesReminder,
   OkOr,
   PermissionMode,
+  SavedRow,
   Point,
   QAItem,
   SessionRow,
@@ -88,6 +89,10 @@ export const shareStop = () => invoke<void>('share_stop');
 export const shareSuggest = (text: string) => invoke<string>('share_suggest', { text });
 export const shareTakeBack = (id: string) => invoke<void>('share_take_back', { id });
 export const shareLeave = () => invoke<void>('share_leave');
+export const shareTalk = (text: string) => invoke<void>('share_talk', { text });
+export const shareComment = (quote: string, text: string) => invoke<void>('share_comment', { quote, text });
+export const shareRecommend = (requestId: string, choice: string, why: string) =>
+  invoke<void>('share_recommend', { args: { requestId, choice, why } });
 // (the context engine, app/src/context: how its index is, switching it on or off, reading the folder again)
 export const robotContext = () => invoke<ContextEngineStatus>('robot_context');
 export const robotContextSet = (on: boolean) => invoke<ContextEngineStatus>('robot_context_set', { on });
@@ -158,10 +163,17 @@ export const robotTabReopen = (tabId?: string) =>
   invoke<OkOr<{ tabId: string; title: string }>>('robot_tab_reopen', { tabId });
 export const robotTabRename = (tabId: string, title: string) => invoke<void>('robot_tab_rename', { tabId, title });
 export const robotTabActivate = (tabId: string) => invoke<void>('robot_tab_activate', { tabId });
+export const robotTabMove = (tabId: string, to: number) => invoke<void>('robot_tab_move', { tabId, to });
 export const robotSessions = () => invoke<SessionRow[]>('robot_sessions');
 export const robotSession = (sessionId: string) => invoke<Transcript | null>('robot_session', { sessionId });
 // (past conversations thrown away, none named: every one it had; ones open in a tab stay. How many went)
 export const robotForgetSessions = (sessionIds?: string[]) => invoke<number>('robot_forget_sessions', { sessionIds });
+// (saved chats, most recently saved first: what robot_saved, robot_save and robot_unsave answer)
+export const robotSaved = () => invoke<SavedRow[]>('robot_saved');
+// (a tab's conversation, or one from Past chats; no name: the one it has, or its conversation's title)
+export const robotSave = (chat: ({ tabId: string } | { sessionId: string }) & { name?: string; emoji?: string }) =>
+  invoke<SavedRow[]>('robot_save', { chat });
+export const robotUnsave = (sessionId: string) => invoke<SavedRow[]>('robot_unsave', { sessionId });
 // (already: it was open in one of the tabs, now the active one)
 export const robotResume = (tabId: string, sessionId: string) =>
   invoke<OkOr<{ tabId: string; already: true } | { tabId: string; already?: undefined; title: string; total: number }>>(

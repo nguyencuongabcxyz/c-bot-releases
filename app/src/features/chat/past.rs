@@ -1,5 +1,5 @@
 //! Past conversations thrown away (the bin in "Past chats"): their transcripts, and the
-//! closed tabs that could have brought them back.
+//! closed tabs that could have brought them back. Saved chats stay unless thrown away by name.
 
 use super::*;
 use std::collections::HashSet;
@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use crate::runtime::Error;
 use crate::store::Fields;
 
-/// Throw past conversations away: these, or (none named) every one the robot had. Ones open
-/// in a tab stay. How many went.
+/// Throw past conversations away: these, or (none named) every one the robot had but its
+/// saved ones. Ones open in a tab stay. How many went.
 pub fn forget_sessions(
     app: &AppHandle,
     id: &str,
@@ -27,11 +27,18 @@ pub fn forget_sessions(
         .flatten()
         .flat_map(|t| [sessions_of(t), side::sessions_of(t)].concat())
         .collect();
+    // (clearing them all keeps the saved ones; one thrown away by name isn't saved any more)
+    let keep = if session_ids.is_some() {
+        HashSet::new()
+    } else {
+        saved_ids(&c)
+    };
     let gone: Vec<String> = session_ids
         .unwrap_or_else(|| all_of(&c))
         .into_iter()
-        .filter(|s| !open.contains(s))
+        .filter(|s| !open.contains(s) && !keep.contains(s))
         .collect();
+    unsave(app, id, &gone);
     let mut n = 0;
     for s in &gone {
         n += usize::from(transcripts::forget(&folder, s));

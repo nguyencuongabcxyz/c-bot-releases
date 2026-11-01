@@ -5,7 +5,7 @@ import { TOOLS } from '@/views/robot/constants';
 import type { CommentaryApi } from './reply/commentary';
 import type { FaceApi } from '@/views/robot/life/face';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
-import type { TabsApi } from './tabs';
+import type { TabsApi } from './tabs/tabs';
 import type { ChatLogApi } from './log';
 import type { DeskActivityApi } from '@/views/robot/life/desk';
 import { Sfx } from '@/views/robot/sound';
