@@ -138,6 +138,8 @@ pub enum AgentEvent {
         kind: String,
         prompt: String,
         background: bool,
+        /// Not a helper but a command left running in the background (or a watch on one).
+        command: bool,
     },
     Step {
         id: String,
@@ -324,10 +326,11 @@ mod tests {
             kind: "".into(),
             prompt: "p".into(),
             background: false,
+            command: false,
         };
         assert_eq!(
             json!(start),
-            json!({ "op": "start", "id": "a", "description": "Look", "kind": "", "prompt": "p", "background": false })
+            json!({ "op": "start", "id": "a", "description": "Look", "kind": "", "prompt": "p", "background": false, "command": false })
         );
     }
 

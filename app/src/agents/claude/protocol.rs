@@ -317,6 +317,9 @@ pub(super) struct HelperTask {
     pub prompt: String,
     #[serde(default, deserialize_with = "flag")]
     pub is_backgrounded: bool,
+    /// What kind of task: local_agent (a helper), local_bash (a command left running)…
+    #[serde(default, deserialize_with = "text")]
+    pub task_type: String,
     /// (task_updated) what changed: { status }
     #[serde(default)]
     pub patch: Value,
@@ -329,6 +332,14 @@ pub(super) struct HelperTask {
     /// (task_summary) what it's up to
     #[serde(default)]
     pub detail: Value,
+}
+
+impl HelperTask {
+    /// A command left running in the background (or a watch on one), not a helper agent.
+    pub fn is_command(&self) -> bool {
+        matches!(self.task_type.as_str(), "local_bash" | "local_command")
+            || self.task_type.starts_with("monitor")
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -497,6 +508,20 @@ mod tests {
             panic!()
         };
         assert!(message.content.is_empty());
+    }
+
+    #[test]
+    fn a_command_left_running_is_not_a_helper() {
+        let task = |t: &str| -> HelperTask {
+            serde_json::from_value(json!({ "task_id": "b1", "task_type": t })).expect("a task")
+        };
+        assert!(task("local_bash").is_command());
+        assert!(task("monitor_ws").is_command());
+        assert!(!task("local_agent").is_command());
+        assert!(!task("remote_agent").is_command());
+        // (from before Claude Code said what kind: a helper, as it was)
+        let old: HelperTask = serde_json::from_value(json!({ "task_id": "b1" })).expect("a task");
+        assert!(!old.is_command());
     }
 
     #[test]

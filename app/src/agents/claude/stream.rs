@@ -196,6 +196,7 @@ impl Inner {
             kind: s(input, "subagent_type").to_string(),
             prompt: s(input, "prompt").to_string(),
             background: input["run_in_background"].as_bool().unwrap_or(false),
+            command: false,
         }));
     }
 
@@ -244,6 +245,7 @@ impl Inner {
         let Some(id) = self.helper_of(&t) else { return };
         self.agent_tools.insert(id.clone());
         self.agent_running.insert(id.clone());
+        let command = t.is_command();
         self.emit(Event::Agent(AgentEvent::Start {
             id,
             parent: None,
@@ -251,6 +253,7 @@ impl Inner {
             kind: t.subagent_type,
             prompt: t.prompt,
             background: t.is_backgrounded,
+            command,
         }));
     }
 

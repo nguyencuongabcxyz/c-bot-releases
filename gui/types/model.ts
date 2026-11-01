@@ -820,6 +820,7 @@ export type AgentEvent =
       kind: string;
       prompt: string;
       background: boolean;
+      command: boolean; // (not a helper: a command left running in the background)
     }
   | { op: 'progress'; id: string; activity: string; tokens?: number; tools?: number; ms?: number }
   | { op: 'step'; id: string; tool: string; detail: string }

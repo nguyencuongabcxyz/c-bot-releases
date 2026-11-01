@@ -1,5 +1,7 @@
 // Helper agents (sub-agents) Claude Code sends out, each with its own card:
-// what it's doing right now, how far it got, and its report when it's back.
+// what it's doing right now, how far it got, and its report when it's back. Commands it
+// leaves running in the background are listed there too, as commands: no little bot for
+// them, and the robot doesn't act them out.
 // (robot.ts calls createHelpers with its hub.)
 import type { PastChatsApi } from './past/resume';
 import { TOOLS } from '@/views/robot/constants';
@@ -14,6 +16,7 @@ import { Sfx } from '@/views/robot/sound';
 import type { ChatTab, Helper, RobotState, ToolCall } from '@/views/robot/types';
 import { fileIcon as viewIcon, renderFileView } from '@/features/workbench/files/viewer';
 import { collectOutputs, renderOutputsPanel, renderOutputsStrip } from './outputs';
+import { cardTitle } from './helper-card';
 import * as ipc from '@/ipc';
 import { $ } from '@/lib/dom';
 import { plural, samePath } from '@/lib/text';
@@ -98,6 +101,7 @@ export function createHelpers(r: HelpersNeeds) {
           kind: ev.kind || a.kind,
           prompt: ev.prompt || a.prompt,
           background: ev.background || a.background,
+          command: ev.command || a.command,
           parent: ev.parent ?? a.parent,
         });
         if (fresh) tab.helpersCollapsed = false;
@@ -131,7 +135,7 @@ export function createHelpers(r: HelpersNeeds) {
         if (ev.tools !== undefined) a.toolsUsed = ev.tools;
         if (wasRunning) {
           tab.justBack = a.id;
-          if (r.animates(tab)) {
+          if (r.animates(tab) && !a.command) {
             Sfx.tick();
             r.flash('hop', 600);
             const name = a.description.length > 30 ? `${a.description.slice(0, 29)}…` : a.description;
@@ -143,7 +147,10 @@ export function createHelpers(r: HelpersNeeds) {
     }
     if (tab === r.active()) renderHelpers();
     if (helperView.id === a.id) renderHelperView();
-    actOutHelper(tab, ev, fresh);
+    if (a.command) {
+      r.renderTabs();
+      r.renderWorking();
+    } else actOutHelper(tab, ev, fresh);
   }
 
   // the robot acts out its helpers: a whee as one flies off, a hop when one takes
@@ -188,8 +195,7 @@ export function createHelpers(r: HelpersNeeds) {
     helpersEl.classList.toggle('collapsed', !!t.helpersCollapsed);
     helpersEl.innerHTML =
       '<div class="todo-head"><span class="todo-title"></span><span class="todo-bar"><i></i></span><span class="todo-chev"></span></div><ul class="helper-list"></ul>';
-    $('.todo-title', helpersEl).textContent =
-      back === list.length ? `${plural(list.length, 'helper')}  all back` : `Helpers  ${back}/${list.length} back`;
+    $('.todo-title', helpersEl).textContent = cardTitle(list);
     $<HTMLElement>('.todo-bar i', helpersEl).style.width = `${(back / list.length) * 100}%`;
     $('.todo-chev', helpersEl).textContent = t.helpersCollapsed ? 'show' : 'hide';
     $('.todo-head', helpersEl).addEventListener('click', () => {
@@ -199,14 +205,16 @@ export function createHelpers(r: HelpersNeeds) {
     const ul = $('.helper-list', helpersEl);
     for (const a of list) {
       const li = document.createElement('li');
-      li.className = `${a.status}${a.id === t.justBack ? ' just-back' : ''}`;
-      li.title = 'Click to watch it work';
+      li.className = `${a.status}${a.command ? ' command' : ''}${a.id === t.justBack ? ' just-back' : ''}`;
+      li.title = a.command ? 'Background command' : 'Click to watch it work';
       li.innerHTML = '<span class="hi"></span><span class="hn"></span><span class="hm"></span><span class="hs"></span>';
-      $('.hi', li).innerHTML = AGENT_ICON[a.status] ? Icon(AGENT_ICON[a.status], 'sm') : '';
+      const icon = AGENT_ICON[a.status] || (a.command ? 'terminal' : '');
+      $('.hi', li).innerHTML = icon ? Icon(icon, 'sm') : '';
       $('.hn', li).textContent = `${a.parent ? '↳ ' : ''}${a.description}`;
       $('.hm', li).textContent = helperMeta(a);
       const firstLine = (a.summary || a.report || '').split('\n').find((l) => l.trim()) || '';
-      $('.hs', li).textContent = a.status === 'running' ? a.activity || 'Getting started…' : firstLine || 'Done';
+      const running = a.command ? 'Running in the background' : a.activity || 'Getting started…';
+      $('.hs', li).textContent = a.status === 'running' ? running : firstLine || 'Done';
       li.addEventListener('click', () => openHelper(t, a.id));
       ul.appendChild(li);
     }
@@ -560,7 +568,7 @@ export function createHelpers(r: HelpersNeeds) {
     const bodyEl = $('#hv-body');
     const nearBottom = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight < 60;
     const open = bodyEl.querySelector('details')?.open;
-    Icon.text($('#hv-title'), `🤖 ${a.description}`);
+    Icon.text($('#hv-title'), `${a.command ? '⌨️' : '🤖'} ${a.description}`);
     const status =
       (
         {
@@ -578,7 +586,11 @@ export function createHelpers(r: HelpersNeeds) {
       <div class="hv-said" hidden><h4>What it says</h4><div class="hv-words md-said"></div></div>
       <div class="hv-rep" hidden><h4>Report</h4><div class="hv-words md-rep"></div></div>`;
     Icon.text($(`.pill-${a.status}`, bodyEl), status);
-    $('.hv-kind', bodyEl).textContent = `${a.kind || 'helper'}${a.background ? ' · in the background' : ''}`;
+    $('.hv-kind', bodyEl).textContent = a.command
+      ? 'command, in the background'
+      : `${a.kind || 'helper'}${a.background ? ' · in the background' : ''}`;
+    // (a command has no job nor steps to show: what it ended with is its report)
+    for (const el of bodyEl.querySelectorAll<HTMLElement>('details, :scope > h4, .hv-steps')) el.hidden = !!a.command;
     $('.hv-stats', bodyEl).textContent = helperMeta(a);
     $('.hv-prompt', bodyEl).textContent = a.prompt || '(not shared)';
     if (open) $<HTMLDetailsElement>('details', bodyEl).open = true;

@@ -93,6 +93,7 @@ export type Helper = {
   kind?: string;
   prompt?: string;
   background?: boolean;
+  command?: boolean; // (not a helper: a command left running in the background)
   parent?: string | null;
   activity?: string;
   tokens?: number;

@@ -20,11 +20,12 @@ export type DeskActivityNeeds = {
 };
 
 export function createDeskActivity(r: DeskActivityNeeds) {
-  // helper agents still at work, in one tab or all of them
+  // helper agents still at work, in one tab or all of them (not commands left running: a dev
+  // server would keep it supervising for hours)
   function helpersOut(tab?: ChatTab) {
     let n = 0;
     for (const t of tab ? [tab] : r.tabs.values())
-      for (const a of t.agents?.values() || []) if (a.status === 'running') n++;
+      for (const a of t.agents?.values() || []) if (a.status === 'running' && !a.command) n++;
     return n;
   }
 
