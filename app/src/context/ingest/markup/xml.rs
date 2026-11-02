@@ -75,7 +75,7 @@ pub(super) fn xml(text: &str) -> Vec<Def> {
                 at = lt + 1;
                 continue;
             }
-            // (HTML's void elements, `<br>`, `<input â€¦>`, never close)
+            // (HTML's void elements, `<br>`, `<input …>`, never close)
             let shut = tag.ends_with('/') || VOID.contains(&name.to_ascii_lowercase().as_str());
             // (a script's or a style's text holds no elements: on to where it closes)
             if !shut && matches!(name.to_ascii_lowercase().as_str(), "script" | "style") {

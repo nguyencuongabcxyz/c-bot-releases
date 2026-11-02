@@ -321,6 +321,24 @@ mod tests {
     }
 
     #[test]
+    fn a_use_inside_a_method_is_the_methods_not_its_classs() {
+        let (dir, code) = crate::context::answers::tests::folder(&[
+            ("src/limits.ts", "export const LIMIT = 10;\n"),
+            (
+                "src/shop.ts",
+                "import { LIMIT } from './limits';\nexport class Shop {\n  page(items: number[]) {\n    return items.slice(0, LIMIT);\n  }\n}\n",
+            ),
+        ]);
+        let g = Graph::build(&code, &dir);
+        let got = references(&g, &code, &dir, "LIMIT", "", 1);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            got.contains("resolved to it (1):\n  src/shop.ts:4  in src.shop.Shop.page\n"),
+            "{got}"
+        );
+    }
+
+    #[test]
     fn a_function_handed_on_is_a_use_of_it() {
         let (dir, code, g) = limits();
         let got = references(&g, &code, &dir, "format", "", 1);

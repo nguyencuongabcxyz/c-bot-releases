@@ -456,6 +456,18 @@ mod tests {
     }
 
     #[test]
+    fn a_config_keys_comment_right_after_the_one_before_goes_with_it() {
+        // (a config file's definitions have no head from a syntax tree: the comment above a
+        // key is found by its line, even straight after the previous key's last line)
+        let mut src = String::from("first:\n");
+        src.push_str(&"  x: 1\n".repeat(15));
+        src.push_str("# The second one.\nsecond:\n");
+        src.push_str(&"  y: 2\n".repeat(15));
+        let got = spans(FileType::Config(Config::Yaml), &src);
+        assert_eq!(got.last(), Some(&(17, 33, "second".to_string())), "{got:?}");
+    }
+
+    #[test]
     fn text_is_cut_by_paragraph() {
         let src = "One.\nTwo.\n\nThree.\n";
         assert_eq!(spans(FileType::Text, src), [(1, 4, String::new())]);

@@ -342,7 +342,7 @@ pub(super) fn summary(code: &Code) -> String {
     }
     let langs: Vec<String> = langs.iter().map(|(l, n)| format!("{l} {n}")).collect();
     format!(
-        "{} code files ({}), {} definitions. Each line: where it starts â”‚ its signature.",
+        "{} code files ({}), {} definitions. Each line: where it starts │ its signature.",
         code.files.len(),
         langs.join(", "),
         code.symbols()
