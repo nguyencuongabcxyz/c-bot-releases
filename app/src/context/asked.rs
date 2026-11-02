@@ -140,6 +140,18 @@ pub fn type_hierarchy(
     Ok(answers::hierarchy(&graph_of(&f), name, direction))
 }
 
+/// find_type_usages: where a type is used as one (under `path`, '' for anywhere).
+pub fn find_type_usages(
+    app: &AppHandle,
+    id: &str,
+    name: &str,
+    path: &str,
+) -> Result<String, Error> {
+    let f = fresh(app, id)?;
+    let under = ingest::asked_path(&f.root, path).unwrap_or_default();
+    Ok(answers::type_usages(&graph_of(&f), &f.root, name, &under))
+}
+
 /// change_impact: what changing a symbol or a file would touch.
 pub fn change_impact(
     app: &AppHandle,
@@ -150,11 +162,25 @@ pub fn change_impact(
     let f = fresh(app, id)?;
     let g = graph_of(&f);
     let file = ingest::asked_path(&f.root, target).filter(|r| g.file_of(r).is_some());
+    let code = f.code.locked();
     Ok(answers::impact(
         &g,
+        &code,
+        &f.root,
         file.as_deref().unwrap_or(target),
         depth,
     ))
+}
+
+/// type_members: a type's members (and with `inherited`, its supertypes').
+pub fn type_members(
+    app: &AppHandle,
+    id: &str,
+    name: &str,
+    inherited: bool,
+) -> Result<String, Error> {
+    let f = fresh(app, id)?;
+    Ok(answers::members(&graph_of(&f), name, inherited))
 }
 
 /// search_code: code or documents found by name, words and meaning (under `path`, '' for

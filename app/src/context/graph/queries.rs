@@ -197,6 +197,53 @@ impl Graph {
         out
     }
 
+    /// The innermost definition of `file` holding `line` (None: the file's top level).
+    pub(in crate::context) fn at_line(&self, file: usize, line: u32) -> Option<usize> {
+        self.files[file].syms.clone().rfind(|&s| {
+            let sym = &self.syms[s];
+            sym.line <= line && line <= sym.end && sym.kind != Kind::Module
+        })
+    }
+
+    /// What a name used bare in `file` on `line` means: in a type, its member of that name
+    /// unsaid (C#, Java, C++, Dart, Ruby: `_count` for `this._count`); else what a bare call
+    /// there would see, of any kind but a member: one nested around it, the file's own, or
+    /// one brought in.
+    pub(in crate::context) fn bare_meaning(
+        &self,
+        file: usize,
+        name: &str,
+        line: u32,
+    ) -> Option<usize> {
+        let by = self.at_line(file, line);
+        let unsaid = matches!(
+            self.files[file].lang,
+            Lang::CSharp | Lang::Java | Lang::Cpp | Lang::Dart | Lang::Ruby
+        );
+        if unsaid
+            && let Some(m) = by
+                .and_then(|b| self.enclosing(b))
+                .and_then(|t| self.member(t, name))
+        {
+            return Some(m);
+        }
+        let free = |s: usize| self.owner[s].is_none();
+        by.and_then(|b| self.in_scope(file, b, name, line, &free))
+            .or_else(|| self.resolve(file, name, &free))
+    }
+
+    /// A type's members, its own (all its parts': a C# partial class, a Rust type's impls),
+    /// in the order they're defined.
+    pub(in crate::context) fn own_members(&self, ty: usize) -> Vec<usize> {
+        let mut out: Vec<usize> = self
+            .parts(ty)
+            .flat_map(|t| self.members_of(t).to_vec())
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// A type's supertypes (`up`) or subtypes, all the way, with their distances.
     pub(in crate::context) fn lineage(&self, ty: usize, up: bool) -> Vec<(usize, usize, Heir)> {
         let mut seen = HashSet::from([ty]);

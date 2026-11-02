@@ -487,7 +487,7 @@ impl Graph {
     /// sees: one nested in a definition around the call (the innermost), else one at the file's
     /// level (or a namespace's). Of several there (a test file defines a helper again in each `describe` block),
     /// the last defined before the call, else the first; a function's overloads are one.
-    fn in_scope(
+    pub(super) fn in_scope(
         &self,
         file: usize,
         caller: usize,

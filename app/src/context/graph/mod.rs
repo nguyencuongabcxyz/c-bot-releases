@@ -1,4 +1,5 @@
-//! The code graph: who calls what, what imports what, what extends what, across a folder.
+//! The code graph: who calls what, what imports what, what extends what, where a type is
+//! used as one (a parameter's, a field's…), across a folder.
 //! Each file keeps only its own links (facts.rs), read with its definitions (extract/); the
 //! graph is put together from every file's at once when it's first asked about (build.rs,
 //! modules.rs), kept till the folder's generation moves on, and walked to answer
@@ -58,6 +59,16 @@ pub(in crate::context) struct Edge {
     pub lines: Vec<u32>,
 }
 
+/// A place a type is named in a declaration: in what (None: at the top of a file), what for,
+/// and on what line.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(in crate::context) struct TypeUseAt {
+    pub file: usize,
+    pub by: Option<usize>,
+    pub role: TypeRole,
+    pub line: u32,
+}
+
 /// The names a file can reach besides its own: what it imported by name, the modules it
 /// imported whole (under a name), and the files whose top level it sees all of.
 #[derive(Default)]
@@ -92,6 +103,7 @@ pub(in crate::context) struct Graph {
     pub subs: Vec<Vec<(usize, Heir)>>,
     pub calls_out: Vec<Vec<Edge>>,
     pub calls_in: Vec<Vec<Edge>>,
+    pub type_uses: Vec<Vec<TypeUseAt>>, // (a type -> where declarations name it)
     pub imports: Vec<BTreeSet<usize>>,
     pub imported_by: Vec<BTreeSet<usize>>,
     pub externals: Vec<BTreeSet<String>>,
@@ -189,6 +201,53 @@ mod tests {
         }
         out.sort();
         out
+    }
+
+    /// Where a type is named in a declaration: "role in user @line".
+    fn type_uses_of(g: &Graph, name: &str) -> Vec<String> {
+        let t = g.resolve_name(name, "type")[0];
+        g.type_uses[t]
+            .iter()
+            .map(|u| {
+                let by = u.by.map_or("-", |s| g.syms[s].name.as_str());
+                format!("{:?} in {by} @{}", u.role, u.line)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_type_named_from_outside_is_not_the_folders_of_its_name() {
+        let g = graph(&[
+            ("src/error.rs", "pub enum Error { Gone }\n"),
+            (
+                "src/main.rs",
+                "mod error;\nuse crate::error::Error;\nfn a(e: Error) {}\nfn b(e: tungstenite::Error) -> std::io::Error {}\nfn c() -> Result<(), crate::error::Error> {}\nstruct S { e: D::Error }\n",
+            ),
+        ]);
+        assert_eq!(
+            type_uses_of(&g, "Error"),
+            ["Param in a @3", "Returns in c @5"]
+        );
+    }
+
+    #[test]
+    fn a_type_is_used_through_an_import_as_a_parameter_a_field_and_a_return() {
+        let g = graph(&[
+            ("src/store.ts", "export class Store {}\n"),
+            (
+                "src/api.ts",
+                "import { Store } from './store';\nexport class Api {\n  store: Store;\n  open(s: Store): Store { const t: Store = s; return t; }\n}\n",
+            ),
+        ]);
+        assert_eq!(
+            type_uses_of(&g, "Store"),
+            [
+                "Field in store @3",
+                "Param in open @4",
+                "Returns in open @4",
+                "Other in open @4",
+            ]
+        );
     }
 
     #[test]

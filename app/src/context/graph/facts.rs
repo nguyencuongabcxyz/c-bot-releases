@@ -1,6 +1,6 @@
 //! What a file says about how it hangs together, kept with its definitions (parse.rs Facts):
-//! what it imports, what it calls or makes and through what, what its types extend, and its
-//! types' typed fields. Nothing here is resolved across files: the graph (build.rs) does that
+//! what it imports, what it calls or makes and through what, what its types extend, its
+//! types' typed fields, and the types its declarations name (a parameter's, a field's…). Nothing here is resolved across files: the graph (build.rs) does that
 //! when it's asked, from every file's facts at once, so the order files are read in never
 //! matters and a file read again can't leave a stale edge behind.
 
@@ -106,6 +106,30 @@ pub(in crate::context) struct Receiver {
     pub ty: String,
 }
 
+/// What a type named in a declaration is there for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(in crate::context) enum TypeRole {
+    /// A parameter's type.
+    Param,
+    /// What a function or method returns.
+    Returns,
+    /// A field's or a property's type.
+    Field,
+    /// Anywhere else: a local's type, a cast, an alias.
+    Other,
+}
+
+/// A type named in a declaration, by name: `store: Store` names Store, as a parameter's type.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(in crate::context) struct TypeUse {
+    pub name: String,
+    pub role: TypeRole,
+    pub line: u32,
+    /// The definition it's in (an index into the file's definitions), if any.
+    pub within: Option<u32>,
+}
+
 /// Everything above, for one file.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::context) struct Links {
@@ -123,6 +147,8 @@ pub(in crate::context) struct Links {
     /// Store`, ("load", "open") for `export { open as load }`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exports: Vec<(String, String)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<TypeUse>,
 }
 
 #[cfg(test)]

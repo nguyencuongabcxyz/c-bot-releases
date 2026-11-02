@@ -1,6 +1,7 @@
 //! The context optimizer's tools (context/), about the code in the robot's folder: finding your
 //! way (code_map, code_outline, find_symbol, search_code), following the code graph
-//! (find_references, call_chain, file_dependencies, type_hierarchy, change_impact), and what
+//! (find_references, call_chain, file_dependencies, type_hierarchy, type_members,
+//! find_type_usages, change_impact), and what
 //! git remembers of it (code_history). Only conversations of a robot with the optimizer on are
 //! given them (server.rs `--code`).
 
@@ -18,7 +19,7 @@ const HISTORY_DEFAULT: usize = 10;
 const HISTORY_MAX: usize = 50;
 
 /// The names of its tools.
-pub const NAMES: [&str; 10] = [
+pub const NAMES: [&str; 12] = [
     "code_map",
     "code_outline",
     "find_symbol",
@@ -27,6 +28,8 @@ pub const NAMES: [&str; 10] = [
     "call_chain",
     "file_dependencies",
     "type_hierarchy",
+    "type_members",
+    "find_type_usages",
     "change_impact",
     "code_history",
 ];
@@ -85,7 +88,7 @@ fn finding() -> Value {
         },
         {
             "name": "find_references",
-            "description": "Who calls or makes a function, method or type in your project: each call followed through imports, fields, typed parameters and locals and inheritance to the definition it really reaches (not just text that matches), with its line and the function it's in; with depth, the callers' callers too. Then the other places the name appears that aren't calls of it. Use it before changing or renaming something.",
+            "description": "Who calls or makes a function, method or type in your project: each call followed through imports, fields, typed parameters and locals and inheritance to the definition it really reaches (not just text that matches), with its line and the function it's in; with depth, the callers' callers too. Then where it's used without a call (a constant read, a function handed on as a callback), resolved the same way, and the other places the name appears. Use it before changing or renaming something.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -118,6 +121,7 @@ fn finding() -> Value {
 }
 
 /// The tools that follow the code graph.
+#[expect(clippy::too_many_lines, reason = "a flat table of the tools' JSON schemas")]
 fn following() -> Value {
     let at_once = super::at_once();
     json!([
@@ -165,8 +169,36 @@ fn following() -> Value {
             "annotations": at_once,
         },
         {
+            "name": "type_members",
+            "description": "The members of a class, interface, struct, trait or other type of your project (all its parts': a C# partial class, a Rust type's impls), each with its kind, file and lines, and signature; with inherited, its supertypes' members too, nearest first, but for those it overrides.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "The type: a name, or a full name from find_symbol." },
+                    "inherited": { "type": "boolean", "description": "Also the members it gets from its supertypes." },
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
+            "name": "find_type_usages",
+            "description": "Where a class, interface, struct or other type of your project is used as a type: as a parameter's type, as what a function returns, as a field's or a property's type, and elsewhere (a local's type, a cast), each with its line and what it's in; then where it's made, and what extends or implements it. Use it before changing a type's shape.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "The type: a name, or a full name from find_symbol." },
+                    "path": { "type": "string", "description": "Only uses in this file or folder." },
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
             "name": "change_impact",
-            "description": "What changing a function, method, type or file would touch in your project, before you change it: its callers (to a depth), overriding methods, subtypes and supertypes; for a file, the files importing it and the callers of what it defines. With a level: low, medium or high.",
+            "description": "What changing a function, method, constant, type or file would touch in your project, before you change it: its callers (to a depth), what uses it without a call, overriding methods, subtypes and supertypes, and for a type what declares something of it (a parameter, a field, what's returned); for a file, the files importing it and the callers of what it defines. With a level: low, medium or high.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -252,6 +284,15 @@ pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
         "type_hierarchy" => {
             let direction = args["direction"].as_str().unwrap_or("both");
             context::type_hierarchy(app, from, &text(&args["name"]), direction)
+        }
+        "type_members" => context::type_members(
+            app,
+            from,
+            &text(&args["name"]),
+            args["inherited"].as_bool() == Some(true),
+        ),
+        "find_type_usages" => {
+            context::find_type_usages(app, from, &text(&args["name"]), &text(&args["path"]))
         }
         "change_impact" => {
             let depth = number(&args["depth"], 2, 1, DEPTH_MAX);

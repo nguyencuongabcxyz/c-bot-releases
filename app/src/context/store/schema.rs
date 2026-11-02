@@ -106,6 +106,15 @@ const MIGRATIONS: &[(i32, &str)] = &[
     WHERE type IN ('python', 'typescript', 'tsx', 'rust', 'dart', 'php');
     "#,
     ),
+    (
+        7,
+        // Code read again: its facts now say the types its declarations name (graph::TypeUse),
+        // for find_type_usages.
+        r#"
+    UPDATE files SET size = -1, hash = ''::bytea
+    WHERE type IN ('typescript', 'tsx', 'csharp', 'go', 'python', 'rust', 'java', 'cpp', 'php', 'dart', 'zig');
+    "#,
+    ),
 ];
 
 pub(super) async fn migrate(pool: &PgPool) -> Result<(), sqlx::Error> {

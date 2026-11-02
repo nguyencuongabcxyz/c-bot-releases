@@ -36,7 +36,14 @@ pub(super) struct Facts {
     /// The lines that use the name asked for (read_for), in order.
     #[serde(skip)]
     pub uses: Vec<u32>,
+    /// Of those, the lines that use it bare, as a name in reach (not `x.name`, `a::name`, an
+    /// object's key, or in an import): where it may mean the folder's own of that name.
+    #[serde(skip)]
+    pub bare: Vec<u32>,
 }
+
+/// What comes before a name that's a member of something, not a name in reach.
+const MEMBER_OF: &[&str] = &[".", "::", "->", "?.", "?->", "::$"];
 
 const SIG_MAX: usize = 200;
 
@@ -118,6 +125,7 @@ pub(super) fn read_for(lang: Lang, src: &str, target: Option<&str>) -> Option<Fa
     names.sort_unstable();
     r.facts.names = names;
     r.facts.uses.dedup();
+    r.facts.bare.dedup();
     r.facts.links = graph::links(lang, &tree, src, &r.facts.defs);
     Some(r.facts)
 }
@@ -179,7 +187,11 @@ impl<'a> Reader<'a> {
             let name = self.text(node);
             *self.counts.entry(name).or_default() += 1;
             if self.target == Some(name) {
-                self.facts.uses.push(row(node.start_position()));
+                let line = row(node.start_position());
+                self.facts.uses.push(line);
+                if bare(node) {
+                    self.facts.bare.push(line);
+                }
             }
         }
     }
@@ -362,6 +374,38 @@ impl<'a> Reader<'a> {
         }
         row(start.start_position())
     }
+}
+
+/// A name used as one in reach: not after a `.` or a `::` (a member, a path's), not what
+/// something is called (an object's key, a field's name), not in an import (where it's
+/// brought in, not used).
+fn bare(node: Node) -> bool {
+    if node
+        .prev_sibling()
+        .is_some_and(|p| MEMBER_OF.contains(&p.kind()))
+    {
+        return false;
+    }
+    // (what a member, a key or an argument is called: `{ name: 1 }`, `f(name=1)`, a field's
+    // name in a type; but a JSX tag names the component it shows)
+    let key = node.parent().is_some_and(|p| {
+        !p.kind().starts_with("jsx")
+            && ["name", "key", "property", "field", "attribute"]
+                .iter()
+                .any(|f| {
+                    p.child_by_field_name(f)
+                        .is_some_and(|k| k.id() == node.id())
+                })
+    });
+    let imported = std::iter::successors(node.parent(), |p| p.parent()).any(|p| {
+        let kind = p.kind();
+        kind.contains("import")
+            || matches!(
+                kind,
+                "use_declaration" | "using_directive" | "namespace_use_declaration"
+            )
+    });
+    !key && !imported
 }
 
 fn row(p: tree_sitter::Point) -> u32 {
@@ -784,6 +828,17 @@ mod tests {
         let names: Vec<(&str, u32)> = f.names.iter().map(|(n, c)| (n.as_str(), *c)).collect();
         assert_eq!(names, [("Store", 1), ("helper", 2), ("open", 1), ("s", 1)]);
         assert_eq!(f.uses, [3, 4]);
+    }
+
+    #[test]
+    fn a_name_is_used_bare_unless_its_a_member_a_key_or_imported() {
+        let src = "import { LIMIT } from './limits';\nconst a = LIMIT;\nconst b = cfg.LIMIT;\nconst c = { LIMIT: 1 };\nrun(LIMIT);\nfunction f(o: { LIMIT: number }) {}\n";
+        let f = read_for(Lang::TypeScript, src, Some("LIMIT")).unwrap();
+        assert_eq!(f.uses, [1, 2, 3, 4, 5, 6]);
+        assert_eq!(f.bare, [2, 5]);
+        let rust = "use crate::limits::LIMIT;\nfn a() -> u32 { LIMIT + limits::LIMIT }\n";
+        let f = read_for(Lang::Rust, rust, Some("LIMIT")).unwrap();
+        assert_eq!(f.bare, [2]);
     }
 
     #[test]

@@ -1,45 +1,10 @@
 //! What the tools that walk the code graph answer: where something is defined (its full name,
-//! its lines, its signature, how many call it), who calls it (each call's line, in what), the
-//! chain of calls from one to another, a file's imports and importers, a type's lineage and a
-//! method's overrides, and what changing something would touch.
+//! its lines, its signature, how many call it), the chain of calls from one to another, a
+//! file's imports and importers, a type's lineage and a method's overrides, a type's members,
+//! and what changing something would touch. Who calls something and where it's used: uses.rs.
 
 use super::*;
-
-const TARGETS: usize = 5;
-const CALLS_SHOWN: usize = 80;
-const TESTS_SHOWN: usize = 20;
-
-/// A symbol in a line: its kind, full name, where.
-fn named(g: &Graph, s: usize) -> String {
-    let sym = &g.syms[s];
-    format!(
-        "{} {} — {}:{}-{}",
-        sym.kind.word(),
-        sym.fqn,
-        g.path(s),
-        sym.line,
-        sym.end
-    )
-}
-
-/// Each file's lines, read once.
-#[derive(Default)]
-struct Lines {
-    files: HashMap<String, Vec<String>>,
-}
-
-impl Lines {
-    fn get(&mut self, root: &Path, path: &str, line: u32) -> String {
-        let lines = self.files.entry(path.to_string()).or_insert_with(|| {
-            ingest::read_code(&root.join(path))
-                .map(|t| t.lines().map(str::to_string).collect())
-                .unwrap_or_default()
-        });
-        lines
-            .get(line as usize - 1)
-            .map_or(String::new(), |l| parse::cut(l.trim(), 160))
-    }
-}
+use crate::context::graph::Heir;
 
 // ---------------------------------------------------------------- find_symbol
 
@@ -76,117 +41,6 @@ pub(in crate::context) fn find(
             "… and {} more: be more exact (Holder.name, a full name), or give a kind.\n",
             found.len() - FIND_MAX
         ));
-    }
-    out
-}
-
-// ---------------------------------------------------------------- find_references
-
-/// Who calls what a name means, up to `depth` calls away (under `under`), each call with its
-/// line and what it's in; then the other places the name appears that aren't resolved to it.
-pub(in crate::context) fn references(
-    g: &Graph,
-    code: &Code,
-    root: &Path,
-    query: &str,
-    under: &str,
-    depth: usize,
-) -> String {
-    let targets: Vec<usize> = g
-        .resolve_name(query, "")
-        .into_iter()
-        .take(TARGETS)
-        .collect();
-    if targets.is_empty() {
-        return name_uses(code, root, query, under);
-    }
-    let mut lines = Lines::default();
-    let mut out = String::new();
-    let mut resolved = HashSet::new();
-    let mut shown = 0;
-    for &t in &targets {
-        let callers = g.callers(t, depth.max(1), &|p| !search::under_path(p, under));
-        let through = g.dispatched_through(t);
-        out.push_str(&format!("{}\n", named(g, t)));
-        if callers.is_empty() {
-            out.push_str("  no calls found to it\n\n");
-            continue;
-        }
-        out.push_str(&format!(
-            "  {} callers{}:\n",
-            callers.len(),
-            if depth > 1 {
-                format!(" (up to {depth} calls away)")
-            } else {
-                String::new()
-            }
-        ));
-        for r in &callers {
-            let caller = &g.syms[r.sym];
-            let path = g.path(r.sym).to_string();
-            for &l in &r.lines {
-                resolved.insert((path.clone(), l));
-            }
-            if shown >= CALLS_SHOWN {
-                continue;
-            }
-            shown += 1;
-            let at = r.lines.first().copied().unwrap_or(caller.line);
-            let indent = "  ".repeat(r.depth);
-            let calls = if r.via == t {
-                String::new()
-            } else if through.contains(&r.via) {
-                format!(" (through {})", g.syms[r.via].fqn)
-            } else {
-                format!(" → {}", g.syms[r.via].name)
-            };
-            out.push_str(&format!("{indent}{path}:{at}  in {}{calls}\n", caller.fqn));
-            out.push_str(&format!("{indent}  {}\n", lines.get(root, &path, at)));
-        }
-        out.push('\n');
-    }
-    if shown >= CALLS_SHOWN {
-        out.push_str("(more callers than shown: give a path to narrow it)\n");
-    }
-    let name = g.syms[targets[0]].name.clone();
-    out.push_str(&unresolved(code, root, &name, under, &resolved));
-    out
-}
-
-/// The places a name appears that the graph didn't resolve to what it means (other things of
-/// that name, or calls the syntax can't follow), in short.
-fn unresolved(
-    code: &Code,
-    root: &Path,
-    name: &str,
-    under: &str,
-    resolved: &HashSet<(String, u32)>,
-) -> String {
-    let mut lines: Vec<(String, u32, String)> = vec![];
-    for (path, lang) in users(code, name, under) {
-        let Some(text) = ingest::read_code(&root.join(&path)) else {
-            continue;
-        };
-        let Some(facts) = parse::read_for(lang, &text, Some(name)) else {
-            continue;
-        };
-        let all: Vec<&str> = text.lines().collect();
-        for l in facts.uses {
-            if !resolved.contains(&(path.clone(), l)) {
-                let code = all.get(l as usize - 1).map_or("", |s| s.trim());
-                lines.push((path.clone(), l, parse::cut(code, 160)));
-            }
-        }
-    }
-    if lines.is_empty() {
-        return String::new();
-    }
-    let mut out = format!(
-        "Other places \"{name}\" appears, not resolved to the above ({}):\n",
-        lines.len()
-    );
-    for (path, l, code) in lines.iter().take(30) {
-        out.push_str(&format!("  {path}:{l}  {code}\n"));
     }
     out
 }
@@ -320,12 +174,80 @@ pub(in crate::context) fn hierarchy(g: &Graph, query: &str, direction: &str) -> 
     out
 }
 
+// ---------------------------------------------------------------- type_members
+
+/// A type's members (all its parts': a C# partial class, a Rust type's impls), each with its
+/// kind, lines and signature; with `inherited`, its supertypes' too, nearest first, but for
+/// those of a name already listed (overridden).
+pub(in crate::context) fn members(g: &Graph, query: &str, inherited: bool) -> String {
+    let Some(&t) = g.resolve_name(query, "type").first() else {
+        return format!(
+            "No type named \"{query}\" is defined here. Try mcp__cbot__find_symbol for its name."
+        );
+    };
+    let own = g.own_members(t);
+    let mut seen: HashSet<&str> = own.iter().map(|&m| g.syms[m].name.as_str()).collect();
+    let mut out = format!("{}\n  {} members:\n", named(g, t), own.len());
+    out.push_str(&member_lines(g, &own));
+    if !inherited {
+        return out;
+    }
+    for (sup, _, heir) in g.lineage(t, true) {
+        let theirs: Vec<usize> = g
+            .own_members(sup)
+            .into_iter()
+            .filter(|&m| seen.insert(g.syms[m].name.as_str()))
+            .collect();
+        if !theirs.is_empty() {
+            let how = if heir == Heir::Implements {
+                "implemented"
+            } else {
+                "inherited"
+            };
+            out.push_str(&format!(
+                "  {how} from {} ({}):\n",
+                g.syms[sup].fqn,
+                theirs.len()
+            ));
+            out.push_str(&member_lines(g, &theirs));
+        }
+    }
+    out
+}
+
+/// Members, a line each with their signature under.
+fn member_lines(g: &Graph, members: &[usize]) -> String {
+    members
+        .iter()
+        .map(|&m| {
+            let s = &g.syms[m];
+            format!(
+                "    {} {} — {}:{}-{}\n      {}\n",
+                s.kind.word(),
+                s.name,
+                g.path(m),
+                s.line,
+                s.end,
+                s.sig
+            )
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------- change_impact
 
 /// What changing a symbol or a file would touch: its callers (to `depth`), overrides,
-/// subtypes and supertypes; for a file, the files importing it and the callers of what it
-/// defines from elsewhere. With a level: low (under 5 places), medium (under 20), high.
-pub(in crate::context) fn impact(g: &Graph, target: &str, depth: usize) -> String {
+/// subtypes and supertypes, what uses it without a call (reads a constant, hands a function
+/// on), and for a type what declares something of it (a parameter, a field, what a function
+/// returns); for a file, the files importing it and the callers of what it defines from
+/// elsewhere. With a level: low (under 5 places), medium (under 20), high.
+pub(in crate::context) fn impact(
+    g: &Graph,
+    code: &Code,
+    root: &Path,
+    target: &str,
+    depth: usize,
+) -> String {
     if let Some(f) = g.file_of(target) {
         return file_impact(g, f, depth);
     }
@@ -341,10 +263,31 @@ pub(in crate::context) fn impact(g: &Graph, target: &str, depth: usize) -> Strin
     let (below, above) = g.overrides(s);
     let subtypes = g.lineage(s, false);
     let supertypes = g.lineage(s, true);
-    let touched = callers.len() + below.len() + subtypes.len();
+    let counted = |b: usize| b != s && !tests[b] && !callers.iter().any(|r| r.sym == b);
+    // (what declares something of this type: a parameter, a field, what a function returns)
+    let typed: BTreeSet<usize> = g.type_uses[s]
+        .iter()
+        .filter_map(|u| u.by)
+        .filter(|&b| counted(b))
+        .collect();
+    let used: BTreeSet<usize> = used_by(g, code, root, s)
+        .into_iter()
+        .filter(|&b| counted(b) && !typed.contains(&b))
+        .collect();
+    let touched = callers.len() + below.len() + subtypes.len() + typed.len() + used.len();
     let files: BTreeSet<&str> = callers.iter().map(|r| g.path(r.sym)).collect();
+    let as_type = if g.syms[s].kind.fits("type") {
+        format!(", {} more declaring something of its type", typed.len())
+    } else {
+        String::new()
+    };
+    let without_calls = if used.is_empty() {
+        String::new()
+    } else {
+        format!(", {} more using it without a call", used.len())
+    };
     let mut out = format!(
-        "{}\nimpact: {} ({} callers in {} files up to {} calls away, {} in tests; {} overriding methods, {} subtypes)\n\n",
+        "{}\nimpact: {} ({} callers in {} files up to {} calls away, {} in tests; {} overriding methods, {} subtypes{as_type}{without_calls})\n\n",
         named(g, s),
         level(touched),
         callers.len(),
@@ -363,22 +306,42 @@ pub(in crate::context) fn impact(g: &Graph, target: &str, depth: usize) -> Strin
             out.push_str(&format!("  {}\n", named(g, r.sym)));
         }
     }
-    for (title, list) in [("overridden by", below), ("overrides", above)] {
-        if !list.is_empty() {
-            out.push_str(&format!("{title}:\n"));
-            out.extend(list.into_iter().map(|m| format!("  {}\n", named(g, m))));
-        }
-    }
-    for (title, list) in [("subtypes", subtypes), ("supertypes", supertypes)] {
+    let lineage = |l: Vec<(usize, usize, Heir)>| l.into_iter().map(|(t, _, _)| t).collect();
+    for (title, list) in [
+        ("overridden by", below),
+        ("overrides", above),
+        ("subtypes", lineage(subtypes)),
+        ("supertypes", lineage(supertypes)),
+        (
+            "declaring something of its type (a parameter, a field, what it returns)",
+            typed.into_iter().collect(),
+        ),
+        (
+            "using it without a call (reading it, handing it on)",
+            used.into_iter().collect(),
+        ),
+    ] {
         if !list.is_empty() {
             out.push_str(&format!("{title}:\n"));
             out.extend(
                 list.into_iter()
-                    .map(|(t, _, _)| format!("  {}\n", named(g, t))),
+                    .take(CALLS_SHOWN)
+                    .map(|m| format!("  {}\n", named(g, m))),
             );
         }
     }
     out
+}
+
+/// What uses a symbol without calling it (each once): what reads a constant or hands a
+/// function on, by its name in reach where it's used (uses.rs).
+fn used_by(g: &Graph, code: &Code, root: &Path, s: usize) -> BTreeSet<usize> {
+    let called: HashSet<(String, u32)> = g.calls_in[s]
+        .iter()
+        .flat_map(|e| e.lines.iter().map(|&l| (g.path(e.to).to_string(), l)))
+        .collect();
+    let (used, _) = scan(g, code, root, &g.syms[s].name, &[s], "", &called);
+    used.iter().filter_map(|p| place_in(g, p)).collect()
 }
 
 fn file_impact(g: &Graph, f: usize, depth: usize) -> String {
@@ -430,33 +393,7 @@ fn level(n: usize) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn shop() -> (Graph, Code) {
-        let mut code = Code::default();
-        let files = [
-            (
-                "src/store.ts",
-                "export class Store {\n  open(id: string) { return load(id); }\n}\nexport class Cache extends Store {\n  open(id: string) { return 'x'; }\n}\nexport function load(id: string) { return id; }\n",
-            ),
-            (
-                "src/api.ts",
-                "import { Store } from './store';\nexport class Api {\n  constructor(private store: Store) {}\n  get(id: string) {\n    return this.store.open(id);\n  }\n}\n",
-            ),
-            (
-                "src/main.ts",
-                "import { Api } from './api';\nimport express from 'express';\nfunction main() {\n  new Api(null).get('1');\n}\n",
-            ),
-        ];
-        for (path, src) in files {
-            code.put(
-                path,
-                FileType::Code(Lang::TypeScript),
-                parse::read(Lang::TypeScript, src).unwrap(),
-            );
-        }
-        let g = Graph::build(&code, Path::new("no such folder"));
-        (g, code)
-    }
+    use crate::context::answers::tests::shop;
 
     #[test]
     fn a_symbol_is_found_by_its_full_name_and_says_who_calls_it() {
@@ -469,18 +406,6 @@ mod tests {
             "{got}"
         );
         assert!(find(&g, Path::new("."), "Nope", "", false).starts_with("Nothing named"));
-    }
-
-    #[test]
-    fn a_call_to_the_method_it_overrides_may_land_on_an_override() {
-        let (g, code) = shop();
-        let got = references(&g, &code, Path::new("."), "Cache.open", "", 1);
-        assert!(
-            got.contains("in src.api.Api.get (through src.store.Store.open)\n"),
-            "{got}"
-        );
-        let store_open = g.resolve_name("Store.open", "")[0];
-        assert!(g.dispatched_through(store_open).is_empty());
     }
 
     #[test]
@@ -531,11 +456,76 @@ mod tests {
     }
 
     #[test]
+    fn a_types_members_are_its_own_then_what_it_inherits_unless_overridden() {
+        let g = Graph::build(
+            &{
+                let mut code = Code::default();
+                code.put(
+                    "src/shapes.ts",
+                    FileType::Code(Lang::TypeScript),
+                    parse::read(Lang::TypeScript, "export class Shape {\n  area(): number { return 0; }\n  name(): string { return ''; }\n}\nexport class Square extends Shape {\n  side = 1;\n  area(): number { return 1; }\n}\n").unwrap(),
+                );
+                code
+            },
+            Path::new("no such folder"),
+        );
+        let got = members(&g, "Square", false);
+        assert_eq!(
+            got,
+            "class src.shapes.Square — src/shapes.ts:5-8\n  2 members:\n    property side — src/shapes.ts:6-6\n      side = 1\n    method area — src/shapes.ts:7-7\n      area(): number\n"
+        );
+        let got = members(&g, "Square", true);
+        assert!(
+            got.ends_with("  inherited from src.shapes.Shape (1):\n    method name — src/shapes.ts:3-3\n      name(): string\n"),
+            "{got}"
+        );
+        assert!(members(&g, "Nope", false).starts_with("No type named"));
+    }
+
+    #[test]
+    fn changing_a_constant_touches_what_reads_it() {
+        let (dir, code) = crate::context::answers::tests::folder(&[
+            ("src/limits.ts", "export const LIMIT = 10;\n"),
+            (
+                "src/api.ts",
+                "import { LIMIT } from './limits';\nexport function page() {\n  return LIMIT;\n}\n",
+            ),
+        ]);
+        let g = Graph::build(&code, &dir);
+        let got = impact(&g, &code, &dir, "LIMIT", 2);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            got.contains("0 subtypes, 1 more using it without a call)"),
+            "{got}"
+        );
+        assert!(
+            got.contains(
+                "using it without a call (reading it, handing it on):\n  function src.api.page"
+            ),
+            "{got}"
+        );
+    }
+
+    #[test]
+    fn changing_a_type_touches_what_declares_something_of_it() {
+        let (g, code) = shop();
+        let got = impact(&g, &code, Path::new("."), "Store", 2);
+        assert!(
+            got.contains("1 subtypes, 1 more declaring something of its type)"),
+            "{got}"
+        );
+        assert!(
+            got.contains("declaring something of its type (a parameter, a field, what it returns):\n  method src.api.Api.constructor"),
+            "{got}"
+        );
+    }
+
+    #[test]
     fn the_impact_of_a_change_counts_what_it_touches() {
-        let (g, _) = shop();
-        let got = impact(&g, "Store.open", 3);
+        let (g, code) = shop();
+        let got = impact(&g, &code, Path::new("."), "Store.open", 3);
         assert!(got.starts_with("method src.store.Store.open — src/store.ts:2-2\nimpact: low (2 callers in 2 files up to 3 calls away, 0 in tests; 1 overriding methods, 0 subtypes)\n"), "{got}");
-        let got = impact(&g, "src/store.ts", 2);
+        let got = impact(&g, &code, Path::new("."), "src/store.ts", 2);
         assert!(got.contains("impact: low (2 files import it, up to 2 away; 1 callers elsewhere of what it defines, and 0 calls from tests)"), "{got}");
         assert_eq!(level(4), "low");
         assert_eq!(level(19), "medium");
@@ -562,7 +552,7 @@ mod tests {
             );
         }
         let g = Graph::build(&code, Path::new("no such folder"));
-        let got = impact(&g, "load", 1);
+        let got = impact(&g, &code, Path::new("."), "load", 1);
         assert!(
             got.contains("(1 callers in 1 files up to 1 calls away, 1 in tests;"),
             "{got}"

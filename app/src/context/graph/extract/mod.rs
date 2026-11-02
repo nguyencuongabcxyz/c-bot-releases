@@ -5,6 +5,7 @@
 //! every language: `this`/`self`, a field of it, a typed local, a name, or nothing.
 //!   rust.rs typescript.rs python.rs go.rs csharp.rs java.rs cpp.rs dart.rs zig.rs php.rs
 //!   ruby.rs shell.rs powershell.rs                                 each language's node kinds
+//!   types.rs   the types declarations name (a parameter's, a field's…), for every language
 
 mod cpp;
 mod csharp;
@@ -17,15 +18,18 @@ mod python;
 mod ruby;
 mod rust;
 mod shell;
+mod types;
 mod typescript;
 mod zig;
 
 use std::collections::HashMap;
+use std::ops::Range;
 
 use tree_sitter::{Node, Tree};
 
 use super::facts::{
-    CLOSURE_ARG, Heir, Heritage, Import, Links, Member, Receiver, Ref, RefKind, Via,
+    CLOSURE_ARG, Heir, Heritage, Import, Links, Member, Receiver, Ref, RefKind, TypeRole, TypeUse,
+    Via,
 };
 use crate::context::langs::{Kind, Lang};
 use crate::context::parse::{Def, walk};
@@ -45,6 +49,7 @@ pub(super) struct Walk<'a> {
     defs: &'a [Def],
     scopes: Vec<(usize, HashMap<String, String>)>, // (the node that opened it, local -> type)
     pending: HashMap<usize, Vec<(String, String)>>, // (a scope about to open -> its typed locals)
+    typed: Vec<Range<usize>>, // (the declared types read, still around: types.rs)
     out: Links,
 }
 
@@ -60,6 +65,7 @@ pub(in crate::context) fn links(lang: Lang, tree: &Tree, src: &str, defs: &[Def]
         defs,
         scopes: vec![(usize::MAX, HashMap::new())],
         pending: HashMap::new(),
+        typed: vec![],
         out: Links::default(),
     };
     walk(tree, |node, entering| {
@@ -74,6 +80,7 @@ pub(in crate::context) fn links(lang: Lang, tree: &Tree, src: &str, defs: &[Def]
 
 impl<'a> Walk<'a> {
     fn enter(&mut self, node: Node) {
+        self.declared_types(node);
         match self.lang {
             Lang::Rust => rust::visit(self, node),
             Lang::TypeScript | Lang::Tsx => typescript::visit(self, node),

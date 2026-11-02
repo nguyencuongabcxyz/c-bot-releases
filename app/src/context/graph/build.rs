@@ -1,8 +1,8 @@
 //! Putting the graph together from every file's facts, in passes: the symbols and their full
 //! names; each file's scope from its imports (a name brought in, a module under a name, a
 //! file seen whole), following re-exports; which type each member belongs to (a Rust method
-//! to the type its impl is for) and each type's typed fields; heritage; and last the calls,
-//! each by what it goes through (calls.rs). And finding a type or a member by name, as a
+//! to the type its impl is for) and each type's typed fields; heritage; the calls, each by
+//! what it goes through (calls.rs); and last where each type is named in a declaration. And finding a type or a member by name, as a
 //! file sees it.
 
 use super::*;
@@ -23,6 +23,7 @@ impl Graph {
         g.partials();
         g.heritage(code);
         g.calls(code);
+        g.type_uses(code);
         g
     }
 
@@ -82,6 +83,7 @@ impl Graph {
         self.subs = vec![vec![]; n];
         self.calls_out = vec![vec![]; n];
         self.calls_in = vec![vec![]; n];
+        self.type_uses = vec![vec![]; n];
         self.imports = vec![BTreeSet::new(); files];
         self.imported_by = vec![BTreeSet::new(); files];
         self.externals = vec![BTreeSet::new(); files];
@@ -126,6 +128,77 @@ impl Graph {
                 _ => {}
             }
         }
+    }
+
+    /// Where each type is named in a declaration: every type a file's declarations name, found
+    /// as the file sees it (its own, or brought in), once per place and what for.
+    fn type_uses(&mut self, code: &Code) {
+        let mut found: Vec<(usize, TypeUseAt)> = vec![];
+        for (i, f) in self.files.iter().enumerate() {
+            let Some(file) = code.files.get(&f.path) else {
+                continue;
+            };
+            for u in &file.links.types {
+                let Some(ty) = self.declared_type(i, &u.name).map(|t| self.declared(t)) else {
+                    continue;
+                };
+                let by = u
+                    .within
+                    .map(|w| f.syms.start + w as usize)
+                    .filter(|s| f.syms.contains(s))
+                    .map(|s| self.declared(s));
+                // (a type naming itself, `fn new() -> Self` aside: no use from outside it)
+                if by != Some(ty) {
+                    let (file, role, line) = (i, u.role, u.line);
+                    found.push((
+                        ty,
+                        TypeUseAt {
+                            file,
+                            by,
+                            role,
+                            line,
+                        },
+                    ));
+                }
+            }
+        }
+        for (ty, at) in found {
+            self.type_uses[ty].push(at);
+        }
+        for uses in &mut self.type_uses {
+            uses.sort_unstable();
+            uses.dedup();
+        }
+    }
+
+    /// The folder's type a declaration in `file` names: by its name as the file sees it; with a
+    /// path (`a::b::Store`), only when the path starts from the folder's own (`crate`, a module
+    /// or type the file sees, a namespace of the folder's), the type of that name in what the
+    /// path ends with first. `tungstenite::Error` is no Error of the folder's.
+    fn declared_type(&self, file: usize, name: &str) -> Option<usize> {
+        let Some((path, last)) = name.rsplit_once("::") else {
+            return self.resolve_type(file, name);
+        };
+        let first = path.split("::").next().unwrap_or(path);
+        let space = |s: usize| self.is_type(s) || self.syms[s].kind == Kind::Module;
+        let ours = matches!(first, "crate" | "self" | "super")
+            || self.scopes[file].modules.contains_key(first)
+            || self.namespaces.contains_key(&path.replace("::", "."))
+            || (!self.scopes[file].outside.contains(first)
+                && (self.rust_stems.contains_key(first)
+                    || self.resolve(file, first, &space).is_some()));
+        if !ours {
+            return None;
+        }
+        let holder = format!(".{}.", path.rsplit("::").next().unwrap_or(path));
+        self.by_name
+            .get(last)
+            .and_then(|all| {
+                all.iter()
+                    .copied()
+                    .find(|&s| self.is_type(s) && self.syms[s].fqn.contains(&holder))
+            })
+            .or_else(|| self.resolve_type(file, last))
     }
 
     /// A file's top-level symbols (in a C# namespace: still top-level).

@@ -1,11 +1,13 @@
 //! What the code tools answer, as text for Claude: a file's or a folder's outline, where a
 //! name is used when there's nothing to follow calls to (each file read again for the lines,
 //! so they're as the file is now), and code found; and what the graph's tools answer
-//! (relations.rs).
+//! (relations.rs; who calls something and where it's used, uses.rs).
 
 mod relations;
+mod uses;
 
 pub(super) use relations::*;
+pub(super) use uses::*;
 
 use super::*;
 
@@ -16,6 +18,41 @@ const BODY_MAX_LINES: usize = 150;
 const BODIES: usize = 3;
 const USES_MAX: usize = 120;
 const SNIPPET_LINES: usize = 12;
+const TARGETS: usize = 5;
+const CALLS_SHOWN: usize = 80;
+const TESTS_SHOWN: usize = 20;
+
+/// A symbol in a line: its kind, full name, where.
+fn named(g: &Graph, s: usize) -> String {
+    let sym = &g.syms[s];
+    format!(
+        "{} {} — {}:{}-{}",
+        sym.kind.word(),
+        sym.fqn,
+        g.path(s),
+        sym.line,
+        sym.end
+    )
+}
+
+/// Each file's lines, read once.
+#[derive(Default)]
+struct Lines {
+    files: HashMap<String, Vec<String>>,
+}
+
+impl Lines {
+    fn get(&mut self, root: &Path, path: &str, line: u32) -> String {
+        let lines = self.files.entry(path.to_string()).or_insert_with(|| {
+            ingest::read_code(&root.join(path))
+                .map(|t| t.lines().map(str::to_string).collect())
+                .unwrap_or_default()
+        });
+        lines
+            .get(line as usize - 1)
+            .map_or(String::new(), |l| parse::cut(l.trim(), 160))
+    }
+}
 
 // ---------------------------------------------------------------- code_outline
 
@@ -253,29 +290,64 @@ fn snippet(text: &str, from: u32, words: &[String]) -> String {
 mod tests {
     use super::*;
 
+    /// A small TypeScript project read into a graph, for the graph's tools (relations.rs,
+    /// uses.rs): a class and its subclass, one using it, and a main.
+    pub(super) fn shop() -> (Graph, Code) {
+        let mut code = Code::default();
+        let files = [
+            (
+                "src/store.ts",
+                "export class Store {\n  open(id: string) { return load(id); }\n}\nexport class Cache extends Store {\n  open(id: string) { return 'x'; }\n}\nexport function load(id: string) { return id; }\n",
+            ),
+            (
+                "src/api.ts",
+                "import { Store } from './store';\nexport class Api {\n  constructor(private store: Store) {}\n  get(id: string) {\n    return this.store.open(id);\n  }\n}\n",
+            ),
+            (
+                "src/main.ts",
+                "import { Api } from './api';\nimport express from 'express';\nfunction main() {\n  new Api(null).get('1');\n}\n",
+            ),
+        ];
+        for (path, src) in files {
+            code.put(
+                path,
+                FileType::Code(Lang::TypeScript),
+                parse::read(Lang::TypeScript, src).unwrap(),
+            );
+        }
+        let g = Graph::build(&code, Path::new("no such folder"));
+        (g, code)
+    }
+
     /// A folder of code, read as the optimizer does.
     fn project() -> (PathBuf, Code) {
+        folder(&[
+            (
+                "src/store.ts",
+                "export class OrderStore {\n  open(id: string): Order {\n    return load(id);\n  }\n}\n",
+            ),
+            (
+                "src/api.ts",
+                "import { OrderStore } from './store';\nexport function getOrder(id: string) {\n  const s = new OrderStore();\n  return s.open(id);\n}\n",
+            ),
+            (
+                "svc/Orders.cs",
+                "public class Orders {\n  // refresh the token before it expires\n  public void RefreshToken() { }\n}\n",
+            ),
+        ])
+    }
+
+    /// These files written in a folder of their own, and read as the optimizer does.
+    pub(super) fn folder(files: &[(&str, &str)]) -> (PathBuf, Code) {
         let dir = std::env::temp_dir().join(format!(
             "cbot-ctx-answers-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let write = |p: &str, text: &str| {
+        for (p, text) in files {
             let path = dir.join(p);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, text).unwrap();
-        };
-        write(
-            "src/store.ts",
-            "export class OrderStore {\n  open(id: string): Order {\n    return load(id);\n  }\n}\n",
-        );
-        write(
-            "src/api.ts",
-            "import { OrderStore } from './store';\nexport function getOrder(id: string) {\n  const s = new OrderStore();\n  return s.open(id);\n}\n",
-        );
-        write(
-            "svc/Orders.cs",
-            "public class Orders {\n  // refresh the token before it expires\n  public void RefreshToken() { }\n}\n",
-        );
+        }
         let (found, _) = ingest::find(&dir);
         let mut ix = Code::default();
         for r in ingest::read_all(&dir, found, &HashMap::new(), &|_| {}) {
