@@ -349,13 +349,26 @@ export type ContextEngineStatus = {
 
 /** Everything about the context optimizer, for the chat's details panel (app/src/context/details.rs
  * Details): the robot's own folder (null while the optimizer is off for it), the store (null while
- * its database isn't up), every folder the store holds, the models, and where it all is. */
+ * its database isn't up), every folder the store holds, the models, how robots have used the code
+ * tools (the most called first), and where it all is. */
 export type ContextEngineDetails = {
   folder: ContextFolderDetails | null;
   store: ContextStoreDetails | null;
   repos: ContextRepo[];
   models: ContextModel[];
+  tools: ContextToolUse[];
   dir: string;
+};
+
+/** One code tool's use, all its calls together (app/src/context/usage.rs ToolUse): ms and chars
+ * are all its calls' time and answers' length; last, its last call (ms since 1970). */
+export type ContextToolUse = {
+  tool: string;
+  calls: number;
+  errors: number;
+  ms: number;
+  chars: number;
+  last: number;
 };
 
 /** The robot's own folder: its index, what's in it, its watch, its git branch. readAt: when it was

@@ -2,15 +2,18 @@
 //! way (code_map, code_outline, find_symbol, explain_symbol, search_code, and library_api for
 //! the packages it uses), following the code graph (find_references, call_chain,
 //! file_dependencies, type_hierarchy, type_members, find_type_usages, change_impact,
-//! affected_tests), and what
+//! affected_tests), what the project's compiler says (diagnostics), and what
 //! git remembers of it (code_history). Only conversations of a robot with the optimizer on are
 //! given them (server.rs `--code`).
+
+use std::time::Instant;
 
 use serde_json::{Value, json};
 use tauri::AppHandle;
 
 use super::err;
 use crate::context;
+use crate::runtime::Error;
 use crate::runtime::util::text;
 
 const SEARCH_DEFAULT: usize = 8;
@@ -20,7 +23,7 @@ const HISTORY_DEFAULT: usize = 10;
 const HISTORY_MAX: usize = 50;
 
 /// The names of its tools.
-pub const NAMES: [&str; 15] = [
+pub const NAMES: [&str; 16] = [
     "code_map",
     "code_outline",
     "find_symbol",
@@ -35,6 +38,7 @@ pub const NAMES: [&str; 15] = [
     "find_type_usages",
     "change_impact",
     "affected_tests",
+    "diagnostics",
     "code_history",
 ];
 
@@ -274,6 +278,20 @@ fn following() -> Value {
             "annotations": at_once,
         },
         {
+            "name": "diagnostics",
+            "description": "What the project's own compiler says about the code now, in short: each error with file, line, column and code (cargo check, tsc, dotnet build, go vet), for the projects the uncommitted changes (or the paths you give) are in, errors in the changed files first. Use it after editing, instead of reading a whole build's output.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "Files or folders to check the projects of, instead of what changed." },
+                    "warnings": { "type": "boolean", "description": "Also list warnings (else only counted)." },
+                },
+                "additionalProperties": false,
+            },
+            // (it runs the build: one at a time)
+            "annotations": super::in_turn(),
+        },
+        {
             "name": "code_history",
             "description": "What git remembers: the latest commits to a file, a folder or the project (date, author, message, files), or who last changed a symbol's lines. Use it to see why code is as it is, or what changed lately.",
             "inputSchema": {
@@ -299,7 +317,20 @@ fn number(v: &Value, default: usize, min: usize, max: usize) -> usize {
 }
 
 pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
-    let answer = match tool {
+    let started = Instant::now();
+    let said = answer(app, from, tool, args).map_err(|e| e.to_string());
+    // (counted for the Context optimizer window's Tools: which are used, and what they cost)
+    let length = said.as_ref().map_or_else(String::len, String::len);
+    context::record_use(app, tool, started.elapsed(), length, said.is_ok());
+    match said {
+        Ok(text) => json!({ "text": text }),
+        Err(e) => err(e),
+    }
+}
+
+/// What a tool answers.
+fn answer(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Result<String, Error> {
+    match tool {
         "code_map" => {
             let focus = strings(&args["focus"]);
             let budget = number(
@@ -359,6 +390,12 @@ pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
             &text(&args["name"]),
             args["inherited"].as_bool() == Some(true),
         ),
+        "diagnostics" => context::diagnostics(
+            app,
+            from,
+            &strings(&args["paths"]),
+            args["warnings"].as_bool() == Some(true),
+        ),
         "find_type_usages" => {
             context::find_type_usages(app, from, &text(&args["name"]), &text(&args["path"]))
         }
@@ -384,10 +421,6 @@ pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
                 limit,
             )
         }
-    };
-    match answer {
-        Ok(text) => json!({ "text": text }),
-        Err(e) => err(e.to_string()),
     }
 }
 
@@ -405,13 +438,16 @@ mod tests {
             .map(|t| t["name"].as_str().unwrap())
             .collect();
         assert_eq!(names, NAMES);
-        assert!(
-            tools
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|t| t["annotations"]["readOnlyHint"] == true)
-        );
+        // (but diagnostics, which runs the project's build)
+        let read_only: Vec<&str> = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["annotations"]["readOnlyHint"] == true)
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        let others: Vec<&str> = NAMES.into_iter().filter(|n| *n != "diagnostics").collect();
+        assert_eq!(read_only, others);
     }
 
     #[test]

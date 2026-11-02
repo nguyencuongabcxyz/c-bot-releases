@@ -11,6 +11,7 @@ import {
   readProgress,
   repoMeta,
   size,
+  toolRow,
 } from './details';
 
 const status = (over: Partial<ContextEngineStatus> = {}): ContextEngineStatus => ({
@@ -89,6 +90,7 @@ describe('the disk and the repositories', () => {
       { role: 'reranker', name: 'r', downloaded: false, loaded: false, bytes: 0 },
       { role: 'runtime', name: 'o', downloaded: true, loaded: true, bytes: 100 },
     ],
+    tools: [],
     dir: 'x',
   };
   it('cuts the disk the optimizer takes into its parts, biggest first', () => {
@@ -112,6 +114,15 @@ describe('the disk and the repositories', () => {
       bytes: 3 * 1024 * 1024,
     };
     expect(repoMeta(repo)).toBe('1,200 files · 5,000 chunks · 3.0 MB');
+  });
+});
+
+describe('the code tools used', () => {
+  it('says what one call takes on average, and when it was last', () => {
+    const now = Date.UTC(2026, 10, 2, 12);
+    const use = { tool: 'explain_symbol', calls: 4, errors: 1, ms: 5200, chars: 9600, last: now - 3 * 3600_000 };
+    expect(toolRow(use, now)).toEqual(['explain_symbol', '4', '1.3 s', '~600 tokens', '1', '3 h ago']);
+    expect(toolRow({ ...use, errors: 0, ms: 400 }, now).slice(2, 5)).toEqual(['100 ms', '~600 tokens', '—']);
   });
 });
 

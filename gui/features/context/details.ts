@@ -2,7 +2,8 @@
 // folder) and the Context optimizer window (any folder, the store, the models): a folder's top (how
 // far it's read and embedded, in rings that move as it goes, and its numbers), its indexes one by
 // one, every field of its index, its languages, its git branch; the disk the optimizer takes, the
-// store's PostgreSQL and the models. The words are pure (tested); the charts are charts.ts.
+// store's PostgreSQL, the models, and how robots have used the code tools. The words are pure
+// (tested); the charts are charts.ts.
 import { el } from '@/lib/dom';
 import { Icon } from '@/icons/icons';
 import type {
@@ -13,6 +14,7 @@ import type {
   ContextModel,
   ContextRepo,
   ContextStoreDetails,
+  ContextToolUse,
 } from '@/types/model';
 import { type Share, type Tone, bar, legend, pill, ring, setRing, setTile, shares, stack, tile } from './charts';
 import { type IndexState, indexStates } from './status';
@@ -315,6 +317,47 @@ export function storeCard(s: ContextStoreDetails | null): HTMLElement {
     ]),
     el('p', 'cx-path', s.dataDir),
   );
+  return box;
+}
+
+/** A code tool's use as the Tools card shows it: its calls; one call's time and answer on
+ * average (the answer in tokens, about four characters each: what a conversation pays to read
+ * it); its failures; its last call. */
+export function toolRow(u: ContextToolUse, now = Date.now()): string[] {
+  const each = (n: number) => (u.calls ? n / u.calls : 0);
+  const ms = each(u.ms);
+  return [
+    u.tool,
+    count(u.calls),
+    ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`,
+    `~${count(Math.round(each(u.chars) / 4))} tokens`,
+    u.errors ? count(u.errors) : '—',
+    ago(u.last, now),
+  ];
+}
+
+/** How robots have used the code tools, the most called first. */
+export function toolsCard(tools: ContextToolUse[]): HTMLElement {
+  const calls = tools.reduce((n, t) => n + t.calls, 0);
+  const box = card('Tools', 'wrench', el('span', 'cx-muted', `${count(calls)} calls`));
+  box.classList.add('wide');
+  if (!tools.length) {
+    box.append(el('p', 'cx-muted', 'No robot has used the code tools yet.'));
+    return box;
+  }
+  const table = el('table', 'cx-table');
+  const head = el('tr');
+  for (const h of ['Tool', 'Calls', 'Time', 'Answer', 'Failed', 'Last']) head.append(el('th', '', h));
+  const body = el('tbody');
+  for (const u of tools) {
+    const tr = el('tr');
+    for (const [i, cell] of toolRow(u).entries()) tr.append(el('td', i ? 'num' : '', cell));
+    body.append(tr);
+  }
+  const thead = el('thead');
+  thead.append(head);
+  table.append(thead, body);
+  box.append(table);
   return box;
 }
 

@@ -456,13 +456,14 @@ mod tests {
     #[test]
     fn the_tools_are_the_cbot_ones() {
         let with_code = tools::allowed(true);
-        assert_eq!(with_code.len(), 31);
+        assert_eq!(with_code.len(), 32);
         assert_eq!(with_code[16], "mcp__cbot__code_map");
         assert_eq!(with_code[19], "mcp__cbot__explain_symbol");
         assert_eq!(with_code[22], "mcp__cbot__library_api");
         assert_eq!(with_code[28], "mcp__cbot__change_impact");
         assert_eq!(with_code[29], "mcp__cbot__affected_tests");
-        assert_eq!(with_code[30], "mcp__cbot__code_history");
+        assert_eq!(with_code[30], "mcp__cbot__diagnostics");
+        assert_eq!(with_code[31], "mcp__cbot__code_history");
         assert_eq!(
             tools::allowed(false),
             [

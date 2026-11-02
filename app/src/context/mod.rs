@@ -40,6 +40,7 @@ mod asked;
 mod browse;
 mod code;
 mod details;
+mod diagnose;
 mod embed;
 mod graph;
 mod history;
@@ -53,6 +54,7 @@ mod map;
 mod parse;
 mod search;
 mod store;
+mod usage;
 mod vectors;
 mod watch;
 mod window;
@@ -61,8 +63,10 @@ mod wipe;
 pub use asked::*;
 pub use browse::*;
 pub use details::*;
+pub use diagnose::diagnostics;
 pub use history::*;
 pub use library::library_api;
+pub use usage::{ToolUse, record_use};
 pub use window::*;
 pub use wipe::*;
 
@@ -123,7 +127,7 @@ const NOTE: &str = concat!(
     "mcp__cbot__explain_symbol (one symbol with everything around it), mcp__cbot__search_code (by words or meaning; ask in English), ",
     "mcp__cbot__library_api (an installed library's real API). Its code graph: mcp__cbot__find_references (callers and uses), ",
     "mcp__cbot__call_chain, mcp__cbot__file_dependencies, mcp__cbot__type_hierarchy, mcp__cbot__type_members, mcp__cbot__find_type_usages, ",
-    "mcp__cbot__change_impact (before a change), mcp__cbot__affected_tests (after one: which tests to run), mcp__cbot__code_history (what git remembers)."
+    "mcp__cbot__change_impact (before a change), mcp__cbot__affected_tests (after one: which tests to run), mcp__cbot__diagnostics (the compiler's errors, in short), mcp__cbot__code_history (what git remembers)."
 );
 
 /// Where a folder's index is.
@@ -178,6 +182,7 @@ struct Engine {
     setup: Arc<Setup>,
     embedder: Arc<Embedder>,
     folders: HashMap<String, Arc<Folder>>, // folder key -> its folder
+    usage: Option<Vec<usage::ToolUse>>,    // (the code tools' use: read from usage.json at first)
 }
 
 fn engine<R>(app: &AppHandle, f: impl FnOnce(&mut Engine) -> R) -> R {

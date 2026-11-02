@@ -29,6 +29,7 @@ import {
   repoMeta,
   size,
   storeCard,
+  toolsCard,
 } from '@/features/context/details';
 import { contextLabel } from '@/features/context/status';
 import { forgetQuestion, wipeQuestion, wipedText } from '@/features/context/wipe';
@@ -177,7 +178,7 @@ const folderKey = (p: string) => samePath(p).replace(/\\+$/, '');
     }
   }
 
-  /** The store, the disk, the models, and every folder in a table. */
+  /** The store, the disk, the models, every folder in a table, and the code tools' use. */
   function drawEngine() {
     const page = pages.engine;
     if (!details) return;
@@ -185,7 +186,14 @@ const folderKey = (p: string) => samePath(p).replace(/\\+$/, '');
     const repos = card('Repositories', 'folder', el('span', 'cx-muted', count(details.repos.length)));
     repos.classList.add('wide');
     repos.append(reposTable(details.repos));
-    grid.append(storeCard(details.store), diskCard(details), modelsCard(details.models), repos, wipeCard(details));
+    grid.append(
+      storeCard(details.store),
+      diskCard(details),
+      modelsCard(details.models),
+      repos,
+      toolsCard(details.tools),
+      wipeCard(details),
+    );
     page.replaceChildren(grid);
   }
 

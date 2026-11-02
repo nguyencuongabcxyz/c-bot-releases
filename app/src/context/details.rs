@@ -1,8 +1,9 @@
 //! Everything about the optimizer, for the chat's panel (robot_context_details) and the Context
 //! optimizer window (window.rs): a folder (its index, the languages in it, whether it's watched,
 //! its git branch and last commit), every folder the store holds and which robots read it, the
-//! store itself (its PostgreSQL, size, vectors by model), and the models (downloaded, loaded,
-//! size). Nothing is started or downloaded for asking: what isn't up says so.
+//! store itself (its PostgreSQL, size, vectors by model), the models (downloaded, loaded,
+//! size), and how the code tools have been used. Nothing is started or downloaded for asking:
+//! what isn't up says so.
 
 use super::*;
 
@@ -14,7 +15,8 @@ pub struct Details {
     pub store: Option<StoreDetails>,   // (while the database is up)
     pub repos: Vec<RepoDetails>,
     pub models: Vec<ModelDetails>,
-    pub dir: String, // (where the optimizer keeps it all)
+    pub tools: Vec<ToolUse>, // (how robots have used the code tools, the most called first)
+    pub dir: String,         // (where the optimizer keeps it all)
 }
 
 /// The robot's own folder.
@@ -154,6 +156,7 @@ pub(super) fn details(app: &AppHandle, current: Option<&str>, folder: Option<&Fo
             .map(|o| repos(app, &o, current))
             .unwrap_or_default(),
         models: models(&dir, &embedder),
+        tools: usage::uses(app),
         dir: dir.to_string_lossy().into_owned(),
     }
 }
