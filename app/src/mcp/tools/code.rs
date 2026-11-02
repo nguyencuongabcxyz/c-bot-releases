@@ -66,7 +66,7 @@ fn finding() -> Value {
     json!([
         {
             "name": "code_map",
-            "description": "A map of the code in your project folder: the files, and in each the definitions the rest of the code uses most (classes, functions, types…), with their signatures and the line each starts on. Use it to find your way round a codebase before reading files, and give a focus (the files, folders or names you're working on) to see what matters around them.",
+            "description": "A map of your project's code: its files, and the definitions the rest of the code uses most, with signatures and lines. Use it to find your way round before reading files; give a focus (files, folders, names) to see what's around them.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -79,7 +79,7 @@ fn finding() -> Value {
         },
         {
             "name": "code_outline",
-            "description": "The outline of a code file: every class, function, method, type and constant in it, nested, with its signature and the line it starts on. Given a folder, the top-level definitions of each file in it. Much cheaper than reading the file: read only the lines you need afterwards.",
+            "description": "A code file's outline: every class, function, method, type and constant, nested, with signature and line (a folder: each file's top level). Much cheaper than reading the file.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -92,7 +92,7 @@ fn finding() -> Value {
         },
         {
             "name": "find_symbol",
-            "description": "Where something is defined in your project: classes, functions, methods, types, constants… by name (exact, else any case, else part of the name). Each result has its kind, file and lines, and signature; set body to also see the code of the first few.",
+            "description": "Where something is defined: classes, functions, methods, types, constants, by name (exact, else any case, else part of it), with kind, file, lines and signature; body: the code of the first few too.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -107,7 +107,7 @@ fn finding() -> Value {
         },
         {
             "name": "explain_symbol",
-            "description": "Everything about one function, method or type of your project at once, instead of several lookups and reads: its code (a type's head, with its members, what it extends and what extends it), what it calls with their signatures, what calls it, the types it takes and returns, the tests that reach it, and who changed it last. Use it to understand something before changing or calling it.",
+            "description": "One function, method or type with everything around it, instead of several lookups: its code (a type's head, members and lineage), what it calls with their signatures, what calls it, the types it takes and returns, the tests that reach it, who changed it last. Use it before changing or calling something.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -120,7 +120,7 @@ fn finding() -> Value {
         },
         {
             "name": "find_references",
-            "description": "Who calls or makes a function, method or type in your project: each call followed through imports, fields, typed parameters and locals and inheritance to the definition it really reaches (not just text that matches), with its line and the function it's in; with depth, the callers' callers too. Then where it's used without a call (a constant read, a function handed on as a callback), resolved the same way, and the other places the name appears. Use it before changing or renaming something.",
+            "description": "Who calls or makes a function, method or type: each call followed through imports, fields, typed locals and inheritance to what it really reaches, with its line and the function it's in (depth: the callers' callers too). Then where it's used without a call (a constant read, a callback handed on) and the other places its name appears. Use it before changing or renaming something.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -135,7 +135,7 @@ fn finding() -> Value {
         },
         {
             "name": "search_code",
-            "description": "Find code (with the project's XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte, CSS, INI, .properties and .conf, and its Markdown, text and Word docs) when you don't know the names: by what it does, in plain words (\"retry the upload when it fails\"), or by words and names (\"refresh token expiry\"). Ask in English, in the words the code would use, even when the user writes in another language: code is written in English, and a question in English finds it far more often. Ranked results, best first, each with its file and lines, what it's in (Class › method, or a doc's section) and the lines with the words. Names are matched in their parts too (getUserById matches user).",
+            "description": "Find code or docs (config files, Markdown, Word too) when you don't know the names: by what it does in plain words (\"retry the upload when it fails\"), or by words and names. Ask in English, in the code's words, even when the user writes in another language. Ranked results with file, lines, what they're in (Class › method, a doc's section) and the lines with the words; names match by their parts (getUserById matches user).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -151,7 +151,7 @@ fn finding() -> Value {
         },
         {
             "name": "library_api",
-            "description": "What a library your project uses offers, read from the version installed here (node_modules and @types, Cargo.lock with Cargo's registry, a .venv, go.mod with Go's module cache, NuGet's XML docs), not remembered from another version: a function's, type's or method's signature and doc comment, a type's members; or, with no name, the package's top level. Use it before calling an API of a library you're not sure of, so the code fits the version the project has.",
+            "description": "A library's API as the project has it installed (npm and @types, Cargo's registry at Cargo.lock's version, a .venv, Go's module cache, NuGet's docs), not as remembered: a name's signature, doc comment and members, or the package's top level. Use it before calling an API you're not sure of.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -190,7 +190,7 @@ fn following() -> Value {
         },
         {
             "name": "file_dependencies",
-            "description": "What a file of your project imports and what imports it, with how many steps away (imports resolved through relative paths, tsconfig paths, Rust modules, Python packages, Go's module, C# namespaces). With no path: the outside packages the project imports, most used first.",
+            "description": "What a file imports and what imports it, with how many steps away (relative paths, tsconfig paths, Rust modules, Python packages, Go modules, C# namespaces). No path: the outside packages the project imports, most used first.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -218,7 +218,7 @@ fn following() -> Value {
         },
         {
             "name": "type_members",
-            "description": "The members of a class, interface, struct, trait or other type of your project (all its parts': a C# partial class, a Rust type's impls), each with its kind, file and lines, and signature; with inherited, its supertypes' members too, nearest first, but for those it overrides.",
+            "description": "A type's members (all its parts': a C# partial class, a Rust type's impls), with kind, lines and signature; inherited: its supertypes' too, but for those it overrides.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -232,7 +232,7 @@ fn following() -> Value {
         },
         {
             "name": "find_type_usages",
-            "description": "Where a class, interface, struct or other type of your project is used as a type: as a parameter's type, as what a function returns, as a field's or a property's type, and elsewhere (a local's type, a cast), each with its line and what it's in; then where it's made, and what extends or implements it. Use it before changing a type's shape.",
+            "description": "Where a type is used as one: a parameter's type, what a function returns, a field's or property's type, elsewhere (a local, a cast), each with its line and what it's in; then where it's made and what extends it. Use it before changing a type's shape.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -246,7 +246,7 @@ fn following() -> Value {
         },
         {
             "name": "change_impact",
-            "description": "What changing a function, method, constant, type or file would touch in your project, before you change it: its callers (to a depth), what uses it without a call, overriding methods, subtypes and supertypes, and for a type what declares something of it (a parameter, a field, what's returned); for a file, the files importing it and the callers of what it defines. With a level: low, medium or high.",
+            "description": "What changing a function, method, constant, type or file would touch, before you change it: callers (to a depth), uses without a call, overrides, subtypes and supertypes, what declares something of a type; for a file, its importers and the callers of what it defines. With a level: low, medium or high.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -260,7 +260,7 @@ fn following() -> Value {
         },
         {
             "name": "affected_tests",
-            "description": "The tests in your project that reach what you changed, so you run only those: by default what isn't committed yet (new files too), or what changed since a branch or commit, or the functions, types and files you name. Each test with what it reaches, then the commands that run just them (cargo test, vitest or jest, pytest, go test, dotnet test). Use it after a change, before running the whole suite.",
+            "description": "The tests that reach what you changed, so you run only those: what isn't committed (new files too), what changed since a branch or commit, or the symbols and files you name. Each with what it reaches, then the commands that run just them (cargo test, vitest, jest, pytest, go test, dotnet test). Use it after a change, before the whole suite.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -275,7 +275,7 @@ fn following() -> Value {
         },
         {
             "name": "code_history",
-            "description": "What git remembers of the code: the latest commits that changed a file or folder (or the whole project), newest first, each with its date, author, message and the files it changed; or, given a symbol, who last changed its lines, commit by commit. Use it to see why code is the way it is, or what changed lately.",
+            "description": "What git remembers: the latest commits to a file, a folder or the project (date, author, message, files), or who last changed a symbol's lines. Use it to see why code is as it is, or what changed lately.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

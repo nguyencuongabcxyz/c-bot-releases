@@ -105,23 +105,25 @@ use crate::ui::views;
 const FRESH: Duration = Duration::from_secs(3);
 /// How often the chat hears how a reading is going.
 const PROGRESS_EVERY: Duration = Duration::from_millis(300);
-/// The map at the start of a conversation, in characters (about a thousand tokens).
-const PROMPT_MAP: usize = 4_500;
+/// The map at the start of a conversation, in characters (about 750 tokens: each conversation
+/// pays for it, and code_map gives more when it's wanted).
+const PROMPT_MAP: usize = 3_000;
 pub const MAP_DEFAULT: usize = 8_000;
 pub const MAP_MAX: usize = 40_000;
 
-/// What every conversation of a robot with the optimizer on is told about it. The tools are named
-/// as Claude Code offers them (`mcp__<server>__<tool>`, the server being `cbot`, mcp/link.rs):
-/// told only `find_references`, Claude calls that first and fails.
+/// What every conversation of a robot with the optimizer on is told about it: which tool for
+/// what, in few words (each conversation pays for every word; the tools' own descriptions say
+/// the rest). The tools are named as Claude Code offers them (`mcp__<server>__<tool>`, the
+/// server being `cbot`, mcp/link.rs): told only `find_references`, Claude calls that first and
+/// fails.
 const NOTE: &str = concat!(
-    "C-Bot's context optimizer has indexed the code in this folder (TypeScript/JavaScript, C#, Java, C/C++, Go, Python with Jupyter notebooks, Rust, Dart/Flutter, Zig, PHP, Ruby, shell, PowerShell; Kotlin, Swift, Prisma, Protocol Buffers and Terraform for their definitions only; its XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte, CSS, INI, .properties and .conf; its Markdown, text and Word documents) and keeps it up to date. ",
-    "Use its tools before grepping or reading whole files: mcp__cbot__code_map for the files and definitions that matter most (focus it on what you're working on), ",
-    "mcp__cbot__code_outline for the signatures in a file or folder with their lines, mcp__cbot__find_symbol for where something is defined (body: true to see its code), mcp__cbot__explain_symbol for one function or type with everything around it at once (its code, calls, callers, types, tests), ",
-    "and mcp__cbot__search_code to find code or docs by words or meaning when you don't know the names (ask it in English, in the code's words, whatever language the user writes in). Then Read only the lines you need. ",
-    "It also knows who calls what (not yet in the languages read for their definitions only), through imports, fields and types: mcp__cbot__find_references for a function's or type's callers, mcp__cbot__call_chain for how one reaches another, ",
-    "mcp__cbot__file_dependencies for what a file imports and what imports it, mcp__cbot__type_hierarchy for supertypes, subtypes and overrides, mcp__cbot__type_members for what a type has (inherited too), mcp__cbot__find_type_usages for where a type is a parameter's, a field's or what's returned, and mcp__cbot__change_impact before changing something. ",
-    "After a change, mcp__cbot__affected_tests says which tests reach it and how to run just those. Before calling a library's API you're not sure of, mcp__cbot__library_api reads it from the version the project has installed. ",
-    "mcp__cbot__code_history tells what git remembers: the latest commits to a file, a folder or a symbol's lines, to see why code is the way it is."
+    "C-Bot's context optimizer has indexed this folder's code and docs, and keeps the index current. ",
+    "Prefer its tools to grepping or reading whole files, then Read only the lines you need: ",
+    "mcp__cbot__code_map (what matters most), mcp__cbot__code_outline (a file's signatures), mcp__cbot__find_symbol (where it's defined), ",
+    "mcp__cbot__explain_symbol (one symbol with everything around it), mcp__cbot__search_code (by words or meaning; ask in English), ",
+    "mcp__cbot__library_api (an installed library's real API). Its code graph: mcp__cbot__find_references (callers and uses), ",
+    "mcp__cbot__call_chain, mcp__cbot__file_dependencies, mcp__cbot__type_hierarchy, mcp__cbot__type_members, mcp__cbot__find_type_usages, ",
+    "mcp__cbot__change_impact (before a change), mcp__cbot__affected_tests (after one: which tests to run), mcp__cbot__code_history (what git remembers)."
 );
 
 /// Where a folder's index is.
@@ -147,8 +149,8 @@ pub struct Status {
     pub symbols: usize,
     pub calls: usize,         // (the code graph's, once it's built: who calls what)
     pub graph: bool,          // (the code graph is built for the code as it is now)
-    pub done: usize,          // (while indexing: files readâ€¦)
-    pub total: usize,         // (â€¦of these)
+    pub done: usize,          // (while indexing: files read…)
+    pub total: usize,         // (…of these)
     pub capped: bool,         // (more files than it reads)
     pub note: Option<String>, // (what it's doing, while installing)
     pub error: Option<String>,
@@ -481,12 +483,12 @@ mod tests {
             done: 1,
             total: 2,
             capped: false,
-            note: Some("Downloading PostgreSQL (once)â€¦".into()),
+            note: Some("Downloading PostgreSQL (once)…".into()),
             error: None,
         };
         assert_eq!(
             json!(s),
-            json!({ "phase": "installing", "files": 3, "chunks": 9, "embedded": 5, "symbols": 40, "calls": 70, "graph": true, "done": 1, "total": 2, "capped": false, "note": "Downloading PostgreSQL (once)â€¦", "error": null })
+            json!({ "phase": "installing", "files": 3, "chunks": 9, "embedded": 5, "symbols": 40, "calls": 70, "graph": true, "done": 1, "total": 2, "capped": false, "note": "Downloading PostgreSQL (once)…", "error": null })
         );
         assert_eq!(json!(Status::default())["phase"], "off");
         assert_eq!(json!(Phase::Failed), "failed");
