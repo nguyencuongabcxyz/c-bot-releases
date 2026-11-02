@@ -1,6 +1,6 @@
 {
   "name": "c-bot",
-  "version": "2.4.6",
+  "version": "2.4.7",
   "description": "Cartoon desktop robots that are secretly Claude Code",
   "type": "module",
   "scripts": {
