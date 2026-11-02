@@ -1,7 +1,7 @@
-//! The context engine's tools (context/), about the code in the robot's folder: finding your
+//! The context optimizer's tools (context/), about the code in the robot's folder: finding your
 //! way (code_map, code_outline, find_symbol, search_code), following the code graph
 //! (find_references, call_chain, file_dependencies, type_hierarchy, change_impact), and what
-//! git remembers of it (code_history). Only conversations of a robot with the engine on are
+//! git remembers of it (code_history). Only conversations of a robot with the optimizer on are
 //! given them (server.rs `--code`).
 
 use serde_json::{Value, json};

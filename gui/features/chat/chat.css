@@ -542,7 +542,7 @@ button.tv-doc:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--
 #brain-meter.warm .bm-bar i { background: var(--warn); }
 #brain-meter.full .bm-bar i { background: var(--danger); }
 #brain-meter.full { animation: pulse 1.2s ease-in-out infinite; }
-/* the context engine (chat/context/engine.ts): dim while off, lit while it works, its map green once it's done;
+/* the context optimizer (chat/context/engine.ts): dim while off, lit while it works, its map green once it's done;
    while it works a bar under its words, accent while it reads, violet while its chunks get their vectors
    (sliding when there's no telling how far) */
 #brain-context[data-phase="off"] { color: var(--muted); }

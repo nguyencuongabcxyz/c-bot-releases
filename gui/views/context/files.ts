@@ -1,4 +1,4 @@
-// The Context engine window's Files: every file of a folder's index in a table (filtered by words
+// The Context optimizer window's Files: every file of a folder's index in a table (filtered by words
 // in its path and by kind, sorted by any column; only the rows in view are drawn, so thousands
 // scroll smoothly), and the file picked beside it (file.ts), a divider between them to drag. The
 // file can have the whole page; Esc gives it back, then closes it. The arrows walk the list.

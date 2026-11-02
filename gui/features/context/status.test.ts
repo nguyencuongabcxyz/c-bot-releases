@@ -18,7 +18,7 @@ const status = (s: Partial<ContextEngineStatus>): ContextEngineStatus => ({
   ...s,
 });
 
-describe('the context engine button', () => {
+describe('the context optimizer button', () => {
   it('says off, how far a reading has got, or how many files it knows', () => {
     expect(contextLabel(status({}))).toBe('off');
     expect(contextLabel(status({ phase: 'installing' }))).toBe('setting up…');
@@ -112,7 +112,7 @@ describe('the context engine button', () => {
       'Indexed 12 files, 3 definitions · Downloading…',
     );
     expect(contextSummary(status({ phase: 'failed', error: 'The folder C:\\x isn’t there.' }))).toBe(
-      'Context engine: The folder C:\\x isn’t there.',
+      'Context optimizer: The folder C:\\x isn’t there.',
     );
   });
 });

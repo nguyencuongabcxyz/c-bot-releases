@@ -327,7 +327,7 @@ export type Character = {
   contextEngine?: boolean; // its folder's code indexed for its Claude (app/src/context), switched on from the chat
 };
 
-/** How the context engine's index of a robot's folder is (app/src/context Status): off; setting
+/** How the context optimizer's index of a robot's folder is (app/src/context Status): off; setting
  * up its database the first time (note: what it's doing); reading its files (done of total);
  * ready, its chunks getting their vectors for search by meaning (embedded of chunks; note: the
  * model's download); or it couldn't (error). capped: more files than it reads. calls: who calls
@@ -347,8 +347,8 @@ export type ContextEngineStatus = {
   error: string | null;
 };
 
-/** Everything about the context engine, for the chat's details panel (app/src/context/details.rs
- * Details): the robot's own folder (null while the engine is off for it), the store (null while
+/** Everything about the context optimizer, for the chat's details panel (app/src/context/details.rs
+ * Details): the robot's own folder (null while the optimizer is off for it), the store (null while
  * its database isn't up), every folder the store holds, the models, and where it all is. */
 export type ContextEngineDetails = {
   folder: ContextFolderDetails | null;
@@ -383,7 +383,7 @@ export type ContextGit = {
   changed: number;
 };
 
-/** The engine's PostgreSQL; startedHere: by this C-Bot (which stops it on its way out). */
+/** The optimizer's PostgreSQL; startedHere: by this C-Bot (which stops it on its way out). */
 export type ContextStoreDetails = {
   version: string;
   port: number;
@@ -393,7 +393,7 @@ export type ContextStoreDetails = {
   vectors: { model: string; count: number }[];
 };
 
-/** A folder the store holds: robots, the ones with the engine on reading it; current: this
+/** A folder the store holds: robots, the ones with the optimizer on reading it; current: this
  * robot's; open: in memory now; kinds: its files by language or kind of document (most first);
  * bytes: its files', as last read. */
 export type ContextRepo = {
@@ -409,7 +409,7 @@ export type ContextRepo = {
   bytes: number;
 };
 
-/** A model the engine runs, or what runs them. */
+/** A model the optimizer runs, or what runs them. */
 export type ContextModel = {
   role: 'sentence' | 'reranker' | 'runtime';
   name: string;
@@ -419,7 +419,7 @@ export type ContextModel = {
 };
 
 /** A group of the tools C-Bot gives a robot's Claude Code (app/src/mcp/tools/mod.rs GroupInfo):
- * on, this robot's conversations get them (the context engine's only while it's on). */
+ * on, this robot's conversations get them (the context optimizer's only while it's on). */
 export type ToolGroupInfo = {
   group: 'robots' | 'words' | 'notes' | 'routines' | 'terminal' | 'screen' | 'tabs' | 'code';
   on: boolean;
@@ -430,7 +430,7 @@ export type ToolGroupInfo = {
  * asks first (the robot's permission mode decides). */
 export type ToolInfo = { name: string; description: string; asks: boolean };
 
-/** What the Context engine window opens on (app/src/context/window.rs): the folder asked for
+/** What the Context optimizer window opens on (app/src/context/window.rs): the folder asked for
  * (a robot's), as the store names it. */
 export type ContextInit = { focus: string | null };
 
@@ -499,7 +499,7 @@ export type ContextChunk = {
   embedded: boolean;
 };
 
-/** What the Context engine window deletes besides one folder's index (app/src/context/wipe.rs):
+/** What the Context optimizer window deletes besides one folder's index (app/src/context/wipe.rs):
  * every index (the downloads stay), or everything, downloads too. */
 export type ContextWipe = 'indexes' | 'everything';
 
@@ -507,7 +507,7 @@ export type ContextWipe = 'indexes' | 'everything';
 export type ContextWiped = {
   freed: number; // (bytes, on disk)
   later: boolean; // (some of it was in use: it goes the next time C-Bot starts)
-  robots: string[]; // (the robots the engine was switched off for, by name)
+  robots: string[]; // (the robots the optimizer was switched off for, by name)
 };
 
 /** What a robot window is told about its robot (main.js robotView). */

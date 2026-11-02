@@ -1,4 +1,4 @@
-// A file's text in the Context engine window, beside its definitions and chunks (file.ts): the
+// A file's text in the Context optimizer window, beside its definitions and chunks (file.ts): the
 // whole file as it is on disk, highlighted, with its line numbers and, in the gutter, a band for
 // the chunk each line is in (chunks take turns at two shades, the one picked lit). Only the lines
 // in view are drawn, so a long file scrolls as smoothly as a short one. What's picked (a

@@ -1,4 +1,4 @@
-// A divider between two panes of the Context engine window: dragged, it sets the first pane's
+// A divider between two panes of the Context optimizer window: dragged, it sets the first pane's
 // share of their box (`--split`, which the box's grid uses), remembered for next time; a
 // double-click puts it back. `x`: side by side; `y`: one above the other.
 import { el } from '@/lib/dom';

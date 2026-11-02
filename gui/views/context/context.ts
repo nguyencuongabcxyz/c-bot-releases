@@ -1,4 +1,4 @@
-// The Context engine window (?view=context; app/src/context/window.rs): every folder the store
+// The Context optimizer window (?view=context; app/src/context/window.rs): every folder the store
 // holds down the side (which folds away to a rail: its button, or Ctrl+B), and the one picked in
 // three pages: its Overview (its top with rings and
 // numbers, its indexes one by one, every field of its index, its languages, its git), its Files
@@ -39,7 +39,7 @@ import '@/theme/base.css';
 import '@/features/context/context.css';
 import './context.css';
 
-showView(markup, { title: 'Context engine — C-Bot', bodyClass: 'cx' });
+showView(markup, { title: 'Context optimizer — C-Bot', bodyClass: 'cx' });
 
 type Tab = 'overview' | 'files' | 'engine';
 const TAB_KEY = 'context.tab';
@@ -133,7 +133,8 @@ const folderKey = (p: string) => samePath(p).replace(/\\+$/, '');
     for (const [t, page] of Object.entries(pages)) page.hidden = t !== tab;
   }
 
-  const storeDown = 'The context engine’s store isn’t running: switch the engine on for a robot from its chat first.';
+  const storeDown =
+    'The context optimizer’s store isn’t running: switch the optimizer on for a robot from its chat first.';
   function nothing(page: HTMLElement, text: string) {
     page.replaceChildren(el('p', 'cx-muted empty', text));
   }
@@ -159,7 +160,7 @@ const folderKey = (p: string) => samePath(p).replace(/\\+$/, '');
           el(
             'p',
             'cx-muted',
-            'No robot with the context engine on reads this folder now: what’s here is what the store kept of it.',
+            'No robot with the context optimizer on reads this folder now: what’s here is what the store kept of it.',
           ),
         );
         parts.push(note);
@@ -188,7 +189,7 @@ const folderKey = (p: string) => samePath(p).replace(/\\+$/, '');
     page.replaceChildren(grid);
   }
 
-  /** Deleting the engine's data: every index (the downloads stay), or everything. */
+  /** Deleting the optimizer's data: every index (the downloads stay), or everything. */
   function wipeCard(d: ContextEngineDetails): HTMLElement {
     const box = card('Delete data', 'trash');
     box.classList.add('wide', 'cx-wipe');
@@ -221,7 +222,7 @@ const folderKey = (p: string) => samePath(p).replace(/\\+$/, '');
       el(
         'p',
         'cx-muted',
-        'Either switches the context engine off for every robot. One folder’s index: the bin at the top.',
+        'Either switches the context optimizer off for every robot. One folder’s index: the bin at the top.',
       ),
     );
     return box;
@@ -329,7 +330,7 @@ const folderKey = (p: string) => samePath(p).replace(/\\+$/, '');
 
   // ---------------------------------------------------------------- reading
 
-  /** Everything about the engine, read again (and the side drawn again). */
+  /** Everything about the optimizer, read again (and the side drawn again). */
   async function loadDetails(): Promise<ContextEngineDetails | null> {
     try {
       details = await ipc.contextDetails();

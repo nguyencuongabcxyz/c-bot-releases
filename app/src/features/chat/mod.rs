@@ -296,7 +296,7 @@ fn patch(pairs: Vec<(&str, Value)>) -> Map<String, Value> {
 // ---------------------------------------------------------------- one tab's conversation
 
 /// Its personality, the other robots it can ask (mcp/link.rs), and the map of its code when
-/// the context engine is on (context/).
+/// the context optimizer is on (context/).
 pub fn prompt_for(app: &AppHandle, c: &Value) -> String {
     let id = c.id();
     let mut prompt = personalities::system_prompt_for(c);

@@ -1,5 +1,5 @@
 /* Highlighted code's colours (highlight.js's classes), on the code background (--code-bg), for
-   every window that shows code: the chat's code blocks and file viewer, the Context engine window. */
+   every window that shows code: the chat's code blocks and file viewer, the Context optimizer window. */
 .hljs-comment, .hljs-quote { color: #8b949e; font-style: italic; }
 .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-built_in, .hljs-type { color: #ff7b72; }
 .hljs-string, .hljs-regexp, .hljs-addition, .hljs-meta .hljs-string { color: #a5d6ff; }

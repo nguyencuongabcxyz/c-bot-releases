@@ -251,7 +251,7 @@ pub(super) fn summary(code: &Code) -> String {
     )
 }
 
-/// What a robot's Claude is told about the engine and the code, when it's on (with the map
+/// What a robot's Claude is told about the optimizer and the code, when it's on (with the map
 /// once the folder has been read: a conversation doesn't wait for the first reading).
 pub fn note(app: &AppHandle, id: &str) -> Option<String> {
     let f = folder_for(app, id).ok()?;

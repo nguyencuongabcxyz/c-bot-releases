@@ -42,7 +42,7 @@ pub(super) fn outline(ix: &Code, rel: &str) -> Result<String, String> {
         .collect();
     if files.is_empty() {
         return Err(format!(
-            "There's no code file or folder \"{rel}\" here (the context engine reads TypeScript/JavaScript, C#, Java, C/C++, Go, Python, Rust, Dart, Zig, Kotlin, Swift, PHP, Ruby, shell, PowerShell, Prisma, Protocol Buffers and Terraform)."
+            "There's no code file or folder \"{rel}\" here (the context optimizer reads TypeScript/JavaScript, C#, Java, C/C++, Go, Python, Rust, Dart, Zig, Kotlin, Swift, PHP, Ruby, shell, PowerShell, Prisma, Protocol Buffers and Terraform)."
         ));
     }
     let mut out = String::new();
@@ -253,7 +253,7 @@ fn snippet(text: &str, from: u32, words: &[String]) -> String {
 mod tests {
     use super::*;
 
-    /// A folder of code, read as the engine does.
+    /// A folder of code, read as the optimizer does.
     fn project() -> (PathBuf, Code) {
         let dir = std::env::temp_dir().join(format!(
             "cbot-ctx-answers-{}",

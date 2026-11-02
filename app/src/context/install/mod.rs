@@ -1,4 +1,4 @@
-//! What the context engine needs that's too big for the installer, got the first time it's
+//! What the context optimizer needs that's too big for the installer, got the first time it's
 //! needed: its PostgreSQL (postgres.rs), downloaded once and run while C-Bot runs, and the
 //! sentence model that search by meaning runs (model.rs) with what runs it (ONNX Runtime,
 //! runtime.rs). The store on the database is set up once for every robot: whoever needs it

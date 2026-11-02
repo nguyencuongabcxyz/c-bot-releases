@@ -1,4 +1,4 @@
-// The files of a folder's index, in words and in order (the Context engine window's Files):
+// The files of a folder's index, in words and in order (the Context optimizer window's Files):
 // which to show for the words typed and the kind picked, sorted by any column, what they add up
 // to; and in one file, the chunk a definition is in, the chunk each line is in, the definition
 // a line is in, and the definitions or chunks that match some words. Pure (tested).

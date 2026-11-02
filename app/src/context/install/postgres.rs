@@ -1,4 +1,4 @@
-//! The engine's own PostgreSQL. It's downloaded once into <dir>/pg/install (an exact version,
+//! The optimizer's own PostgreSQL. It's downloaded once into <dir>/pg/install (an exact version,
 //! so an installed one is found without asking the internet), keeps its data in <dir>/pg/data,
 //! and listens on 127.0.0.1 on a port and with a password chosen once. C-Bot starts it when a
 //! robot first needs it, joins it when it's already running (left by a C-Bot that didn't get to
@@ -8,7 +8,7 @@ use super::*;
 
 /// The PostgreSQL release, pinned exactly (a range asks GitHub which is newest on every start).
 const VERSION: &str = "=18.6.1";
-/// The engine's database in the cluster.
+/// The optimizer's database in the cluster.
 const DATABASE: &str = "cbot_context";
 /// How long the database may take to come up or answer.
 const TIMEOUT: Duration = Duration::from_secs(60);

@@ -1,13 +1,13 @@
-//! Deleting what the engine keeps, when the user asks (the Context engine window): one folder's
-//! index, every folder's (the downloads stay), or everything in the engine's folder, downloads
-//! too. The robots reading what goes have the engine switched off first, so nothing reads it
+//! Deleting what the optimizer keeps, when the user asks (the Context optimizer window): one folder's
+//! index, every folder's (the downloads stay), or everything in the optimizer's folder, downloads
+//! too. The robots reading what goes have the optimizer switched off first, so nothing reads it
 //! again meanwhile; switching it back on reads (and downloads) it all afresh. What's in use and
 //! can't go yet (ONNX Runtime, once loaded, stays till C-Bot quits; a keyword index a reading
-//! still holds) is listed, and goes the next time C-Bot starts, before the engine opens anything.
+//! still holds) is listed, and goes the next time C-Bot starts, before the optimizer opens anything.
 
 use super::*;
 
-/// The list of what's to go the next time C-Bot starts, in the engine's folder.
+/// The list of what's to go the next time C-Bot starts, in the optimizer's folder.
 const LATER: &str = "delete-later.txt";
 
 /// What goes, besides one folder's index.
@@ -16,7 +16,7 @@ const LATER: &str = "delete-later.txt";
 pub enum Wipe {
     /// Every folder's index: the database's data and the keyword indexes (the downloads stay).
     Indexes,
-    /// Everything in the engine's folder: the indexes, PostgreSQL, the models, ONNX Runtime.
+    /// Everything in the optimizer's folder: the indexes, PostgreSQL, the models, ONNX Runtime.
     Everything,
 }
 
@@ -26,10 +26,10 @@ pub enum Wipe {
 pub struct Wiped {
     freed: u64,          // (bytes, on disk)
     later: bool,         // (some of it was in use: it goes the next time C-Bot starts)
-    robots: Vec<String>, // (the robots the engine was switched off for, by name)
+    robots: Vec<String>, // (the robots the optimizer was switched off for, by name)
 }
 
-/// Delete one folder's index (the robots reading it have the engine switched off). Its files
+/// Delete one folder's index (the robots reading it have the optimizer switched off). Its files
 /// stay as they are.
 #[tauri::command(async)]
 pub fn context_forget(
@@ -57,7 +57,7 @@ pub fn context_forget(
     })
 }
 
-/// Delete every folder's index, or everything (the engine is switched off for every robot).
+/// Delete every folder's index, or everything (the optimizer is switched off for every robot).
 #[tauri::command(async)]
 pub fn context_wipe(
     app: AppHandle,
@@ -89,7 +89,7 @@ pub fn context_wipe(
     })
 }
 
-/// What goes, in the engine's folder.
+/// What goes, in the optimizer's folder.
 fn targets(dir: &Path, what: Wipe) -> Vec<PathBuf> {
     match what {
         Wipe::Indexes => vec![dir.join("pg").join("data"), dir.join("scopes")],
@@ -97,7 +97,7 @@ fn targets(dir: &Path, what: Wipe) -> Vec<PathBuf> {
     }
 }
 
-/// The engine switched off for the robots whose folder `goes`, their chats told; their names.
+/// The optimizer switched off for the robots whose folder `goes`, their chats told; their names.
 fn switch_off(app: &AppHandle, goes: impl Fn(&str) -> bool) -> Vec<String> {
     let robots: Vec<(String, String)> = with(app, |st| {
         st.store
@@ -163,7 +163,7 @@ fn note_later(dir: &Path, paths: &[PathBuf]) {
         return;
     }
     log::info!(
-        "context engine: {} in use, deleted the next time C-Bot starts",
+        "context optimizer: {} in use, deleted the next time C-Bot starts",
         paths.len()
     );
     let list = dir.join(LATER);
@@ -177,7 +177,7 @@ fn note_later(dir: &Path, paths: &[PathBuf]) {
 }
 
 /// C-Bot starts: what couldn't go before (nothing holds it now) goes, with the folders it
-/// leaves empty. Only ever what's in the engine's folder.
+/// leaves empty. Only ever what's in the optimizer's folder.
 pub(super) fn leftovers(dir: &Path) {
     let list = dir.join(LATER);
     let Ok(text) = std::fs::read_to_string(&list) else {
@@ -199,7 +199,7 @@ pub(super) fn leftovers(dir: &Path) {
     }
 }
 
-/// The list's paths, those in the engine's folder (and not the folder itself).
+/// The list's paths, those in the optimizer's folder (and not the folder itself).
 fn later_paths(text: &str, dir: &Path) -> Vec<PathBuf> {
     text.lines()
         .map(str::trim)
@@ -209,7 +209,7 @@ fn later_paths(text: &str, dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// The folders `path` was in, deleted while they're empty, up to the engine's folder.
+/// The folders `path` was in, deleted while they're empty, up to the optimizer's folder.
 fn prune_up(path: &Path, dir: &Path) {
     let mut at = path.parent();
     while let Some(p) = at.filter(|p| p.starts_with(dir) && *p != dir) {

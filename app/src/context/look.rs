@@ -419,7 +419,7 @@ pub(super) fn database(app: &AppHandle, f: Option<&Folder>) -> Result<Arc<Databa
     if let Some(f) = f
         && !still_on(app, f)
     {
-        return Err("The context engine was switched off for this folder.".into());
+        return Err("The context optimizer was switched off for this folder.".into());
     }
     let (dir, setup) = engine(app, |e| (e.dir.clone(), e.setup.clone()));
     let say = |note: &str| {

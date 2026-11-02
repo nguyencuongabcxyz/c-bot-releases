@@ -17,7 +17,7 @@ pub trait Fields {
     fn visible(&self) -> bool;
     /// The Claude Code conversation it carries on, once it has one.
     fn session_id(&self) -> Option<&str>;
-    /// The context engine switched on for a robot (off unless the user turned it on).
+    /// The context optimizer switched on for a robot (off unless the user turned it on).
     fn context_engine(&self) -> bool;
 }
 

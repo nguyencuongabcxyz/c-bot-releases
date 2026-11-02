@@ -26,7 +26,7 @@ pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
         .target(Target::new(file))
         .target(Target::new(TargetKind::Stdout)) // (run from a terminal: there too)
         .level(LevelFilter::Info)
-        // (the context engine's database and its download say a lot as they go: only what's wrong)
+        // (the context optimizer's database and its download say a lot as they go: only what's wrong)
         .level_for("tracing", LevelFilter::Warn)
         .level_for("postgresql_archive", LevelFilter::Warn)
         .level_for("postgresql_embedded", LevelFilter::Warn)

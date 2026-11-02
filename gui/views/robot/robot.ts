@@ -577,7 +577,7 @@ tooltips($('#side-panel'));
     startCompact,
   }: BrainApi = createBrain(hub);
 
-  // the context engine: its folder's code, indexed for its Claude
+  // the context optimizer: its folder's code, indexed for its Claude
   createContextEngine(hub); // (chat/context/engine.ts)
 
   // tabs

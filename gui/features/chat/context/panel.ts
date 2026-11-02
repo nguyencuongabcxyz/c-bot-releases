@@ -1,7 +1,7 @@
-// The context engine's panel, in the chat's helper view (engine.ts opens it from the header's
+// The context optimizer's panel, in the chat's helper view (engine.ts opens it from the header's
 // button and its brain-bar menu): this robot's folder only (its top, its indexes one by one, its
-// languages, its git). A bar on top opens the Context engine window for everything else (every
-// folder, every file, the store, the models), reads the folder again, or switches the engine.
+// languages, its git). A bar on top opens the Context optimizer window for everything else (every
+// folder, every file, the store, the models), reads the folder again, or switches the optimizer.
 // It's read when it opens and when the index changes phase; its rings and indexes follow each
 // status as it comes. Nothing is drawn into a panel that's been closed by then.
 import { el, iconButton } from '@/lib/dom';
@@ -9,7 +9,7 @@ import * as ipc from '@/ipc';
 import type { ContextEngineStatus } from '@/types/model';
 import { type Live, gitCard, heroCard, indexesCard, languagesCard } from '@/features/context/details';
 
-/** What it uses of the engine's part: the status now, and switching it or reading again. */
+/** What it uses of the optimizer's part: the status now, and switching it or reading again. */
 export type ContextPanelNeeds = {
   readonly status: () => ContextEngineStatus;
   readonly act: (what: 'on' | 'off' | 'reindex') => void;
@@ -21,7 +21,7 @@ export function createContextPanel(n: ContextPanelNeeds) {
 
   // the bar
   const bar = el('div', 'cx-toolbar');
-  const all = iconButton('cx-open', 'Context engine window', 'expand', 'All details');
+  const all = iconButton('cx-open', 'Context optimizer window', 'expand', 'All details');
   all.addEventListener('click', () => void ipc.robotContextWindow());
   const refresh = iconButton('cx-btn', 'Refresh', 'refresh');
   refresh.addEventListener('click', () => void load());
@@ -29,7 +29,7 @@ export function createContextPanel(n: ContextPanelNeeds) {
   reindex.addEventListener('click', () => n.act('reindex'));
   const power = el('button', 'cx-switch');
   power.type = 'button';
-  power.title = 'Context engine';
+  power.title = 'Context optimizer';
   power.addEventListener('click', () => n.act(n.status().phase === 'off' ? 'on' : 'off'));
   bar.append(all, el('span', 'spacer'), refresh, reindex, power);
   const page = el('div', 'cx-page');
@@ -52,7 +52,7 @@ export function createContextPanel(n: ContextPanelNeeds) {
       const f = d.folder;
       if (!f) {
         live = [];
-        page.replaceChildren(el('p', 'cx-muted', 'The context engine is off for this robot: switch it on above.'));
+        page.replaceChildren(el('p', 'cx-muted', 'The context optimizer is off for this robot: switch it on above.'));
         return;
       }
       const hero = heroCard(f);

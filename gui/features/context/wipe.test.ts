@@ -15,7 +15,7 @@ const repo = (robots: string[]): ContextRepo => ({
   bytes: 1,
 });
 
-describe('deleting what the context engine keeps, in words', () => {
+describe('deleting what the context optimizer keeps, in words', () => {
   it('puts names in a sentence', () => {
     expect(names([])).toBe('');
     expect(names(['Bolt'])).toBe('Bolt');
@@ -25,10 +25,10 @@ describe('deleting what the context engine keeps, in words', () => {
 
   it('asks about one folder, naming the robots it switches off', () => {
     expect(forgetQuestion(repo([]))).toBe(
-      'Delete the index of shop? Its files stay as they are: switching the engine on again reads them afresh.',
+      'Delete the index of shop? Its files stay as they are: switching the optimizer on again reads them afresh.',
     );
     expect(forgetQuestion(repo(['Bolt', 'Pip']))).toContain(
-      'shop? The context engine will be switched off for Bolt and Pip. Its files',
+      'shop? The context optimizer will be switched off for Bolt and Pip. Its files',
     );
   });
 
@@ -43,7 +43,7 @@ describe('deleting what the context engine keeps, in words', () => {
       'Deleted every index: 2.0 KB freed.',
     );
     expect(wipedText('Deleted the index of shop', { freed: 2048, later: true, robots: ['Bolt'] }, false)).toBe(
-      'Deleted the index of shop. The context engine is off for Bolt. Some of it was in use: it goes the next time C-Bot starts.',
+      'Deleted the index of shop. The context optimizer is off for Bolt. Some of it was in use: it goes the next time C-Bot starts.',
     );
     expect(wipedText('Deleted everything', { freed: 0, later: false, robots: [] })).toBe('Deleted everything.');
   });

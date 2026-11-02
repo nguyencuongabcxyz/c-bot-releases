@@ -1,4 +1,4 @@
-//! The context engine's store, in its PostgreSQL (install/): the one source of truth. For each
+//! The context optimizer's store, in its PostgreSQL (install/): the one source of truth. For each
 //! folder (a scope) it keeps the files as last read (size, time, content hash), their chunks
 //! (what search finds) and their code facts (what they define and the names they use), and a
 //! generation that every commit moves on by one. The keyword index and the code in memory are
@@ -7,7 +7,7 @@
 //! another got in first (the fence), so a late writer can never land stale work.
 //!   schema.rs   the tables, made or brought up to date when the store opens
 //!   commit.rs   one change, all or nothing
-//!   reads.rs    what the engine reads back
+//!   reads.rs    what the optimizer reads back
 //!   vectors.rs  the chunks' vectors, a cache shared by every folder
 
 mod commit;
@@ -28,7 +28,7 @@ use super::ingest::{Chunk, Stamp, Stored};
 use super::{block, embed};
 use crate::runtime::Error;
 
-/// A folder's id in the store: 16 bytes of BLAKE3 over its path as the engine names it.
+/// A folder's id in the store: 16 bytes of BLAKE3 over its path as the optimizer names it.
 pub(in crate::context) type ScopeId = [u8; 16];
 
 pub(in crate::context) fn scope_id(key: &str) -> ScopeId {

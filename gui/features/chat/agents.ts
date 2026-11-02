@@ -277,7 +277,7 @@ export function createHelpers(r: HelpersNeeds) {
     });
   }
 
-  // Another part's own page in the panel (the context engine's): it fills the body, and Back (or
+  // Another part's own page in the panel (the context optimizer's): it fills the body, and Back (or
   // Esc) goes out to the chat. A file opened from it comes Back to it, filled again.
   const PANEL_VIEW = 'panel:';
   let panel: { icon: string; title: string; fill: (body: HTMLElement) => void } | null = null;

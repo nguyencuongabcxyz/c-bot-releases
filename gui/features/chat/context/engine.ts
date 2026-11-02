@@ -1,11 +1,11 @@
-// The context engine (app/src/context): the code in my folder indexed for my Claude Code, which
+// The context optimizer (app/src/context): the code in my folder indexed for my Claude Code, which
 // then starts each conversation with a map of it and gets tools to look things up (code_map,
 // code_outline, find_symbol, search_code) and to follow who calls what (find_references,
 // call_chain, file_dependencies, type_hierarchy, change_impact). It's off till you switch it on for
 // this robot. Two buttons show how the index is: in the brain bar, what it knows, a bar of how
 // far it's got while it works and a dot for each of its indexes (syntax trees, keywords,
 // vectors, code graph; its menu turns it on or off, reads the folder again, or opens the panel
-// or the Context engine window); in the header, a dot (working, ready, failed) on the button
+// or the Context optimizer window); in the header, a dot (working, ready, failed) on the button
 // that opens its panel (panel.ts: this robot's folder). (robot.ts calls createContextEngine with
 // its hub.)
 import type { BrainApi } from '../brain';
@@ -78,7 +78,7 @@ export function createContextEngine(r: ContextEngineNeeds) {
     try {
       turnedOn = what !== 'off';
       onStatus(what === 'reindex' ? await ipc.robotContextReindex() : await ipc.robotContextSet(what === 'on'));
-      if (what === 'off') r.addNote('🧭 Context engine off. New questions go without it.');
+      if (what === 'off') r.addNote('🧭 Context optimizer off. New questions go without it.');
     } catch (e) {
       turnedOn = false;
       r.addNote(`🧭 ${String(e)}`);
@@ -87,7 +87,7 @@ export function createContextEngine(r: ContextEngineNeeds) {
   }
 
   function openDetails() {
-    r.openPanel('map', 'Context engine', (body) => {
+    r.openPanel('map', 'Context optimizer', (body) => {
       body.append(panel.root);
       panel.show();
     });

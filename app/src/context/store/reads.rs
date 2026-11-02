@@ -1,4 +1,4 @@
-//! What the engine reads back from the store: a folder's generation, what it had of each file
+//! What the optimizer reads back from the store: a folder's generation, what it had of each file
 //! (to tell what changed), and, for a derived index that reflects an older generation, what
 //! was written or deleted after it, read in one snapshot so the generation it reports covers
 //! exactly the rows it returns. A replay is full when the index is new, older than the folder's

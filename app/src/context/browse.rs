@@ -1,4 +1,4 @@
-//! What's in a folder's index, file by file, for the Context engine window (window.rs): every
+//! What's in a folder's index, file by file, for the Context optimizer window (window.rs): every
 //! file the store holds of a folder (its kind, size, chunks, how many have their vector, its
 //! definitions), and one file opened up (its definitions as the tools read them, its chunks as
 //! search finds them, and its text as it is on disk now). It's all read from the store, so any folder it holds can be looked
@@ -67,7 +67,7 @@ pub struct ChunkView {
 /// The store, as it is (nothing started for asking).
 pub(super) fn running_store(app: &AppHandle) -> Result<Arc<Database>, Error> {
     Ok(engine(app, |e| e.setup.clone()).running().ok_or(
-        "The index's database isn't running: switch the context engine on for a robot first.",
+        "The index's database isn't running: switch the context optimizer on for a robot first.",
     )?)
 }
 

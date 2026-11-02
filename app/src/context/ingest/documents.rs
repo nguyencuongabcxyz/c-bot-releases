@@ -1,4 +1,4 @@
-//! The files the engine reads that aren't the text they hold: a Jupyter notebook, read as the
+//! The files the optimizer reads that aren't the text they hold: a Jupyter notebook, read as the
 //! Python its cells hold (jupytext's "percent" format: each cell after a `# %%` line, its
 //! Markdown as comments, its outputs left out), so its definitions, calls and words are found
 //! as a .py file's are; and a Word document, read as Markdown (its headings as `#`, its lists'
@@ -13,7 +13,7 @@ use std::io::Read as _;
 /// something else, or a zip bomb).
 const WORD_MAX: u64 = 20 * 1024 * 1024;
 
-/// The text the engine reads in a file, by its kind: a notebook's Python, a Word document's
+/// The text the optimizer reads in a file, by its kind: a notebook's Python, a Word document's
 /// Markdown, else the file itself (None when it isn't text).
 pub(super) fn text_of(path: &Path, bytes: Vec<u8>) -> Option<String> {
     let ext = path

@@ -1,7 +1,7 @@
-// The context engine's details, in words and in cards, for the chat's panel (the robot's own
-// folder) and the Context engine window (any folder, the store, the models): a folder's top (how
+// The context optimizer's details, in words and in cards, for the chat's panel (the robot's own
+// folder) and the Context optimizer window (any folder, the store, the models): a folder's top (how
 // far it's read and embedded, in rings that move as it goes, and its numbers), its indexes one by
-// one, every field of its index, its languages, its git branch; the disk the engine takes, the
+// one, every field of its index, its languages, its git branch; the disk the optimizer takes, the
 // store's PostgreSQL and the models. The words are pure (tested); the charts are charts.ts.
 import { el } from '@/lib/dom';
 import { Icon } from '@/icons/icons';
@@ -123,7 +123,7 @@ export const ROLE: Record<ContextModel['role'], string> = {
   runtime: 'ONNX Runtime',
 };
 
-/** What the engine takes on disk, by part. */
+/** What the optimizer takes on disk, by part. */
 export function diskShares(d: ContextEngineDetails): Share[] {
   return shares(
     [
@@ -148,7 +148,7 @@ export function indexRows(f: ContextFolderDetails, loaded = true, now = Date.now
   const s = f.status;
   const all: [string, string][] = [
     ['Folder', f.root],
-    ['State', loaded ? phasePill(s).text : 'Not loaded: no robot with the engine on reads it now'],
+    ['State', loaded ? phasePill(s).text : 'Not loaded: no robot with the optimizer on reads it now'],
     ['Files', `${count(s.files)}${s.capped ? ' (not all: the folder has more)' : ''}`],
     ['Code files', count(f.languages.reduce((n, l) => n + l.files, 0))],
     ['Docs', count(f.docs)],
@@ -303,7 +303,7 @@ export function diskCard(d: ContextEngineDetails): HTMLElement {
 export function storeCard(s: ContextStoreDetails | null): HTMLElement {
   const box = card('Store', 'box', s ? pill(`PostgreSQL ${s.version}`, 0) : pill('not running', 5));
   if (!s) {
-    box.append(el('p', 'cx-muted', 'Its database starts when a robot with the engine on needs it.'));
+    box.append(el('p', 'cx-muted', 'Its database starts when a robot with the optimizer on needs it.'));
     return box;
   }
   box.append(

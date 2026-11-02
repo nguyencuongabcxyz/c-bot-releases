@@ -1,5 +1,5 @@
-/* The context engine's cards, charts and tables (features/context/details.ts, charts.ts), for the
-   chat's panel and the Context engine window: anything inside .cx. Colours by tone (.t0–.t5: the
+/* The context optimizer's cards, charts and tables (features/context/details.ts, charts.ts), for the
+   chat's panel and the Context optimizer window: anything inside .cx. Colours by tone (.t0–.t5: the
    accent, violet, ok, warn, danger, muted), so they follow the theme and the mode. */
 .cx .t0 { --tone: var(--accent); }
 .cx .t1 { --tone: var(--violet); }

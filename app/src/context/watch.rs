@@ -1,9 +1,9 @@
 //! A folder watched from its first look (notify: ReadDirectoryChangesW on Windows), so its index
 //! follows the files as they're saved: each burst of changes, once it settles for QUIET, has the
 //! files it names read again (look.rs) without waiting for a question; and while it's watched, a
-//! question doesn't walk the folder first (look::trusted). Changes where the engine never reads
+//! question doesn't walk the folder first (look::trusted). Changes where the optimizer never reads
 //! (.git, target, node_modules, hidden folders) or to files of no kind it knows are let be. A
-//! folder gone takes the files the engine had in it; a folder made or moved in, or the system
+//! folder gone takes the files the optimizer had in it; a folder made or moved in, or the system
 //! losing track of changes, has the folder walked again whole. The watch ends with the folder
 //! (the watcher goes with its Folder, and its thread then ends).
 
@@ -52,7 +52,7 @@ pub(super) fn watched(f: &Folder) -> bool {
     f.watch.locked().watcher.is_some()
 }
 
-/// The watch's events as they come: each burst that touches what the engine reads, once it
+/// The watch's events as they come: each burst that touches what the optimizer reads, once it
 /// settles, has the folder brought up to date (just the files it names, when it can).
 fn follow(
     app: &AppHandle,
@@ -73,7 +73,7 @@ fn follow(
         let Some(f) = folder.upgrade() else {
             return; // (let go meanwhile)
         };
-        // (a path gone that may have been a folder: the files the engine had in it)
+        // (a path gone that may have been a folder: the files the optimizer had in it)
         if !burst.gone.is_empty() {
             let code = f.code.locked();
             for dir in &burst.gone {
@@ -92,7 +92,7 @@ fn follow(
     }
 }
 
-/// What a burst of events touched: files of a kind the engine reads, paths gone that may have
+/// What a burst of events touched: files of a kind the optimizer reads, paths gone that may have
 /// been folders, or anything (a folder made or moved in, whose files are found by a walk; the
 /// system lost track).
 #[derive(Default)]

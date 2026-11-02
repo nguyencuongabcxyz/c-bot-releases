@@ -92,7 +92,7 @@ pub fn is_visitor(app: &AppHandle, id: &str) -> bool {
 }
 
 /// An error for a visiting robot: it has no folder of its own, so nothing that works in one
-/// (a shell, a terminal, the context engine) is for it.
+/// (a shell, a terminal, the context optimizer) is for it.
 pub fn not_visiting(app: &AppHandle, id: &str) -> Result<(), crate::runtime::Error> {
     if is_visitor(app, id) {
         Err("I'm only visiting: that's for my owner's C-Bot.".into())

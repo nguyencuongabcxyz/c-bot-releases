@@ -1,5 +1,5 @@
-//! Everything about the engine, for the chat's panel (robot_context_details) and the Context
-//! engine window (window.rs): a folder (its index, the languages in it, whether it's watched,
+//! Everything about the optimizer, for the chat's panel (robot_context_details) and the Context
+//! optimizer window (window.rs): a folder (its index, the languages in it, whether it's watched,
 //! its git branch and last commit), every folder the store holds and which robots read it, the
 //! store itself (its PostgreSQL, size, vectors by model), and the models (downloaded, loaded,
 //! size). Nothing is started or downloaded for asking: what isn't up says so.
@@ -10,11 +10,11 @@ use super::*;
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Details {
-    pub folder: Option<FolderDetails>, // (the robot's own, while it has the engine on)
+    pub folder: Option<FolderDetails>, // (the robot's own, while it has the optimizer on)
     pub store: Option<StoreDetails>,   // (while the database is up)
     pub repos: Vec<RepoDetails>,
     pub models: Vec<ModelDetails>,
-    pub dir: String, // (where the engine keeps it all)
+    pub dir: String, // (where the optimizer keeps it all)
 }
 
 /// The robot's own folder.
@@ -68,7 +68,7 @@ pub struct RepoDetails {
     pub chunks: i64,
     pub embedded: i64,
     pub generation: i64,
-    pub robots: Vec<String>, // (the robots with the engine on that read it, by name)
+    pub robots: Vec<String>, // (the robots with the optimizer on that read it, by name)
     pub current: bool,       // (this robot's)
     pub open: bool,          // (in memory now)
     pub kinds: Vec<KindCount>, // (its files by language or kind of document, most first)
@@ -127,7 +127,7 @@ pub struct ModelDetails {
     pub bytes: u64,
 }
 
-/// Everything about the engine, as the robot `id` sees it.
+/// Everything about the optimizer, as the robot `id` sees it.
 #[tauri::command(async)]
 pub fn robot_context_details(
     app: AppHandle,
@@ -139,7 +139,7 @@ pub fn robot_context_details(
     Ok(details(&app, current.as_deref(), folder.as_deref()))
 }
 
-/// Everything about the engine: `current` the folder (as key()) to mark as this one, `folder`
+/// Everything about the optimizer: `current` the folder (as key()) to mark as this one, `folder`
 /// the one in memory to tell about in full.
 pub(super) fn details(app: &AppHandle, current: Option<&str>, folder: Option<&Folder>) -> Details {
     let (dir, setup, embedder) = engine(app, |e| {
@@ -162,7 +162,7 @@ pub(super) fn details(app: &AppHandle, current: Option<&str>, folder: Option<&Fo
 pub(super) fn overview_of(db: &Database) -> Option<store::Overview> {
     db.store
         .overview(embed::IDENTITY)
-        .inspect_err(|e| log::warn!("the context engine's details: {e}"))
+        .inspect_err(|e| log::warn!("the context optimizer's details: {e}"))
         .ok()
 }
 

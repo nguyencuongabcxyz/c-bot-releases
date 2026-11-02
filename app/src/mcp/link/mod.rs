@@ -272,7 +272,7 @@ pub fn mcp_config(app: &AppHandle, id: &str, tab: &str) -> Option<String> {
         tab.to_string(),
     ];
     if crate::context::on(app, id) {
-        args.push(crate::mcp::server::CODE_FLAG.into()); // (the context engine's tools too)
+        args.push(crate::mcp::server::CODE_FLAG.into()); // (the context optimizer's tools too)
     }
     let cfg = json!({ "mcpServers": { "cbot": {
         "command": exe.to_string_lossy(),

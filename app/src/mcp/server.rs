@@ -1,6 +1,6 @@
 //! C-Bot's MCP server: what gives a robot's Claude Code C-Bot's tools (tools/: the other
 //! robots, the user's words and notes, the shells in its chat, the screen, and the context
-//! engine's when it's on: `--code`). Claude Code starts it for each conversation over stdio, as
+//! optimizer's when it's on: `--code`). Claude Code starts it for each conversation over stdio, as
 //! `c-bot.exe --robots-mcp <robot id> <port> <chat tab id> [--code]`
 //! (link.rs writes the --mcp-config that says so). There's no Node here, so the app's own exe
 //! serves it, from the very top of main(), before the Tauri builder (whose single-instance
@@ -22,7 +22,7 @@ use super::tools;
 use crate::runtime::Locked;
 
 pub const FLAG: &str = "--robots-mcp";
-/// The robot has the context engine on: its tools are listed too.
+/// The robot has the context optimizer on: its tools are listed too.
 pub const CODE_FLAG: &str = "--code";
 
 /// What to do with one message from Claude Code.
@@ -41,7 +41,7 @@ pub enum Step {
     Nothing,
 }
 
-/// (`code`: the context engine's tools are listed too.)
+/// (`code`: the context optimizer's tools are listed too.)
 pub fn step(msg: &Value, code: bool) -> Step {
     let method = msg["method"].as_str().unwrap_or("");
     let params = &msg["params"];

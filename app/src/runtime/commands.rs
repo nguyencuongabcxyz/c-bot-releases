@@ -80,7 +80,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         revive::robot_alive,
         revive::robot_revive,
         tray::robot_menu,
-        // the context engine (its folder's code, indexed for its Claude)
+        // the context optimizer (its folder's code, indexed for its Claude)
         context::robot_context,
         context::robot_context_set,
         context::robot_context_reindex,

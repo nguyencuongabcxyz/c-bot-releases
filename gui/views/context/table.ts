@@ -1,4 +1,4 @@
-// A table for the Context engine window's long lists (files, definitions, chunks): its header
+// A table for the Context optimizer window's long lists (files, definitions, chunks): its header
 // (a column that sorts is a button, with an arrow for the way it's sorted), and its rows drawn
 // only as they come into view (lib/virtual.ts), all the same height. A row clicked is picked;
 // with the table focused, the arrows, Page Up/Down, Home and End pick the row they go to.

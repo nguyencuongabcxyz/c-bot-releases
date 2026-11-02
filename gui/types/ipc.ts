@@ -117,9 +117,9 @@ export interface Events {
   'robot:hush': boolean;
   'robot:screen': { file: FileInfo; source: string };
   'robot:tasks': LinkTask[];
-  // (its context engine: how the index of its folder is, as it changes)
+  // (its context optimizer: how the index of its folder is, as it changes)
   'robot:context': ContextEngineStatus;
-  // (the Context engine window: a folder's status as it changes, and the folder to show)
+  // (the Context optimizer window: a folder's status as it changes, and the folder to show)
   'context:status': { root: string; status: ContextEngineStatus };
   'context:focus': string;
   'robot:vocab': VocabEvent;

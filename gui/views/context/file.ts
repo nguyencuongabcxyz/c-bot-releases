@@ -1,4 +1,4 @@
-// One file of a folder's index, opened up in the Context engine window's Files (files.ts): its
+// One file of a folder's index, opened up in the Context optimizer window's Files (files.ts): its
 // name and numbers on top, with buttons to give it the whole page, open it, show it in its
 // folder or close it; then its definitions as the code tools read them, or its chunks as search
 // finds them (a table each, filtered by words), beside its text (source.ts), a divider between

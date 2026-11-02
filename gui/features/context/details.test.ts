@@ -91,7 +91,7 @@ describe('the disk and the repositories', () => {
     ],
     dir: 'x',
   };
-  it('cuts the disk the engine takes into its parts, biggest first', () => {
+  it('cuts the disk the optimizer takes into its parts, biggest first', () => {
     expect(diskShares(details).map((s) => [s.name, s.value])).toEqual([
       ['Search model', 600],
       ['Database', 300],
@@ -144,7 +144,7 @@ describe('every field of the index', () => {
   });
   it('says only what the store knows of a folder no robot reads now', () => {
     const rows = new Map(indexRows(folder, false));
-    expect(rows.get('State')).toBe('Not loaded: no robot with the engine on reads it now');
+    expect(rows.get('State')).toBe('Not loaded: no robot with the optimizer on reads it now');
     expect(rows.get('Definitions')).toBe('90');
     for (const gone of ['Calls', 'Watched', 'Read', 'Code graph', 'Vectors in memory'])
       expect(rows.has(gone)).toBe(false);

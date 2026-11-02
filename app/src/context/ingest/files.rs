@@ -1,4 +1,4 @@
-//! Which files of a folder the engine reads: its code in the languages it knows and its
+//! Which files of a folder the optimizer reads: its code in the languages it knows and its
 //! documents, the way git sees the folder (.gitignore), less what's built, downloaded or
 //! generated; how each was when last seen (so only the ones that changed are read again); and
 //! reading one, with the hash of what it holds.
@@ -43,12 +43,12 @@ const SKIP_DIRS: &[&str] = &[
 /// .mdc).
 const READ_HIDDEN: &[&str] = &[".cursor"];
 
-/// A hidden file or folder the engine doesn't read (`.git`, `.venv`, `.env`).
+/// A hidden file or folder the optimizer doesn't read (`.git`, `.venv`, `.env`).
 fn hidden(name: &str) -> bool {
     name.starts_with('.') && !READ_HIDDEN.contains(&name)
 }
 
-/// A path in the folder that's somewhere the engine never reads: in a folder it skips, or a
+/// A path in the folder that's somewhere the optimizer never reads: in a folder it skips, or a
 /// hidden one (as the walk skips them).
 pub(in crate::context) fn skipped(rel: &str) -> bool {
     let mut dirs: Vec<&str> = rel.split('/').collect();
@@ -103,7 +103,7 @@ pub(in crate::context) struct Content {
     pub text: Option<String>,
 }
 
-/// The files the engine reads in a folder, by path; and whether there were more than it looks at.
+/// The files the optimizer reads in a folder, by path; and whether there were more than it looks at.
 pub(in crate::context) fn find(root: &Path) -> (Vec<Found>, bool) {
     let walker = ignore::WalkBuilder::new(root)
         .hidden(false) // (the filter skips them: all but READ_HIDDEN)
@@ -158,7 +158,7 @@ pub(in crate::context) fn find(root: &Path) -> (Vec<Found>, bool) {
 }
 
 /// Of these files of the folder (by path), the ones `find` would find: there, of a kind the
-/// engine reads, not hidden, skipped, generated, too big or ignored by git.
+/// optimizer reads, not hidden, skipped, generated, too big or ignored by git.
 pub(in crate::context) fn find_these(root: &Path, paths: &[String]) -> Vec<Found> {
     let mut found: Vec<Found> = paths
         .iter()
@@ -242,7 +242,7 @@ fn ms_since_1970(t: SystemTime) -> i64 {
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
-/// A path inside root as the engine names it (forward slashes), or None outside it.
+/// A path inside root as the optimizer names it (forward slashes), or None outside it.
 pub(in crate::context) fn rel_path(root: &Path, path: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
     let parts: Vec<String> = rel
@@ -252,7 +252,7 @@ pub(in crate::context) fn rel_path(root: &Path, path: &Path) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("/"))
 }
 
-/// A path Claude gave (relative to root or absolute, either slash) as the engine names it:
+/// A path Claude gave (relative to root or absolute, either slash) as the optimizer names it:
 /// '' for root itself, None outside it.
 pub(in crate::context) fn asked_path(root: &Path, path: &str) -> Option<String> {
     let p = path.trim().replace('\\', "/");

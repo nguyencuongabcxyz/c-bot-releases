@@ -64,7 +64,7 @@ windows-sys = { version = "0.61.2", features = [
 portable-pty = "0.9"
 thiserror = "2.0.21"
 log = "0.4.35"
-# the context engine (context/): the code in a robot's folder read into symbols, the way
+# the context optimizer (context/): the code in a robot's folder read into symbols, the way
 # editors read it (tree-sitter and its grammars), and walked the way git sees it (ignore)
 tree-sitter = "0.27.1"
 tree-sitter-typescript = "0.23.2"
@@ -86,7 +86,7 @@ tree-sitter-proto = "0.6.0"
 tree-sitter-hcl = "1.1.0"
 tree-sitter-prisma-io = "1.6.0"
 ignore = "0.4.34"
-# the context engine's store (context/store): PostgreSQL, downloaded the first time a robot
+# the context optimizer's store (context/store): PostgreSQL, downloaded the first time a robot
 # switches the engine on and run by the app (postgresql_embedded), spoken to with sqlx (the
 # one postgresql_embedded already brings); files told apart by content (blake3)
 postgresql_embedded = { version = "0.22.0", default-features = false, features = ["theseus", "tokio", "tls-rustls-ring"] }
@@ -128,7 +128,7 @@ allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 disallowed_methods = "deny"
 
-# (the dependencies built fast in debug builds too: the context engine's keyword index and
+# (the dependencies built fast in debug builds too: the context optimizer's keyword index and
 # parsers are unusably slow unoptimized), without their debug info: it was most of target/'s
 # size, and nobody steps into other people's crates
 [profile.dev.package."*"]

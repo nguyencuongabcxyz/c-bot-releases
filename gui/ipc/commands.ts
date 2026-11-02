@@ -93,7 +93,7 @@ export const shareTalk = (text: string) => invoke<void>('share_talk', { text });
 export const shareComment = (quote: string, text: string) => invoke<void>('share_comment', { quote, text });
 export const shareRecommend = (requestId: string, choice: string, why: string) =>
   invoke<void>('share_recommend', { args: { requestId, choice, why } });
-// (the context engine, app/src/context: how its index is, switching it on or off, reading the folder again)
+// (the context optimizer, app/src/context: how its index is, switching it on or off, reading the folder again)
 export const robotContext = () => invoke<ContextEngineStatus>('robot_context');
 export const robotContextSet = (on: boolean) => invoke<ContextEngineStatus>('robot_context_set', { on });
 export const robotContextReindex = () => invoke<ContextEngineStatus>('robot_context_reindex');
@@ -101,7 +101,7 @@ export const robotContextDetails = () => invoke<ContextEngineDetails>('robot_con
 export const robotContextWindow = () => invoke<null>('robot_context_window');
 // (the tools C-Bot gives this robot's Claude Code, by group: the chat's /tools)
 export const robotTools = () => invoke<ToolGroupInfo[]>('robot_tools');
-// (the Context engine window: any folder the store holds, by its root)
+// (the Context optimizer window: any folder the store holds, by its root)
 export const contextInit = () => invoke<ContextInit>('context_init');
 export const contextDetails = () => invoke<ContextEngineDetails>('context_details');
 export const contextRepo = (root: string) => invoke<ContextRepoView>('context_repo', { root });

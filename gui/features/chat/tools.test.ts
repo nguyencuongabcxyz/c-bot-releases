@@ -36,9 +36,9 @@ describe('the tools, as /tools lists them', () => {
     );
   });
 
-  it('says the context engine’s are off while it is, and still lists them', () => {
+  it('says the context optimizer’s are off while it is, and still lists them', () => {
     const text = toolsText(groups);
-    expect(text).toContain('**🧭 Context engine** (off: switch the context engine on');
+    expect(text).toContain('**🧭 Context optimizer** (off: switch the context optimizer on');
     expect(text).toContain('- `code_map` The files and definitions that matter most.');
     expect(toolsText([{ ...groups[1], on: true }])).toContain('(1 in this chat;');
   });

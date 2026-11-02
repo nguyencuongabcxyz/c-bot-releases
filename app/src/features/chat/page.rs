@@ -39,7 +39,7 @@ pub fn close_robot(app: &AppHandle, id: &str) {
 }
 
 /// Its conversations that aren't working close, to pick up again on their next question with
-/// what changed (the context engine's tools switched on or off). Remote Control stays on.
+/// what changed (the context optimizer's tools switched on or off). Remote Control stays on.
 pub fn close_robot_idle(app: &AppHandle, id: &str) {
     let prefix = format!("{id}|");
     let idle: Vec<Arc<Chat>> = with(app, |st| {

@@ -1,4 +1,4 @@
-// Small charts for the context engine's details (details.ts), drawn with SVG and CSS: a ring
+// Small charts for the context optimizer's details (details.ts), drawn with SVG and CSS: a ring
 // for a share done, a progress bar, a stacked bar with its legend for a whole cut into parts, a
 // tile for a number, a pill for a state. Their colours are the theme's tones (context.css
 // .t0–.t5: the accent, violet, ok, warn, danger, muted), so they follow the theme and the mode.

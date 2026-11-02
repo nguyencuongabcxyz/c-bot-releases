@@ -1,4 +1,4 @@
-//! The files the context engine reads: code in the languages it knows (their tree-sitter
+//! The files the context optimizer reads: code in the languages it knows (their tree-sitter
 //! grammar, which of their syntax nodes define something, and what, or name something); the
 //! files that set code up or lay out its pages (XML and XAML, Razor views, YAML, Dockerfiles,
 //! JSON, TOML, SQL, HTML with Vue and Svelte, CSS, INI and properties), cut along their
@@ -51,7 +51,7 @@ pub(super) enum Config {
     Ini,  // (.properties, and .conf: nginx's blocks, Apache's sections too)
 }
 
-/// What a file is to the engine: code in a language, a config file, or a document.
+/// What a file is to the optimizer: code in a language, a config file, or a document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum FileType {
     Code(Lang),
@@ -231,7 +231,7 @@ impl Lang {
 }
 
 impl FileType {
-    /// A file's type by its name or extension (None: not one the engine reads).
+    /// A file's type by its name or extension (None: not one the optimizer reads).
     pub(super) fn of(path: &str) -> Option<FileType> {
         if let Some(lang) = Lang::of(path) {
             return Some(FileType::Code(lang));

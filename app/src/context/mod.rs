@@ -1,4 +1,4 @@
-//! The context engine: the code and documents in a robot's folder (the languages and files in
+//! The context optimizer: the code and documents in a robot's folder (the languages and files in
 //! langs.rs; Markdown, text) read, kept up to date, and asked about by the robot's
 //! Claude Code (mcp/tools/code.rs), which also starts each conversation with a map of the code.
 //! The user switches it on robot by robot, from the chat (the robot's `contextEngine`); it's
@@ -30,9 +30,9 @@
 //!   history.rs  what git remembers of the folder (code_history)
 //!   asked.rs    what the code tools ask, and the note each conversation starts with
 //!   answers/    what each tool answers
-//!   details.rs  everything about the engine, for the chat's panel and its window
+//!   details.rs  everything about the optimizer, for the chat's panel and its window
 //!   browse.rs   what's in a folder's index, file by file, for the window
-//!   window.rs   the Context engine window
+//!   window.rs   the Context optimizer window
 //!   wipe.rs     deleting what it keeps, when the user asks
 
 mod answers;
@@ -108,11 +108,11 @@ const PROMPT_MAP: usize = 4_500;
 pub const MAP_DEFAULT: usize = 8_000;
 pub const MAP_MAX: usize = 40_000;
 
-/// What every conversation of a robot with the engine on is told about it. The tools are named
+/// What every conversation of a robot with the optimizer on is told about it. The tools are named
 /// as Claude Code offers them (`mcp__<server>__<tool>`, the server being `cbot`, mcp/link.rs):
 /// told only `find_references`, Claude calls that first and fails.
 const NOTE: &str = concat!(
-    "C-Bot's context engine has indexed the code in this folder (TypeScript/JavaScript, C#, Java, C/C++, Go, Python with Jupyter notebooks, Rust, Dart/Flutter, Zig, PHP, Ruby, shell, PowerShell; Kotlin, Swift, Prisma, Protocol Buffers and Terraform for their definitions only; its XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte, CSS, INI, .properties and .conf; its Markdown, text and Word documents) and keeps it up to date. ",
+    "C-Bot's context optimizer has indexed the code in this folder (TypeScript/JavaScript, C#, Java, C/C++, Go, Python with Jupyter notebooks, Rust, Dart/Flutter, Zig, PHP, Ruby, shell, PowerShell; Kotlin, Swift, Prisma, Protocol Buffers and Terraform for their definitions only; its XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte, CSS, INI, .properties and .conf; its Markdown, text and Word documents) and keeps it up to date. ",
     "Use its tools before grepping or reading whole files: mcp__cbot__code_map for the files and definitions that matter most (focus it on what you're working on), ",
     "mcp__cbot__code_outline for the signatures in a file or folder with their lines, mcp__cbot__find_symbol for where something is defined (body: true to see its code), ",
     "and mcp__cbot__search_code to find code or docs by words or meaning when you don't know the names (ask it in English, in the code's words, whatever language the user writes in). Then Read only the lines you need. ",
@@ -207,7 +207,7 @@ fn key(folder: &str) -> String {
 
 // ---------------------------------------------------------------- whose folder
 
-/// The robot has the engine on (and a folder to read).
+/// The robot has the optimizer on (and a folder to read).
 pub fn on(app: &AppHandle, id: &str) -> bool {
     with(app, |st| {
         st.store
@@ -226,7 +226,7 @@ fn folder_for(app: &AppHandle, id: &str) -> Result<Arc<Folder>, Error> {
         return Err("That robot isn't there any more.".into());
     };
     if !on {
-        return Err("The context engine is off for this robot. The user can switch it on in the chat, from the bar under it.".into());
+        return Err("The context optimizer is off for this robot. The user can switch it on in the chat, from the bar under it.".into());
     }
     if folder.is_empty() || !Path::new(&folder).is_dir() {
         return Err(format!("This robot's folder ({folder}) isn't there.").into());
@@ -258,7 +258,7 @@ fn folder_for(app: &AppHandle, id: &str) -> Result<Arc<Folder>, Error> {
     }))
 }
 
-/// The folders no robot with the engine on looks after any more are let go.
+/// The folders no robot with the optimizer on looks after any more are let go.
 fn forget_unused(app: &AppHandle) {
     let used: HashSet<String> = with(app, |st| {
         st.store
@@ -271,7 +271,7 @@ fn forget_unused(app: &AppHandle) {
     engine(app, |e| e.folders.retain(|k, _| used.contains(k)));
 }
 
-/// The folder is still the one the engine keeps for its robots (not let go since: switched off,
+/// The folder is still the one the optimizer keeps for its robots (not let go since: switched off,
 /// or its index deleted, maybe made anew).
 fn still_on(app: &AppHandle, f: &Folder) -> bool {
     engine(app, |e| {
@@ -315,19 +315,19 @@ fn tell_status(app: &AppHandle, f: &Folder, status: &Status) {
     window::tell(app, &f.root, status);
 }
 
-/// A folder in memory (a robot with the engine on reads it), by its root however it's written.
+/// A folder in memory (a robot with the optimizer on reads it), by its root however it's written.
 fn folder_at(app: &AppHandle, root: &str) -> Option<Arc<Folder>> {
     engine(app, |e| e.folders.get(&key(root)).cloned())
 }
 
-/// Read a robot's folder in the background (the engine just came on, or the app started).
+/// Read a robot's folder in the background (the optimizer just came on, or the app started).
 fn start(app: &AppHandle, id: &str, again: bool) {
     match folder_for(app, id) {
         Ok(f) => {
             let app = app.clone();
             thread::spawn(move || look::look(&app, &f, again));
         }
-        Err(e) => log::warn!("context engine for {id}: {e}"),
+        Err(e) => log::warn!("context optimizer for {id}: {e}"),
     }
 }
 
@@ -371,7 +371,7 @@ pub fn robot_context(app: AppHandle, window: tauri::WebviewWindow) -> Result<Sta
     Ok(status_of(&app, &id))
 }
 
-/// The user switches the engine on or off for this robot. Its conversations that aren't
+/// The user switches the optimizer on or off for this robot. Its conversations that aren't
 /// working pick up (or drop) the tools on their next question.
 #[tauri::command(async)]
 pub fn robot_context_set(
@@ -415,7 +415,7 @@ pub fn robot_context_reindex(
     Ok(status_of(&app, &id))
 }
 
-/// Where the engine keeps its database, model and indexes: the machine's own app data (they're
+/// Where the optimizer keeps its database, model and indexes: the machine's own app data (they're
 /// big, and no use roaming), or the test copy's data folder.
 fn data_dir(app: &AppHandle) -> PathBuf {
     let base = match std::env::var_os("CBOT_DATA_DIR") {
@@ -438,7 +438,7 @@ pub fn setup(app: &AppHandle) {
     // the worker giving chunks their vectors, for search by meaning
     let worker = app.clone();
     thread::spawn(move || embed::work(&worker));
-    // the robots with the engine on read their folders, once the app is up
+    // the robots with the optimizer on read their folders, once the app is up
     let app = app.clone();
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(5));

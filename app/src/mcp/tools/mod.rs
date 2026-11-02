@@ -9,7 +9,7 @@
 //!   screen.rs    screenshot: the screen as it is now, as a picture to look at
 //!   tabs.rs      list_tabs, wait_for_tab: the robot's other conversations (and the edit guard)
 //!   code.rs      code_map, code_outline, find_symbol, find_references, search_code: the
-//!                context engine, for robots that have it on
+//!                context optimizer, for robots that have it on
 //! The chat lists them all for the user (/tools: robot_tools).
 
 pub mod code;
@@ -72,7 +72,7 @@ fn groups() -> [(Group, Value); 8] {
     ]
 }
 
-/// Every tool, as tools/list gives them (the context engine's too when `code`).
+/// Every tool, as tools/list gives them (the context optimizer's too when `code`).
 pub fn list(code: bool) -> Value {
     let all: Vec<Value> = groups()
         .into_iter()
@@ -92,7 +92,7 @@ pub struct ToolInfo {
     asks: bool,
 }
 
-/// A group of tools; on: this robot's conversations get them (the context engine's only while
+/// A group of tools; on: this robot's conversations get them (the context optimizer's only while
 /// it's on).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,7 +103,7 @@ pub struct GroupInfo {
 }
 
 /// Every tool C-Bot gives a robot's Claude Code, by group, as the robot `code` (its context
-/// engine on or off) has them.
+/// optimizer on or off) has them.
 fn infos(code: bool) -> Vec<GroupInfo> {
     let free = allowed(true);
     groups()

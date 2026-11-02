@@ -14,10 +14,10 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    /// The context engine's database (context/store).
+    /// The context optimizer's database (context/store).
     #[error("The code index's database: {0}")]
     Database(#[from] sqlx::Error),
-    /// The context engine's keyword index (context/keyword.rs).
+    /// The context optimizer's keyword index (context/keyword.rs).
     #[error("The code index's search: {0}")]
     Search(#[from] tantivy::TantivyError),
 }

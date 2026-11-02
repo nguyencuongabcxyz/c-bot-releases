@@ -1,4 +1,4 @@
-//! The Context engine window ("context"): every folder the store holds, and one looked at in
+//! The Context optimizer window ("context"): every folder the store holds, and one looked at in
 //! full (its overview, every file with its definitions and chunks, the store and the models).
 //! A normal window, to make as big as you like; one at a time, and opening it again brings it
 //! round on the folder asked for (a robot's, from its menu or its chat). It hears each folder's
@@ -41,12 +41,12 @@ pub fn open_window(app: &AppHandle, robot_id: Option<String>) {
         return;
     }
     let built = views::builder(app, LABEL, "context", &[])
-        .title("Context engine — C-Bot")
+        .title("Context optimizer — C-Bot")
         .inner_size(1180.0, 760.0)
         .min_inner_size(720.0, 480.0)
         .build();
     if let Err(err) = built {
-        log::warn!("couldn't open the Context engine window: {err}");
+        log::warn!("couldn't open the Context optimizer window: {err}");
     }
 }
 
@@ -95,7 +95,7 @@ pub fn context_init(app: AppHandle, window: tauri::WebviewWindow) -> Result<Cont
     Ok(ContextInit { focus })
 }
 
-/// Everything about the engine: the store, every folder in it, the models.
+/// Everything about the optimizer: the store, every folder in it, the models.
 #[tauri::command(async)]
 pub fn context_details(app: AppHandle, window: tauri::WebviewWindow) -> Result<Details, Error> {
     util::only(&window, LABEL)?;
@@ -132,7 +132,7 @@ pub fn context_reindex(
 ) -> Result<(), Error> {
     util::only(&window, LABEL)?;
     let Some(f) = folder_at(&app, &root) else {
-        return Err("No robot with the context engine on reads this folder now.".into());
+        return Err("No robot with the context optimizer on reads this folder now.".into());
     };
     set_status(
         &app,

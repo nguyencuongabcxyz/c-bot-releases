@@ -1,4 +1,4 @@
-// How the context engine's index of a folder is, in words: what its button in the chat's brain
+// How the context optimizer's index of a folder is, in words: what its button in the chat's brain
 // bar says (and the bar under it while it works), the line on top of its menu, and how each of
 // its indexes is (the dots beside the button, the chat's panel and the window).
 import type { ContextEngineStatus } from '@/types/model';
@@ -56,7 +56,7 @@ export function contextLabel(s: ContextEngineStatus): string {
 /** The indexes a folder's made into: its syntax trees (the definitions the code tools read),
  * the keyword index, the vectors (search by meaning) and the code graph (who calls what). */
 export type IndexKind = 'syntax' | 'keyword' | 'vectors' | 'graph';
-/** How one is: off (the engine is), waiting its turn, being made, ready, or failed. */
+/** How one is: off (the optimizer is), waiting its turn, being made, ready, or failed. */
 export type IndexState = 'off' | 'wait' | 'work' | 'ready' | 'failed';
 /** One index: what it is, how it is, a line about it, and how far it's got while it's made. */
 export type IndexView = { kind: IndexKind; name: string; state: IndexState; detail: string; pct: number | null };
@@ -113,7 +113,7 @@ export function indexStates(s: ContextEngineStatus): IndexView[] {
 export function contextSummary(s: ContextEngineStatus): string {
   switch (s.phase) {
     case 'off':
-      return 'Context engine: off';
+      return 'Context optimizer: off';
     case 'installing':
       return s.note ?? 'Setting up the index…';
     case 'indexing':
@@ -124,6 +124,6 @@ export function contextSummary(s: ContextEngineStatus): string {
       return `Indexed ${count(s.files)} files, ${count(s.symbols)} definitions${calls}${capped}${meaning(s)}`;
     }
     case 'failed':
-      return `Context engine: ${s.error ?? "couldn't read the folder"}`;
+      return `Context optimizer: ${s.error ?? "couldn't read the folder"}`;
   }
 }

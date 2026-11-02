@@ -1,6 +1,6 @@
 // The tools C-Bot gives a robot's Claude Code (app/src/mcp/tools), as the chat lists them for
 // /tools: by group, each with what it does in a sentence, the ones that ask first marked, and
-// the context engine's said to be off while it is. Pure (tested); slash.ts posts it.
+// the context optimizer's said to be off while it is. Pure (tested); slash.ts posts it.
 import type { ToolGroupInfo } from '@/types/model';
 
 const GROUPS: Record<ToolGroupInfo['group'], string> = {
@@ -11,7 +11,7 @@ const GROUPS: Record<ToolGroupInfo['group'], string> = {
   terminal: '⌨️ Terminal',
   screen: '🖥️ Screen',
   tabs: '🗂️ My other tabs',
-  code: '🧭 Context engine',
+  code: '🧭 Context optimizer',
 };
 const PREFIX = 'mcp__cbot__';
 const LONGEST = 160;
@@ -32,7 +32,7 @@ export function toolsText(groups: ToolGroupInfo[]): string {
   for (const g of groups) {
     lines.push(
       '',
-      `**${GROUPS[g.group]}**${g.on ? '' : ' (off: switch the context engine on from 🗺 in the bar under the chat)'}`,
+      `**${GROUPS[g.group]}**${g.on ? '' : ' (off: switch the context optimizer on from 🗺 in the bar under the chat)'}`,
     );
     for (const t of g.tools) {
       const name = t.name.startsWith(PREFIX) ? t.name.slice(PREFIX.length) : t.name;
