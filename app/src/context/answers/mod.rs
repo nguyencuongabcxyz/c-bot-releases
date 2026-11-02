@@ -3,9 +3,13 @@
 //! so they're as the file is now), and code found; and what the graph's tools answer
 //! (relations.rs; who calls something and where it's used, uses.rs).
 
+mod covering;
+mod explain;
 mod relations;
 mod uses;
 
+pub(super) use covering::*;
+pub(super) use explain::*;
 pub(super) use relations::*;
 pub(super) use uses::*;
 

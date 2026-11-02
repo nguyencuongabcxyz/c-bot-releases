@@ -22,6 +22,7 @@ mod queries;
 
 pub(in crate::context) use extract::links;
 pub(in crate::context) use facts::*;
+pub(in crate::context) use queries::Tested;
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::ops::Range;
@@ -104,6 +105,7 @@ pub(in crate::context) struct Graph {
     pub calls_out: Vec<Vec<Edge>>,
     pub calls_in: Vec<Vec<Edge>>,
     pub type_uses: Vec<Vec<TypeUseAt>>, // (a type -> where declarations name it)
+    pub tested_from: Vec<Vec<(usize, u32)>>, // (a symbol -> the test files' top lines calling it)
     pub imports: Vec<BTreeSet<usize>>,
     pub imported_by: Vec<BTreeSet<usize>>,
     pub externals: Vec<BTreeSet<String>>,

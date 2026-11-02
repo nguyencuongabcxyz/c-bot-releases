@@ -172,6 +172,78 @@ pub fn change_impact(
     ))
 }
 
+/// explain_symbol: a symbol and what's around it (its code, calls, callers, types, tests, last
+/// change), at once.
+pub fn explain_symbol(app: &AppHandle, id: &str, name: &str) -> Result<String, Error> {
+    let f = fresh(app, id)?;
+    Ok(answers::explain(&graph_of(&f), &f.root, name.trim()))
+}
+
+/// affected_tests: the tests that reach the symbols and files asked about, or, asked about
+/// none, what changed since `since` ('' for what isn't committed yet, new files included).
+pub fn affected_tests(
+    app: &AppHandle,
+    id: &str,
+    symbols: &[String],
+    paths: &[String],
+    since: &str,
+    depth: usize,
+) -> Result<String, Error> {
+    let f = fresh(app, id)?;
+    let g = graph_of(&f);
+    let mut targets: Vec<usize> = vec![];
+    let mut add = |s: usize| {
+        if !targets.contains(&s) {
+            targets.push(s);
+        }
+    };
+    for s in symbols {
+        let Some(&t) = g.resolve_name(s.trim(), "").first() else {
+            return Err(format!("Nothing called \"{s}\" is defined here.").into());
+        };
+        add(t);
+    }
+    for p in paths {
+        let file = ingest::asked_path(&f.root, p).and_then(|rel| g.file_of(&rel));
+        let Some(file) = file else {
+            return Err(format!("There's no code file \"{p}\" here.").into());
+        };
+        g.files[file].syms.clone().for_each(&mut add);
+    }
+    if !symbols.is_empty() || !paths.is_empty() {
+        return Ok(answers::affected(
+            &g,
+            &f.root,
+            &targets,
+            "asked about",
+            depth,
+        ));
+    }
+    let (diff, new) = history::changes(&f.root, since)?;
+    let (changed, mut others) = answers::changed_symbols(&g, &diff);
+    changed.into_iter().for_each(&mut add);
+    for path in new {
+        match g.file_of(&path) {
+            Some(file) => g.files[file].syms.clone().for_each(&mut add),
+            None => others.push(path),
+        }
+    }
+    let why = match since.trim() {
+        "" => "changed and not committed".to_string(),
+        s => format!("changed since {s}"),
+    };
+    let mut out = answers::affected(&g, &f.root, &targets, &why, depth);
+    if !others.is_empty() {
+        let shown: Vec<&str> = others.iter().take(10).map(String::as_str).collect();
+        out.push_str(&format!(
+            "\nAlso changed, not code the graph follows: {}{}\n",
+            shown.join(", "),
+            if others.len() > 10 { ", …" } else { "" }
+        ));
+    }
+    Ok(out)
+}
+
 /// type_members: a type's members (and with `inherited`, its supertypes').
 pub fn type_members(
     app: &AppHandle,

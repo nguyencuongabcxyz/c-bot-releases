@@ -68,6 +68,25 @@ pub(super) fn info(root: &Path) -> Option<GitInfo> {
     })
 }
 
+/// What changed in the folder: `git diff -U0` against `since` (a branch, a commit; '' for the
+/// last commit: what isn't committed yet), and the files git doesn't track yet (new ones).
+pub(super) fn changes(root: &Path, since: &str) -> Result<(String, Vec<String>), Error> {
+    let base = if since.trim().is_empty() {
+        "HEAD"
+    } else {
+        since.trim()
+    };
+    let diff = git(
+        root,
+        &["diff", "-U0", "--no-color", "--no-ext-diff", base, "--"],
+    )?;
+    let new = git(root, &["ls-files", "--others", "--exclude-standard"])?
+        .lines()
+        .map(str::to_string)
+        .collect();
+    Ok((diff, new))
+}
+
 // ---------------------------------------------------------------- code_history
 
 /// code_history: a symbol's lines, commit by commit (`symbol`), or the latest `limit` commits
@@ -182,7 +201,7 @@ fn commits(out: &str) -> Vec<Commit> {
 
 /// Who last changed lines `from..=to` of `rel`: each commit with how many of them, newest
 /// first, at most `limit`.
-fn blame(
+pub(super) fn blame(
     root: &Path,
     rel: &str,
     from: u32,

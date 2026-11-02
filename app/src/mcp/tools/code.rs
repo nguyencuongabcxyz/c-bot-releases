@@ -1,7 +1,8 @@
 //! The context optimizer's tools (context/), about the code in the robot's folder: finding your
-//! way (code_map, code_outline, find_symbol, search_code), following the code graph
-//! (find_references, call_chain, file_dependencies, type_hierarchy, type_members,
-//! find_type_usages, change_impact), and what
+//! way (code_map, code_outline, find_symbol, explain_symbol, search_code, and library_api for
+//! the packages it uses), following the code graph (find_references, call_chain,
+//! file_dependencies, type_hierarchy, type_members, find_type_usages, change_impact,
+//! affected_tests), and what
 //! git remembers of it (code_history). Only conversations of a robot with the optimizer on are
 //! given them (server.rs `--code`).
 
@@ -19,18 +20,21 @@ const HISTORY_DEFAULT: usize = 10;
 const HISTORY_MAX: usize = 50;
 
 /// The names of its tools.
-pub const NAMES: [&str; 12] = [
+pub const NAMES: [&str; 15] = [
     "code_map",
     "code_outline",
     "find_symbol",
+    "explain_symbol",
     "find_references",
     "search_code",
+    "library_api",
     "call_chain",
     "file_dependencies",
     "type_hierarchy",
     "type_members",
     "find_type_usages",
     "change_impact",
+    "affected_tests",
     "code_history",
 ];
 
@@ -41,7 +45,22 @@ pub fn list() -> Value {
     Value::Array(all)
 }
 
+/// A list of strings argument (what isn't a string left out).
+fn strings(v: &Value) -> Vec<String> {
+    v.as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The tools that find your way round the code.
+#[expect(
+    clippy::too_many_lines,
+    reason = "a flat table of the tools' JSON schemas"
+)]
 fn finding() -> Value {
     let at_once = super::at_once();
     json!([
@@ -87,6 +106,19 @@ fn finding() -> Value {
             "annotations": at_once,
         },
         {
+            "name": "explain_symbol",
+            "description": "Everything about one function, method or type of your project at once, instead of several lookups and reads: its code (a type's head, with its members, what it extends and what extends it), what it calls with their signatures, what calls it, the types it takes and returns, the tests that reach it, and who changed it last. Use it to understand something before changing or calling it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Its name, Holder.name (Store.open), or a full name from find_symbol." },
+                },
+                "required": ["name"],
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
             "name": "find_references",
             "description": "Who calls or makes a function, method or type in your project: each call followed through imports, fields, typed parameters and locals and inheritance to the definition it really reaches (not just text that matches), with its line and the function it's in; with depth, the callers' callers too. Then where it's used without a call (a constant read, a function handed on as a callback), resolved the same way, and the other places the name appears. Use it before changing or renaming something.",
             "inputSchema": {
@@ -117,11 +149,27 @@ fn finding() -> Value {
             },
             "annotations": at_once,
         },
+        {
+            "name": "library_api",
+            "description": "What a library your project uses offers, read from the version installed here (node_modules and @types, Cargo.lock with Cargo's registry, a .venv, go.mod with Go's module cache, NuGet's XML docs), not remembered from another version: a function's, type's or method's signature and doc comment, a type's members; or, with no name, the package's top level. Use it before calling an API of a library you're not sure of, so the code fits the version the project has.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "The function, type or method: useQuery, serde_json::from_str, JsonConvert.SerializeObject. Leave out for the package's top level." },
+                    "package": { "type": "string", "description": "The package: @tanstack/react-query, serde_json, requests, github.com/spf13/cobra, Newtonsoft.Json. Leave out to use the one the project imports the name from." },
+                },
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
     ])
 }
 
 /// The tools that follow the code graph.
-#[expect(clippy::too_many_lines, reason = "a flat table of the tools' JSON schemas")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "a flat table of the tools' JSON schemas"
+)]
 fn following() -> Value {
     let at_once = super::at_once();
     json!([
@@ -211,6 +259,21 @@ fn following() -> Value {
             "annotations": at_once,
         },
         {
+            "name": "affected_tests",
+            "description": "The tests in your project that reach what you changed, so you run only those: by default what isn't committed yet (new files too), or what changed since a branch or commit, or the functions, types and files you name. Each test with what it reaches, then the commands that run just them (cargo test, vitest or jest, pytest, go test, dotnet test). Use it after a change, before running the whole suite.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "symbols": { "type": "array", "items": { "type": "string" }, "description": "Functions, methods or types (names, Holder.name or full names) instead of what changed." },
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "Code files: everything they define." },
+                    "since": { "type": "string", "description": "A branch or commit: what changed since it, instead of what isn't committed yet." },
+                    "depth": { "type": "integer", "minimum": 1, "maximum": DEPTH_MAX, "description": "How many calls away a test may reach them from (5 if not given)." },
+                },
+                "additionalProperties": false,
+            },
+            "annotations": at_once,
+        },
+        {
             "name": "code_history",
             "description": "What git remembers of the code: the latest commits that changed a file or folder (or the whole project), newest first, each with its date, author, message and the files it changed; or, given a symbol, who last changed its lines, commit by commit. Use it to see why code is the way it is, or what changed lately.",
             "inputSchema": {
@@ -238,14 +301,7 @@ fn number(v: &Value, default: usize, min: usize, max: usize) -> usize {
 pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
     let answer = match tool {
         "code_map" => {
-            let focus: Vec<String> = args["focus"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|f| f.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
+            let focus = strings(&args["focus"]);
             let budget = number(
                 &args["max_chars"],
                 context::MAP_DEFAULT,
@@ -261,6 +317,18 @@ pub fn call(app: &AppHandle, from: &str, tool: &str, args: &Value) -> Value {
             &text(&args["name"]),
             &text(&args["kind"]),
             args["body"].as_bool() == Some(true),
+        ),
+        "explain_symbol" => context::explain_symbol(app, from, &text(&args["name"])),
+        "library_api" => {
+            context::library_api(app, from, &text(&args["package"]), &text(&args["name"]))
+        }
+        "affected_tests" => context::affected_tests(
+            app,
+            from,
+            &strings(&args["symbols"]),
+            &strings(&args["paths"]),
+            &text(&args["since"]),
+            number(&args["depth"], 5, 1, DEPTH_MAX),
         ),
         "find_references" => context::find_references(
             app,

@@ -47,6 +47,7 @@ mod ingest;
 mod install;
 mod keyword;
 mod langs;
+mod library;
 mod look;
 mod map;
 mod parse;
@@ -61,6 +62,7 @@ pub use asked::*;
 pub use browse::*;
 pub use details::*;
 pub use history::*;
+pub use library::library_api;
 pub use window::*;
 pub use wipe::*;
 
@@ -114,10 +116,11 @@ pub const MAP_MAX: usize = 40_000;
 const NOTE: &str = concat!(
     "C-Bot's context optimizer has indexed the code in this folder (TypeScript/JavaScript, C#, Java, C/C++, Go, Python with Jupyter notebooks, Rust, Dart/Flutter, Zig, PHP, Ruby, shell, PowerShell; Kotlin, Swift, Prisma, Protocol Buffers and Terraform for their definitions only; its XML/XAML, Razor views, YAML, Dockerfiles, JSON, TOML, SQL, HTML, Vue, Svelte, CSS, INI, .properties and .conf; its Markdown, text and Word documents) and keeps it up to date. ",
     "Use its tools before grepping or reading whole files: mcp__cbot__code_map for the files and definitions that matter most (focus it on what you're working on), ",
-    "mcp__cbot__code_outline for the signatures in a file or folder with their lines, mcp__cbot__find_symbol for where something is defined (body: true to see its code), ",
+    "mcp__cbot__code_outline for the signatures in a file or folder with their lines, mcp__cbot__find_symbol for where something is defined (body: true to see its code), mcp__cbot__explain_symbol for one function or type with everything around it at once (its code, calls, callers, types, tests), ",
     "and mcp__cbot__search_code to find code or docs by words or meaning when you don't know the names (ask it in English, in the code's words, whatever language the user writes in). Then Read only the lines you need. ",
     "It also knows who calls what (not yet in the languages read for their definitions only), through imports, fields and types: mcp__cbot__find_references for a function's or type's callers, mcp__cbot__call_chain for how one reaches another, ",
     "mcp__cbot__file_dependencies for what a file imports and what imports it, mcp__cbot__type_hierarchy for supertypes, subtypes and overrides, mcp__cbot__type_members for what a type has (inherited too), mcp__cbot__find_type_usages for where a type is a parameter's, a field's or what's returned, and mcp__cbot__change_impact before changing something. ",
+    "After a change, mcp__cbot__affected_tests says which tests reach it and how to run just those. Before calling a library's API you're not sure of, mcp__cbot__library_api reads it from the version the project has installed. ",
     "mcp__cbot__code_history tells what git remembers: the latest commits to a file, a folder or a symbol's lines, to see why code is the way it is."
 );
 

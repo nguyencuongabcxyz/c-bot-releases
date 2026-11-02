@@ -148,17 +148,24 @@ fn distinctive(name: &str) -> bool {
 impl Graph {
     pub(super) fn calls(&mut self, code: &Code) {
         let mut edges: Vec<(usize, usize, RefKind, u32)> = vec![];
+        let mut tested: Vec<(usize, usize, u32)> = vec![];
         for (i, f) in self.files.iter().enumerate() {
             let Some(file) = code.files.get(&f.path) else {
                 continue;
             };
+            let test = test_file(&f.path);
             for r in &file.links.refs {
                 let Some(caller) = r
                     .within
                     .map(|w| f.syms.start + w as usize)
                     .filter(|c| f.syms.contains(c))
                 else {
-                    continue; // (code at the top of a file: no one calls from there)
+                    // (code at the top of a file: no one calls from there; but a test file's
+                    // is its tests, `it('…', () => …)`)
+                    if test && let Some(callee) = self.top_callee(code, i, r) {
+                        tested.push((self.declared(callee), i, r.line));
+                    }
+                    continue;
                 };
                 if let Some((callee, kind)) = self.callee(code, i, caller, r) {
                     let (caller, callee) = (self.declared(caller), self.declared(callee));
@@ -171,6 +178,40 @@ impl Graph {
         for (caller, callee, kind, line) in edges {
             add(&mut self.calls_out[caller], callee, kind, line);
             add(&mut self.calls_in[callee], caller, kind, line);
+        }
+        for (callee, file, line) in tested {
+            if !self.tested_from[callee].contains(&(file, line)) {
+                self.tested_from[callee].push((file, line));
+            }
+        }
+    }
+
+    /// What a call at the top of a file goes to: only what needs no definition around it (a
+    /// name in reach, a type's or a module's member, a typed local's method), as in a test's
+    /// `it('…', () => { const s = new Store(); s.open(); })`.
+    fn top_callee(&self, code: &Code, file: usize, r: &Ref) -> Option<usize> {
+        if r.kind == RefKind::New {
+            return self.resolve_type(file, &r.name);
+        }
+        let free = |s: usize| (self.callable(s) && self.owner[s].is_none()) || self.is_type(s);
+        match &r.via {
+            Via::Bare => self.resolve(file, &r.name, &free),
+            Via::Typed(path) => {
+                let mut parts = path.split('#');
+                let first = parts.next().unwrap_or("");
+                let t = self
+                    .start(file, first)
+                    .and_then(|t| self.through(t, parts))?;
+                self.member_or_impl(t, &r.name)
+            }
+            Via::Name(n) => self
+                .resolve_type(file, n)
+                .and_then(|t| self.member(t, &r.name))
+                .or_else(|| {
+                    let files = self.scopes[file].modules.get(n)?;
+                    self.exported(code, files, &r.name, 0).first().copied()
+                }),
+            _ => None,
         }
     }
 

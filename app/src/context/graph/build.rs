@@ -84,6 +84,7 @@ impl Graph {
         self.calls_out = vec![vec![]; n];
         self.calls_in = vec![vec![]; n];
         self.type_uses = vec![vec![]; n];
+        self.tested_from = vec![vec![]; n];
         self.imports = vec![BTreeSet::new(); files];
         self.imported_by = vec![BTreeSet::new(); files];
         self.externals = vec![BTreeSet::new(); files];

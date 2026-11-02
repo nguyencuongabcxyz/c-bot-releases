@@ -1,8 +1,8 @@
 //! Walking the graph to answer: the symbols a name means, best first; who calls a symbol (and
 //! who calls them, to a depth); the shortest chain of calls from one symbol to another; what
 //! a file imports and who imports it, to a depth; a type's supertypes and subtypes; and the
-//! methods that override one, or that it overrides. Every walk is breadth first, so each
-//! symbol or file shows at its shortest distance.
+//! methods that override one, or that it overrides; the tests that reach a symbol. Every walk
+//! is breadth first, so each symbol or file shows at its shortest distance.
 
 use super::*;
 
@@ -14,6 +14,14 @@ pub(in crate::context) struct Reached {
     pub depth: usize,
     pub via: usize,
     pub lines: Vec<u32>,
+}
+
+/// The tests reaching some symbols (tests_of): test symbols, each with the target it reaches and
+/// how many calls away; and test files' top lines (file, line, target).
+#[derive(Debug, Default)]
+pub(in crate::context) struct Tested {
+    pub syms: Vec<(usize, usize, usize)>,
+    pub lines: Vec<(usize, u32, usize)>,
 }
 
 impl Graph {
@@ -241,6 +249,44 @@ impl Graph {
             .collect();
         out.sort_unstable();
         out.dedup();
+        out
+    }
+
+    /// The tests that reach any of `targets` within `depth` calls: test symbols (a test
+    /// function, a test file's helper, what a Rust `mod tests` holds), each with the target it
+    /// reaches and how far; and the lines at the top of test files (inside `it('…', …)`) that
+    /// call a target or something that reaches one, with the target.
+    pub(in crate::context) fn tests_of(&self, targets: &[usize], depth: usize) -> Tested {
+        let tests = self.tests();
+        // (a test: a test function no other test calls; a helper, a `mod tests`, isn't one)
+        let a_test = |s: usize| {
+            tests[s]
+                && self.syms[s].kind.fits("function")
+                && !self.calls_in[s].iter().any(|e| tests[e.to])
+        };
+        let mut out = Tested::default();
+        let mut seen: HashSet<usize> = HashSet::new();
+        let mut lines: HashSet<(usize, u32)> = HashSet::new();
+        for &t in targets {
+            let reached = std::iter::once((t, 0)).chain(
+                self.callers(t, depth, &|_| false)
+                    .into_iter()
+                    .map(|r| (r.sym, r.depth)),
+            );
+            for (s, d) in reached {
+                if a_test(s) && seen.insert(s) {
+                    out.syms.push((s, t, d));
+                }
+                for &(file, line) in &self.tested_from[s] {
+                    if lines.insert((file, line)) {
+                        out.lines.push((file, line, t));
+                    }
+                }
+            }
+        }
+        out.syms
+            .sort_by_key(|&(s, _, d)| (self.syms[s].file, d, self.syms[s].line));
+        out.lines.sort_unstable();
         out
     }
 

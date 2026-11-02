@@ -1,8 +1,8 @@
 // The context optimizer (app/src/context): the code in my folder indexed for my Claude Code, which
 // then starts each conversation with a map of it and gets tools to look things up (code_map,
-// code_outline, find_symbol, search_code) and to follow who calls what (find_references,
-// call_chain, file_dependencies, type_hierarchy, type_members, find_type_usages,
-// change_impact). It's off
+// code_outline, find_symbol, explain_symbol, search_code, library_api) and to follow who calls
+// what (find_references, call_chain, file_dependencies, type_hierarchy, type_members,
+// find_type_usages, change_impact, affected_tests). It's off
 // till you switch it on for this robot. Two buttons show how the index is: in the brain bar,
 // what it knows, a bar of how
 // far it's got while it works and a dot for each of its indexes (syntax trees, keywords,
