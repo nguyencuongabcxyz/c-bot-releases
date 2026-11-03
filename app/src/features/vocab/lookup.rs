@@ -9,10 +9,9 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::words::norm;
@@ -202,11 +201,59 @@ pub fn result_of(line: &str) -> Option<Result<Value, String>> {
     Some(Ok(out.clone()))
 }
 
-/// Ask Claude Code's quick model one question and get its structured answer. content: the
-/// user message (a string, or content blocks such as an image).
-fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result<Value, String> {
-    let mut child = start_haiku(exe, schema, system)?;
-    let killer = Killer::new(child.id());
+/// The text a stream-json line adds to the answer as it's written (with partial messages on).
+fn text_delta(line: &str) -> Option<String> {
+    let m: Value = serde_json::from_str(line).ok()?;
+    if m["type"] != "stream_event" || m["event"]["type"] != "content_block_delta" {
+        return None;
+    }
+    let d = &m["event"]["delta"];
+    (d["type"] == "text_delta").then(|| crate::runtime::util::text(&d["text"]))
+}
+
+/// What a result line says when the answer is plain text: the text, or why there's none.
+fn text_result_of(line: &str) -> Option<Result<Value, String>> {
+    let m: Value = serde_json::from_str(line).ok()?;
+    if m["type"] != "result" {
+        return None;
+    }
+    let text = crate::runtime::util::text(&m["result"]);
+    if m["is_error"].as_bool().unwrap_or(false) || text.trim().is_empty() {
+        let why = if text.is_empty() {
+            "nothing came back".to_string()
+        } else {
+            text
+        };
+        return Some(Err(why.chars().take(200).collect()));
+    }
+    Some(Ok(json!(text)))
+}
+
+/// What the reader heard: a finished line of the answer's text, or the answer.
+enum Heard {
+    Line(String),
+    Answer(Result<Value, String>),
+}
+
+/// The written text's finished lines, taken off the front of it (what's left is unfinished).
+fn finished_lines(written: &mut String) -> Vec<String> {
+    let mut out = vec![];
+    while let Some(at) = written.find('\n') {
+        let line: String = written.drain(..=at).collect();
+        out.push(line.trim_end().to_string());
+    }
+    out
+}
+
+/// Its question in, then its answer (what answer_of makes of the result line). With partial
+/// messages on, each line of the text is given to on_line as soon as it's written.
+fn talk(
+    mut child: Child,
+    killer: &Killer,
+    content: Value,
+    answer_of: fn(&str) -> Option<Result<Value, String>>,
+    mut on_line: impl FnMut(&str),
+) -> Result<Value, String> {
     let mut stdin = child.stdin.take();
     let message = json!({ "type": "user", "message": { "role": "user", "content": content } });
     if let Some(i) = stdin.as_mut() {
@@ -224,11 +271,20 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
     let (tx, rx) = mpsc::channel();
     let waiter = killer.clone();
     thread::spawn(move || {
+        let mut written = String::new();
         if let Some(out) = stdout {
             for line in BufReader::new(out).lines() {
                 let Ok(line) = line else { break };
-                if let Some(answer) = result_of(line.trim()) {
-                    let _ = tx.send(answer);
+                if let Some(more) = text_delta(line.trim()) {
+                    written.push_str(&more);
+                    for l in finished_lines(&mut written) {
+                        let _ = tx.send(Heard::Line(l));
+                    }
+                } else if let Some(answer) = answer_of(line.trim()) {
+                    if !written.trim().is_empty() {
+                        let _ = tx.send(Heard::Line(std::mem::take(&mut written)));
+                    }
+                    let _ = tx.send(Heard::Answer(answer));
                 }
             }
         }
@@ -241,36 +297,55 @@ fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result
         drop(child);
         let err = err_reader.join().unwrap_or_default();
         let err: String = err.chars().take(200).collect();
-        let _ = tx.send(Err(format!(
+        let _ = tx.send(Heard::Answer(Err(format!(
             "Claude Code stopped ({code}): {}",
             if err.is_empty() { "no answer" } else { &err }
-        )));
+        ))));
     });
-    let answer = match rx.recv_timeout(LOOKUP_TIMEOUT) {
-        Ok(a) => a,
-        Err(_) => {
-            killer.kill();
-            Err("Claude Code took too long".into())
+    let deadline = Instant::now() + LOOKUP_TIMEOUT;
+    let answer = loop {
+        match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(Heard::Line(l)) => on_line(&l),
+            Ok(Heard::Answer(a)) => break a,
+            Err(_) => {
+                killer.kill();
+                break Err("Claude Code took too long".into());
+            }
         }
     };
     drop(stdin); // it's answered: let it go (it shuts down by itself)
     answer
 }
 
+/// Ask Claude Code's quick model one question and get its structured answer. content: the
+/// user message (a string, or content blocks such as an image).
+fn ask_haiku(exe: &Path, schema: &Value, system: &str, content: Value) -> Result<Value, String> {
+    let child = start_haiku(exe, Some(schema), system, false)?;
+    let killer = Killer::new(child.id());
+    talk(child, &killer, content, result_of, |_| {})
+}
+
 /// `claude -p` on the quick model with nothing but the question: no tools, no settings, no
-/// session kept.
-fn start_haiku(exe: &Path, schema: &Value, system: &str) -> Result<Child, String> {
-    let args = [
+/// session kept. With a schema, its answer is structured; with stream, the text comes as it's
+/// written.
+fn start_haiku(
+    exe: &Path,
+    schema: Option<&Value>,
+    system: &str,
+    stream: bool,
+) -> Result<Child, String> {
+    let mut args: Vec<String> = [
         "-p",
         "--model",
         "haiku",
+        // (no thinking: it doubles the wait, and a dictionary answer doesn't need it)
+        "--effort",
+        "low",
         "--input-format",
         "stream-json",
         "--output-format",
         "stream-json",
         "--verbose",
-        "--json-schema",
-        &schema.to_string(),
         "--system-prompt",
         system,
         "--tools",
@@ -280,7 +355,16 @@ fn start_haiku(exe: &Path, schema: &Value, system: &str) -> Result<Child, String
         "--disable-slash-commands",
         "--setting-sources",
         "",
-    ];
+    ]
+    .iter()
+    .map(|a| a.to_string())
+    .collect();
+    if let Some(schema) = schema {
+        args.extend(["--json-schema".to_string(), schema.to_string()]);
+    }
+    if stream {
+        args.push("--include-partial-messages".into());
+    }
     Command::new(exe)
         .args(args)
         .current_dir(std::env::temp_dir())
@@ -292,6 +376,57 @@ fn start_haiku(exe: &Path, schema: &Value, system: &str) -> Result<Child, String
         .no_window()
         .spawn()
         .map_err(|e| format!("Couldn't start Claude Code: {e}"))
+}
+
+/// The quick model started ahead of its question, waiting for it (starting one takes a couple
+/// of seconds: started while you type, it answers at once). Dropped unasked, it's ended.
+pub(super) struct Warm {
+    child: Option<Child>,
+    killer: Killer,
+    born: Instant,
+}
+
+impl Warm {
+    /// Start one that answers in plain text (stream: each line as it's written).
+    pub(super) fn start(claude_path: &str, system: &str, stream: bool) -> Result<Warm, String> {
+        let child = start_haiku(&claude_exe(claude_path)?, None, system, stream)?;
+        Ok(Warm {
+            killer: Killer::new(child.id()),
+            child: Some(child),
+            born: Instant::now(),
+        })
+    }
+
+    /// Ends it, even while it's answering.
+    pub(super) fn killer(&self) -> Killer {
+        self.killer.clone()
+    }
+
+    /// How long it's been waiting.
+    pub(super) fn age(&self) -> Duration {
+        self.born.elapsed()
+    }
+
+    /// Its one question; its text answer (each finished line to on_line as it's written).
+    pub(super) fn ask(
+        mut self,
+        content: Value,
+        on_line: impl FnMut(&str),
+    ) -> Result<String, String> {
+        let Some(child) = self.child.take() else {
+            return Err("it has answered already".into());
+        };
+        talk(child, &self.killer, content, text_result_of, on_line)
+            .map(|v| crate::runtime::util::text(&v))
+    }
+}
+
+impl Drop for Warm {
+    fn drop(&mut self) {
+        if self.child.is_some() {
+            self.killer.kill();
+        }
+    }
 }
 
 fn claude_exe(claude_path: &str) -> Result<std::path::PathBuf, String> {
@@ -426,129 +561,6 @@ pub fn lookup(
     Ok(entry_of(meaning, extras))
 }
 
-// ---------------------------------------------------------------- the other way: the English for it
-
-/// How an English choice comes across (its tag's colour on the Find the English window).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Feel {
-    Positive,
-    #[default]
-    Neutral,
-    Negative,
-    Formal,
-    Casual,
-}
-
-/// One English word or phrase for what you typed in Vietnamese. saved: its id in My words,
-/// if it's there already (the window fills it in).
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
-pub struct Choice {
-    pub word: String,
-    pub ipa: String,
-    pub pos: String,
-    pub feel: Feel,
-    pub tone: String,
-    pub vi: String,
-    pub en: String,
-    pub example: String,
-    pub saved: Option<String>,
-}
-
-/// The English for something in Vietnamese: the choices, the most natural first, and a tip
-/// (in Vietnamese) on which to pick when.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
-pub struct English {
-    pub choices: Vec<Choice>,
-    pub tip: String,
-}
-
-fn english_schema() -> Value {
-    json!({
-        "type": "object",
-        "properties": {
-            "choices": {
-                "type": "array",
-                "description": "3 to 5 English words or phrases a native speaker would really use for it, the most natural and common first",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "word": { "type": "string", "description": "the dictionary form (lemma) of the English word or phrase" },
-                        "ipa": { "type": "string", "description": "US IPA, e.g. /məˈtɪkjələs/" },
-                        "pos": { "type": "string", "description": "noun, verb, adj, adv, phrase, idiom…" },
-                        "feel": { "type": "string", "enum": ["positive", "neutral", "negative", "formal", "casual"], "description": "how it comes across" },
-                        "tone": { "type": "string", "description": "its tone or where it's used, in English, 1 or 2 words: praise, neutral, at work, slang, too picky…" },
-                        "vi": { "type": "string", "description": "in Vietnamese, one short sentence: its meaning and the nuance that sets it apart from the other choices" },
-                        "en": { "type": "string", "description": "a short English definition" },
-                        "example": { "type": "string", "description": "a natural everyday English sentence using exactly this word or phrase" },
-                    },
-                    "required": ["word", "ipa", "pos", "feel", "tone", "vi", "en", "example"],
-                },
-            },
-            "tip": { "type": "string", "description": "in Vietnamese, one or two short sentences on which choice to use when, or empty" },
-        },
-        "required": ["choices", "tip"],
-    })
-}
-
-const ENGLISH_SYSTEM: &str = concat!(
-    "You help a Vietnamese speaker who is learning English find the English for what they want to say. ",
-    "Given a Vietnamese word, phrase, idiom or sentence, reply with the 3 to 5 English words or phrases a native speaker would really use for it, the most natural and common first, ",
-    "each with its tone, its meaning and nuance in Vietnamese, a short English definition and a natural everyday example sentence. ",
-    "For an idiom or saying, give English idioms or phrases with the same meaning, never a word-by-word translation. ",
-    "For a whole sentence, give the English for its key word or phrase. ",
-    "Where the choices differ in strength, tone or register, say so in the tip. ",
-    "If the text is already English, give the best English choices for what it means.",
-);
-
-/// What you typed, as the question (cut to MAX_ASKED characters).
-pub const MAX_ASKED: usize = 300;
-
-fn english_prompt(text: &str) -> String {
-    format!(
-        "Vietnamese: \"{}\"",
-        text.trim().chars().take(MAX_ASKED).collect::<String>()
-    )
-}
-
-/// The answer, tidied: at most 5 choices, each with a word, cut to size.
-fn english_of(r: &Value) -> Result<English, String> {
-    let choices: Vec<Choice> = list(&r["choices"], 5)
-        .iter()
-        .map(|c| Choice {
-            word: s(&c["word"], 80).trim().to_string(),
-            ipa: s(&c["ipa"], 80),
-            pos: s(&c["pos"], 30),
-            feel: serde_json::from_value(c["feel"].clone()).unwrap_or_default(),
-            tone: s(&c["tone"], 40),
-            vi: s(&c["vi"], 400),
-            en: s(&c["en"], 400),
-            example: s(&c["example"], 400),
-            saved: None,
-        })
-        .filter(|c| !c.word.is_empty())
-        .collect();
-    if choices.is_empty() {
-        return Err("no English came back".into());
-    }
-    Ok(English {
-        choices,
-        tip: s(&r["tip"], 600),
-    })
-}
-
-/// The English for something in Vietnamese (a word, a phrase, an idiom or a sentence).
-pub fn english_for(text: &str, claude_path: &str) -> Result<English, String> {
-    let exe = claude_exe(claude_path)?;
-    let r = ask_haiku(
-        &exe,
-        &english_schema(),
-        ENGLISH_SYSTEM,
-        json!(english_prompt(text)),
-    )?;
-    english_of(&r)
-}
-
 /// The word in a cut-out of the screen (a PNG): (text, sentence).
 pub fn read_picture(png: &[u8], claude_path: &str) -> Result<(String, String), String> {
     let exe = claude_exe(claude_path)?;
@@ -653,68 +665,40 @@ mod tests {
     }
 
     #[test]
-    fn the_english_question() {
-        assert_eq!(english_prompt("  tỉ mỉ "), "Vietnamese: \"tỉ mỉ\"");
-        let long = "a".repeat(MAX_ASKED + 50);
-        assert_eq!(english_prompt(&long).chars().count(), MAX_ASKED + 14);
-        let schema = english_schema();
-        let item = &schema["properties"]["choices"]["items"];
-        assert_eq!(
-            item["required"].as_array().unwrap().len(),
-            item["properties"].as_object().unwrap().len()
-        );
-        assert_eq!(
-            item["properties"]["feel"]["enum"],
-            json!(["positive", "neutral", "negative", "formal", "casual"])
-        );
+    fn the_text_as_it_is_written() {
+        let delta = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"meti"}}}"#;
+        assert_eq!(text_delta(delta), Some("meti".into()));
+        let thinking = r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hm"}}}"#;
+        assert_eq!(text_delta(thinking), None);
+        assert_eq!(text_delta(r#"{"type":"assistant"}"#), None);
+        assert_eq!(text_delta("not json"), None);
     }
 
     #[test]
-    fn the_english_is_tidied() {
-        assert!(english_of(&json!({ "choices": [], "tip": "" })).is_err());
-        assert!(english_of(&json!({ "choices": [{ "word": " " }] })).is_err());
-        let r = json!({
-            "choices": [
-                { "word": " meticulous ", "ipa": "/x/", "pos": "adj", "feel": "positive", "tone": "praise", "vi": "tỉ mỉ", "en": "careful", "example": "She's meticulous." },
-                { "word": "fussy", "feel": "grumpy" },
-                { "word": "" },
-                { "word": "a" }, { "word": "b" }, { "word": "c" }, { "word": "d" },
-            ],
-            "tip": "Khen: meticulous.",
-        });
-        let e = english_of(&r).unwrap();
-        assert_eq!(e.choices.len(), 4); // (the first 5, less the empty one)
-        assert_eq!(e.choices[0].word, "meticulous");
-        assert_eq!(e.choices[0].feel, Feel::Positive);
-        assert_eq!(e.choices[1].feel, Feel::Neutral); // (one it doesn't know)
-        assert_eq!(e.tip, "Khen: meticulous.");
+    fn its_finished_lines() {
+        let mut written = "one\ntwo\nthr".to_string();
+        assert_eq!(finished_lines(&mut written), ["one", "two"]);
+        assert_eq!(written, "thr");
+        written.push_str("ee\r\n");
+        assert_eq!(finished_lines(&mut written), ["three"]);
+        assert!(written.is_empty());
     }
 
     #[test]
-    fn the_english_as_the_page_reads_it() {
-        let e = English {
-            choices: vec![Choice {
-                word: "fussy".into(),
-                feel: Feel::Negative,
-                saved: Some("id1".into()),
-                ..Choice::default()
-            }],
-            tip: String::new(),
-        };
+    fn the_text_answer() {
         assert_eq!(
-            serde_json::to_value(&e).unwrap(),
-            json!({ "choices": [{ "word": "fussy", "ipa": "", "pos": "", "feel": "negative", "tone": "", "vi": "", "en": "", "example": "", "saved": "id1" }], "tip": "" })
+            text_result_of(r#"{"type":"result","result":"a | b"}"#),
+            Some(Ok(json!("a | b")))
         );
-    }
-
-    // The English for some Vietnamese, with Claude Code (the user's account):
-    // cargo test -- --ignored real_english
-    #[test]
-    #[ignore]
-    fn real_english() {
-        let e = english_for("tỉ mỉ", "").expect("found");
-        assert!(!e.choices.is_empty());
-        println!("{}", serde_json::to_string_pretty(&e).unwrap());
+        assert_eq!(
+            text_result_of(r#"{"type":"result","is_error":true,"result":"Not logged in"}"#),
+            Some(Err("Not logged in".into()))
+        );
+        assert_eq!(
+            text_result_of(r#"{"type":"result","result":""}"#),
+            Some(Err("nothing came back".into()))
+        );
+        assert_eq!(text_result_of(r#"{"type":"assistant"}"#), None);
     }
 
     // A real lookup, with Claude Code (the user's account): cargo test -- --ignored real_lookup

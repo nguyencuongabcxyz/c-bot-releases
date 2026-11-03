@@ -18,6 +18,7 @@ pub mod card;
 mod catch;
 mod commands;
 mod dreams;
+mod english;
 mod find;
 mod lookup;
 mod my_words;

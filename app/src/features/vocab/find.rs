@@ -5,6 +5,11 @@
 //! its own and is looked up as the word hotkey's are. With some text selected, it opens on
 //! that and looks it up straight away.
 //!
+//! Quick: the words come first (find_search answers with them), then each one's details as
+//! they're written (find:detail, then find:done). The quick model is started for both steps
+//! as soon as the window opens, so it's ready by the time you've typed; a search you made
+//! before comes back at once.
+//!
 //! The page asks for what it opens with (find_init), says how tall it is (find_size), looks
 //! things up (find_search) and sends its buttons (find_act).
 
@@ -14,20 +19,28 @@ use serde::Deserialize;
 use tauri::WindowEvent;
 use tauri::webview::PageLoadEvent;
 
+use crate::agents::claude::Killer;
 use crate::platform::clipboard;
 use crate::runtime::{Error, part};
 use crate::ui::place;
 
-use lookup::{English, MAX_ASKED};
+use super::english::{self, Choice, English, MAX_ASKED};
+use super::lookup::Warm;
+use super::words::norm;
 
 pub(super) const LABEL: &str = "find";
 const W: f64 = 380.0; // (CSS px)
 const GAP: f64 = 8.0;
 const PAINT: &str = "#5ac8fa";
 const SOURCE: &str = "Find the English";
+// a quick model started this long ago is started afresh (it may have gone stale)
+const WARM_FOR: Duration = Duration::from_secs(15 * 60);
+const REMEMBERED: usize = 40; // searches whose answers are kept, for asking again
 
 /// What it's open on: the robot it's by (its box and paint), the text it opened with, and
-/// the words saved from it this time (the only ones ☆ may take back).
+/// the words saved from it this time (the only ones ☆ may take back). The quick model waiting
+/// for each step, which search is the latest (and its details being written), and the
+/// searches made before (the newest last).
 #[derive(Default)]
 pub(super) struct Find {
     robot_id: Option<String>,
@@ -36,6 +49,11 @@ pub(super) struct Find {
     text: String,
     height: f64, // what the page asked for (CSS px)
     saved_here: Vec<String>,
+    warm_words: Option<Warm>,
+    warm_details: Option<Warm>,
+    seq: u64,
+    writing: Option<Killer>,
+    before: Vec<(String, English)>,
 }
 
 fn finding<R>(app: &AppHandle, f: impl FnOnce(&mut Find) -> R) -> R {
@@ -129,6 +147,8 @@ pub(super) fn open_find(app: &AppHandle, robot_id: Option<String>, text: &str) {
 fn open_now(app: &AppHandle) {
     static OPENING: Mutex<()> = Mutex::new(());
     let _one = OPENING.locked();
+    let a = app.clone();
+    thread::spawn(move || warm_up(&a)); // (while you type)
     if app.get_webview_window(LABEL).is_some() {
         let _ = app.emit_to(LABEL, "find:open", view(app));
         show(app);
@@ -166,7 +186,15 @@ fn open_now(app: &AppHandle) {
     let app2 = app.clone();
     w.on_window_event(move |e| {
         if let WindowEvent::Destroyed = e {
-            finding(&app2, |f| f.saved_here.clear());
+            // (the quick models it kept are ended out of the lock)
+            let (words, details, writing) = finding(&app2, |f| {
+                f.saved_here.clear();
+                (f.warm_words.take(), f.warm_details.take(), f.writing.take())
+            });
+            if let Some(writing) = writing {
+                writing.kill();
+            }
+            drop((words, details));
         }
     });
 }
@@ -179,20 +207,186 @@ fn close(app: &AppHandle) {
 
 // ---------------------------------------------------------------- looking up and saving
 
-/// The English for it, each choice marked with its id in My words if it's there already.
+fn claude_path(app: &AppHandle) -> String {
+    text(&settings(app)["claudePath"])
+}
+
+/// Where the quick model for one step waits: the words', or the details'.
+fn waiting(f: &mut Find, details: bool) -> &mut Option<Warm> {
+    if details {
+        &mut f.warm_details
+    } else {
+        &mut f.warm_words
+    }
+}
+
+fn start_warm(app: &AppHandle, details: bool) -> Result<Warm, String> {
+    let system = if details {
+        english::DETAILS_SYSTEM
+    } else {
+        english::WORDS_SYSTEM
+    };
+    Warm::start(&claude_path(app), system, details)
+}
+
+/// Start the quick model for each step that has none waiting (while the window's open).
+fn warm_up(app: &AppHandle) {
+    for details in [false, true] {
+        let ready = finding(app, |f| {
+            waiting(f, details)
+                .as_ref()
+                .is_some_and(|w| w.age() < WARM_FOR)
+        });
+        if ready || app.get_webview_window(LABEL).is_none() {
+            continue;
+        }
+        let Ok(fresh) = start_warm(app, details) else {
+            continue; // (the search says why)
+        };
+        let old = finding(app, |f| waiting(f, details).replace(fresh));
+        drop(old); // (ended out of the lock)
+    }
+}
+
+/// The quick model for this step: the one waiting, or a new one (and another's started for
+/// next time). True if it was waiting.
+fn take_warm(app: &AppHandle, details: bool) -> Result<(Warm, bool), String> {
+    let kept = finding(app, |f| waiting(f, details).take());
+    let a = app.clone();
+    thread::spawn(move || warm_up(&a));
+    match kept {
+        Some(w) if w.age() < WARM_FOR => Ok((w, true)),
+        _ => Ok((start_warm(app, details)?, false)),
+    }
+}
+
+/// The words, on the quick model waiting for them (if that one had gone, on a new one).
+fn ask_words(app: &AppHandle, asked: &str) -> Result<Vec<Choice>, String> {
+    let (warm, kept) = take_warm(app, false)?;
+    match english::ask_words(warm, asked) {
+        Err(e) if kept && e.starts_with("Claude Code stopped") => {
+            english::ask_words(start_warm(app, false)?, asked)
+        }
+        r => r,
+    }
+}
+
+/// Each choice marked with its id in My words, if it's there.
+fn mark_saved(app: &AppHandle, choices: &mut [Choice]) {
+    words(app, |w| {
+        for c in choices.iter_mut() {
+            c.saved = w.vocab.find(&c.word).map(|k| text(&k["id"]));
+        }
+    });
+}
+
+/// How a search is known again (case, spaces and punctuation aside).
+fn key_of(asked: &str) -> String {
+    norm(asked)
+}
+
+/// Keep a search's whole answer, for asking it again (the oldest go past REMEMBERED).
+fn remember(before: &mut Vec<(String, English)>, key: String, found: English) {
+    before.retain(|(k, _)| *k != key);
+    before.push((key, found));
+    let over = before.len().saturating_sub(REMEMBERED);
+    before.drain(..over);
+}
+
+/// The English for it: the words now (each marked with its id in My words if it's there),
+/// their details to follow (find:detail, find:done); the whole of it at once if you've asked
+/// before.
 fn search(app: &AppHandle, asked: &str) -> Result<English, Error> {
     let asked = asked.trim();
     if asked.is_empty() {
         return Err("Type something in Vietnamese first.".into());
     }
-    let claude_path = text(&settings(app)["claudePath"]);
-    let mut found = lookup::english_for(asked, &claude_path)?;
-    words(app, |w| {
-        for c in &mut found.choices {
-            c.saved = w.vocab.find(&c.word).map(|k| text(&k["id"]));
-        }
+    let key = key_of(asked);
+    let (id, writing, before) = finding(app, |f| {
+        f.seq += 1;
+        let before = f
+            .before
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, e)| e.clone());
+        (f.seq, f.writing.take(), before)
     });
+    if let Some(writing) = writing {
+        writing.kill(); // (the details of a search before: not wanted now)
+    }
+    if let Some(mut found) = before {
+        found.id = id;
+        mark_saved(app, &mut found.choices);
+        return Ok(found);
+    }
+    let mut choices = ask_words(app, asked)?;
+    mark_saved(app, &mut choices);
+    let found = English {
+        id,
+        choices: choices.clone(),
+        tip: String::new(),
+        complete: false,
+    };
+    let (app, asked) = (app.clone(), asked.to_string());
+    thread::spawn(move || write_details(&app, id, &asked, key, choices));
     Ok(found)
+}
+
+/// Tell the page search id's details are all in (with the tip, or why they aren't).
+fn details_done(app: &AppHandle, id: u64, tip: &str, error: Option<String>) {
+    let _ = app.emit_to(
+        LABEL,
+        "find:done",
+        json!({ "id": id, "tip": tip, "error": error }),
+    );
+}
+
+/// The details of search id's words, each to the page as it's written (find:detail), then the
+/// tip; the whole answer kept if they all came. Stopped by a newer search.
+fn write_details(app: &AppHandle, id: u64, asked: &str, key: String, mut choices: Vec<Choice>) {
+    let warm = match take_warm(app, true) {
+        Ok((w, _)) => w,
+        Err(e) => return details_done(app, id, "", Some(e)),
+    };
+    let killer = warm.killer();
+    if !finding(app, |f| f.seq == id && f.writing.replace(killer).is_none()) {
+        return; // (a newer search came meanwhile)
+    }
+    let written = english::ask_details(warm, asked, &mut choices, |at, c| {
+        let _ = app.emit_to(
+            LABEL,
+            "find:detail",
+            json!({ "id": id, "index": at, "choice": c }),
+        );
+    });
+    let latest = finding(app, |f| {
+        let latest = f.seq == id;
+        if latest {
+            f.writing = None;
+        }
+        latest
+    });
+    if !latest {
+        return; // (stopped for a newer one)
+    }
+    match written {
+        Ok(tip) => {
+            if choices.iter().all(|c| c.ready) {
+                for c in &mut choices {
+                    c.saved = None; // (marked afresh when it's asked again)
+                }
+                let whole = English {
+                    id: 0,
+                    choices,
+                    tip: tip.clone(),
+                    complete: true,
+                };
+                finding(app, |f| remember(&mut f.before, key, whole));
+            }
+            details_done(app, id, &tip, None);
+        }
+        Err(e) => details_done(app, id, "", Some(e)),
+    }
 }
 
 /// ☆: the word into My words (its example as the sentence it was found in, so the lookup
@@ -324,5 +518,24 @@ mod tests {
         assert_eq!(read("copy"), Some(FindAct::Copy));
         assert_eq!(read("close"), Some(FindAct::Close));
         assert_eq!(read("search"), None);
+    }
+
+    #[test]
+    fn a_search_is_known_again() {
+        assert_eq!(key_of("  Tỉ mỉ! "), key_of("tỉ   mỉ"));
+        assert_ne!(key_of("tỉ mỉ"), key_of("ti mi"));
+    }
+
+    #[test]
+    fn searches_are_remembered_newest_last() {
+        let mut before = vec![];
+        for i in 0..REMEMBERED + 3 {
+            remember(&mut before, format!("k{i}"), English::default());
+        }
+        assert_eq!(before.len(), REMEMBERED);
+        assert_eq!(before[0].0, "k3"); // (the oldest gone)
+        remember(&mut before, "k3".into(), English::default());
+        assert_eq!(before.len(), REMEMBERED);
+        assert_eq!(before[REMEMBERED - 1].0, "k3"); // (asked again: the newest)
     }
 }

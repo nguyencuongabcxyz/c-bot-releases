@@ -30,20 +30,29 @@ export type CardWord = { word: CardShownWord; paint: string; fresh?: boolean };
 export type FindInit = { text: string; paint: string; hotkey: string };
 /** How an English choice comes across (features/vocab/lookup.rs Feel). */
 export type FindFeel = 'positive' | 'neutral' | 'negative' | 'formal' | 'casual';
-/** One English word or phrase for it; saved: its id in My words, if it's there. */
+/**
+ * One English word or phrase for it (features/vocab/english.rs Choice): the word, its feel and
+ * tone and a few Vietnamese words for it (gloss) first; once ready, its IPA, part of speech,
+ * nuance (vi) and an example. saved: its id in My words, if it's there.
+ */
 export type FindChoice = {
   word: string;
-  ipa: string;
-  pos: string;
   feel: FindFeel;
   tone: string;
+  gloss: string;
+  ipa: string;
+  pos: string;
   vi: string;
-  en: string;
   example: string;
+  ready: boolean;
   saved: string | null;
 };
-/** The English for what you typed (lookup.rs English). */
-export type FindEnglish = { choices: FindChoice[]; tip: string };
+/** The English for what you typed: id, which search it is; complete, the details are in too. */
+export type FindEnglish = { id: number; choices: FindChoice[]; tip: string; complete: boolean };
+/** One choice's details, as they're written (find:detail). */
+export type FindDetail = { id: number; index: number; choice: FindChoice };
+/** A search's details are all in: the tip, or why they aren't (find:done). */
+export type FindDone = { id: number; tip: string; error: string | null };
 
 /** A row of My words (main.js wordRow); box: times seen. */
 export type WordRow = {

@@ -160,6 +160,8 @@ export interface Events {
   'drone:cmd': DroneCmd;
   'quick:open': P.QuickOpen;
   'find:open': P.FindInit;
+  'find:detail': P.FindDetail;
+  'find:done': P.FindDone;
   'quick:text': P.QuickText;
   'plane:pose': PlanePose;
   'groupchat:state': P.GroupChatView;

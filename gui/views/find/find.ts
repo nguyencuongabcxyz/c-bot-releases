@@ -1,12 +1,13 @@
 // Find the English (features/vocab/find.rs): type something in Vietnamese and get the
-// English for it, a few choices with their tone, meaning and an example. ☆ saves one to My
+// English for it, a few choices with their tone, meaning and an example. The words come first;
+// each one's details follow as they're written (find:detail, find:done). ☆ saves one to My
 // words (as a word of its own, looked up there); nothing else is kept.
 import { $ } from '@/lib/dom';
 import { sayInEnglish as say } from '@/lib/speech';
 import { esc } from '@/lib/text';
 import { marked } from '@/features/vocab/marked';
-import { SAVE_LABEL, saveState } from '@/features/vocab/choices';
-import type { FindChoice, FindEnglish, FindInit } from '@/types/pages';
+import { SAVE_LABEL, saveState, withDetail } from '@/features/vocab/choices';
+import type { FindChoice, FindDetail, FindDone, FindEnglish, FindInit } from '@/types/pages';
 import { Icon } from '@/icons/icons';
 import { showView } from '@/lib/page';
 import markup from './find.html?raw';
@@ -24,6 +25,7 @@ showView(markup, { title: 'Find the English' });
   const list = $('#choices');
   let found: FindEnglish | null = null;
   let asking = 0; // (only the latest search's answer is shown)
+  let early: FindDetail[] = []; // details that came before their search's words were shown
   const savedHere = new Set<string>(); // ids saved from this window (☆ again takes one back)
 
   // ---------------------------------------------------------------- drawing
@@ -36,11 +38,13 @@ showView(markup, { title: 'Find the English' });
       (c.ipa ? `<span class="ipa">${esc(c.ipa)}</span>` : '') +
       `<button type="button" class="icon mini" data-say="${esc(c.word)}" title="Say it">${Icon('sound')}</button>` +
       (c.tone ? `<span class="tag feel-${esc(c.feel)}">${esc(c.tone)}</span>` : '') +
-      `</div><div class="vi">${c.pos ? `<span class="pos">${esc(c.pos)}</span>` : ''}${esc(c.vi)}</div>` +
-      (c.en ? `<div class="en">${esc(c.en)}</div>` : '') +
+      `</div><div class="gloss">${c.pos ? `<span class="pos">${esc(c.pos)}</span>` : ''}${esc(c.gloss)}</div>` +
+      (c.vi ? `<div class="vi">${esc(c.vi)}</div>` : '') +
       (c.example
         ? `<div class="ex">${marked(c.example, c.word)} <button type="button" class="icon mini" data-say="${esc(c.example)}" title="Say it">${Icon('sound')}</button></div>`
-        : '') +
+        : !c.ready && !found?.complete
+          ? '<div class="ex wait"></div>'
+          : '') +
       `<div class="acts"><button type="button" class="save${on}${state === 'had' ? ' had' : ''}" data-save="${i}" title="Save to My words">${Icon('star')}<span>${SAVE_LABEL[state]}</span></button>` +
       `<button type="button" data-copy="${i}" title="Copy">${Icon('copy')}<span>Copy</span></button></div></li>`
     );
@@ -78,6 +82,8 @@ showView(markup, { title: 'Find the English' });
       const answer = await ipc.findSearch(text);
       if (mine !== asking) return;
       found = answer;
+      for (const d of early) withDetail(found, d);
+      early = [];
     } catch (err) {
       if (mine !== asking) return;
       $('#failed').textContent = String(err);
@@ -140,6 +146,20 @@ showView(markup, { title: 'Find the English' });
     if (copyIt) return void copy(Number(copyIt.dataset.copy), copyIt);
   });
   new ResizeObserver(report).observe(box);
+
+  // a word's details as they're written (the first may beat its words here: kept till then)
+  ipc.on('find:detail', (d: FindDetail) => {
+    if (withDetail(found, d)) return render();
+    if (!found || d.id > found.id) early = [...early, d].slice(-20);
+  });
+  ipc.on('find:done', ({ id, tip, error }: FindDone) => {
+    if (!found || found.id !== id) return;
+    found.complete = true;
+    found.tip = tip;
+    if (error && !found.choices.some((c) => c.ready)) $('#failed').textContent = `No examples this time: ${error}`;
+    $('#failed').hidden = !error;
+    render();
+  });
 
   // opened (or the hotkey again): with text, look it up at once; without, the box is yours
   function open(view: FindInit | null) {
