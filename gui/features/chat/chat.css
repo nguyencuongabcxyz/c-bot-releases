@@ -1260,7 +1260,7 @@ button.sq-new:hover { color: var(--fg); }
   display: none; flex-direction: column; overflow: hidden; user-select: text;
   background: var(--panel-bg); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow-pop);
 }
-body.expanded.side-open.side-ready:not(.panel-out):not(.staged) #side-panel { display: flex; animation: chat-pop 0.22s ease-out; }
+body.expanded.side-open.side-ready:not(.panel-out):not(.staged:not(.docked)) #side-panel { display: flex; animation: chat-pop 0.22s ease-out; }
 #side-panel > header { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--line); }
 #side-panel .spacer { flex: 1; }
 .sp-title { font-family: var(--font-display); font-weight: 650; font-size: 13.5px; }

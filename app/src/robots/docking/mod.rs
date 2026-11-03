@@ -4,7 +4,8 @@
 //! or press Dock, and it docks; Back to desk, or its title bar dragged off the edge, and it's
 //! at its desk by that edge again. Robots docked on the same edge of a screen share it,
 //! stacked in the order they came: drag the gap between two to share it out again, and the
-//! inner edge for the width (the same for every chat on that edge: setting dockWidth).
+//! inner edge for the width (the same for every chat on that edge of that screen: setting
+//! dockWidth).
 //!
 //! Docked goes with the chat open: tucked away or asleep the robot is at its desk as ever,
 //! and it docks again as its chat opens. Sent to the island or onto the stage it leaves the
@@ -176,19 +177,31 @@ pub fn screen_room(app: &AppHandle, m: &window::Monitor) -> Rect {
     })
 }
 
-/// How wide an edge's chats are (CSS px).
-fn width(st: &State, edge: Edge) -> f64 {
-    st.store.settings()["dockWidth"][edge.key()]
+/// How wide the chats on that edge of that screen are (CSS px).
+fn width(st: &State, m: &window::Monitor, edge: Edge) -> f64 {
+    width_in(&st.store.settings()["dockWidth"], m.bounds, edge)
+}
+
+/// Each screen's edge has its own width ("right@0,0,2560,1440"); one not set yet takes the
+/// edge's, as it was kept before there was one per screen ("right").
+fn width_in(all: &Value, screen: Rect, edge: Edge) -> f64 {
+    all[width_key(screen, edge)]
         .as_f64()
+        .or_else(|| all[edge.key()].as_f64())
         .unwrap_or(CHAT_W)
 }
 
-fn set_width(st: &mut State, edge: Edge, w: f64) {
+fn width_key(screen: Rect, edge: Edge) -> String {
+    let Rect { x, y, w, h } = screen;
+    format!("{}@{x},{y},{w},{h}", edge.key())
+}
+
+fn set_width(st: &mut State, m: &window::Monitor, edge: Edge, w: f64) {
     let mut all = st.store.settings()["dockWidth"]
         .as_object()
         .cloned()
         .unwrap_or_default();
-    all.insert(edge.key().into(), json!(w));
+    all.insert(width_key(m.bounds, edge), json!(w));
     st.store
         .update_settings(patch(vec![("dockWidth", Value::Object(all))]));
 }
@@ -202,8 +215,13 @@ pub(super) fn layout_in(st: &State, id: &str) -> Option<Layout> {
     let i = stack.iter().position(|(s, _)| s == id)?;
     let weights: Vec<f64> = stack.iter().map(|(_, d)| share_of(d)).collect();
     let room = room(st, &m, d.edge);
-    let rects = rects(room, m.scale, d.edge, width(st, d.edge), &weights);
-    Some(docked_layout(rects[i], m.scale, d.edge, i, stack.len()))
+    let width = width(st, &m, d.edge);
+    let mut b = rects(room, m.scale, d.edge, width, &weights)[i];
+    if r.side_w > 0.0 {
+        // (its side panel open: it grows away from the edge to make room for it)
+        b = widened(b, room, m.scale, d.edge, width + r.side_w);
+    }
+    Some(docked_layout(b, m.scale, d.edge, i, stack.len()))
 }
 
 /// Flush against the screen's edge, a few px in from the others (the gaps to drag); the chat
@@ -508,20 +526,32 @@ pub fn reserve_changed(app: &AppHandle) {
     settled(app);
 }
 
-/// The strip each stack keeps, by the robot at its top.
+/// The strip each stack keeps, by the robot at its top: as wide as its widest chat (one with
+/// its side panel open is wider).
 fn wanted(st: &State) -> HashMap<String, Kept> {
+    let docked_w = |id: &str| {
+        st.robots
+            .get(id)
+            .and_then(|r| r.layout.as_ref())
+            .filter(|l| l.placement == "dock")
+            .map(|l| l.bounds.w)
+    };
     let mut want = HashMap::new();
     for (id, r) in &st.robots {
-        let (Some(d), Some(l)) = (active(r), r.layout.as_ref()) else {
+        let Some(d) = active(r) else {
             continue;
         };
         let m = screen(r);
-        let top = stack(st, m.bounds, d.edge).into_iter().next();
-        if l.placement == "dock" && top.is_some_and(|(t, _)| t == *id) {
+        let stack = stack(st, m.bounds, d.edge);
+        if docked_w(id).is_some() && stack.first().is_some_and(|(t, _)| t == id) {
             let k = Kept {
                 edge: d.edge,
                 screen: m.bounds,
-                w: l.bounds.w,
+                w: stack
+                    .iter()
+                    .filter_map(|(s, _)| docked_w(s))
+                    .max()
+                    .unwrap_or(0),
             };
             want.insert(id.clone(), k);
         }
@@ -572,6 +602,36 @@ mod tests {
             assert_eq!(Gap::parse(&g.name()), Some(g));
         }
         assert_eq!(Gap::parse("x1"), None);
+    }
+
+    const LEFT_SCREEN: Rect = Rect {
+        x: 0,
+        y: 0,
+        w: 2560,
+        h: 1440,
+    };
+    const RIGHT_SCREEN: Rect = Rect {
+        x: 2560,
+        y: 0,
+        w: 1920,
+        h: 1080,
+    };
+
+    #[test]
+    fn each_screen_keeps_its_own_width() {
+        let all = json!({ "right@0,0,2560,1440": 640.0 });
+        assert_eq!(width_key(LEFT_SCREEN, Edge::Right), "right@0,0,2560,1440");
+        assert_eq!(width_in(&all, LEFT_SCREEN, Edge::Right), 640.0);
+        assert_eq!(width_in(&all, RIGHT_SCREEN, Edge::Right), CHAT_W);
+        assert_eq!(width_in(&all, LEFT_SCREEN, Edge::Left), CHAT_W);
+    }
+
+    #[test]
+    fn a_screen_not_set_yet_takes_the_edges_width_from_before() {
+        let all = json!({ "right": 500.0, "right@0,0,2560,1440": 640.0 });
+        assert_eq!(width_in(&all, RIGHT_SCREEN, Edge::Right), 500.0);
+        assert_eq!(width_in(&all, LEFT_SCREEN, Edge::Right), 640.0);
+        assert_eq!(width_in(&Value::Null, LEFT_SCREEN, Edge::Right), CHAT_W);
     }
 
     #[test]

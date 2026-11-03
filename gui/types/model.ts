@@ -13,7 +13,9 @@ export type Settings = {
   claudePath: string;
   muted?: boolean;
   island?: boolean; // the robot island at the screen's edge (on unless false)
-  dockWidth?: Partial<Record<DockEdge, number>>; // how wide the docked chats on each edge are (CSS px)
+  // how wide the docked chats on each edge of each screen are ("right@x,y,w,h", CSS px); the bare
+  // edge ("right") is what one was before each screen had its own
+  dockWidth?: Partial<Record<DockEdge | `${DockEdge}@${string}`, number>>;
   dockReserve?: boolean; // docked chats keep their edge's room for themselves (off unless true)
   sounds: SoundLevel;
   theme?: string;

@@ -24,6 +24,17 @@ pub(super) fn rects(room: Rect, scale: f64, edge: Edge, width: f64, weights: &[f
         .collect()
 }
 
+/// One chat of a stack made `width` wide (CSS px) instead, still flush against the edge: its side
+/// panel open, it grows away from the edge by that much.
+pub(super) fn widened(b: Rect, room: Rect, scale: f64, edge: Edge, width: f64) -> Rect {
+    let w = width_px(room, scale, width);
+    let x = match edge {
+        Edge::Left => room.x,
+        Edge::Right => room.right() - w,
+    };
+    Rect { x, w, ..b }
+}
+
 /// Heights as shares of the stack, 1 on average: one that docks later (at the average) fits
 /// in with them.
 pub(super) fn shares(sizes: &[i32]) -> Vec<f64> {
@@ -166,6 +177,27 @@ mod tests {
             r.iter().map(|r| (r.x, r.w, r.h)).collect::<Vec<_>>(),
             vec![(0, 600, 780), (0, 600, 260)]
         );
+    }
+
+    #[test]
+    fn a_chat_with_its_side_panel_open_grows_away_from_the_edge() {
+        let b = rects(SCREEN, 1.0, Edge::Right, 500.0, &[1.0, 1.0])[1];
+        assert_eq!(
+            widened(b, SCREEN, 1.0, Edge::Right, 880.0),
+            Rect {
+                x: 1040,
+                y: 520,
+                w: 880,
+                h: 520
+            }
+        );
+        let b = rects(SCREEN, 1.0, Edge::Left, 500.0, &[1.0])[0];
+        assert_eq!(
+            widened(b, SCREEN, 1.0, Edge::Left, 880.0),
+            Rect { w: 880, ..b }
+        );
+        // never past most of the screen
+        assert_eq!(widened(b, SCREEN, 1.0, Edge::Left, 5000.0).w, 1720);
     }
 
     #[test]

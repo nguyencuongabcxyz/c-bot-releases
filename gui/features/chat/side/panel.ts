@@ -1,5 +1,5 @@
 // Side questions about an answer (chat/side/threads.ts), wired to this window: its tabs, its markdown,
-// and the stage (no side panel on a stage tile).
+// and the stage (no side panel on a stage tile; docked, the chat grows to make room for it).
 // (robot.ts calls createSidePanel with its hub.)
 import type { ComposerApi } from '../composer/composer';
 import type { ChatMarkdownApi } from '../reply/local-files';
@@ -22,7 +22,7 @@ export function createSidePanel(r: SidePanelNeeds) {
   const sides = SideQuestions({
     md: r.md,
     tabOf: (id) => r.tabs.get(id),
-    staged: () => r.stagePart.staged,
+    staged: () => r.stagePart.staged && !r.stagePart.dockedOn,
     // a side answer taken back to the conversation: into the box, to send (or not)
     useInMain: (text) => {
       const had = r.input.value.trimEnd();

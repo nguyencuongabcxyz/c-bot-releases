@@ -239,11 +239,8 @@ pub(super) fn lay_out(app: &AppHandle, id: &str) -> Option<Laid> {
         msg.insert("masked".into(), json!(false));
         msg.insert(
             "sideW".into(),
-            json!(if r.stage.is_some() || docked {
-                0.0
-            } else {
-                r.side_w
-            }),
+            // (docked, its window grew by the side panel's width too: docking::layout_in)
+            json!(if r.stage.is_some() { 0.0 } else { r.side_w }),
         );
         let bounds = layout.bounds;
         let hide = layout.placement == "hidden";

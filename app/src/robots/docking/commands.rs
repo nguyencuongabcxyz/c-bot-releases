@@ -88,10 +88,10 @@ fn now(st: &State, id: &str) -> Option<(window::Monitor, Edge, Vec<String>, Vec<
 }
 
 fn start_split(st: &mut State, id: &str, gap: Gap) -> bool {
-    let Some((_, edge, ids, sizes)) = now(st, id) else {
+    let Some((m, edge, ids, sizes)) = now(st, id) else {
         return false;
     };
-    let width = width(st, edge);
+    let width = width(st, &m, edge);
     if let Some(r) = st.robots.get_mut(id) {
         r.dock_drag = Some(GapDrag {
             gap,
@@ -123,7 +123,7 @@ fn move_split(st: &mut State, id: &str, gap: Gap, d: f64) -> bool {
                 Edge::Right => -d,
             };
             let w = width_css(room(st, &m, edge), m.scale, g.width + grow);
-            set_width(st, edge, w);
+            set_width(st, &m, edge, w);
         }
         Gap::Between(k) => {
             let px = |v: f64| (v * m.scale).round() as i32;
@@ -161,11 +161,11 @@ fn save(st: &mut State, ids: &[String]) {
 }
 
 fn even(st: &mut State, id: &str, gap: Gap) -> bool {
-    let Some((_, edge, ids, sizes)) = now(st, id) else {
+    let Some((m, edge, ids, sizes)) = now(st, id) else {
         return false;
     };
     match gap {
-        Gap::Width => set_width(st, edge, CHAT_W),
+        Gap::Width => set_width(st, &m, edge, CHAT_W),
         Gap::Between(_) => {
             set_weights(st, &ids, &vec![1; sizes.len()]);
             save(st, &ids);

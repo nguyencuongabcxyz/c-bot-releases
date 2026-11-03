@@ -565,7 +565,7 @@ export const SideQuestions = ({
   }
 
   /** The window laid out (robot:layout): with the side panel open, the panel's room is the chat's
-   *  and the side panel's, the side panel on the far side from the robot. */
+   *  and the side panel's, the side panel on the far side from the robot (docked: from the edge). */
   function layout(l: Layout) {
     lastLayout = l;
     const w = side && l.panel && !staged() ? l.sideW || 0 : 0;
@@ -578,7 +578,7 @@ export const SideQuestions = ({
       return closeSide({ open: true });
     }
     const root = document.documentElement.style;
-    const left = l.placement === 'left' || l.side === 'left';
+    const left = l.placement === 'left' || l.side === 'left' || l.stage?.dock === 'right';
     const [mainX, sideX] = left ? [l.panel.x + w, l.panel.x] : [l.panel.x, l.panel.x + mainW + GAP];
     root.setProperty('--panel-x', `${mainX}px`);
     root.setProperty('--panel-w', `${mainW}px`);
