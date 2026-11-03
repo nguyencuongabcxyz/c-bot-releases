@@ -15,4 +15,6 @@ mod windows;
 use windows as os;
 
 pub use common::{image, input};
-pub use os::{appbar, clipboard, network, power, presence, process, screenshot, webview, window};
+pub use os::{
+    appbar, clipboard, explorer, network, power, presence, process, screenshot, webview, window,
+};

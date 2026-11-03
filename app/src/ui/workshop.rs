@@ -350,18 +350,22 @@ pub fn sanitize(fields: &Value) -> Map<String, Value> {
 
 /// A new robot: it comes out on the desktop straight away.
 fn create(app: &AppHandle, fields: &Value) -> Value {
-    let fields = sanitize(fields);
-    let (c, index) = with(app, |st| {
-        let c = st.store.create(fields);
-        (c, st.store.list().len().saturating_sub(1))
-    });
+    let c = add(app, fields);
     let id = c.id().to_string();
+    let index = with(app, |st| st.store.list().len().saturating_sub(1));
     if let Err(err) = robots::open(app, &id, index) {
         log::warn!("couldn't open {id}: {err}");
     }
     tray::refresh(app);
     notify(app);
     c
+}
+
+/// A new robot, kept but not out on the desktop yet (create puts it out; so does "Open with
+/// C-Bot", once it has noted it should wake up).
+pub fn add(app: &AppHandle, fields: &Value) -> Value {
+    let fields = sanitize(fields);
+    with(app, |st| st.store.create(fields))
 }
 
 /// Gone for good (its folder and its Claude Code conversations aren't touched).

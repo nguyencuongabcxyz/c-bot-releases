@@ -38,6 +38,7 @@ export type RobotInit = {
   noteHotkey: string;
   hush: boolean;
   share: ShareView | null; // (part of a shared chat: features/share)
+  wake: boolean; // (opened from Explorer's "Open with C-Bot": up with its chat open)
 };
 
 // (at: a question's place in the history, for bookmarking it)

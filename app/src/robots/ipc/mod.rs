@@ -23,6 +23,7 @@ use crate::robots::sender;
 use crate::runtime::util::patch;
 use crate::runtime::{Error, hub, with};
 use crate::store;
+use crate::ui::folder_menu;
 use crate::workbench::{files, shell};
 
 const TOO_MANY_TABS: &str = "That's the most tabs I can juggle!";
@@ -52,6 +53,7 @@ pub fn robot_init(app: AppHandle, window: WebviewWindow) -> Answer {
         "noteHotkey": notes::hotkey(&app),
         "hush": hub::hush(&app),
         "share": share::view_for(&app, &id),
+        "wake": folder_menu::wakes(&app, &id), // (opened from Explorer: up and chatting)
     }))
 }
 

@@ -28,6 +28,8 @@ Open the **Robot Workshop** from the tray. Pick a name, a project folder and a p
 
 <img src="docs/screenshots/workshop.png" alt="The Robot Workshop" width="720">
 
+Or skip the Workshop: right-click any folder in Explorer (or the empty space inside one) and pick **Open with C-Bot**. The robot that looks after that folder comes out with its chat open; if none does yet, a new one is made for it, named after the folder, ready to talk. On Windows 11 the entry is under **Show more options**.
+
 ### Chat with it
 
 Click a robot to wake it and open its chat. Under the hood it *is* your own Claude Code, running in the robot's folder, so **anything Claude Code can do, a robot can do too**: write and fix code, run commands, search the web, and use your skills, MCP servers, hooks, subagents, `CLAUDE.md` and slash commands. The chat shows it all: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Right-click the robot and pick **⌨️ Open in terminal** to continue the conversation in a real Claude Code terminal.
@@ -248,7 +250,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       office network or through the relay; guest.rs the visiting robot;
                       wire.rs what they say; tls.rs the encryption; relay.rs and pipe.rs
                       the way through the relay)
-    ui/               the app's own windows and menus: views.rs, place.rs, tray.rs, workshop.rs
+    ui/               the app's own windows and menus: views.rs, place.rs, tray.rs, workshop.rs,
+                      folder_menu.rs ("Open with C-Bot" in Explorer's right-click menu)
     platform/         what needs the operating system, kept by system: windows/ (window,
                       appbar, input, clipboard, network, screenshot, presence, power, process,
                       webview), and

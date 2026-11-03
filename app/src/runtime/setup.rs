@@ -21,7 +21,7 @@ use crate::robots::{island, maid, planes, revive, screens, social, stage, topmos
 use crate::runtime::updater;
 use crate::store::Fields;
 use crate::store::Store;
-use crate::ui::{tray, workshop};
+use crate::ui::{folder_menu, tray, workshop};
 use crate::workbench::{capture, palette, paste, quick, shell, snip, terminal};
 
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
@@ -40,7 +40,8 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let (visible, order) = open_state(app, dir);
     let handle = app.handle().clone();
     setup_parts(&handle)?;
-    bring_out(handle, &visible, &order);
+    bring_out(handle.clone(), &visible, &order);
+    folder_menu::open_at_start(&handle); // (Explorer's "Open with C-Bot" started it)
     Ok(())
 }
 
@@ -111,6 +112,8 @@ fn setup_parts(handle: &AppHandle) -> tauri::Result<()> {
     share::setup(handle);
     share::register_links(); // (cbot:// invite links open here)
     share::join_from_args(handle, &std::env::args().collect::<Vec<_>>()); // (one started it)
+    folder_menu::setup(handle);
+    folder_menu::register(); // (Explorer's right-click menu on folders)
     Ok(())
 }
 
@@ -122,7 +125,7 @@ fn bring_out(handle: AppHandle, visible: &[String], order: &[String]) {
             log::warn!("couldn't open {id}: {err}");
         }
     }
-    if order.is_empty() {
+    if order.is_empty() && !folder_menu::asked_at_start() {
         workshop::open(&handle, Some("new"));
     }
     stage::setup(&handle);

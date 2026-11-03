@@ -747,7 +747,7 @@ tooltips($('#side-panel'));
       state.peek = true;
       deskState.peek = '1';
     }
-    ipc.robotExpand(false); // every (re)load starts asleep; keep the window in sync
+    const asleep = ipc.robotExpand(false); // every (re)load starts asleep; keep the window in sync
     const terminalTab = init.character.terminalTab ? tabs.get(init.character.terminalTab) : undefined;
     if (init.character.terminalOpen && terminalTab) terminalState('opened', terminalTab, { quiet: true });
     setActivity('off');
@@ -756,5 +756,6 @@ tooltips($('#side-panel'));
     blinkLoop();
     setTimeout(antics, 8000);
     setTimeout(dozeLoop, rand(20000, 40000));
+    if (init.wake) asleep.then(() => wake()); // (after it's asleep: the window grows for the chat)
   })();
 })();
