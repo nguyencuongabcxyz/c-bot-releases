@@ -161,6 +161,7 @@ pub fn robot_ask(app: AppHandle, window: WebviewWindow, tab_id: String, ask: Ask
         kind,
         tag: ask.tag.as_deref(),
         briefs: &ask.briefs,
+        note: None,
     };
     Ok(chat::ask(&app, &sender(&window)?, &tab_id, ask))
 }
@@ -179,6 +180,7 @@ pub fn robot_compact(
         kind: chat::AskKind::Compact,
         tag: None,
         briefs: &[],
+        note: None,
     };
     Ok(chat::ask(&app, &sender(&window)?, &tab_id, ask))
 }

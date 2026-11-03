@@ -24,8 +24,9 @@ const EDITS: [(&str, &str); 4] = [
     ("NotebookEdit", "notebook_path"),
 ];
 
-// Who waits for whom (tab key -> the tab key it waits for): no two tabs wait for each other.
-static WAITS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Mutex::default);
+// Who waits for whom (tab key -> the tab key it waits for: wait_for_tab, or ask_tab's answer in
+// peers.rs): no two tabs wait for each other.
+pub(super) static WAITS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Mutex::default);
 
 /// What a tab's turn is on, as it goes (kept in its Book).
 #[derive(Default, Clone)]
@@ -262,7 +263,7 @@ fn guard_for(busy: &[Activity], folder: &str, file: &str) -> Option<String> {
 // ---------------------------------------------------------------- wait_for_tab
 
 /// The tab named `name` (its title, the start of it, or part of it), among `all`.
-fn find<'a>(all: &'a [Activity], name: &str) -> Option<&'a Activity> {
+pub(super) fn find<'a>(all: &'a [Activity], name: &str) -> Option<&'a Activity> {
     let n = name
         .trim()
         .trim_start_matches('#')
@@ -279,7 +280,7 @@ fn find<'a>(all: &'a [Activity], name: &str) -> Option<&'a Activity> {
 }
 
 /// Would `from` waiting for `to` close a loop (`to` waits, maybe through others, for `from`)?
-fn would_loop(waits: &HashMap<String, String>, from: &str, to: &str) -> bool {
+pub(super) fn would_loop(waits: &HashMap<String, String>, from: &str, to: &str) -> bool {
     let mut at = to.to_string();
     for _ in 0..=waits.len() {
         if at == from {

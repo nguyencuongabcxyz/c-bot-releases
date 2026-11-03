@@ -74,7 +74,8 @@ const DESK_NOTE: &str = concat!(
 const TABS_NOTE: &str = concat!(
     "The user may have other conversations with you (other chat tabs) working in this same folder at the same time. ",
     "mcp__cbot__list_tabs shows what each one is doing and the files it's changing; mcp__cbot__wait_for_tab waits till one is done and tells you what it did. ",
-    "If you're told another tab is changing a file you need, don't change it at the same time: wait for that tab, or do the rest first, then read the file again before changing it."
+    "If you're told another tab is changing a file you need, don't change it at the same time: wait for that tab, or do the rest first, then read the file again before changing it. ",
+    "Your tabs can talk to each other: mcp__cbot__ask_tab asks one something and waits for its answer, mcp__cbot__tell_tab tells one something without waiting, and mcp__cbot__open_tab opens a new tab for a job (when the user asks you to split work across tabs, or for work that can go on beside yours; get its report with mcp__cbot__wait_for_tab)."
 );
 
 #[derive(Clone)]
@@ -456,14 +457,14 @@ mod tests {
     #[test]
     fn the_tools_are_the_cbot_ones() {
         let with_code = tools::allowed(true);
-        assert_eq!(with_code.len(), 32);
-        assert_eq!(with_code[16], "mcp__cbot__code_map");
-        assert_eq!(with_code[19], "mcp__cbot__explain_symbol");
-        assert_eq!(with_code[22], "mcp__cbot__library_api");
-        assert_eq!(with_code[28], "mcp__cbot__change_impact");
-        assert_eq!(with_code[29], "mcp__cbot__affected_tests");
-        assert_eq!(with_code[30], "mcp__cbot__diagnostics");
-        assert_eq!(with_code[31], "mcp__cbot__code_history");
+        assert_eq!(with_code.len(), 35);
+        assert_eq!(with_code[19], "mcp__cbot__code_map");
+        assert_eq!(with_code[22], "mcp__cbot__explain_symbol");
+        assert_eq!(with_code[25], "mcp__cbot__library_api");
+        assert_eq!(with_code[31], "mcp__cbot__change_impact");
+        assert_eq!(with_code[32], "mcp__cbot__affected_tests");
+        assert_eq!(with_code[33], "mcp__cbot__diagnostics");
+        assert_eq!(with_code[34], "mcp__cbot__code_history");
         assert_eq!(
             tools::allowed(false),
             [
@@ -483,6 +484,9 @@ mod tests {
                 "mcp__cbot__screenshot",
                 "mcp__cbot__list_tabs",
                 "mcp__cbot__wait_for_tab",
+                "mcp__cbot__ask_tab",
+                "mcp__cbot__tell_tab",
+                "mcp__cbot__open_tab",
             ]
         );
     }

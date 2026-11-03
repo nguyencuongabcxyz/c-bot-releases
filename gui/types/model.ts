@@ -261,6 +261,7 @@ export type Tab = {
   remoteUrl?: string | null; // (its page on claude.ai)
   sides?: SideThread[]; // side questions about its answers
   shared?: boolean; // (the page's own: shared with colleagues right now, features/share)
+  group?: string | null; // the tab group it's in (one tab opened another: app/src/features/chat/peers.rs)
 };
 
 /** Someone at either end of a shared chat: their name, PC and address on the network
@@ -917,6 +918,7 @@ export type ChatEvent =
   | { type: 'remote'; on: boolean; url?: string | null; error?: string }
   | { type: 'remote-state'; state: string }
   | { type: 'remote-prompt'; text: string; tag: string }
+  | { type: 'tab-message'; text: string; tag: string; fromTab: string; turnId: string; queued: boolean } // (from another of its tabs)
   | { type: 'share-state'; state: ShareView }
   | { type: 'share-suggest'; id: string; from: SharePerson; text: string; hidden: boolean }
   | { type: 'share-taken-back'; id: string }

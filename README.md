@@ -40,6 +40,7 @@ Click a robot to wake it and open its chat. Under the hood it *is* your own Clau
 
   <img src="docs/screenshots/tab-brief.png" alt="A message that brings in a brief from another tab" width="440">
 - **Tabs mind each other:** a robot's tabs can work in its folder at the same time without tripping over each other. A tab that starts work hears which others are busy, and on which files. It can check on them (`list_tabs`) or wait for one to finish and hear what it did (`wait_for_tab`). If it tries to change a file another tab is changing right now, the edit is stopped and it's told to wait for that tab, then read the file again.
+- **Tabs talk to each other:** ask a tab to split the work (*"open a tab to migrate the DB while you update the types"*) and it opens new tabs, each with its job, and carries on while they work; it gets each one's report when it needs it. Tabs can ask each other something and wait for the answer, or pass something on. A message from another tab shows in the chat marked **↳ From "Types"**: click the mark to go to that tab. Tabs opened this way are grouped: the strip folds the group into one chip with a dot for each tab, so it takes the room of one. Click the chip to see what each one is doing and go to it, unfold the group in the strip, or ungroup it.
 - **Tabs your way:** hold a tab and drag it to another place in the strip. Right-click a tab to close it, the others, or all of them; **Undo** brings them all back.
 - **Saved chats:** click the ☆ on a tab (or **Ctrl+S**, or `/save`) to keep its conversation for later, under a name and an emoji you choose. **🔖** in the header (**Ctrl+O**, or `/saved`) lists them: type to find one, and click it or press **Alt+1…9** to pick it up again where it left off. *Past chats* shows the saved ones first, with a ☆ on every row, and clearing the history leaves them alone.
 
@@ -230,7 +231,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       snip, quick, palette
     features/         what the robots do for you: chat/ a robot's tabs (page.rs what its page
                       asks; side.rs side questions; brief.rs briefs from one tab for another;
-                      tabs.rs what each tab is up to, for the others; saved.rs saved chats;
+                      tabs.rs what each tab is up to, for the others; peers.rs tabs asking,
+                      telling and opening each other; saved.rs saved chats;
                       bookmarks.rs bookmarked messages;
                       temporary.rs; awake.rs the PC kept awake for Remote Control) and
                       group/ the group chat and meeting room; vocab/ English words; notes/

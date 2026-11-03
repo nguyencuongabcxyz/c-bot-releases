@@ -7,7 +7,8 @@
 //!   routines.rs  list_routines, add_routine, remove_routine, run_routine: prompts run on a schedule
 //!   terminal.rs  terminal_read, terminal_type, terminal_run: the shells in the chat's drawer
 //!   screen.rs    screenshot: the screen as it is now, as a picture to look at
-//!   tabs.rs      list_tabs, wait_for_tab: the robot's other conversations (and the edit guard)
+//!   tabs.rs      list_tabs, wait_for_tab, ask_tab, tell_tab, open_tab: the robot's other
+//!                conversations, and talking to them (and the edit guard)
 //!   code.rs      code_map, code_outline, find_symbol, find_references, search_code: the
 //!                context optimizer, for robots that have it on
 //! The chat lists them all for the user (/tools: robot_tools).
@@ -158,6 +159,9 @@ pub fn allowed(code: bool) -> Vec<String> {
         "screenshot",
         "list_tabs",
         "wait_for_tab",
+        "ask_tab",
+        "tell_tab",
+        "open_tab",
     ];
     let code_names: &[&str] = if code { &code::NAMES } else { &[] };
     names
@@ -186,7 +190,9 @@ pub fn call(app: &AppHandle, from: &str, tab: &str, tool: &str, args: &Value, co
             terminal::call(app, from, tab, tool, args)
         }
         "screenshot" => screen::call(app, args),
-        "list_tabs" | "wait_for_tab" | tabs::GUARD => tabs::call(app, from, tab, tool, args),
+        _ if tool == tabs::GUARD || tabs::NAMES.contains(&tool) => {
+            tabs::call(app, from, tab, tool, args)
+        }
         _ if code::NAMES.contains(&tool) => code::call(app, from, tool, args),
         _ => err(format!("No tool {tool}.")),
     }

@@ -264,7 +264,10 @@ mod tests {
                 "terminal_run",
                 "screenshot",
                 "list_tabs",
-                "wait_for_tab"
+                "wait_for_tab",
+                "ask_tab",
+                "tell_tab",
+                "open_tab"
             ]
         );
         let read_only: Vec<&str> = tools

@@ -95,6 +95,15 @@ pub(in crate::features) enum PageEvent {
         text: String,
         tag: String,
     },
+    /// A message from another of the robot's tabs (features/chat/peers.rs), asked in this one as a
+    /// question of its own: who it's from, and whether it waits its turn.
+    TabMessage {
+        text: String,
+        tag: String,
+        from_tab: String,
+        turn_id: String,
+        queued: bool,
+    },
     /// A shared chat changed: who's in, who's asking, how long it has left (features/share).
     ShareState {
         state: ShareView,
@@ -237,6 +246,16 @@ mod tests {
                 turn_ids: vec!["t2".into()]
             }),
             json!({ "type": "dropped", "turnIds": ["t2"] })
+        );
+        assert_eq!(
+            page(PageEvent::TabMessage {
+                text: "Is user_id a string?".into(),
+                tag: "↳ From “Types”".into(),
+                from_tab: "a".into(),
+                turn_id: "t3".into(),
+                queued: true
+            }),
+            json!({ "type": "tab-message", "text": "Is user_id a string?", "tag": "↳ From “Types”", "fromTab": "a", "turnId": "t3", "queued": true })
         );
         assert_eq!(
             page(PageEvent::Remote {

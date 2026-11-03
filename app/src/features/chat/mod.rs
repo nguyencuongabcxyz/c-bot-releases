@@ -12,6 +12,7 @@ pub mod group;
 mod page;
 mod page_event;
 mod past;
+pub mod peers;
 mod saved;
 pub mod side;
 mod sign_in;

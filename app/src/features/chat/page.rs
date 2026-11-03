@@ -207,6 +207,7 @@ pub struct Ask<'a> {
     pub kind: AskKind,
     pub tag: Option<&'a str>, // a line kept above your message (sent to everyone on the stage: who got it)
     pub briefs: &'a [brief::Brief], // what other tabs wrote for it (mentioned with @#)
+    pub note: Option<&'a str>, // for Claude only, after the question (another tab's message: how to answer it)
 }
 
 pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
@@ -217,6 +218,7 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
         kind,
         tag,
         briefs,
+        note,
     } = ask;
     let c = match ready(app, id, tab_id) {
         Ok(c) => c,
@@ -225,6 +227,7 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
     let turn_id = turn_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let mut fed = with_files(prompt, attachments, c.folder());
     fed.prompt = brief::with_briefs(&fed.prompt, briefs);
+    fed.prompt += note.unwrap_or("");
     if kind == AskKind::Chat {
         fed.prompt += &tabs::meanwhile(app, id, tab_id); // (other tabs at work in the folder)
     }
@@ -485,6 +488,7 @@ pub fn cancel(app: &AppHandle, id: &str, tab_id: &str) -> Value {
         .map(|c| c.session.interrupt())
         .unwrap_or_default();
     if !dropped.is_empty() {
+        peers::dropped(id, tab_id, &dropped); // (another tab waiting on one: it's told)
         tell(
             app,
             id,

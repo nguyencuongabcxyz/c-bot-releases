@@ -25,6 +25,7 @@ import type { RobotView } from '@/types/model';
 import { Icon } from '@/icons/icons';
 import { createTabDrag } from './drag';
 import { createTabMenu } from './menu';
+import { createTabGroups, dragOrder, runs, type TabStatus } from './groups';
 
 /** What it uses of the robot window (robot.ts's hub). */
 export type TabsNeeds = {
@@ -177,14 +178,14 @@ export function createTabs(r: TabsNeeds) {
     else if (!r.state.busy && !r.state.mirroring) r.setActivity(r.restingActivity());
   }
 
-  const statusOf = (t: ChatTab) => {
+  const statusOf = (t: ChatTab): TabStatus => {
     if (t.terminal) return 'terminal';
     if (t.question && !t.question.sent) return 'question';
     if (t.busy) return 'busy';
     if (r.helpersOut(t)) return 'helpers';
     return t.status;
   };
-  const STATUS_LABEL = {
+  const STATUS_LABEL: Record<TabStatus, string> = {
     helpers: 'helpers still working…',
     busy: 'working…',
     question: 'has a question for you',
@@ -202,51 +203,78 @@ export function createTabs(r: TabsNeeds) {
       .filter((id) => r.tabs.has(id));
   const drag = createTabDrag({ strip: r.tabStrip, dropped: moveTab });
   const menu = createTabMenu({ order, closeTab, closeTabs });
+  const groups = createTabGroups({
+    tabs: r.tabs,
+    activeId: () => r.activeId,
+    statusOf,
+    statusLabel: STATUS_LABEL,
+    activate: (id) => activateTab(id),
+    redraw: () => renderTabs(),
+    ungroup: (group) => ipc.robotTabUngroup(group),
+  });
 
   function renderTabs() {
-    if (!r.state.character || drag.dragging) return; // (redrawn when it's let go)
+    const c = r.state.character;
+    if (!c || drag.dragging) return; // (redrawn when it's let go)
     r.deskState.helpers = String(r.helpersOut()); // the little bots circling the desk
     r.tabStrip.innerHTML = '';
-    for (const { id } of r.state.character.tabs) {
-      const t = r.tabs.get(id);
-      if (!t) continue;
-      const s = statusOf(t);
-      const el = document.createElement('div');
-      const temp = !!t.data?.temporary;
-      const saved = !temp && r.isSaved(t);
-      el.className = `tab s-${s}${t.id === r.activeId ? ' on' : ''}${temp ? ' temporary' : ''}${t.data?.remote ? ' remote' : ''}${t.data?.shared ? ' shared' : ''}${saved ? ' saved' : ''}`;
-      el.dataset.id = t.id;
-      el.setAttribute('role', 'tab');
-      el.setAttribute('aria-selected', String(t.id === r.activeId));
-      el.title = `${temp ? 'Temporary chat (nothing is kept): ' : ''}${t.title}${STATUS_LABEL[s] ? ` (${STATUS_LABEL[s]})` : ''}\nDouble-click to rename`;
-      el.innerHTML = `${temp ? Icon('eye', 'sm tab-temp') : ''}${t.data?.shared ? Icon('link', 'sm tab-shared') : ''}<span class="tab-dot"></span><span class="tab-title"></span><button class="tab-x" type="button" title="Close tab (Ctrl+W)">×</button>`;
-      $('.tab-title', el).textContent = t.title;
-      if (!temp) {
-        // ☆ save this chat (★ saved: its name and emoji, or unsave)
-        const star = document.createElement('button');
-        star.type = 'button';
-        star.className = 'tab-star';
-        star.title = saved ? 'Saved chat (Ctrl+S)' : 'Save chat (Ctrl+S)';
-        star.innerHTML = Icon('star', 'sm');
-        star.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (t.id !== r.activeId) activateTab(t.id);
-          r.starTab(t);
-        });
-        el.prepend(star);
+    // (a group of tabs: one chip, or unfolded, its label and its tabs: groups.ts)
+    for (const run of runs(c.tabs.filter((t) => r.tabs.has(t.id)))) {
+      if (run.kind === 'tab') r.tabStrip.appendChild(tabEl(run.id));
+      else if (!groups.isOpen(run.group)) r.tabStrip.appendChild(groups.chip(run.group, run.ids));
+      else {
+        r.tabStrip.appendChild(groups.label(run.group, run.ids));
+        for (const id of run.ids) r.tabStrip.appendChild(tabEl(id, true));
       }
-      el.addEventListener('click', (e) => {
-        if (!(e.target as Element).closest('.tab-x') && t.id !== r.activeId) activateTab(t.id);
-      });
-      el.addEventListener('dblclick', (e) => {
-        if (!(e.target as Element).closest('.tab-x, .tab-star')) renameTab(t.id, $<HTMLElement>('.tab-title', el));
-      });
-      el.addEventListener('auxclick', (e) => e.button === 1 && closeTab(t.id)); // middle-click closes
-      el.addEventListener('contextmenu', (e) => menu.show(t.id, e));
-      $('.tab-x', el).addEventListener('click', () => closeTab(t.id));
-      drag.draggable(el, t.id);
-      r.tabStrip.appendChild(el);
     }
+    stripButtons(c);
+  }
+
+  // one tab in the strip
+  function tabEl(id: string, inGroup = false) {
+    const t = r.tabs.get(id);
+    const el = document.createElement('div');
+    if (!t) return el;
+    const s = statusOf(t);
+    const temp = !!t.data?.temporary;
+    const saved = !temp && r.isSaved(t);
+    el.className = `tab s-${s}${t.id === r.activeId ? ' on' : ''}${temp ? ' temporary' : ''}${t.data?.remote ? ' remote' : ''}${t.data?.shared ? ' shared' : ''}${saved ? ' saved' : ''}${inGroup ? ' in-group' : ''}`;
+    el.dataset.id = t.id;
+    el.dataset.ids = t.id; // (the tabs this place in the strip stands for: drag.ts)
+    el.setAttribute('role', 'tab');
+    el.setAttribute('aria-selected', String(t.id === r.activeId));
+    el.title = `${temp ? 'Temporary chat (nothing is kept): ' : ''}${t.title}${STATUS_LABEL[s] ? ` (${STATUS_LABEL[s]})` : ''}\nDouble-click to rename`;
+    el.innerHTML = `${temp ? Icon('eye', 'sm tab-temp') : ''}${t.data?.shared ? Icon('link', 'sm tab-shared') : ''}<span class="tab-dot"></span><span class="tab-title"></span><button class="tab-x" type="button" title="Close tab (Ctrl+W)">×</button>`;
+    $('.tab-title', el).textContent = t.title;
+    if (!temp) {
+      // ☆ save this chat (★ saved: its name and emoji, or unsave)
+      const star = document.createElement('button');
+      star.type = 'button';
+      star.className = 'tab-star';
+      star.title = saved ? 'Saved chat (Ctrl+S)' : 'Save chat (Ctrl+S)';
+      star.innerHTML = Icon('star', 'sm');
+      star.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (t.id !== r.activeId) activateTab(t.id);
+        r.starTab(t);
+      });
+      el.prepend(star);
+    }
+    el.addEventListener('click', (e) => {
+      if (!(e.target as Element).closest('.tab-x') && t.id !== r.activeId) activateTab(t.id);
+    });
+    el.addEventListener('dblclick', (e) => {
+      if (!(e.target as Element).closest('.tab-x, .tab-star')) renameTab(t.id, $<HTMLElement>('.tab-title', el));
+    });
+    el.addEventListener('auxclick', (e) => e.button === 1 && closeTab(t.id)); // middle-click closes
+    el.addEventListener('contextmenu', (e) => menu.show(t.id, e));
+    $('.tab-x', el).addEventListener('click', () => closeTab(t.id));
+    drag.draggable(el, t.id);
+    return el;
+  }
+
+  // + new tab, 👁 temporary chat, ↺ reopen: after the tabs
+  function stripButtons(c: RobotView) {
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'tab-add';
@@ -263,7 +291,7 @@ export function createTabs(r: TabsNeeds) {
     temp.disabled = r.tabs.size >= 8;
     temp.addEventListener('click', () => newTab({ temporary: true }));
     r.tabStrip.appendChild(temp);
-    const closed = r.state.character.closedTabs || [];
+    const closed = c.closedTabs || [];
     if (closed.length) {
       const back = document.createElement('button');
       back.type = 'button';
@@ -277,13 +305,17 @@ export function createTabs(r: TabsNeeds) {
     r.renderRemote();
   }
 
-  // A tab let go after a drag: it's picked, and main keeps its new place (the strip shows it now).
+  // A tab let go after a drag (`to`: its place in the strip): it's picked, and main keeps its new
+  // place among all the tabs, a folded group's too (the strip shows it now).
   function moveTab(id: string, to: number) {
+    const places = [...r.tabStrip.querySelectorAll<HTMLElement>('.tab')].map((e) => (e.dataset.ids ?? '').split(' '));
+    const at = places.findIndex((p) => p.length === 1 && p[0] === id);
     const tabs = r.character().tabs;
     const from = tabs.findIndex((t) => t.id === id);
-    if (from >= 0 && from !== to) {
-      tabs.splice(to, 0, ...tabs.splice(from, 1));
-      ipc.robotTabMove(id, to);
+    const now = at < 0 ? from : dragOrder(places, at, to).indexOf(id);
+    if (from >= 0 && now >= 0 && from !== now) {
+      tabs.splice(now, 0, ...tabs.splice(from, 1));
+      ipc.robotTabMove(id, now);
     }
     if (id !== r.activeId) activateTab(id);
     else renderTabs();

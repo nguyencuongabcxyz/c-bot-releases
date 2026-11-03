@@ -682,6 +682,15 @@ fn on_done(e: Ev, d: Done) {
                 .unwrap_or(Value::Null),
         )
     });
+    // (another tab asked this: its answer goes back to it)
+    let answer = if d.interrupted {
+        Err("it was stopped before it finished".to_string())
+    } else if d.is_error {
+        Err(d.text.clone())
+    } else {
+        Ok(d.text.clone())
+    };
+    peers::answered(id, tab_id, &turn_id, answer);
     let Some(at) = kept else { return };
     tell(app, id, tab_id, PageEvent::Done { done: d, at, kind });
     refresh_context(app, id, tab_id);
@@ -721,6 +730,12 @@ fn on_fail(e: Ev, f: Fail) {
         b.turns.remove(&turn_id);
         b.take()
     };
+    let why = if f.cancelled {
+        "it was stopped".to_string()
+    } else {
+        f.message.clone()
+    };
+    peers::answered(id, tab_id, &turn_id, Err(why));
     if !f.cancelled {
         with(app, |st| {
             st.store.push_history(

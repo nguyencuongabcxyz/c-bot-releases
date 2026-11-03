@@ -7,6 +7,8 @@ import type { Ask, ChatTab, Reply, ToolCall } from '@/views/robot/types';
 import type { AskingApi } from './reply/ask';
 import type { RoutinesApi } from '@/features/routines/robot';
 import type { SharingApi } from './share/share';
+import type { TabsApi } from './tabs/tabs';
+import { Icon } from '@/icons/icons';
 import * as ipc from '@/ipc';
 import type { RobotEvent } from '@/types/model';
 
@@ -27,7 +29,11 @@ export type ChatEventsNeeds = Omit<import('./reply/ask').AskingNeeds, 'onEvent'>
     | 'renderCurrent'
     | 'setBusy'
     | 'startReply'
-  > & { readonly routineAnswer: RoutinesApi['routineAnswer']; readonly onShare: SharingApi['onShare'] };
+  > & {
+    readonly activateTab: TabsApi['activateTab'];
+    readonly routineAnswer: RoutinesApi['routineAnswer'];
+    readonly onShare: SharingApi['onShare'];
+  };
 
 export function createChatEvents(r: ChatEventsNeeds) {
   let quiet = 0; // (the timer that stops the talking face once the words pause)
@@ -254,6 +260,31 @@ export function createChatEvents(r: ChatEventsNeeds) {
     }
   }
 
+  // a message from another of its tabs (app/src/features/chat/peers.rs), asked here as a question
+  // of its own: tagged with the tab it's from (click the tag: that tab), next up if this one's busy
+  // (its turn takes it out of the queue, as a question typed ahead)
+  function onTabMessage(ev: Ev<'tab-message'>, { tab, show }: At) {
+    for (const g of tab.log.querySelectorAll('.greet')) g.remove();
+    const el = r.addUser(ev.text, [], tab, ev.tag);
+    el.classList.add('enter');
+    const from = el.querySelector<HTMLElement>('.stage-tag');
+    if (from && r.tabs.has(ev.fromTab)) {
+      from.classList.add('from-tab');
+      from.title = 'Go to tab';
+      from.addEventListener('click', () => r.activateTab(ev.fromTab));
+    }
+    if (ev.queued) {
+      el.classList.add('queued');
+      const bar = document.createElement('div');
+      bar.className = 'queue-actions';
+      bar.innerHTML = `<span>${Icon('inbox', 'sm lead')}next up</span>`;
+      el.appendChild(bar);
+    }
+    tab.queue.push({ turnId: ev.turnId, el, ask: { question: ev.text, paths: [] } });
+    r.scrollDown(tab);
+    if (show) r.flash('hop', 600);
+  }
+
   // a shared chat (chat/share): who's in, a guest's suggestion, what became of yours, the end
   function onShare(ev: Ev<Extract<RobotEvent['type'], `share-${string}`>>, { tab }: At) {
     r.onShare(ev, tab);
@@ -450,6 +481,7 @@ export function createChatEvents(r: ChatEventsNeeds) {
     remote: onRemote,
     'remote-state': onRemoteState,
     'remote-prompt': onRemotePrompt,
+    'tab-message': onTabMessage,
     'share-state': onShare,
     'share-suggest': onShare,
     'share-taken-back': onShare,

@@ -1,6 +1,7 @@
 //! A robot's tabs: new, closed, reopened, renamed, moved, and switched to.
 
 use super::*;
+use crate::store::Fields;
 
 /// A new tab; a temporary one keeps nothing (it and its transcripts go when it closes, and it's
 /// never among the past conversations).
@@ -87,6 +88,35 @@ pub fn robot_tab_rename(
     with(&app, |st| {
         st.store
             .update_tab(&id, &tab_id, patch(vec![("title", json!(title))]))
+    });
+    robots::send_character(&app, &id);
+    Ok(())
+}
+
+/// A tab group taken apart: its tabs are loose in the strip again.
+#[tauri::command(async)]
+pub fn robot_tab_ungroup(
+    app: AppHandle,
+    window: WebviewWindow,
+    group: String,
+) -> Result<(), Error> {
+    let id = sender(&window)?;
+    with(&app, |st| {
+        let members: Vec<String> = st
+            .store
+            .get(&id)
+            .and_then(|c| c["tabs"].as_array())
+            .map(|tabs| {
+                tabs.iter()
+                    .filter(|t| t["group"] == group.as_str())
+                    .map(|t| t.id().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        for tab_id in members {
+            st.store
+                .update_tab(&id, &tab_id, patch(vec![("group", Value::Null)]));
+        }
     });
     robots::send_character(&app, &id);
     Ok(())

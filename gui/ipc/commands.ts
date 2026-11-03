@@ -167,6 +167,7 @@ export const robotTabReopen = (tabId?: string) =>
 export const robotTabRename = (tabId: string, title: string) => invoke<void>('robot_tab_rename', { tabId, title });
 export const robotTabActivate = (tabId: string) => invoke<void>('robot_tab_activate', { tabId });
 export const robotTabMove = (tabId: string, to: number) => invoke<void>('robot_tab_move', { tabId, to });
+export const robotTabUngroup = (group: string) => invoke<void>('robot_tab_ungroup', { group });
 export const robotSessions = () => invoke<SessionRow[]>('robot_sessions');
 export const robotSession = (sessionId: string) => invoke<Transcript | null>('robot_session', { sessionId });
 // (past conversations thrown away, none named: every one it had; ones open in a tab stay. How many went)

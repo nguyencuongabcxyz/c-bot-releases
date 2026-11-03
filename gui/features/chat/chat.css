@@ -129,6 +129,50 @@ body.busy .who::before { background: var(--accent); box-shadow: 0 0 0 3px var(--
 /* a tab held and dragged to another place (tabs/drag.ts): it rides over the strip, the others slide aside */
 #tabs.reordering .tab { transition: transform 0.15s ease; }
 #tabs.reordering .tab.dragging { transition: none; z-index: 1; cursor: grabbing; color: var(--fg); background: var(--bg-2); box-shadow: var(--shadow-pop); }
+/* a tab group (tabs/groups.ts): folded, one chip with an accent edge, a dot per tab and how many */
+.tab.tab-group {
+  display: flex; gap: 6px; padding: 5px 8px 5px 10px; margin: 2px 0 3px; border-radius: 7px;
+  background: var(--accent-soft); color: var(--fg); box-shadow: inset 3px 0 0 var(--accent);
+}
+.tab.tab-group > * { margin-right: 0; }
+.tab.tab-group:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.tab.tab-group.on::after { left: 10px; right: 8px; bottom: -4px; }
+.tab-group-caret { width: 11px; height: 11px; color: var(--accent-ink); flex-shrink: 0; }
+.tab.tab-group .tab-title { max-width: 110px; }
+.tab-group-dots { display: inline-flex; flex-shrink: 0; }
+.tab-group-dots i { width: 8px; height: 8px; margin-left: -2px; border-radius: 50%; border: 1.5px solid var(--panel-bg); }
+.tab-group-dots i:first-child { margin-left: 0; }
+.tab-group-count { font-size: 11px; font-weight: 700; color: var(--accent-ink); }
+/* a group's tabs, each dot by its state (the chip's, and the list under it) */
+.tab-group-dots i, .tab-group-row > i { background: color-mix(in srgb, var(--muted) 40%, transparent); }
+:is(.tab-group-dots, .tab-group-row) .s-busy { background: var(--accent); }
+:is(.tab-group-dots, .tab-group-row) .s-question { background: var(--warn); }
+:is(.tab-group-dots, .tab-group-row) .s-done { background: var(--ok); }
+:is(.tab-group-dots, .tab-group-row) .s-error { background: var(--danger); }
+:is(.tab-group-dots, .tab-group-row) .s-terminal { background: var(--fg-2); }
+:is(.tab-group-dots, .tab-group-row) .s-helpers { background: var(--violet); }
+/* unfolded: a short label, then its tabs over a line in the group's colour */
+.tab-group-label {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; margin: 0 2px 4px 4px; padding: 3px 8px 3px 5px;
+  border: 0; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent);
+  font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.tab-group-label .ic { width: 11px; height: 11px; }
+.tab.in-group { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+/* the group's tabs, dropped down under its chip */
+#tab-group-list {
+  position: absolute; z-index: 8; min-width: 230px; max-width: 320px; max-height: 320px; overflow-y: auto;
+  background: var(--panel-bg); border: 1px solid var(--line-2); border-radius: 10px; padding: 4px; box-shadow: var(--shadow-pop);
+}
+.tab-group-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
+.tab-group-row > i { width: 8px; height: 8px; border-radius: 50%; }
+.tab-group-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-group-row small { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tab-group-row:has(.s-question) { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.tab-group-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+/* a message from another tab: its tag takes you there */
+.stage-tag.from-tab { cursor: pointer; }
+.stage-tag.from-tab:hover { text-decoration: underline; }
 /* "“…” closed · Undo" after closing a tab */
 #undo {
   position: absolute; left: 50%; top: 84px; transform: translateX(-50%); z-index: 8; display: flex; align-items: center; gap: 10px;
