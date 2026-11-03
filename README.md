@@ -152,6 +152,11 @@ Select a word to get its Vietnamese meaning, phrases and examples. Your robots b
 
 <img src="docs/screenshots/word-card.png" alt="A word card for 'meticulous'" width="300">
 
+**🔤 Find the English** · `Ctrl+Alt+E`<br>
+Know it in Vietnamese but not in English? Type it (a word, a phrase, an idiom) and pick from a few English choices, each with its tone, its meaning and an example. ☆ saves the one you want to your words.
+
+<img src="docs/screenshots/find-english.png" alt="Find the English: the English choices for 'tỉ mỉ'" width="300">
+
 </td>
 <td valign="top">
 
@@ -235,7 +240,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
                       telling and opening each other; saved.rs saved chats;
                       bookmarks.rs bookmarked messages;
                       temporary.rs; awake.rs the PC kept awake for Remote Control) and
-                      group/ the group chat and meeting room; vocab/ English words; notes/
+                      group/ the group chat and meeting room; vocab/ English words (find.rs
+                      Find the English); notes/
                       notes and reminders; routines/ prompts a robot runs on a schedule
                       (schedule.rs when, runs.rs a run and its result, panel.rs the window);
                       share/ a tab shared with colleagues (host/ the sharing end, on the

@@ -264,6 +264,9 @@ export const snipCancel = () => invoke<boolean>('snip_cancel');
 // ---- the word card, My words
 export const cardInit = () => invoke<P.CardInit | null>('card_init');
 export const cardAct = acts<P.CardActs>('card_act', 'payload');
+export const findInit = () => invoke<P.FindInit | null>('find_init');
+export const findSearch = (text: string) => invoke<P.FindEnglish>('find_search', { text });
+export const findAct = acts<P.FindActs>('find_act', 'p');
 export const wordsList = () => invoke<P.WordsList>('words_list');
 export const wordsOpen = (id: string) => invoke<boolean>('words_open', { id });
 export const wordsDelete = (id: string) => invoke<boolean>('words_delete', { id });
@@ -330,6 +333,7 @@ export const walkerClick = () => tell('walker_click');
 export const walkerReady = () => tell('walker_ready');
 export const walkerThrough = (through: boolean) => tell('walker_through', { through });
 export const cardSize = (height: number) => tell('card_size', { height });
+export const findSize = (height: number) => tell('find_size', { height });
 export const islandSize = (width: number, height: number) => tell('island_size', { width, height });
 export const islandBox = (x: number, y: number, width: number, height: number) =>
   tell('island_box', { x, y, width, height });

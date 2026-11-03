@@ -8,6 +8,8 @@
 //! looks it up in its dictionary while the card shows it; then the meanings in Vietnamese
 //! and the phrases fill in, and the card goes in the word box on its desk. Nothing selected
 //! (a word in a picture, a video…): drag a box round it, and Claude reads it off the screen.
+//! The other way round, the find hotkey opens Find the English ("find"): type it in
+//! Vietnamese, get the English choices, and ☆ the one you want into My words.
 //!
 //! Locks: this module's state (Words) is never held while calling out of it: not into a
 //! window, the robots' state (with()), the tray or another module.
@@ -16,12 +18,14 @@ pub mod card;
 mod catch;
 mod commands;
 mod dreams;
+mod find;
 mod lookup;
 mod my_words;
 mod practice;
 mod words;
 
 pub use commands::*;
+pub use find::*;
 use my_words::*;
 use practice::*;
 
@@ -288,6 +292,12 @@ pub fn catch_word(app: &AppHandle, text: &str, source: &str, robot_id: Option<St
 pub fn box_word(app: &AppHandle, robot_id: Option<String>, source: String) {
     let robot = robot_id.or_else(|| hub::nearest_robot(app));
     box_for(app, robot, source);
+}
+
+/// Find the English: its window by this robot (the nearest if none), on this text (looked up
+/// at once; empty: just the box to type in).
+pub fn find_english(app: &AppHandle, robot_id: Option<String>, text: &str) {
+    open_find(app, robot_id.or_else(|| hub::nearest_robot(app)), text);
 }
 
 /// One of your words in a dream bubble beside this robot. False if there's none to show.

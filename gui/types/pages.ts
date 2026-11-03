@@ -24,6 +24,27 @@ export type CardInit = { word: CardShownWord; paint: string };
 /** fresh: a new word on the card (not the same one looked up or edited). */
 export type CardWord = { word: CardShownWord; paint: string; fresh?: boolean };
 
+// ---- Find the English (features/vocab/find.rs)
+
+/** What it opens with: text to look up straight away (empty: just the box), the robot's paint, the hotkey. */
+export type FindInit = { text: string; paint: string; hotkey: string };
+/** How an English choice comes across (features/vocab/lookup.rs Feel). */
+export type FindFeel = 'positive' | 'neutral' | 'negative' | 'formal' | 'casual';
+/** One English word or phrase for it; saved: its id in My words, if it's there. */
+export type FindChoice = {
+  word: string;
+  ipa: string;
+  pos: string;
+  feel: FindFeel;
+  tone: string;
+  vi: string;
+  en: string;
+  example: string;
+  saved: string | null;
+};
+/** The English for what you typed (lookup.rs English). */
+export type FindEnglish = { choices: FindChoice[]; tip: string };
+
 /** A row of My words (main.js wordRow); box: times seen. */
 export type WordRow = {
   id: string;
@@ -146,7 +167,7 @@ export type NoteSettings = {
 export type WorkshopSettings = Settings & Partial<NoteSettings> & { vocabRewards?: { gradcap?: boolean } };
 /** A global hotkey (main.js hotkeyList): its keys, its default, whether it works (ok: no other app has it). */
 export type WorkshopHotkey = {
-  setting: 'paletteHotkey' | 'screenHotkey' | 'quickHotkey' | 'vocabHotkey' | 'noteHotkey';
+  setting: 'paletteHotkey' | 'screenHotkey' | 'quickHotkey' | 'vocabHotkey' | 'findHotkey' | 'noteHotkey';
   label: string;
   what: string;
   key: string;
@@ -301,6 +322,14 @@ export type CardActs = {
   undo: [undefined, true | null];
   save: [CardEdits, VocabWord | null];
   ask: [undefined, true | null];
+};
+
+/** Find the English (features/vocab/find.rs act). */
+export type FindActs = {
+  save: [{ word: string; example: string }, string | null]; // (its id in My words)
+  unsave: [{ id: string }, boolean];
+  copy: [{ text: string }, boolean];
+  close: [undefined, null];
 };
 
 /** The notebook (features/notes/actions.rs act, on_action). */

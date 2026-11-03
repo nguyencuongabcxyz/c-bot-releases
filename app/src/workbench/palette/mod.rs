@@ -137,6 +137,7 @@ fn items_for(text: &str) -> Vec<Value> {
         return vec![
             item("screen", "scan", "Ask about part of the screen"),
             item("box-word", "text-box", "Box a word on screen to save it"),
+            item("find-english", "languages", "Find the English…"),
             item("new-note", "note-plus", "New note"),
             item("quick", "sparkles", "Quick actions on text…"),
             item("words", "book", "My words"),
@@ -224,6 +225,7 @@ fn on_pick(app: &AppHandle, id: &str, ctx: Ctx) {
             Some(source),
         ),
         "box-word" => vocab::box_word(app, robot_id.or_else(|| hub::nearest_robot(app)), source),
+        "find-english" => vocab::find_english(app, robot_id, ""),
         "new-note" => notes::open_notebook(app, robot_id, Some("add")),
         "quick" => {
             let text = slice16(clipboard::text().trim(), MAX_TEXT).to_string();
@@ -551,11 +553,27 @@ mod tests {
     fn nothing_selected() {
         assert_eq!(
             ids(&items_for("")),
-            ["screen", "box-word", "new-note", "quick", "words", "notes"]
+            [
+                "screen",
+                "box-word",
+                "find-english",
+                "new-note",
+                "quick",
+                "words",
+                "notes"
+            ]
         );
         assert_eq!(
             ids(&items_for("  \n\t ")),
-            ["screen", "box-word", "new-note", "quick", "words", "notes"]
+            [
+                "screen",
+                "box-word",
+                "find-english",
+                "new-note",
+                "quick",
+                "words",
+                "notes"
+            ]
         );
     }
 

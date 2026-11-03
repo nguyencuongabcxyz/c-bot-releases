@@ -158,6 +158,7 @@ export interface Events {
   'palette:open': PaletteView;
   'drone:cmd': DroneCmd;
   'quick:open': P.QuickOpen;
+  'find:open': P.FindInit;
   'quick:text': P.QuickText;
   'plane:pose': PlanePose;
   'groupchat:state': P.GroupChatView;

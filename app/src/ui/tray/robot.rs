@@ -105,6 +105,7 @@ fn words_menu(app: &AppHandle, id: &str, s: &Value) -> Item {
         &words_title(app),
         vec![
             item(app, act(id, "words"), "📚 My words…", true),
+            item(app, act(id, "find-english"), "🔤 Find the English…", true),
             item(
                 app,
                 act(id, "box-word"),

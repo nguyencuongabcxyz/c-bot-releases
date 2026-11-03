@@ -12,6 +12,7 @@ use std::thread;
 use std::time::Duration;
 
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::words::norm;
@@ -425,6 +426,129 @@ pub fn lookup(
     Ok(entry_of(meaning, extras))
 }
 
+// ---------------------------------------------------------------- the other way: the English for it
+
+/// How an English choice comes across (its tag's colour on the Find the English window).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Feel {
+    Positive,
+    #[default]
+    Neutral,
+    Negative,
+    Formal,
+    Casual,
+}
+
+/// One English word or phrase for what you typed in Vietnamese. saved: its id in My words,
+/// if it's there already (the window fills it in).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Choice {
+    pub word: String,
+    pub ipa: String,
+    pub pos: String,
+    pub feel: Feel,
+    pub tone: String,
+    pub vi: String,
+    pub en: String,
+    pub example: String,
+    pub saved: Option<String>,
+}
+
+/// The English for something in Vietnamese: the choices, the most natural first, and a tip
+/// (in Vietnamese) on which to pick when.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct English {
+    pub choices: Vec<Choice>,
+    pub tip: String,
+}
+
+fn english_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "choices": {
+                "type": "array",
+                "description": "3 to 5 English words or phrases a native speaker would really use for it, the most natural and common first",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "word": { "type": "string", "description": "the dictionary form (lemma) of the English word or phrase" },
+                        "ipa": { "type": "string", "description": "US IPA, e.g. /məˈtɪkjələs/" },
+                        "pos": { "type": "string", "description": "noun, verb, adj, adv, phrase, idiom…" },
+                        "feel": { "type": "string", "enum": ["positive", "neutral", "negative", "formal", "casual"], "description": "how it comes across" },
+                        "tone": { "type": "string", "description": "its tone or where it's used, in English, 1 or 2 words: praise, neutral, at work, slang, too picky…" },
+                        "vi": { "type": "string", "description": "in Vietnamese, one short sentence: its meaning and the nuance that sets it apart from the other choices" },
+                        "en": { "type": "string", "description": "a short English definition" },
+                        "example": { "type": "string", "description": "a natural everyday English sentence using exactly this word or phrase" },
+                    },
+                    "required": ["word", "ipa", "pos", "feel", "tone", "vi", "en", "example"],
+                },
+            },
+            "tip": { "type": "string", "description": "in Vietnamese, one or two short sentences on which choice to use when, or empty" },
+        },
+        "required": ["choices", "tip"],
+    })
+}
+
+const ENGLISH_SYSTEM: &str = concat!(
+    "You help a Vietnamese speaker who is learning English find the English for what they want to say. ",
+    "Given a Vietnamese word, phrase, idiom or sentence, reply with the 3 to 5 English words or phrases a native speaker would really use for it, the most natural and common first, ",
+    "each with its tone, its meaning and nuance in Vietnamese, a short English definition and a natural everyday example sentence. ",
+    "For an idiom or saying, give English idioms or phrases with the same meaning, never a word-by-word translation. ",
+    "For a whole sentence, give the English for its key word or phrase. ",
+    "Where the choices differ in strength, tone or register, say so in the tip. ",
+    "If the text is already English, give the best English choices for what it means.",
+);
+
+/// What you typed, as the question (cut to MAX_ASKED characters).
+pub const MAX_ASKED: usize = 300;
+
+fn english_prompt(text: &str) -> String {
+    format!(
+        "Vietnamese: \"{}\"",
+        text.trim().chars().take(MAX_ASKED).collect::<String>()
+    )
+}
+
+/// The answer, tidied: at most 5 choices, each with a word, cut to size.
+fn english_of(r: &Value) -> Result<English, String> {
+    let choices: Vec<Choice> = list(&r["choices"], 5)
+        .iter()
+        .map(|c| Choice {
+            word: s(&c["word"], 80).trim().to_string(),
+            ipa: s(&c["ipa"], 80),
+            pos: s(&c["pos"], 30),
+            feel: serde_json::from_value(c["feel"].clone()).unwrap_or_default(),
+            tone: s(&c["tone"], 40),
+            vi: s(&c["vi"], 400),
+            en: s(&c["en"], 400),
+            example: s(&c["example"], 400),
+            saved: None,
+        })
+        .filter(|c| !c.word.is_empty())
+        .collect();
+    if choices.is_empty() {
+        return Err("no English came back".into());
+    }
+    Ok(English {
+        choices,
+        tip: s(&r["tip"], 600),
+    })
+}
+
+/// The English for something in Vietnamese (a word, a phrase, an idiom or a sentence).
+pub fn english_for(text: &str, claude_path: &str) -> Result<English, String> {
+    let exe = claude_exe(claude_path)?;
+    let r = ask_haiku(
+        &exe,
+        &english_schema(),
+        ENGLISH_SYSTEM,
+        json!(english_prompt(text)),
+    )?;
+    english_of(&r)
+}
+
 /// The word in a cut-out of the screen (a PNG): (text, sentence).
 pub fn read_picture(png: &[u8], claude_path: &str) -> Result<(String, String), String> {
     let exe = claude_exe(claude_path)?;
@@ -526,6 +650,71 @@ mod tests {
         assert!(e.get("synonyms").is_none());
         assert_eq!(e["extrasError"], "Claude Code took too long");
         assert_eq!(e["antonyms"], json!([]));
+    }
+
+    #[test]
+    fn the_english_question() {
+        assert_eq!(english_prompt("  tỉ mỉ "), "Vietnamese: \"tỉ mỉ\"");
+        let long = "a".repeat(MAX_ASKED + 50);
+        assert_eq!(english_prompt(&long).chars().count(), MAX_ASKED + 14);
+        let schema = english_schema();
+        let item = &schema["properties"]["choices"]["items"];
+        assert_eq!(
+            item["required"].as_array().unwrap().len(),
+            item["properties"].as_object().unwrap().len()
+        );
+        assert_eq!(
+            item["properties"]["feel"]["enum"],
+            json!(["positive", "neutral", "negative", "formal", "casual"])
+        );
+    }
+
+    #[test]
+    fn the_english_is_tidied() {
+        assert!(english_of(&json!({ "choices": [], "tip": "" })).is_err());
+        assert!(english_of(&json!({ "choices": [{ "word": " " }] })).is_err());
+        let r = json!({
+            "choices": [
+                { "word": " meticulous ", "ipa": "/x/", "pos": "adj", "feel": "positive", "tone": "praise", "vi": "tỉ mỉ", "en": "careful", "example": "She's meticulous." },
+                { "word": "fussy", "feel": "grumpy" },
+                { "word": "" },
+                { "word": "a" }, { "word": "b" }, { "word": "c" }, { "word": "d" },
+            ],
+            "tip": "Khen: meticulous.",
+        });
+        let e = english_of(&r).unwrap();
+        assert_eq!(e.choices.len(), 4); // (the first 5, less the empty one)
+        assert_eq!(e.choices[0].word, "meticulous");
+        assert_eq!(e.choices[0].feel, Feel::Positive);
+        assert_eq!(e.choices[1].feel, Feel::Neutral); // (one it doesn't know)
+        assert_eq!(e.tip, "Khen: meticulous.");
+    }
+
+    #[test]
+    fn the_english_as_the_page_reads_it() {
+        let e = English {
+            choices: vec![Choice {
+                word: "fussy".into(),
+                feel: Feel::Negative,
+                saved: Some("id1".into()),
+                ..Choice::default()
+            }],
+            tip: String::new(),
+        };
+        assert_eq!(
+            serde_json::to_value(&e).unwrap(),
+            json!({ "choices": [{ "word": "fussy", "ipa": "", "pos": "", "feel": "negative", "tone": "", "vi": "", "en": "", "example": "", "saved": "id1" }], "tip": "" })
+        );
+    }
+
+    // The English for some Vietnamese, with Claude Code (the user's account):
+    // cargo test -- --ignored real_english
+    #[test]
+    #[ignore]
+    fn real_english() {
+        let e = english_for("tỉ mỉ", "").expect("found");
+        assert!(!e.choices.is_empty());
+        println!("{}", serde_json::to_string_pretty(&e).unwrap());
     }
 
     // A real lookup, with Claude Code (the user's account): cargo test -- --ignored real_lookup

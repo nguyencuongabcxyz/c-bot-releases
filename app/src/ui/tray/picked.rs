@@ -86,6 +86,7 @@ fn tray_action(app: &AppHandle, what: &str) {
         "routines" => routines::open_window(app, None),
         "context" => context::open_window(app, None),
         "words" => vocab::open_words(app),
+        "find-english" => vocab::find_english(app, None, ""),
         "box-word" => {
             thread::sleep(Duration::from_millis(250)); // (after the menu has gone)
             vocab::box_word(app, None, String::new());
@@ -116,6 +117,7 @@ fn robot_action(app: &AppHandle, id: &str, action: &str) {
         "context" => context::open_window(app, rid),
         "notes-robot" => pick_robot(app, "notesRobot", id),
         "words" => vocab::open_words(app),
+        "find-english" => vocab::find_english(app, rid, ""),
         "box-word" => {
             thread::sleep(Duration::from_millis(250)); // (after the menu has gone)
             vocab::box_word(app, rid, String::new());

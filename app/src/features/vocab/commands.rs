@@ -146,6 +146,7 @@ pub fn setup(app: &AppHandle) {
         clock: DreamClock::new(t, &words::local_day(t)),
     }));
     card::setup(app);
+    setup_find(app);
     // (what's waiting is written as C-Bot quits)
     let quitting = tauri::plugin::Builder::<tauri::Wry>::new("cbot-vocab")
         .on_event(|app, e| {

@@ -1,4 +1,5 @@
 import { $ } from '@/lib/dom';
+import { marked as markWord } from '@/features/vocab/marked';
 import { sayInEnglish as say } from '@/lib/speech';
 import { esc } from '@/lib/text';
 import type { CardShownWord, CardWord } from '@/types/pages';
@@ -36,30 +37,8 @@ showView(markup, { title: 'Word card' });
   const QUIZ_BACK_WAIT = 180_000;
   const quizOn = () => !!word?.quiz && !result;
 
-  // the word highlighted in a sentence: its endings too (meticulously, deciding), and a
-  // verb's other forms (went, gone; gave up)
-  function marked(sentence: string, w: string) {
-    const safe = esc(sentence);
-    const pattern = (s: string) =>
-      String(s || '')
-        .trim()
-        .split(/\s+/)
-        .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-        .join('\\s+');
-    const stem = pattern(w);
-    if (!stem) return safe;
-    // a long single word matches without its last letter too (decide -> deciding)
-    const root = stem.length > 5 && !stem.includes('\\s') ? stem.slice(0, -1) : stem;
-    const vf = word?.verbForms;
-    const forms = vf
-      ? [vf.past, vf.participle, vf.third, vf.ing]
-          .flatMap((f) => String(f || '').split('/'))
-          .map(pattern)
-          .filter(Boolean)
-      : [];
-    const alts = [...new Set(forms)].sort((a, b) => b.length - a.length);
-    return safe.replace(new RegExp(`\\b(${[...alts, `${root}\\w*`].join('|')})`, 'gi'), '<mark>$1</mark>');
-  }
+  // the word highlighted in a sentence (its endings, and this word's verb forms)
+  const marked = (sentence: string, w: string) => markWord(sentence, w, word?.verbForms);
 
   // a synonym, an antonym or a family word: its meaning, a note or an example, 🔊 and ＋ (save it too)
   type Extras = { pos?: string; note?: string; example?: string };

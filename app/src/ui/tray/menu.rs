@@ -156,6 +156,12 @@ fn words_menu(app: &AppHandle, s: &Value) -> Item {
             item(app, "tray|words".into(), "📚 My words…", true),
             item(
                 app,
+                "tray|find-english".into(),
+                "🔤 Find the English…",
+                true,
+            ),
+            item(
+                app,
                 "tray|box-word".into(),
                 "🔍 Box a word on screen to save it…",
                 true,
