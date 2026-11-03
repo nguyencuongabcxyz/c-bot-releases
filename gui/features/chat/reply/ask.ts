@@ -1,6 +1,7 @@
 // Asking it: what you type goes to its Claude (or waits its turn while it's busy), and the answer
 // streams into a bubble: its words, the steps between them and what they made, in order.
 // (robot.ts calls createAsking with its hub.)
+import type { BookmarksApi } from '../bookmarks/bookmarks';
 import type { SidePanelApi } from '../side/panel';
 import type { SharingApi } from '../share/share';
 import { THINKING_VERBS } from '@/views/robot/constants';
@@ -107,6 +108,7 @@ export type AskingNeeds = {
   readonly settleThinking: ChatLogApi['settleThinking'];
   readonly showAside: CommentaryApi['showAside'];
   readonly showPop: DeskActivityApi['showPop'];
+  readonly marks: BookmarksApi;
   readonly sides: SidePanelApi['sides'];
   readonly socialReport: OtherRobotsApi['socialReport'];
   readonly startCompact: BrainApi['startCompact'];
@@ -198,7 +200,8 @@ export function createAsking(r: AskingNeeds) {
     tab.vocabWord = r.askedWord(text); // "what does X mean?": offer to save X under the answer
     for (const el of tab.log.querySelectorAll('.greet')) el.remove();
     r.clearFinishedHelpers(tab);
-    r.addUser(question, files, tab, tag, briefs).classList.add('enter');
+    const asked = r.addUser(question, files, tab, tag, briefs);
+    asked.classList.add('enter');
     r.sentOf(tab).push(question);
     tab.rewinding = false;
     r.composerPart.recallAt = -1;
@@ -224,6 +227,7 @@ export function createAsking(r: AskingNeeds) {
       briefs,
     );
     if (!res.ok) r.onEvent({ type: 'fail', tabId: tab.id, turnId, message: res.error });
+    else r.marks.attach(asked, res.at, tab);
   }
 
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -269,7 +273,7 @@ export function createAsking(r: AskingNeeds) {
     if (!res.ok) {
       dropQueued(tab, turnId, 'not sent');
       r.addNote(`📨 ${res.error}`, '', tab);
-    }
+    } else r.marks.attach(el, res.at, tab);
   }
 
   function dropQueued(tab: ChatTab, turnId: string, why: string) {

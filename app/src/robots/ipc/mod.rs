@@ -346,6 +346,31 @@ pub fn robot_side_remove(
     Ok(side::remove(&app, &sender(&window)?, &tab_id, &thread_id))
 }
 
+/// A message to bookmark (or not): the question or answer at `at` in a tab's history.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Bookmark {
+    tab_id: String,
+    at: i64,
+    on: bool,
+}
+
+#[tauri::command(async)]
+pub fn robot_bookmark(
+    app: AppHandle,
+    window: WebviewWindow,
+    mark: Bookmark,
+) -> Result<bool, Error> {
+    let id = sender(&window)?;
+    Ok(chat::bookmarks::set(
+        &app,
+        &id,
+        &mark.tab_id,
+        mark.at,
+        mark.on,
+    ))
+}
+
 /// The side panel open beside the chat (its width, CSS px) or shut (0): the window makes room.
 #[tauri::command(async)]
 pub fn robot_side_width(app: AppHandle, window: WebviewWindow, width: f64) -> Result<(), Error> {

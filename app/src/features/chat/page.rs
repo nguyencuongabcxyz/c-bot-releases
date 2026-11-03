@@ -228,7 +228,8 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
     if kind == AskKind::Chat {
         fed.prompt += &tabs::meanwhile(app, id, tab_id); // (other tabs at work in the folder)
     }
-    with(app, |st| {
+    // (a question: when it went into the history, for bookmarking it: features/chat/bookmarks.rs)
+    let at = with(app, |st| {
         if kind == AskKind::Bonk {
             st.store.push_history(
                 id,
@@ -255,7 +256,12 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
             stats.insert("questions".into(), json!(n));
             st.store
                 .update(id, patch(vec![("stats", Value::Object(stats))]));
+            return st
+                .store
+                .tab(id, tab_id)
+                .and_then(|t| t["history"].as_array()?.last()?.get("at").cloned());
         }
+        None
     });
     if kind == AskKind::Chat {
         share::said(app, id, tab_id, prompt, tag); // (anyone watching the tab sees it too)
@@ -275,7 +281,7 @@ pub fn ask(app: &AppHandle, id: &str, tab_id: &str, ask: Ask) -> Value {
         },
     );
     let queued = chat.session.ask(fed.prompt, turn_id.clone());
-    json!({ "ok": true, "turnId": turn_id, "queued": queued })
+    json!({ "ok": true, "turnId": turn_id, "queued": queued, "at": at })
 }
 
 /// Can the tab be asked: it's there, not open in the terminal, Claude Code is installed, the

@@ -1,6 +1,7 @@
 // Bring the renderer's tabs in line with the main process's list.
 // (robot.ts calls createTabs with its hub.)
 import type { ShellsApi } from '@/features/workbench/shell/drawer';
+import type { BookmarksApi } from '../bookmarks/bookmarks';
 import type { SidePanelApi } from '../side/panel';
 import type { CommentaryApi } from '../reply/commentary';
 import type { DeskActivityApi } from '@/views/robot/life/desk';
@@ -57,6 +58,7 @@ export type TabsNeeds = {
   readonly setBusy: AskingApi['setBusy'];
   readonly shell: ShellsApi['shell'];
   readonly showPop: DeskActivityApi['showPop'];
+  readonly marks: BookmarksApi;
   readonly sides: SidePanelApi['sides'];
   readonly starTab: SavedChatsApi['starTab'];
   readonly startReply: AskingApi['startReply'];
@@ -151,6 +153,7 @@ export function createTabs(r: TabsNeeds) {
     if (prev && prev !== next) prev.draft = r.input.value; // each tab keeps its half-typed message
     r.activeId = id;
     r.sides.tabShown(id); // (the side panel holds another tab's thread: it shuts)
+    r.marks.tabShown(); // (its own bookmarks)
     if (prev && prev !== next) r.keepPlace(prev);
     for (const t of r.tabs.values()) t.log.hidden = t !== next;
     r.shell.switchTo(id); // (its own shells)

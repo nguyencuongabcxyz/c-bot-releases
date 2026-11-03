@@ -1,0 +1,42 @@
+/* Bookmarked messages (chat/bookmarks/bookmarks.ts): the flag on a marked question or answer, its
+   hover button, the list dropped down from the title bar, and the flash on the one jumped to. */
+
+/* ------------------------------------------------------------- a bookmarked message */
+.msg.bookmarked::before {
+  content: ""; position: absolute; top: 6px; left: -9px; width: 4px; height: 16px; border-radius: 2px;
+  background: var(--warn); pointer-events: none;
+}
+.msg.user.bookmarked::before { left: -8px; }
+.msg.bookmarked > .msg-actions .mark-btn { color: var(--warn); }
+.msg.bookmarked > .msg-actions .mark-btn svg { fill: currentColor; }
+
+/* jumped to from the list: it lights up a moment */
+.msg.mark-flash { animation: mark-flash 1.6s ease-out; }
+@keyframes mark-flash {
+  0%, 30% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 45%, transparent); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+
+/* ------------------------------------------------------------- the list */
+#btn-marks.on { color: var(--warn); }
+#marks-pop {
+  position: absolute; z-index: 9; top: 46px; right: 10px; width: min(320px, calc(100% - 20px)); padding: 8px;
+  display: flex; flex-direction: column; gap: 4px; max-height: min(420px, calc(100% - 120px));
+  background: var(--panel-bg); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: var(--shadow-pop);
+  animation: pop-in 0.16s ease-out;
+}
+.mk-head { padding: 2px 6px 4px; font: 650 12px var(--font-display); color: var(--muted); }
+#mk-list { overflow-y: auto; display: flex; flex-direction: column; gap: 1px; min-height: 0; }
+.mk-item {
+  display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 0 6px;
+  padding: 6px 6px 6px 4px; border-radius: 8px; cursor: pointer; color: var(--panel-fg);
+}
+.mk-item:hover { background: var(--accent-soft); }
+.mk-who { display: grid; place-items: center; color: var(--muted); }
+.mk-text { min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-act {
+  width: 22px; height: 22px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer;
+  display: grid; place-items: center; padding: 0; visibility: hidden;
+}
+.mk-item:hover .mk-act, .mk-act:focus-visible { visibility: visible; }
+.mk-act:hover { background: var(--bg-2); color: var(--fg); }

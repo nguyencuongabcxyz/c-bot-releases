@@ -22,6 +22,7 @@ import '@/features/robots/stage/tile.css';
 import '@/features/robots/dock/dock.css';
 import '@/features/chat/share/share.css';
 import '@/features/chat/saved/saved.css';
+import '@/features/chat/bookmarks/bookmarks.css';
 import type { Settings } from '@/types/model';
 import * as ipc from '@/ipc';
 
@@ -69,6 +70,7 @@ import { lazy } from '@/lib/lazy';
 import { createPastChats, type PastChatsApi } from '@/features/chat/past/resume';
 import { createSavedChats, type SavedChatsApi } from '@/features/chat/saved/saved';
 import { createSidePanel, type SidePanelApi } from '@/features/chat/side/panel';
+import { type BookmarksApi, createBookmarks } from '@/features/chat/bookmarks/bookmarks';
 import { createShells, type ShellsApi } from '@/features/workbench/shell/drawer';
 import { createWindowLayout } from './layout';
 
@@ -277,6 +279,7 @@ tooltips($('#side-panel'));
       showContext: () => showContext,
       showPop: () => showPop,
       sides: () => sides,
+      marks: () => marks,
       sightWord: () => sightWord,
       sleep: () => sleep,
       smack: () => smack,
@@ -596,6 +599,7 @@ tooltips($('#side-panel'));
   // ------------------------------------------------------------ side questions (chat/side/threads.ts)
 
   const { sides }: SidePanelApi = createSidePanel(hub); // (chat/side/panel.ts)
+  const marks: BookmarksApi = createBookmarks(hub); // (chat/bookmarks/bookmarks.ts)
   // ------------------------------------------------------------ past conversations
 
   const { history, openHistory, resumed }: PastChatsApi = createPastChats(hub); // (chat/past/resume.ts)

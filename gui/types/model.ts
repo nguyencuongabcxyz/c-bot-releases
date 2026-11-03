@@ -173,7 +173,15 @@ export type Tokens = {
 };
 
 export type HistoryEntry =
-  | { role: 'user'; text: string; files?: FileChip[]; at: number; tag?: string; briefs?: Brief[] }
+  | {
+      role: 'user';
+      text: string;
+      files?: FileChip[];
+      at: number;
+      tag?: string;
+      briefs?: Brief[];
+      bookmarked?: boolean; // (chat/bookmarks)
+    }
   | {
       role: 'assistant';
       text: string;
@@ -189,6 +197,7 @@ export type HistoryEntry =
       tokens?: Tokens; // what it used (answers since this was kept)
       costUsd?: number;
       at: number;
+      bookmarked?: boolean; // (chat/bookmarks)
     }
   | { role: 'note'; text: string; at: number }
   | { role: 'qa'; items: QAItem[]; at?: number }

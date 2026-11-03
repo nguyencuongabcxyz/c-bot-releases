@@ -30,6 +30,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ipc::robot_tab_close,
         ipc::robot_tab_reopen,
         ipc::robot_tab_rename,
+        ipc::robot_bookmark,
         ipc::robot_tab_activate,
         ipc::robot_tab_move,
         ipc::robot_reset,

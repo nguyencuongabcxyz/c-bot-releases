@@ -149,6 +149,9 @@ export const robotSideCancel = (tabId: string, threadId: string) =>
   invoke<boolean>('robot_side_cancel', { tabId, threadId });
 export const robotSideRemove = (tabId: string, threadId: string) =>
   invoke<boolean>('robot_side_remove', { tabId, threadId });
+// (a question or answer bookmarked, or not: false, it isn't in the history any more)
+export const robotBookmark = (tabId: string, at: number, on: boolean) =>
+  invoke<boolean>('robot_bookmark', { mark: { tabId, at, on } });
 export const robotExpand = (expanded: boolean, opts?: { focus?: boolean; tucked?: boolean }) =>
   invoke<void>('robot_expand', { expanded, opts });
 export const robotPeek = (peek: boolean) => invoke<void>('robot_peek', { peek });

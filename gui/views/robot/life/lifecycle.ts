@@ -2,6 +2,7 @@
 // the screen's edge, and what it tells the island about itself.
 // (robot.ts calls createLifeCycle with its hub.)
 import type { ShellsApi } from '@/features/workbench/shell/drawer';
+import type { BookmarksApi } from '@/features/chat/bookmarks/bookmarks';
 import type { SidePanelApi } from '@/features/chat/side/panel';
 import { pick } from '@/lib/random';
 import type { CommentaryApi } from '@/features/chat/reply/commentary';
@@ -57,6 +58,7 @@ export type LifeCycleNeeds = {
   readonly scrollDown: ChatLogApi['scrollDown'];
   readonly setActivity: DeskActivityApi['setActivity'];
   readonly shell: ShellsApi['shell'];
+  readonly marks: BookmarksApi;
   readonly sides: SidePanelApi['sides'];
   readonly socialReport: OtherRobotsApi['socialReport'];
   readonly state: RobotState;
@@ -97,7 +99,8 @@ export function createLifeCycle(r: LifeCycleNeeds) {
     document.title = c.name;
   }
 
-  function renderHistory(tab: ChatTab = r.current()) {
+  // (from: a bookmark further back than it shows, jumped to: it shows from there on)
+  function renderHistory(tab: ChatTab = r.current(), from?: number) {
     tab.log.innerHTML = '';
     if (tab.data?.temporary)
       r.addNote(
@@ -105,28 +108,30 @@ export function createLifeCycle(r: LifeCycleNeeds) {
         'temp-note',
         tab,
       );
-    for (const h of (tab.data.history || []).slice(-30)) {
+    const all = tab.data.history || [];
+    const back = from == null ? -1 : all.findIndex((h) => h.at === from);
+    const start = Math.max(0, back < 0 ? all.length - 30 : Math.min(back, all.length - 30));
+    for (const h of all.slice(start)) {
       if (h.role === 'qa') r.addQaSummary(h.items, tab);
       else if (h.role === 'plan') tab.log.appendChild(planSummary(r.md, h));
       else if (h.role === 'note') r.addNote(h.text, '', tab);
-      else if (h.role === 'user') r.addUser(h.text, h.files, tab, h.tag, h.briefs);
-      else
-        r.sides.attach(
-          r.addBot(h.interrupted ? `${h.text || ''}\n\n_…(stopped)_` : h.text, {
-            error: h.isError,
-            denials: h.denials,
-            tools: h.tools,
-            asides: h.asides,
-            edits: h.edits,
-            apps: h.apps,
-            images: h.images,
-            tokens: h.tokens,
-            costUsd: h.costUsd,
-            tab,
-          }),
-          h.at,
+      else if (h.role === 'user') r.marks.attach(r.addUser(h.text, h.files, tab, h.tag, h.briefs), h.at, tab);
+      else {
+        const answer = r.addBot(h.interrupted ? `${h.text || ''}\n\n_…(stopped)_` : h.text, {
+          error: h.isError,
+          denials: h.denials,
+          tools: h.tools,
+          asides: h.asides,
+          edits: h.edits,
+          apps: h.apps,
+          images: h.images,
+          tokens: h.tokens,
+          costUsd: h.costUsd,
           tab,
-        );
+        });
+        r.sides.attach(answer, h.at, tab);
+        r.marks.attach(answer, h.at, tab);
+      }
     }
   }
 

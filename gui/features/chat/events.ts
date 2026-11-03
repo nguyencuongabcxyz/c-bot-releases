@@ -331,6 +331,7 @@ export function createChatEvents(r: ChatEventsNeeds) {
         r.rawText.set(done.el, done.asked ? done.text.slice(done.offset || 0) : done.text || ev.text);
         r.msgActions(done.el, 'bot', tab);
         r.sides.attach(done.el, ev.at, tab); // (side questions about it go under it)
+        r.marks.attach(done.el, ev.at, tab);
       }
       if (tab.vocabWord && !ev.isError) done.el.appendChild(r.saveWordChip(tab.vocabWord));
       tab.vocabWord = '';

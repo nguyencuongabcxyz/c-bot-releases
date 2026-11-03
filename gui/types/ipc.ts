@@ -40,7 +40,8 @@ export type RobotInit = {
   share: ShareView | null; // (part of a shared chat: features/share)
 };
 
-export type AskResult = OkOr<{ turnId: string; queued: boolean }>;
+// (at: a question's place in the history, for bookmarking it)
+export type AskResult = OkOr<{ turnId: string; queued: boolean; at?: number | null }>;
 
 /** What a robot hears about the stage (robots/stage/mod.rs): picked for it (its number), a message
  * sent to everyone on it, a tile being dragged over it to swap places. */

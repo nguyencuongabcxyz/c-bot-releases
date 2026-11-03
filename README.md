@@ -44,6 +44,7 @@ Click a robot to wake it and open its chat. Under the hood it *is* your own Clau
 - **Saved chats:** click the ☆ on a tab (or **Ctrl+S**, or `/save`) to keep its conversation for later, under a name and an emoji you choose. **🔖** in the header (**Ctrl+O**, or `/saved`) lists them: type to find one, and click it or press **Alt+1…9** to pick it up again where it left off. *Past chats* shows the saved ones first, with a ☆ on every row, and clearing the history leaves them alone.
 
   <img src="docs/screenshots/saved-chats.png" alt="The saved chats list, opened from the chat's header" width="440">
+- **Bookmarks:** hover a question or an answer and click the 🚩 to bookmark it; a flag marks it in the chat. Once a tab has some, **🚩** in the header lists them: click one to scroll straight back to it, even one from further back than the chat shows. They're kept with the conversation.
 - **Steps, folded:** what it did folds under one line (*"Read 2 files, ran 1 command · 4 steps"*) that says what it's on while it works. Open a step to see the command or file and what came back, and its thinking too.
 - **Files in place:** click any file in the chat to look at it right there: highlighted code, markdown, tables, pictures to zoom, PDFs, songs and videos. **Outputs** lists everything the conversation made or changed, with `+12 −3` per file; click a changed file to see its **Changes**, every diff in turn.
 - **Your way:** 🎤 to speak instead of typing (Windows voice typing), ✏️ to edit your last question (the robot really forgets the old one), 👁 temporary chats that keep nothing, and 🗑 in *Past chats* to delete old conversations: one, the ones you tick, or all of them.
@@ -230,6 +231,7 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
     features/         what the robots do for you: chat/ a robot's tabs (page.rs what its page
                       asks; side.rs side questions; brief.rs briefs from one tab for another;
                       tabs.rs what each tab is up to, for the others; saved.rs saved chats;
+                      bookmarks.rs bookmarked messages;
                       temporary.rs; awake.rs the PC kept awake for Remote Control) and
                       group/ the group chat and meeting room; vocab/ English words; notes/
                       notes and reminders; routines/ prompts a robot runs on a schedule
@@ -253,7 +255,8 @@ gui/                  the pages (TypeScript, built by Vite into dist/)
     …                 one folder per other window (island, stage, notebook, routines, words, quick, …)
   features/           what the robot window is built from (views/ shows, features/ handles)
     chat/             a robot's chat: the log, replies, the box you type in, plans, side
-                      questions, past chats, saved/ saved chats, share/ a shared chat
+                      questions, past chats, saved/ saved chats, bookmarks/ bookmarked
+                      messages, share/ a shared chat
     notes/  vocab/    what the robot does with your notes, and with English words
     routines/         what the robot does when one of your routines runs
     robots/           robots noticing and asking each other, the robot as a stage tile, and

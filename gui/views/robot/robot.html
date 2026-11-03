@@ -10,6 +10,7 @@
       <button id="btn-shell" type="button" title="Terminal (Ctrl+`)" data-icon="shell"></button>
       <button id="btn-remote" type="button" title="Remote control" data-icon="phone"></button>
       <button id="btn-share" type="button" title="Share" data-icon="link"></button>
+      <button id="btn-marks" type="button" title="Bookmarks" data-icon="flag" hidden></button>
       <button id="btn-saved" type="button" title="Saved chats (Ctrl+O)" data-icon="bookmark"></button>
       <button id="btn-history" type="button" title="Past chats" data-icon="history"></button>
       <button id="btn-context" type="button" title="Context optimizer" data-icon="map"></button>
@@ -44,6 +45,11 @@
       <button id="sc-unsave" type="button">Unsave</button>
       <button id="sc-done" type="button">Done</button>
     </div>
+  </div>
+  <!-- this tab's bookmarked messages (chat/bookmarks/): click one to go back to it -->
+  <div id="marks-pop" role="dialog" aria-label="Bookmarks" hidden>
+    <div class="mk-head">Bookmarks</div>
+    <div id="mk-list"></div>
   </div>
   <!-- a shared chat: who's watching, who's asking to join (chat/share/share.ts) -->
   <div id="share-strip" hidden></div>
