@@ -156,6 +156,7 @@ export type ChatTab = {
   outChars?: number; // (else estimated from what streamed in)
   sent?: string[]; // what you asked in it, for ↑ / ↓ in the composer
   rewinding?: boolean; // (its last question is being taken back, to edit or ask again)
+  wiping?: boolean; // (it asked to start over: cleared when main's list says it's empty)
 };
 
 /** What the robot's up to: its window's state. */

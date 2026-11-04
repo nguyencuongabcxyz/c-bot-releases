@@ -68,6 +68,7 @@ export type QuickActionsNeeds = {
   readonly READ_AT_LEAST: VocabApi['READ_AT_LEAST'];
   readonly readDeskPlane: OtherRobotsApi['readDeskPlane'];
   readonly renderWorking: LifeCycleApi['renderWorking'];
+  readonly resetTab: TabsApi['resetTab'];
   readonly robot: HTMLElement;
   readonly sayWord: VocabApi['sayWord'];
   readonly setSight: VocabApi['setSight'];
@@ -425,7 +426,7 @@ export function createQuickActions(rw: QuickActionsNeeds) {
       rw.collapse(); // (off the stage: back at its desk, still at work) // (main groupChat.js: the chat stays put away)
     else if (action === 'meeting') rw.toMeeting();
     else if (action === 'meeting-end') rw.fromMeeting();
-    else if (action === 'reset') ipc.robotReset(rw.activeId ?? undefined);
+    else if (action === 'reset') rw.resetTab(rw.activeId);
     else if (action === 'terminal') rw.openTerminal();
     else if (action === 'handoff') rw.goneWalking();
     else if (action === 'dock' || String(action).startsWith('dock:')) {

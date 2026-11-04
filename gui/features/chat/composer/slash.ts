@@ -37,6 +37,7 @@ export type SlashNeeds = {
   readonly openSaved: SavedChatsApi['openSaved'];
   readonly pickEffort: BrainApi['pickEffort'];
   readonly pickModel: BrainApi['pickModel'];
+  readonly resetTab: TabsApi['resetTab'];
   readonly remoteNote: RemoteControlApi['remoteNote'];
   readonly setBrain: BrainApi['setBrain'];
   readonly showContext: BrainApi['showContext'];
@@ -119,7 +120,7 @@ export function createSlash(r: SlashNeeds) {
         return true;
       case 'clear':
       case 'reset':
-        ipc.robotReset(r.activeId ?? undefined);
+        r.resetTab(r.activeId);
         return true;
       case 'close':
         if (r.activeId !== null) r.closeTab(r.activeId); // (none: nothing to close)

@@ -247,6 +247,7 @@ tooltips($('#side-panel'));
       renderPose: () => renderPose,
       renderRemote: () => renderRemote,
       renderScreenAsks: () => renderScreenAsks,
+      resetTab: () => resetTab,
       routineAnswer: () => routineAnswer,
       renderStepDetail: () => renderStepDetail,
       renderTabs: () => renderTabs,
@@ -584,7 +585,7 @@ tooltips($('#side-panel'));
   createContextEngine(hub); // (chat/context/engine.ts)
 
   // tabs
-  const { activateTab, closeTab, newTab, renderTabs, syncTabs }: TabsApi = createTabs(hub); // (chat/tabs.ts)
+  const { activateTab, closeTab, newTab, renderTabs, resetTab, syncTabs }: TabsApi = createTabs(hub); // (chat/tabs.ts)
 
   // slash commands
   const slashPart: SlashApi = createSlash(hub); // (chat/composer/slash.ts)

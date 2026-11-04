@@ -115,12 +115,21 @@ export function createTabs(r: TabsNeeds) {
       } else {
         const hadHistory = tab.data.history.length;
         tab.data = t;
-        if (!tab.busy && key !== tab.key) {
-          if (!t.history.length && hadHistory && !tab.rewinding) {
+        // (started over: the history it shows is gone. Asked from here (wiping), it clears even
+        // when nothing else looks changed, as a second /clear in a row: no session, no history)
+        const wiped = !!tab.wiping && !t.history.length;
+        if (wiped || (!tab.busy && key !== tab.key)) {
+          if (!t.history.length && (hadHistory || wiped) && !tab.rewinding) {
             tab.log.innerHTML = '';
             r.addNote('✨ Fresh start! My memory is squeaky clean.', '', tab);
             if (tab.id === r.activeId) r.flash('spin', 850);
           } else r.renderHistory(tab);
+        }
+        if (wiped) {
+          tab.wiping = false;
+          // (an answer it was writing stopped with its conversation, and what was asked next went too)
+          Object.assign(tab, { current: null, question: null, queue: [] });
+          if (tab.busy) r.setBusy(tab, false);
         }
       }
       tab.key = key;
@@ -462,6 +471,15 @@ export function createTabs(r: TabsNeeds) {
     else return;
     e.preventDefault();
   });
-  return { activateTab, closeTab, newTab, renderTabs, syncTabs };
+  // start this tab over (/clear, the ↺ button, the robot's menu): main forgets its conversation,
+  // and the list it sends back clears it here
+  function resetTab(id: string | null) {
+    const tab = id === null ? undefined : r.tabs.get(id);
+    if (tab) tab.wiping = true;
+    if (tab?.busy) ipc.robotCancel(tab.id); // (its answer stops first, as Esc stops it)
+    ipc.robotReset(id ?? undefined);
+  }
+
+  return { activateTab, closeTab, newTab, renderTabs, resetTab, syncTabs };
 }
 export type TabsApi = ReturnType<typeof createTabs>;

@@ -13,6 +13,7 @@ import type { AttachmentsApi } from './attachments';
 import type { SlashApi } from './slash';
 import type { MentionsApi } from './mentions';
 import type { AskingApi } from '../reply/ask';
+import type { TabsApi } from '../tabs/tabs';
 import type { ChatTab, RobotState } from '@/views/robot/types';
 import { TRANSFORMS, codeBlock, link, prefixLines, transform, wrap } from './format';
 import * as ipc from '@/ipc';
@@ -45,6 +46,7 @@ export type ComposerNeeds = {
   readonly peek: LifeCycleApi['peek'];
   readonly renderAttachments: AttachmentsApi['renderAttachments'];
   readonly renderHistory: LifeCycleApi['renderHistory'];
+  readonly resetTab: TabsApi['resetTab'];
   readonly showPop: DeskActivityApi['showPop'];
   readonly sides: SidePanelApi['sides'];
   readonly sleep: LifeCycleApi['sleep'];
@@ -401,7 +403,7 @@ export function createComposer(r: ComposerNeeds) {
   // off to the robot island (with the island turned off: just to sleep; Esc still sleeps)
   $('#btn-island').addEventListener('click', () => (r.islandOn ? r.peek() : r.sleep()));
   $('#btn-collapse').addEventListener('click', () => r.collapse());
-  $('#btn-reset').addEventListener('click', () => ipc.robotReset(r.activeId ?? undefined));
+  $('#btn-reset').addEventListener('click', () => r.resetTab(r.activeId));
   $('#folder').addEventListener('click', () => ipc.robotOpenFolder());
   return {
     autosize,
