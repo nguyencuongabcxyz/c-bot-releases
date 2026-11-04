@@ -130,10 +130,11 @@ pub fn set_visible(app: &AppHandle, id: &str, visible: bool) {
     });
     let Some(index) = index else { return }; // (no such robot)
     if visible {
-        // (put away, its window was closed: it opens again; already out, nothing to do)
+        // (put away, its window was closed: it opens again; already out, it comes to the front)
         if let Err(err) = robots::open(app, id, index) {
             log::warn!("couldn't open {id}: {err}");
         }
+        robots::raise(app, id);
     } else {
         close_robot_window(app, id);
     }

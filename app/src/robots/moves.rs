@@ -17,6 +17,9 @@ pub fn expand(app: &AppHandle, id: &str, expanded: bool, opts: &Value) {
         return stage::leave(app, id); // (gone to sleep on the stage: off it, back to its desk)
     }
     apply_layout(app, id);
+    if expanded {
+        raise(app, id); // (woken, its chat open: in front, whatever opened over it meanwhile)
+    }
     if expanded
         && focus
         && let Some(w) = app.get_webview_window(&label_of(id))
@@ -39,7 +42,20 @@ pub fn set_peek(app: &AppHandle, id: &str, peek: bool) {
             stage::leave(app, id); // (sent away from the stage: off it first)
         }
         apply_layout(app, id);
+        if !peek {
+            raise(app, id); // (back at its desk: in front)
+        }
         island::changed(app);
+    }
+}
+
+/// In front of every other window, the other always-on-top ones too, without taking the focus
+/// from the app you're in. For a robot brought out: "always on top" alone keeps it above
+/// ordinary windows, but one opened since (another always-on-top app's, a full-screen one)
+/// can still be over it.
+pub fn raise(app: &AppHandle, id: &str) {
+    if let Some(hwnd) = with(app, |st| st.robots.get(id).map(|r| r.hwnd)) {
+        window::set_topmost(hwnd);
     }
 }
 
