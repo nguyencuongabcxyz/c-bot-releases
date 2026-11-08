@@ -157,6 +157,10 @@ export type ChatTab = {
   sent?: string[]; // what you asked in it, for ↑ / ↓ in the composer
   rewinding?: boolean; // (its last question is being taken back, to edit or ask again)
   wiping?: boolean; // (it asked to start over: cleared when main's list says it's empty)
+  /** What the helper panel showed for it when you went to another tab (shown again when you
+   *  come back): a helper, a tool step, or a file (or Outputs, or a part's page), with its
+   *  Back trail and how far down it was. */
+  panelShown?: { id: string | null; call: ToolCall | null; file: string | null; trail: string[]; scroll: number };
 };
 
 /** What the robot's up to: its window's state. */

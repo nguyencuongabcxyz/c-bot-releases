@@ -279,6 +279,7 @@ tooltips($('#side-panel'));
       showAside: () => showAside,
       showContext: () => showContext,
       showPop: () => showPop,
+      showTabPanel: () => showTabPanel,
       sides: () => sides,
       marks: () => marks,
       sightWord: () => sightWord,
@@ -559,6 +560,7 @@ tooltips($('#side-panel'));
     openToolView,
     renderHelpers,
     renderToolView,
+    showTabPanel,
   }: HelpersApi = createHelpers(hub); // (chat/agents.ts)
 
   // brain: model, effort, memory

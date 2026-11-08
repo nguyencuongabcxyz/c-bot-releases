@@ -562,6 +562,62 @@ export function createHelpers(r: HelpersNeeds) {
     bodyEl.scrollTop = 0;
   }
 
+  // ---------------------------------------------------------------- kept with its tab
+
+  /** Switching tabs: what the panel shows stays with the tab it was opened from, shown again
+   *  when you come back to it (where you were in it, and its Back trail); the tab you go to
+   *  shows its own, or none. */
+  function showTabPanel(prev: ChatTab | undefined, next: ChatTab) {
+    const open = !!(helperView.id || helperView.call || helperView.file);
+    if (prev && prev !== next) {
+      const { id, call, file, trail } = helperView;
+      prev.panelShown =
+        open && helperView.tab === prev
+          ? { id, call, file, trail: [...trail], scroll: scroller().scrollTop }
+          : undefined;
+    }
+    if (open && helperView.tab === next) return; // (it's this tab's already)
+    const shown = next.panelShown;
+    next.panelShown = undefined;
+    if (shown) reopen(next, shown);
+    else if (open) closeHelper();
+  }
+
+  // (what scrolls in the panel: a file's own body, else the panel's)
+  const scroller = () => $('#hv-body').querySelector<HTMLElement>('.fv-body') ?? $('#hv-body');
+
+  function reopen(tab: ChatTab, shown: NonNullable<ChatTab['panelShown']>) {
+    const back = () => {
+      helperView.trail = shown.trail;
+      scroller().scrollTop = shown.scroll;
+    };
+    if (shown.id) {
+      if (!tab.agents?.has(shown.id)) return closeHelper();
+      openHelper(tab, shown.id);
+      return back();
+    }
+    if (shown.call) {
+      openToolView(tab, shown.call);
+      return back();
+    }
+    if (shown.file === OUTPUTS_VIEW) {
+      openOutputsView({ back: true });
+      return back();
+    }
+    if (shown.file === PANEL_VIEW) {
+      if (!panel) return closeHelper();
+      openPanel(panel.icon, panel.title, panel.fill);
+      return back();
+    }
+    if (!shown.file) return closeHelper();
+    const file = shown.file;
+    // (read again: it may have changed meanwhile; its place once it's drawn)
+    openFileView(file, { back: true }).then(() => {
+      if (helperView.file === file && helperView.tab === tab) back();
+    });
+    helperView.trail = shown.trail;
+  }
+
   function renderHelperView(top = false) {
     const a = viewedHelper();
     if (!a) return closeHelper();
@@ -631,6 +687,7 @@ export function createHelpers(r: HelpersNeeds) {
     openToolView,
     renderHelpers,
     renderToolView,
+    showTabPanel,
   };
 }
 export type HelpersApi = ReturnType<typeof createHelpers>;

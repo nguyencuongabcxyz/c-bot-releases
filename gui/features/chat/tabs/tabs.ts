@@ -36,11 +36,10 @@ export type TabsNeeds = {
   readonly autosize: ComposerApi['autosize'];
   readonly backToPlace: ChatLogApi['backToPlace'];
   readonly cancelEdit: ComposerApi['cancelEdit'];
-  readonly closeHelper: HelpersApi['closeHelper'];
   readonly deskState: OfficeData;
   readonly flash: FaceApi['flash'];
   readonly helpersOut: DeskActivityApi['helpersOut'];
-  readonly helperView: HelpersApi['helperView'];
+  readonly showTabPanel: HelpersApi['showTabPanel'];
   readonly hidePalette: SlashApi['hidePalette'];
   readonly input: HTMLTextAreaElement;
   readonly isSaved: SavedChatsApi['isSaved'];
@@ -178,7 +177,7 @@ export function createTabs(r: TabsNeeds) {
     renderTabs();
     r.renderTodo();
     r.renderHelpers();
-    if ((r.helperView.id || r.helperView.call || r.helperView.file) && r.helperView.tab !== next) r.closeHelper();
+    r.showTabPanel(prev, next); // (what its helper panel showed, if anything: shown again)
     r.renderBrain();
     r.loadBrain(next);
     r.backToPlace(next);
