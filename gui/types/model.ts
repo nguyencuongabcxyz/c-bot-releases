@@ -544,6 +544,13 @@ export type RobotView = Omit<Character, 'tabs' | 'closedTabs'> & {
   terminalTab: string | null;
 };
 
+/** A RobotView as main sends it (app/src/robots/opening.rs view): a tab's conversation only
+ * when the page doesn't have it as it is now, as they can run to MBs. The robot's page keeps
+ * the rest (chat/tabs/tabs.ts withHistories); the Workshop is sent none. */
+export type RobotSent = Omit<RobotView, 'tabs'> & {
+  tabs: (Omit<RobotView['tabs'][number], 'history'> & { history?: HistoryEntry[] })[];
+};
+
 // ---------------------------------------------------------------- the robot window
 
 /** Where things go in the robot's window (main.js layoutFor), in CSS px. */

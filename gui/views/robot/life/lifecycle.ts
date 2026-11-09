@@ -19,7 +19,7 @@ import { planSummary } from '@/features/chat/plan/modes';
 import { Sfx } from '../sound';
 import type { ChatTab, RobotState } from '../types';
 import * as ipc from '@/ipc';
-import { $ } from '@/lib/dom';
+import { $, setRootVar } from '@/lib/dom';
 import type { Office3DView } from '@/office3d';
 import { writeJson, type OfficeData } from '@/office3d/protocol';
 import type { IslandNews, IslandReport } from '@/types/ipc';
@@ -76,7 +76,7 @@ export function createLifeCycle(r: LifeCycleNeeds) {
       r.chatSizePart.chatH = c.chatHeight ?? null; // (how tall you made its chat)
       if (r.body.classList.contains('expanded')) r.placePanel();
     }
-    document.documentElement.style.setProperty('--paint', c.color || '#5ac8fa');
+    setRootVar('--paint', c.color || '#5ac8fa');
     const face = $('#stage-face');
     if (!face.firstChild) face.innerHTML = headSvg();
     face.style.color = c.color || '#5ac8fa';
@@ -89,7 +89,7 @@ export function createLifeCycle(r: LifeCycleNeeds) {
     r.deskState.acc = c.accessory || 'none';
     // its size: the robot box scales as one, the 3D view renders sharp at that size
     const k = ({ small: 0.7, large: 1.35, huge: 1.7 } as Partial<Record<RobotSize, number>>)[c.size ?? 'normal'] || 1;
-    document.documentElement.style.setProperty('--s', String(k));
+    setRootVar('--s', String(k));
     r.state.scale = k;
     r.office.setScale(k);
     r.deskState.body = 'kit';

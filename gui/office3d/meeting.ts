@@ -2,7 +2,7 @@ import { ease, mix, smooth, wrap } from '@/office3d/core/math';
 import { mesh } from '@/office3d/core/mesh';
 import { ROBOT_SCALE } from '@/office3d/core/constants';
 import * as THREE from 'three';
-import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
+import { OutlineEffect } from './outline';
 import { POSES } from './robot3d';
 import { buildKit } from './kit3d';
 import { toon, glow, noOutline, canvasTexture, roundRect } from './materials';

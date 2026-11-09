@@ -4,7 +4,7 @@
 //   stateEl.dataset  OfficeData below (all strings; '1' for on)
 //   stateEl classes  one-shot reactions: REACTIONS, plus blink and blush (FLASHES)
 //   moodEl classes   Mood: awake / asleep / thinking / talking / dragging / typing
-//   CSS variables    --paint on stateEl; --look-x, --look-y, --swing on the page's root (CSS_VARS)
+//   CSS variables    --paint inline on stateEl or a parent; --look-x, --look-y, --swing on the page's root (CSS_VARS)
 // Out for a walk, mount(..., { solo: true }) draws the character alone (walker3d.ts): it reads
 // the same, plus gait, heading and speed.
 import type { Kit } from '@/types/model';

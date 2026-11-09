@@ -37,6 +37,7 @@ import { $ } from '@/lib/dom';
 import type { OfficeData } from '@/office3d/protocol';
 import type { Personality } from '@/types/model';
 import { Icon } from '@/icons/icons';
+import { forgetDoneCalls, trimLog } from '../trim';
 
 /** What it uses of the robot window (robot.ts's hub). */
 export type AskingNeeds = {
@@ -295,6 +296,10 @@ export function createAsking(r: AskingNeeds) {
 
   // an empty bot bubble that the next streamed reply fills in
   function startReply(tab: ChatTab): asserts tab is ChatTab & { current: Reply } {
+    // (a new answer: the oldest off the page, and the steps that are over forgotten, so a long
+    // session's page stays as light as a short one's)
+    trimLog(tab.log);
+    forgetDoneCalls(tab.calls);
     const el = document.createElement('div');
     el.className = 'msg bot enter';
     tab.log.appendChild(el);

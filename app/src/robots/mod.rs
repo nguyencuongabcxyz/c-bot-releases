@@ -30,6 +30,7 @@ pub use layout::*;
 pub use moves::*;
 pub use opening::*;
 
+use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::time::Duration;
 
@@ -113,6 +114,7 @@ pub struct Robot {
     dock: Option<docking::Docked>, // docked at the screen's edge while its chat is open (docking/)
     dock_drag: Option<docking::GapDrag>,
     kept: Option<docking::Kept>, // the strip of its screen its window keeps for its stack
+    sent: HashMap<String, u64>, // its tabs' conversations, as its page has them (store history_rev)
 }
 
 /// A robot's tile on the stage: its window (physical px), and what the page needs to know

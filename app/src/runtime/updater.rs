@@ -14,7 +14,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::features::chat;
-use crate::runtime::{Error, part_if, with};
+use crate::runtime::{Error, part_if};
 use crate::ui::tray;
 
 const CHECK_EVERY: Duration = Duration::from_secs(4 * 60 * 60);
@@ -135,7 +135,7 @@ fn install(app: &AppHandle, restart: bool) {
         return;
     };
     chat::close_all(app);
-    with(app, |st| st.store.flush());
+    super::setup::save(app, true);
     // (on success this doesn't come back: the installer takes over)
     if let Err(err) = update.restart_after_install(restart).install(&bytes) {
         log::warn!("couldn't install: {err}");

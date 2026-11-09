@@ -216,7 +216,8 @@ app/                  the main process (Rust; tauri.conf.json, icons, Cargo.toml
     runtime/          the app's own life: the state (with()), setup and shutdown, every command
                       the pages can call (commands.rs), the cbot-file / cbot-app schemes,
                       hub.rs the hotkeys, updater.rs auto-updates
-    store/            saving in %APPDATA%\com.cbot.desktop (c-bot.json, and saved.rs for the rest)
+    store/            saving in %APPDATA%\com.cbot.desktop (c-bot.json; histories.rs each chat's
+                      conversation in histories/, saved only when it changed; saved.rs the rest)
     agents/           the coding agents that do the work, and the robots' personalities;
       claude/         Claude Code: session.rs runs it, stream.rs reads its stream, steps.rs
                       describes its steps; locate.rs finds it; transcripts.rs past conversations

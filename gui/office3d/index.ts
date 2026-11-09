@@ -1,8 +1,8 @@
 import { ease, mix } from '@/office3d/core/math';
-import { isMesh } from '@/office3d/core/mesh';
+import { disposeTree, isMesh } from '@/office3d/core/mesh';
 import { ROBOT_SCALE } from '@/office3d/core/constants';
 import * as THREE from 'three';
-import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
+import { OutlineEffect } from './outline';
 import { buildOffice, LAYOUT } from './scene';
 import { themeOf } from './themes';
 import { POSES } from './robot3d';
@@ -57,6 +57,8 @@ export type Office3DView = {
 type Mapped = THREE.Material & { map?: THREE.Texture | null };
 
 const NIGHT_GLOW = new THREE.Color('#7fb2ff');
+const WHITE = new THREE.Color('#ffffff');
+const THINKING_CHEST = new THREE.Color('#4de1ff');
 const MOVING_MOUTHS = new Set(['talk', 'wide', 'chomp']); // mouths that move by themselves (face.js, kitface.js)
 
 // (Some parts are only at the desk (set, antics, bed, the toys) and the walker only out walking
@@ -156,12 +158,13 @@ function mount(
       set.swivel.rotation.y = old.swivel.rotation.y;
       robot.setTheme?.(theme);
     }
+    disposeTree(old.office); // (the robot off it first: it stays)
   }
   let robot!: Rig; // (seated just below, before anything else reads it)
   let body!: string;
   // the robot, built from its parts (kit3d.js); key: what it's built from, so a change rebuilds it
   function seat(kind: string, build: (o: { color: string; name: string }) => Rig) {
-    if (robot) robot.root.removeFromParent(); // off the chair, or off the floor if it was asleep there
+    if (robot) disposeTree(robot.root); // off the chair, or off the floor if it was asleep there
     body = kind;
     robot = build({ color: paint || '#5ac8fa', name: name || '' });
     robot.root.position.set(0, 0.09, 0.04);
@@ -246,6 +249,15 @@ function mount(
   const clock0 = performance.now();
 
   const cssNum = (name: string) => parseFloat(document.documentElement.style.getPropertyValue(name)) || 0;
+  // --paint as the page set it, on stateEl or round it (protocol.ts). Read off the inline styles:
+  // a computed style makes the browser restyle the whole page first, a long chat and all.
+  const paintOf = () => {
+    for (let e: HTMLElement | null = stateEl; e; e = e.parentElement) {
+      const v = e.style.getPropertyValue(CSS_VARS.paint).trim();
+      if (v) return v;
+    }
+    return '';
+  };
 
   const bonkParts = toy ? { toy, camera, emit, worldPoint, react } : null;
   const playFrame = charger ? createPlay({ world, charger, emit, worldPoint, camYaw, react, cssNum }) : null;
@@ -254,6 +266,9 @@ function mount(
   // what frame() remembers between frames: how many it drew, whether it was out and since when;
   // and whether soloFrame() has set its lights yet
   let framesDrawn = 0;
+  // (reused every frame rather than made anew: no garbage for the collector at 30 frames a second)
+  const mugOffset = new THREE.Vector3();
+  const lightTmp = new THREE.Color();
   let wasGone: boolean | undefined;
   let goneAt = 0;
   let soloLit = false;
@@ -314,7 +329,7 @@ function mount(
     // (every frame at first, so a walker taking over from the desk is never the default colour)
     const n = ++framesDrawn;
     if (n < 30 || n % 15 === 1) {
-      const p = getComputedStyle(stateEl).getPropertyValue(CSS_VARS.paint).trim() || '#5ac8fa';
+      const p = paintOf() || '#5ac8fa';
       if (p !== paint || d.name !== name) {
         paint = p;
         name = d.name;
@@ -326,6 +341,7 @@ function mount(
             Array.isArray(o.material) &&
             o.material[4]?.map
           ) {
+            if (o.material[4].map !== b.tex) o.material[4].map.dispose(); // (the old badge's picture)
             o.material[4].map = b.tex;
             o.material[4].needsUpdate = true;
           }
@@ -415,7 +431,7 @@ function mount(
       tip: 0,
       rootY: 0,
       rootZ: 0,
-      mug: new THREE.Vector3(),
+      mug: mugOffset.set(0, 0, 0), // (the antics nudge it each frame)
       mugTilt: 0,
       lamp: 1,
       screen: null,
@@ -534,17 +550,17 @@ function mount(
 
     // ---- antenna + chest light
     const lightCol = thinking
-      ? new THREE.Color().setHSL((t * 0.8) % 1, 0.85, 0.62)
-      : new THREE.Color(awake || working ? robot.light || theme.robot?.light || '#ff5e62' : '#8a90a6'); // (robot.light: the lights colour of a robot you built)
+      ? lightTmp.setHSL((t * 0.8) % 1, 0.85, 0.62)
+      : lightTmp.set(awake || working ? robot.light || theme.robot?.light || '#ff5e62' : '#8a90a6'); // (robot.light: the lights colour of a robot you built)
     robot.antennaBall.color.copy(lightCol);
-    robot.chest.material.color.copy(thinking ? new THREE.Color('#4de1ff') : lightCol);
+    robot.chest.material.color.copy(thinking ? THINKING_CHEST : lightCol);
 
     // ---- lighting: bright while awake, dimmed and bluish while asleep
     lights = mix(lights, awake || working ? 1 : 0, ease(dt, 3));
     // up past 10 pm: the room goes dim and the monitor's glow lights its face
     night = mix(night, d.lateNight === '1' && awake ? 1 : 0, ease(dt, 2));
     hemi.intensity = mix(0.5, 1.2, lights) * (1 - 0.45 * night);
-    hemi.color.set('#9fb0ff').lerp(new THREE.Color('#ffffff'), lights * (1 - 0.6 * night));
+    hemi.color.set('#9fb0ff').lerp(WHITE, lights * (1 - 0.6 * night));
     sun.intensity = mix(0.3, 1.3, lights) * (1 - 0.6 * night);
     if (night > 0.01) set.screen.light.color.lerp(NIGHT_GLOW, night);
     set.lamp.light.intensity = mix(0, 1.2, lights) * A.lamp;
@@ -624,7 +640,7 @@ function mount(
     }
     lights = mix(lights, 1, ease(dt, 0.9));
     hemi.intensity = mix(0.5, 1.2, lights);
-    hemi.color.set('#9fb0ff').lerp(new THREE.Color('#ffffff'), lights);
+    hemi.color.set('#9fb0ff').lerp(WHITE, lights);
     sun.intensity = mix(0.3, 1.3, lights);
     particles.tick(dt);
     effect.render(scene, camera);
@@ -642,8 +658,12 @@ function mount(
   });
   return {
     // draw at k times the resolution, for a robot box scaled up by k
+    // (the page asks again with every change to its robot: the canvas is only made anew when
+    // the resolution really changes)
     setScale(k) {
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * Math.max(1, k));
+      const ratio = Math.min(window.devicePixelRatio || 1, 2) * Math.max(1, k);
+      if (ratio === renderer.getPixelRatio()) return;
+      renderer.setPixelRatio(ratio);
       renderer.setSize(width, height);
     },
     resize(w, h) {

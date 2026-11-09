@@ -25,3 +25,10 @@ export function iconButton(cls: string, title: string, icon: string, label = '')
   if (label) b.append(label);
   return b;
 }
+
+/** Set a CSS variable on the page's root, only when it changes: each write makes the browser
+ *  restyle the whole page (a long chat and all), and the mouse sets some many times a second. */
+export function setRootVar(name: string, value: string) {
+  const root = document.documentElement.style;
+  if (root.getPropertyValue(name) !== value) root.setProperty(name, value);
+}

@@ -10,6 +10,7 @@ import { officeData } from '@/office3d/protocol';
 import { Icon } from '@/icons/icons';
 import { Sfx } from './sound';
 import { tooltips } from '@/features/chat/tips';
+import { withHistories } from '@/features/chat/tabs/histories';
 import { showView } from '@/lib/page';
 import markup from './robot.html?raw';
 import '@/theme/theme.css';
@@ -662,7 +663,9 @@ tooltips($('#side-panel'));
 
   ipc.on('robot:event', onEvent);
 
-  ipc.on('robot:character', (c) => {
+  ipc.on('robot:character', (sent) => {
+    // (a tab's conversation comes only when it changed: the others are as this page has them)
+    const c = withHistories(sent, (id) => tabs.get(id)?.data?.history);
     applyCharacter(c);
     syncTabs(c);
   });

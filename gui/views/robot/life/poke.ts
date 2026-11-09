@@ -4,7 +4,7 @@
 import { pick } from '@/lib/random';
 import { clamp } from '@/lib/math';
 import { onDrag } from '@/lib/drag';
-import { $ } from '@/lib/dom';
+import { $, setRootVar } from '@/lib/dom';
 import type { BonkApi } from './bonk';
 import type { DeskActivityApi } from './desk';
 import type { IdleAnticsApi } from './antics';
@@ -101,14 +101,14 @@ export function createPoking(r: PokingNeeds) {
             dir = way;
           }
           [lastX, lastT] = [ev.screenX, now];
-          document.documentElement.style.setProperty('--swing', `${clamp(-vx * 18, -28, 28).toFixed(1)}deg`);
+          setRootVar('--swing', `${clamp(-vx * 18, -28, 28).toFixed(1)}deg`);
           ipc.robotDrag({ phase: 'move', dx, dy });
         },
         end: ({ moved, letGo, e: ev }) => {
           held = false;
           ipc.robotDrag({ phase: 'end' });
           r.body.classList.remove('dragging');
-          document.documentElement.style.setProperty('--swing', '0deg');
+          setRootVar('--swing', '0deg');
           r.state.lastActivity = Date.now();
           if (!moved) {
             if (letGo) clicked(ev);

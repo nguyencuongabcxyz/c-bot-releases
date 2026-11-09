@@ -6,6 +6,7 @@ import type { IdleAnticsApi } from './antics';
 import type { PlansApi } from '@/features/chat/plan/card';
 import type { ChatTab, RobotState } from '../types';
 import type { OfficeData } from '@/office3d/protocol';
+import { setRootVar } from '@/lib/dom';
 
 /** What it uses of the robot window (robot.ts's hub). */
 export type DeskActivityNeeds = {
@@ -83,10 +84,9 @@ export function createDeskActivity(r: DeskActivityNeeds) {
     const reach = clamp(dist / 120, 0, 1);
     const lx = (dx / dist) * 6 * reach;
     const ly = (dy / dist) * 4 * reach;
-    const root = document.documentElement.style;
-    root.setProperty('--look-x', `${lx.toFixed(2)}px`);
-    root.setProperty('--look-y', `${ly.toFixed(2)}px`);
-    root.setProperty('--tilt', `${(follow && r.state.awake ? lx * 0.8 : 0).toFixed(2)}deg`);
+    setRootVar('--look-x', `${lx.toFixed(2)}px`);
+    setRootVar('--look-y', `${ly.toFixed(2)}px`);
+    setRootVar('--tilt', `${(follow && r.state.awake ? lx * 0.8 : 0).toFixed(2)}deg`);
   }
 
   function lookAt(dx: number, dy: number, ms: number) {

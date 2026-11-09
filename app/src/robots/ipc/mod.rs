@@ -37,7 +37,7 @@ pub fn robot_init(app: AppHandle, window: WebviewWindow) -> Answer {
     shell::close(&app, &id); // (a page loaded afresh has no drawer showing the old one)
     let (character, settings) = with(&app, |st| {
         (
-            st.store.get(&id).map(|c| robots::view(st, c)),
+            robots::view(st, &id, robots::Histories::All),
             st.store.settings().clone(),
         )
     });

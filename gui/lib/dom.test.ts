@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { $, el, iconButton } from './dom';
+import { $, el, iconButton, setRootVar } from './dom';
 
 beforeEach(() => {
   document.body.innerHTML = '<div id="box"><p class="line">hi</p></div>';
@@ -38,5 +38,22 @@ describe('iconButton', () => {
     expect(b.className).toBe('mini');
     expect(b.querySelector('svg')).not.toBeNull();
     expect(b.textContent).toBe('Copy');
+  });
+});
+
+describe('setRootVar', () => {
+  test('sets a variable on the root', () => {
+    setRootVar('--x', '2px');
+    expect(document.documentElement.style.getPropertyValue('--x')).toBe('2px');
+  });
+
+  test('leaves the style alone when the value is the same', () => {
+    setRootVar('--y', '1');
+    const seen: MutationRecord[] = [];
+    const watch = new MutationObserver((m) => seen.push(...m));
+    watch.observe(document.documentElement, { attributes: true });
+    setRootVar('--y', '1');
+    expect([...seen, ...watch.takeRecords()]).toHaveLength(0);
+    watch.disconnect();
   });
 });

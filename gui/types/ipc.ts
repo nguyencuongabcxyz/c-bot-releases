@@ -14,6 +14,7 @@ import type {
   Personality,
   Point,
   RobotEvent,
+  RobotSent,
   RobotView,
   RoutineEvent,
   Settings,
@@ -110,7 +111,7 @@ export interface Events {
   'robot:layout': Layout;
   'robot:cursor': Point;
   'robot:event': RobotEvent;
-  'robot:character': RobotView;
+  'robot:character': RobotSent;
   'robot:settings': Settings;
   'robot:action': string;
   'robot:stage': StageEvent;

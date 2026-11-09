@@ -134,9 +134,16 @@ export const ShellDrawer = ({
       selectionBackground: 'rgba(255, 255, 255, 0.25)',
     };
   }
-  // (another theme, or the robot repainted: their colours follow)
+  // (another theme, or the robot repainted: their colours follow. The root's style changes
+  // many times a second too, the eyes following the mouse: only a new theme or paint counts)
+  let themed = '';
   new MutationObserver(() => {
-    for (const t of tabs) t.term.options.theme = theme();
+    const root = document.documentElement;
+    const now = `${root.dataset.theme}|${root.dataset.mode}|${root.style.getPropertyValue('--paint')}`;
+    if (now === themed || !tabs.length) return;
+    themed = now;
+    const colours = theme();
+    for (const t of tabs) t.term.options.theme = colours;
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-mode', 'style'] });
 
   // ---- what you type goes over in order, a batch at a time

@@ -133,12 +133,13 @@ pub fn resume(app: &AppHandle, id: &str, tab_id: &str, session_id: &str) -> Valu
             ("title", session["title"].clone()),
         ]);
         let target = if reuse {
-            let t = st.store.update_tab(id, tab_id, fields);
-            st.store
-                .update(id, patch(vec![("activeTab", json!(tab_id))]));
-            t
+            st.store.update_tab(id, tab_id, fields).map(|()| {
+                st.store
+                    .update(id, patch(vec![("activeTab", json!(tab_id))]));
+                tab_id.to_string()
+            })
         } else {
-            st.store.add_tab(id, fields)
+            st.store.add_tab(id, fields).map(|t| t.id().to_string())
         };
         if target.is_some() {
             st.store.remember_session(id, session_id);
@@ -149,5 +150,5 @@ pub fn resume(app: &AppHandle, id: &str, tab_id: &str, session_id: &str) -> Valu
         return json!({ "ok": false, "error": "Too many tabs open. Close one first." });
     };
     crate::robots::send_character(app, id);
-    json!({ "ok": true, "tabId": target["id"], "title": session["title"], "total": session["total"] })
+    json!({ "ok": true, "tabId": target, "title": session["title"], "total": session["total"] })
 }

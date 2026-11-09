@@ -1,25 +1,30 @@
 //! The robots and settings: one JSON file, c-bot.json, as the Electron app keeps it
 //! (src/main/store.js), so the two read each other's.
 //!
-//! Saving is power-cut safe: write a temp file, force it to disk, then swap it in.
+//! Saving is power-cut safe: write a temp file, force it to disk, then swap it in. Each tab's
+//! conversation is saved in a file of its own (histories.rs), and only when it changed; what a
+//! save writes is taken under the app's lock and written after it's let go (`Pending`).
 //! A file that can't be read is never overwritten with an empty store: it's set aside
 //! and the robots come back from the temp file or the newest daily backup.
 //! Characters stay plain JSON objects: the pages read and write fields this side
 //! never needs to know about.
 
 mod fields;
+mod histories;
 pub mod saved;
 
 pub use fields::Fields;
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value, json};
 
-use crate::runtime::Error;
+use crate::runtime::{Error, Locked};
 
 const HISTORY_LIMIT: usize = 60;
 pub const MAX_TABS: usize = 8;
@@ -41,6 +46,11 @@ fn new_tab(fields: Map<String, Value>) -> Value {
         .expect("built as an object")
         .extend(fields);
     tab
+}
+
+/// A change that gives a robot its tabs anew.
+fn has_tabs(patch: &Map<String, Value>) -> bool {
+    patch.contains_key("tabs") || patch.contains_key("closedTabs")
 }
 
 fn str_of<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -174,6 +184,86 @@ pub struct Store {
     backup_day: Option<String>,
     pub recovered: Option<Recovered>,
     visitors: Vec<Value>, // robots visiting from a shared chat (features/share): never saved
+    unsaved: HashSet<String>, // tabs whose conversation changed since the last save
+    revisions: HashMap<String, u64>, // each tab's conversation: when it last changed (history_rev)
+    revision: u64,
+}
+
+/// One save at a time, in the order they were taken (setup.rs `save`): a later one is never
+/// overwritten by an earlier one still being written.
+static WRITING: Mutex<()> = Mutex::new(());
+
+/// Hold while taking a save and writing it.
+pub fn writing() -> MutexGuard<'static, ()> {
+    WRITING.locked()
+}
+
+/// What a save writes, taken under the app's lock (`Store::take_save`) and written after it's
+/// let go: c-bot.json without the conversations, and the conversations that changed.
+pub struct Pending {
+    file: PathBuf,
+    text: String,
+    histories: Vec<(String, String)>, // (tab id, its conversation as its file holds it)
+    live: HashSet<String>,            // every tab there is: other conversations' files go
+    tidy: bool,
+    backup: Option<(PathBuf, String)>, // (the backups' folder, today) when today's isn't made yet
+}
+
+impl Pending {
+    pub fn write(self) {
+        let Some(dir) = self.file.parent() else {
+            return;
+        };
+        // (the conversations first: c-bot.json never names a tab whose file isn't there yet)
+        histories::write(dir, &self.histories);
+        let result = fs::create_dir_all(dir).and_then(|_| write_safely(&self.file, &self.text));
+        if let Err(err) = result {
+            log::error!("save failed: {err}");
+            return;
+        }
+        if self.tidy {
+            histories::tidy(dir, &self.live);
+        }
+        if let Some((backup_dir, day)) = &self.backup {
+            backup(backup_dir, day, &self.text);
+        }
+    }
+}
+
+/// one copy of the robots a day, the last two weeks kept
+fn backup(backup_dir: &Path, day: &str, text: &str) {
+    let result = (|| -> std::io::Result<()> {
+        fs::create_dir_all(backup_dir)?;
+        let target = backup_dir.join(format!("c-bot-{day}.json"));
+        if !target.exists() {
+            write_safely(&target, text)?;
+        }
+        for old in backups_in(backup_dir).into_iter().skip(BACKUPS_KEPT) {
+            let _ = fs::remove_file(old);
+        }
+        Ok(())
+    })();
+    if let Err(err) = result {
+        log::warn!("backup failed: {err}");
+    }
+}
+
+/// newest first
+fn backups_in(backup_dir: &Path) -> Vec<PathBuf> {
+    let Ok(dir) = fs::read_dir(backup_dir) else {
+        return vec![];
+    };
+    let mut names: Vec<String> = dir
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|n| {
+            n.len() == "c-bot-2026-01-01.json".len()
+                && n.starts_with("c-bot-")
+                && n.ends_with(".json")
+        })
+        .collect();
+    names.sort();
+    names.reverse();
+    names.into_iter().map(|n| backup_dir.join(n)).collect()
 }
 
 impl Store {
@@ -195,6 +285,9 @@ impl Store {
             backup_day: None,
             recovered: None,
             visitors: Vec::new(),
+            unsaved: HashSet::new(),
+            revisions: HashMap::new(),
+            revision: 0,
         };
         let raw = store.load();
         if let Some(raw) = &raw {
@@ -238,7 +331,17 @@ impl Store {
             );
         }
         if raw.is_some() {
-            store.backup();
+            let day = today();
+            if !store.list().is_empty() {
+                backup(&store.backup_dir, &day, &store.text());
+            }
+            store.backup_day = Some(day);
+        }
+        // each tab's conversation, from its file (or still in c-bot.json: to its file next save)
+        let inline = histories::attach(&mut store.data, dir);
+        if !inline.is_empty() {
+            store.unsaved.extend(inline);
+            store.save();
         }
         store
     }
@@ -276,49 +379,13 @@ impl Store {
         None
     }
 
-    /// newest first
     fn backups(&self) -> Vec<PathBuf> {
-        let Ok(dir) = fs::read_dir(&self.backup_dir) else {
-            return vec![];
-        };
-        let mut names: Vec<String> = dir
-            .filter_map(|e| e.ok()?.file_name().into_string().ok())
-            .filter(|n| {
-                n.len() == "c-bot-2026-01-01.json".len()
-                    && n.starts_with("c-bot-")
-                    && n.ends_with(".json")
-            })
-            .collect();
-        names.sort();
-        names.reverse();
-        names.into_iter().map(|n| self.backup_dir.join(n)).collect()
+        backups_in(&self.backup_dir)
     }
 
-    /// one copy of the robots a day, the last two weeks kept
-    fn backup(&mut self) {
-        let day = today();
-        if self.backup_day.as_deref() == Some(day.as_str()) {
-            return;
-        }
-        self.backup_day = Some(day.clone());
-        let result = (|| -> std::io::Result<()> {
-            fs::create_dir_all(&self.backup_dir)?;
-            let target = self.backup_dir.join(format!("c-bot-{day}.json"));
-            if !target.exists() && !self.list().is_empty() {
-                write_safely(&target, &self.text())?;
-            }
-            for old in self.backups().into_iter().skip(BACKUPS_KEPT) {
-                let _ = fs::remove_file(old);
-            }
-            Ok(())
-        })();
-        if let Err(err) = result {
-            log::warn!("backup failed: {err}");
-        }
-    }
-
+    /// c-bot.json's text: everything but the conversations, which have files of their own.
     fn text(&self) -> String {
-        serde_json::to_string_pretty(&self.data).unwrap_or_default()
+        serde_json::to_string_pretty(&histories::slim(&self.data)).unwrap_or_default()
     }
 
     /// Save soon (changes close together are written once).
@@ -326,21 +393,54 @@ impl Store {
         self.due = Some(Instant::now() + SAVE_DELAY);
     }
 
-    /// Save now if a save is due (the saver thread calls this every so often).
-    pub fn tick(&mut self) {
-        if self.due.is_some_and(|t| Instant::now() >= t) {
-            self.flush();
+    /// What to write, if a save is due (`now`: whatever's unsaved, at once). The saver thread
+    /// asks every so often and writes it after letting the lock go (setup.rs `save`).
+    pub fn take_save(&mut self, now: bool) -> Option<Pending> {
+        let due = self.due?;
+        if !now && Instant::now() < due {
+            return None;
+        }
+        self.due = None;
+        let histories = histories::texts(&self.data, &self.unsaved);
+        self.unsaved.clear();
+        let live = histories::tabs(&self.data)
+            .map(|t| str_of(t, "id").to_string())
+            .collect();
+        // (a new day while the app kept running: today's copy)
+        let day = today();
+        let backup = (self.backup_day.as_deref() != Some(day.as_str()) && !self.list().is_empty())
+            .then(|| (self.backup_dir.clone(), day.clone()));
+        self.backup_day = Some(day);
+        Some(Pending {
+            file: self.file.clone(),
+            text: self.text(),
+            histories,
+            live,
+            // (recovered from a backup: newer chats' files are kept, should the old file be mended)
+            tidy: self.recovered.is_none(),
+            backup,
+        })
+    }
+
+    /// Save now, here (tests).
+    #[cfg(test)]
+    fn flush(&mut self) {
+        if let Some(p) = self.take_save(true) {
+            p.write();
         }
     }
 
-    pub fn flush(&mut self) {
-        self.due = None;
-        let dir = self.file.parent().expect("c-bot.json is in a folder");
-        let result = fs::create_dir_all(dir).and_then(|_| write_safely(&self.file, &self.text()));
-        if let Err(err) = result {
-            log::error!("save failed: {err}");
-        }
-        self.backup(); // a new day while the app kept running
+    /// A tab's conversation changed: saved with the next save, and sent to its page again.
+    fn history_changed(&mut self, tab_id: &str) {
+        self.unsaved.insert(tab_id.to_string());
+        self.revision += 1;
+        self.revisions.insert(tab_id.to_string(), self.revision);
+    }
+
+    /// When this tab's conversation last changed (0: not since C-Bot started). A page sent
+    /// the tab at this revision or later already has it.
+    pub fn history_rev(&self, tab_id: &str) -> u64 {
+        self.revisions.get(tab_id).copied().unwrap_or(0)
     }
 
     // ---------------------------------------------------------------- settings
@@ -422,14 +522,35 @@ impl Store {
         {
             *t = tab;
         }
+        self.history_changed(tab_id);
     }
 
-    pub fn update(&mut self, id: &str, patch: Map<String, Value>) -> Option<Value> {
-        let c = self.get_mut(id)?;
-        c.extend(patch);
-        let out = Value::Object(c.clone());
+    pub fn update(&mut self, id: &str, patch: Map<String, Value>) -> Option<()> {
+        let tabs_too = has_tabs(&patch);
+        self.get_mut(id)?.extend(patch);
+        if tabs_too {
+            self.all_tabs_changed(id);
+        }
         self.save();
-        Some(out)
+        Some(())
+    }
+
+    /// Every tab of this robot changed (its tabs given anew).
+    fn all_tabs_changed(&mut self, id: &str) {
+        let ids: Vec<String> = self
+            .get(id)
+            .into_iter()
+            .flat_map(|c| {
+                ["tabs", "closedTabs"]
+                    .into_iter()
+                    .filter_map(|k| c.get(k)?.as_array())
+                    .flatten()
+            })
+            .map(|t| str_of(t, "id").to_string())
+            .collect();
+        for t in ids {
+            self.history_changed(&t);
+        }
     }
 
     /// Drop these fields (the Electron app sets them to undefined).
@@ -450,10 +571,14 @@ impl Store {
             "permissionMode": "default", "model": "", "tabs": [first.clone()], "activeTab": first["id"], "visible": true,
             "position": null, "stats": { "questions": 0, "pokes": 0, "costUsd": 0 }, "createdAt": now_ms(),
         });
+        let tabs_too = has_tabs(&fields);
         c.as_object_mut()
             .expect("built as an object")
             .extend(fields);
         self.characters_mut().push(c.clone());
+        if tabs_too {
+            self.all_tabs_changed(c.id());
+        }
         self.save();
         c
     }
@@ -485,6 +610,7 @@ impl Store {
         let tab = new_tab(fields);
         c.insert("activeTab".into(), tab["id"].clone());
         c.get_mut("tabs")?.as_array_mut()?.push(tab.clone());
+        self.history_changed(tab.id());
         self.save();
         Some(tab)
     }
@@ -583,20 +709,18 @@ impl Store {
         self.save();
     }
 
-    pub fn update_tab(
-        &mut self,
-        id: &str,
-        tab_id: &str,
-        patch: Map<String, Value>,
-    ) -> Option<Value> {
+    pub fn update_tab(&mut self, id: &str, tab_id: &str, patch: Map<String, Value>) -> Option<()> {
+        let history_too = patch.contains_key("history");
         let tab = self
             .tabs_mut(id)?
             .iter_mut()
             .find(|t| str_of(t, "id") == tab_id)?;
         tab.as_object_mut()?.extend(patch);
-        let out = tab.clone();
+        if history_too {
+            self.history_changed(tab_id);
+        }
         self.save();
-        Some(out)
+        Some(())
     }
 
     /// Every session this robot has started, to label them in "past conversations".
@@ -661,6 +785,7 @@ impl Store {
             let extra = history.len() - HISTORY_LIMIT;
             history.drain(..extra);
         }
+        self.history_changed(tab_id);
         self.save();
     }
 }
@@ -807,7 +932,7 @@ mod tests {
         let dir = scratch("forget");
         let bo = json!({
             "id": "bo", "name": "Bo", "sessionIds": ["a", "b"],
-            "closedTabs": [{ "id": "t1", "sessionId": "a" }, { "id": "t2", "sessionId": "c" }],
+            "closedTabs": [{ "id": "t1", "sessionId": "a", "history": [] }, { "id": "t2", "sessionId": "c", "history": [] }],
         });
         fs::write(
             dir.join("c-bot.json"),
@@ -816,10 +941,16 @@ mod tests {
         .unwrap();
         let mut store = Store::open(&dir, None);
         let dropped = store.forget_sessions("bo", &["a".into()]);
-        assert_eq!(dropped, [json!({ "id": "t1", "sessionId": "a" })]);
+        assert_eq!(
+            dropped,
+            [json!({ "id": "t1", "sessionId": "a", "history": [] })]
+        );
         let bo = store.get("bo").unwrap();
         assert_eq!(bo["sessionIds"], json!(["b"]));
-        assert_eq!(bo["closedTabs"], json!([{ "id": "t2", "sessionId": "c" }]));
+        assert_eq!(
+            bo["closedTabs"],
+            json!([{ "id": "t2", "sessionId": "c", "history": [] }])
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -853,6 +984,121 @@ mod tests {
             ["a", "c", "b"],
             "an unknown tab changes nothing"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    // ---------------------------------------------------------------- conversations' files
+
+    fn talk(text: &str) -> Value {
+        json!({ "role": "user", "text": text })
+    }
+
+    /// A robot with an open tab and a closed one, as c-bot.json kept them before conversations
+    /// had files of their own.
+    fn one_robot_with_inline_chats(dir: &Path) {
+        let file = json!({ "characters": [{ "id": "bo", "name": "Bo",
+            "tabs": [{ "id": "open-1", "history": [talk("hi")] }], "activeTab": "open-1",
+            "closedTabs": [{ "id": "closed-1", "sessionId": "s", "history": [talk("old")] }] }], "settings": {} });
+        fs::write(dir.join("c-bot.json"), file.to_string()).unwrap();
+    }
+
+    fn chat_file(dir: &Path, tab_id: &str) -> PathBuf {
+        dir.join("histories").join(format!("{tab_id}.json"))
+    }
+
+    #[test]
+    fn conversations_move_out_of_c_bot_json_into_their_own_files() {
+        let dir = scratch("chats-out");
+        one_robot_with_inline_chats(&dir);
+        Store::open(&dir, None).flush();
+        let main = fs::read_to_string(dir.join("c-bot.json")).unwrap();
+        assert!(!main.contains("history"), "{main}");
+        let open: Value =
+            serde_json::from_str(&fs::read_to_string(chat_file(&dir, "open-1")).unwrap()).unwrap();
+        assert_eq!(open, json!([talk("hi")]));
+        assert!(chat_file(&dir, "closed-1").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_reopened_store_has_its_conversations_back() {
+        let dir = scratch("chats-back");
+        one_robot_with_inline_chats(&dir);
+        Store::open(&dir, None).flush();
+        let store = Store::open(&dir, None);
+        assert_eq!(
+            store.tab("bo", "open-1").unwrap()["history"],
+            json!([talk("hi")])
+        );
+        let closed = &store.get("bo").unwrap()["closedTabs"][0];
+        assert_eq!(closed["history"], json!([talk("old")]));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_save_writes_only_the_conversations_that_changed() {
+        let dir = scratch("chats-changed");
+        one_robot_with_inline_chats(&dir);
+        let mut store = Store::open(&dir, None);
+        store.flush();
+        fs::remove_file(chat_file(&dir, "closed-1")).unwrap();
+        store.push_history("bo", "open-1", talk("again"));
+        store.flush();
+        let open: Value =
+            serde_json::from_str(&fs::read_to_string(chat_file(&dir, "open-1")).unwrap()).unwrap();
+        assert_eq!(open[1]["text"], "again");
+        assert!(
+            !chat_file(&dir, "closed-1").exists(),
+            "unchanged: not written again"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_tab_gone_for_good_takes_its_file_with_it() {
+        let dir = scratch("chats-gone");
+        one_robot_with_inline_chats(&dir);
+        let mut store = Store::open(&dir, None);
+        store.flush();
+        store.forget_sessions("bo", &["s".to_string()]);
+        store.flush();
+        assert!(!chat_file(&dir, "closed-1").exists());
+        assert!(chat_file(&dir, "open-1").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_tab_with_an_odd_id_keeps_its_conversation_in_c_bot_json() {
+        let dir = scratch("chats-odd");
+        let file = json!({ "characters": [{ "id": "bo", "tabs": [{ "id": "../x", "history": [talk("hi")] }] }] });
+        fs::write(dir.join("c-bot.json"), file.to_string()).unwrap();
+        let mut store = Store::open(&dir, None);
+        store.push_history("bo", "../x", talk("more"));
+        store.flush();
+        let main: Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("c-bot.json")).unwrap()).unwrap();
+        assert_eq!(
+            main["characters"][0]["tabs"][0]["history"][1]["text"],
+            "more"
+        );
+        assert!(!dir.join("histories").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_conversations_revision_moves_only_when_it_changes() {
+        let dir = scratch("chats-rev");
+        one_robot_with_inline_chats(&dir);
+        let mut store = Store::open(&dir, None);
+        let before = store.history_rev("open-1");
+        store.update_tab(
+            "bo",
+            "open-1",
+            crate::runtime::util::patch(vec![("title", json!("T"))]),
+        );
+        assert_eq!(store.history_rev("open-1"), before);
+        store.push_history("bo", "open-1", talk("again"));
+        assert!(store.history_rev("open-1") > before);
         let _ = fs::remove_dir_all(dir);
     }
 }

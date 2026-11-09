@@ -164,11 +164,10 @@ pub fn mgr_find_claude(app: AppHandle) -> Value {
 /// Everything the Workshop shows (main.js mgr:state).
 fn state(app: &AppHandle) -> Value {
     let (characters, settings) = with(app, |st| {
-        let characters: Vec<Value> = st
-            .store
-            .list()
+        let ids: Vec<String> = st.store.list().iter().map(|c| c.id().to_string()).collect();
+        let characters: Vec<Value> = ids
             .iter()
-            .map(|c| robots::view(st, c))
+            .filter_map(|id| robots::view(st, id, robots::Histories::Not))
             .collect();
         (characters, st.store.settings().clone())
     });
@@ -431,7 +430,7 @@ pub fn update_character(app: &AppHandle, id: &str, changes: Map<String, Value>) 
             // a new size grows (or shrinks) round its feet
             robots::resize_robot(app, id, &size);
         }
-        if let Some(view) = with(app, |st| st.store.get(id).map(|c| robots::view(st, c))) {
+        if let Some(view) = with(app, |st| robots::view(st, id, robots::Histories::Changed)) {
             hub::send_to_robot(app, id, "robot:character", view); // (and its walker, if it's out)
         }
     }

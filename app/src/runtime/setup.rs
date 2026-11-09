@@ -19,8 +19,7 @@ use crate::mcp::{apps, link};
 use crate::robots;
 use crate::robots::{island, maid, planes, revive, screens, social, stage, topmost, walkers};
 use crate::runtime::updater;
-use crate::store::Fields;
-use crate::store::Store;
+use crate::store::{self, Fields, Store};
 use crate::ui::{folder_menu, tray, workshop};
 use crate::workbench::{capture, palette, paste, quick, shell, snip, terminal};
 
@@ -143,9 +142,18 @@ fn bring_out(handle: AppHandle, visible: &[String], order: &[String]) {
     thread::spawn(move || {
         loop {
             thread::sleep(Duration::from_millis(100));
-            with(&handle, |st| st.store.tick());
+            save(&handle, false);
         }
     });
+}
+
+/// Save what's due (`now`: whatever's unsaved). What's saved is taken under the lock, and
+/// written to disk after it's let go: the windows needn't wait for the disk.
+pub fn save(app: &AppHandle, now: bool) {
+    let _in_order = store::writing();
+    if let Some(pending) = with(app, |st| st.store.take_save(now)) {
+        pending.write();
+    }
 }
 
 pub fn on_event(app: &AppHandle, event: RunEvent) {
@@ -159,7 +167,7 @@ pub fn on_event(app: &AppHandle, event: RunEvent) {
             chat::close_all(app);
             shell::close_all(app);
             context::shutdown(app); // (its database, if C-Bot started it)
-            with(app, |st| st.store.flush());
+            save(app, true);
         }
         _ => {}
     }

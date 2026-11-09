@@ -181,7 +181,7 @@ pub fn on_menu(app: &AppHandle, event: MenuEvent) {
     let id = event.id().as_ref().to_string();
     if id == "tray|quit" {
         updater::install_on_quit(app); // (a new version downloaded: in it goes, on the way out)
-        with(app, |st| st.store.flush());
+        crate::runtime::setup::save(app, true);
         app.exit(0);
         return;
     }

@@ -9,7 +9,7 @@ import type {
   NotesReminder,
   PermissionMode,
   Point,
-  RobotView,
+  RobotSent,
   Routine,
   Settings,
   VocabReview,
@@ -185,7 +185,7 @@ export type WorkshopHotkey = {
 };
 /** main.js mgr:state */
 export type WorkshopState = {
-  characters: RobotView[];
+  characters: RobotSent[];
   personalities: Record<string, { label: string; emoji: string }>;
   permissionModes: Record<PermissionMode, string>;
   settings: WorkshopSettings;

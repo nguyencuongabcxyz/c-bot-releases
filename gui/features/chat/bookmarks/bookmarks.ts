@@ -41,6 +41,8 @@ export function createBookmarks(r: BookmarksNeeds) {
     const role = msg.classList.contains('user') ? 'user' : 'assistant';
     placed.set(msg, { tab, at, role });
     const mine = shown.get(tab.id) ?? new Map<number, HTMLElement>();
+    // (messages since taken off the page, the chat redrawn or trimmed: not kept alive here)
+    for (const [k, m] of mine) if (!m.isConnected) mine.delete(k);
     shown.set(tab.id, mine.set(at, msg));
     let bar = msg.querySelector(':scope > .msg-actions');
     if (!bar) bar = msg.appendChild(el('div', 'msg-actions'));
