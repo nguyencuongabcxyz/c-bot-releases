@@ -395,27 +395,58 @@ struct Model {
     pub supported_effort_levels: Option<Value>,
 }
 
-/// The models in Claude Code's answer to initialize, for the chat's picker: not the ones
-/// named by their full id ("claude-…", the same models again), and "default" as "" (its own
-/// choice). One it can't read is left out.
+/// The models in Claude Code's answer to initialize, for the chat's picker: the ones it names
+/// by a short name ("opus", "fable"), and "default" as "" (its own choice). One it names by its
+/// full id ("claude-…") is mostly an older one, or the same again: it's offered only when it's
+/// newer than its family's short-named one (a new model comes by its id first: Fable 5.2,
+/// "claude-fable-5-2", beside "fable" still Fable 5.1). One it can't read is left out.
 pub(super) fn model_choices(info: &Value) -> Vec<ModelChoice> {
-    info["models"]
+    let models: Vec<Model> = info["models"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|m| Model::deserialize(m).ok())
+        .collect();
+    let short: Vec<(String, Vec<u32>)> = models
+        .iter()
         .filter(|m| !m.value.starts_with("claude-"))
+        .filter_map(|m| family_version(&m.display_name))
+        .collect();
+    let newer = |m: &Model| {
+        family_version(&m.display_name).is_some_and(|(family, version)| {
+            short
+                .iter()
+                .filter(|(f, _)| *f == family)
+                .all(|(_, v)| version > *v)
+        })
+    };
+    models
+        .iter()
+        .filter(|m| !m.value.starts_with("claude-") || newer(m))
         .map(|m| ModelChoice {
             value: if m.value == "default" {
                 String::new()
             } else {
-                m.value
+                m.value.clone()
             },
-            display_name: m.display_name,
-            description: m.description,
-            efforts: m.supported_effort_levels.unwrap_or(json!([])),
+            display_name: m.display_name.clone(),
+            description: m.description.clone(),
+            efforts: m.supported_effort_levels.clone().unwrap_or(json!([])),
         })
         .collect()
+}
+
+/// "Fable 5.2" → ("fable", [5, 2]): a model's family and version, from its name.
+fn family_version(name: &Value) -> Option<(String, Vec<u32>)> {
+    let mut words = name.as_str()?.split_whitespace();
+    let family = words.next()?.to_lowercase();
+    let version = words
+        .next()?
+        .split('.')
+        .map(str::parse)
+        .collect::<Result<Vec<u32>, _>>()
+        .ok()?;
+    Some((family, version))
 }
 
 // ---------------------------------------------------------------- reading forgivingly
@@ -639,6 +670,29 @@ mod tests {
                 { "value": "", "displayName": "Default", "description": "Its pick", "efforts": [] },
                 { "value": "sonnet", "displayName": "Sonnet", "description": null, "efforts": ["low", "high"] },
             ])
+        );
+    }
+
+    #[test]
+    fn a_model_named_by_its_id_is_offered_only_when_newer_than_its_familys() {
+        let info = json!({ "models": [
+            { "value": "opus", "displayName": "Opus 5.5" },
+            { "value": "claude-fable-5-2", "displayName": "Fable 5.2" },
+            { "value": "fable", "displayName": "Fable 5.1" },
+            { "value": "claude-opus-5", "displayName": "Opus 5" },
+            { "value": "claude-fable-5", "displayName": "Fable 5" },
+            { "value": "claude-haiku-4-5-20251001", "displayName": "Haiku 4.5" },
+            { "value": "claude-odd", "displayName": "Something" },
+        ] });
+        let values: Vec<String> = model_choices(&info).into_iter().map(|m| m.value).collect();
+        assert_eq!(
+            values,
+            [
+                "opus",
+                "claude-fable-5-2",
+                "fable",
+                "claude-haiku-4-5-20251001"
+            ]
         );
     }
     #[test]
