@@ -157,8 +157,11 @@ export function createBrain(rw: BrainNeeds) {
       closeMenu(); // (a press lands on an element)
   });
 
-  function openModelMenu() {
+  async function openModelMenu() {
     const t = rw.current();
+    // (the models Claude Code offers now: learned since this tab last asked, as a chat started)
+    const info = await ipc.robotBrain(t.id);
+    if (info?.models?.length) brainInfo.models = info.models;
     openMenu(
       $('#brain-model'),
       'Brain (model) for this tab',

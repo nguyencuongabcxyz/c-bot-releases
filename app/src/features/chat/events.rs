@@ -192,9 +192,18 @@ fn on_session(e: Ev, sid: &str) {
 
 fn on_initialized(e: Ev, models: Vec<ModelChoice>) {
     let Ev { app, .. } = e;
-    if !models.is_empty() {
-        with(app, |st| st.model_choices = json!(models));
+    if models.is_empty() {
+        return;
     }
+    let models = json!(models);
+    with(app, |st| {
+        if st.model_choices != models {
+            // (remembered: after a restart the menus have them before any chat has started)
+            st.store
+                .update_settings(patch(vec![("modelChoices", models.clone())]));
+            st.model_choices = models;
+        }
+    });
 }
 
 fn on_tools(e: Ev, t: Tools) {

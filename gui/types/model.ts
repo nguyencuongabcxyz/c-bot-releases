@@ -11,6 +11,7 @@ export type SoundLevel = 'essential' | 'all' | 'off';
 
 export type Settings = {
   claudePath: string;
+  modelChoices?: ModelChoice[]; // the models Claude Code last offered (main remembers them for the menus)
   muted?: boolean;
   island?: boolean; // the robot island at the screen's edge (on unless false)
   // how wide the docked chats on each edge of each screen are ("right@x,y,w,h", CSS px); the bare

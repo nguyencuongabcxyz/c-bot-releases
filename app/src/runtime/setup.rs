@@ -55,11 +55,16 @@ fn open_state(app: &App, dir: PathBuf) -> (Vec<String>, Vec<String>) {
             r.broken.display()
         );
     }
+    // (the models Claude Code last offered: until a chat starts and asks it again)
+    let model_choices = Some(&store.settings()["modelChoices"])
+        .filter(|m| m.is_array())
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let mut st = State {
         store,
         robots: HashMap::new(),
         chats: HashMap::new(),
-        model_choices: json!([]),
+        model_choices,
         terminals: HashMap::new(),
         data_dir: dir,
     };
