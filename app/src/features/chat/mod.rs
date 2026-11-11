@@ -35,7 +35,7 @@ use std::time::Duration;
 use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter};
 
-use crate::agents::claude::{Session, locate, transcripts};
+use crate::agents::claude::{Session, chrome, locate, transcripts};
 use crate::agents::{self, claude, personalities};
 use crate::context;
 use crate::features::share;
@@ -312,6 +312,16 @@ pub fn prompt_for(app: &AppHandle, c: &Value) -> String {
     prompt
 }
 
+/// More flags for a tab's Claude Code: the edit guard's settings, and Claude in Chrome when the
+/// user has it on in their own Claude Code (claude/chrome.rs).
+fn extra_args(guard: Option<String>) -> Vec<String> {
+    let mut args = guard.map_or(vec![], |f| vec!["--settings".into(), f]);
+    if chrome::on(&crate::runtime::paths::home()) {
+        args.push(chrome::FLAG.into());
+    }
+    args
+}
+
 /// The tab's live Claude Code process (started on its first question).
 fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
     let key = key_of(id, tab_id);
@@ -363,7 +373,7 @@ fn chat_for(app: &AppHandle, id: &str, tab_id: &str) -> Option<Arc<Chat>> {
             vec![]
         },
         mcp_config: mcp_config.unwrap_or_default(),
-        extra_args: guard.map_or(vec![], |f| vec!["--settings".into(), f]),
+        extra_args: extra_args(guard),
         resume_at,
         fork: false,
         remote: (tab["remote"] == true).then(|| remote_name(&c)),

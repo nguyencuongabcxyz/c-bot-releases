@@ -32,7 +32,7 @@ Or skip the Workshop: right-click any folder in Explorer (or the empty space ins
 
 ### Chat with it
 
-Click a robot to wake it and open its chat. Under the hood it *is* your own Claude Code, running in the robot's folder, so **anything Claude Code can do, a robot can do too**: write and fix code, run commands, search the web, and use your skills, MCP servers, hooks, subagents, `CLAUDE.md` and slash commands. The chat shows it all: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Right-click the robot and pick **⌨️ Open in terminal** to continue the conversation in a real Claude Code terminal.
+Click a robot to wake it and open its chat. Under the hood it *is* your own Claude Code, running in the robot's folder, so **anything Claude Code can do, a robot can do too**: write and fix code, run commands, search the web, and use your skills, MCP servers, hooks, subagents, `CLAUDE.md` and slash commands, and your browser through Claude in Chrome when you have it on in Claude Code (`/chrome`). The chat shows it all: several tabs at once, live plans, file diffs, `@` file mentions, `/` commands, and questions back to you when it needs a decision. Drop files or screenshots onto it to share them. Right-click the robot and pick **⌨️ Open in terminal** to continue the conversation in a real Claude Code terminal.
 
 <img src="docs/screenshots/chat.png" alt="Chatting with a robot" width="440">
 

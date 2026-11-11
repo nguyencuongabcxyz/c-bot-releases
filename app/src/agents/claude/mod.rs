@@ -5,6 +5,7 @@
 //! What happens is reported to the session's handler as an agents::Event (agents/event.rs),
 //! the same as any agent's; what Claude Code writes is read in protocol.rs.
 
+pub mod chrome;
 mod lines;
 pub mod locate;
 mod login;
