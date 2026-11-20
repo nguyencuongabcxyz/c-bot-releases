@@ -13,7 +13,7 @@ import type { ChatLogApi } from '@/features/chat/log';
 import type { LifeCycleApi } from '@/views/robot/life/lifecycle';
 import type { ChatTab, RobotState } from '@/views/robot/types';
 import * as ipc from '@/ipc';
-import { $ } from '@/lib/dom';
+import { $, setRootVar, setVar } from '@/lib/dom';
 import { onDrag } from '@/lib/drag';
 import type { StageEvent } from '@/types/ipc';
 import type { DockEdge, FileInfo, StageTileInfo } from '@/types/model';
@@ -41,6 +41,7 @@ export function createStage(r: StageNeeds) {
   let staged = false;
   let dockedOn: DockEdge | null = null; // (docked: a tile of the stack on that edge, not of the stage)
   const edges = [...document.querySelectorAll<HTMLElement>('.stage-edge')];
+  const panels = [$('#panel'), $('#side-panel')];
   function setStaged(tile: StageTileInfo | null, inset: number) {
     staged = !!tile;
     dockedOn = tile?.dock ?? null;
@@ -51,11 +52,11 @@ export function createStage(r: StageNeeds) {
     r.body.classList.toggle('stage-spot', !!tile?.spot);
     r.body.classList.toggle('stage-strip', !!tile?.strip);
     if (!tile) r.body.classList.remove('stage-target');
-    const root = document.documentElement.style;
-    root.setProperty('--stage-inset', `${inset}px`);
+    setRootVar('--stage-inset', `${inset}px`); // (every layout sends it: written only when it changes)
     if (staged) {
-      root.setProperty('--panel-top', `${inset}px`);
-      root.setProperty('--panel-bottom', `${inset}px`);
+      // (on the elements that use them: views/robot/robot.css says why)
+      setVar(panels, '--panel-top', `${inset}px`);
+      setVar(panels, '--panel-bottom', `${inset}px`);
     }
     for (const e of edges) {
       const split = tile?.edges?.[e.dataset.side as 'left'] ?? '';

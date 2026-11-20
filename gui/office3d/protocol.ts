@@ -3,8 +3,8 @@
 // the Workshop preview and the walker drive it without knowing about 3D.
 //   stateEl.dataset  OfficeData below (all strings; '1' for on)
 //   stateEl classes  one-shot reactions: REACTIONS, plus blink and blush (FLASHES)
-//   moodEl classes   Mood: awake / asleep / thinking / talking / dragging / typing
-//   CSS variables    --paint inline on stateEl or a parent; --look-x, --look-y, --swing on the page's root (CSS_VARS)
+//   moodEl classes   Mood: awake / asleep / thinking / talking / dragging / typing / expanded
+//   CSS variables    --paint, --look-x, --look-y, --swing inline on stateEl or a parent (CSS_VARS)
 // Out for a walk, mount(..., { solo: true }) draws the character alone (walker3d.ts): it reads
 // the same, plus gait, heading and speed.
 import type { Kit } from '@/types/model';
@@ -134,8 +134,8 @@ export type Reaction = (typeof REACTIONS)[number];
 /** What a page may flash on stateEl: a reaction, a blink or a blush. */
 export type Flash = Reaction | 'blink' | 'blush';
 
-/** moodEl's classes. */
-export type Mood = 'awake' | 'asleep' | 'thinking' | 'talking' | 'dragging' | 'typing';
+/** moodEl's classes. `expanded`: its chat is open (the robot window's body says so). */
+export type Mood = 'awake' | 'asleep' | 'thinking' | 'talking' | 'dragging' | 'typing' | 'expanded';
 
-/** The CSS variables it reads: --paint on stateEl, the rest on the page's root. */
+/** The CSS variables it reads, inline on stateEl or the nearest parent that has them. */
 export const CSS_VARS = { paint: '--paint', lookX: '--look-x', lookY: '--look-y', swing: '--swing' } as const;

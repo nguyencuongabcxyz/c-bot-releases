@@ -159,7 +159,7 @@ pub fn resize(app: &AppHandle, id: &str, p: &Value) {
                         .as_ref()
                         .map_or(r.chat_w, |l| l.panel_w + 14.0 - r.side_w),
                 );
-                None
+                Some(()) // (its window as wide as the chat can go, till you let go: layout.rs)
             }
             "move" => {
                 let from = r.resize_from?;
@@ -181,7 +181,7 @@ pub fn resize(app: &AppHandle, id: &str, p: &Value) {
                 let mut patch = Map::new();
                 patch.insert("chatWidth".into(), json!(w));
                 st.store.update(id, patch);
-                None
+                Some(()) // (its window fitted to the chat again)
             }
             "reset" => {
                 r.chat_w = CHAT_W;

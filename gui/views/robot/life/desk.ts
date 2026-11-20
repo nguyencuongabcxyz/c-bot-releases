@@ -6,7 +6,7 @@ import type { IdleAnticsApi } from './antics';
 import type { PlansApi } from '@/features/chat/plan/card';
 import type { ChatTab, RobotState } from '../types';
 import type { OfficeData } from '@/office3d/protocol';
-import { setRootVar } from '@/lib/dom';
+import { setVar } from '@/lib/dom';
 
 /** What it uses of the robot window (robot.ts's hub). */
 export type DeskActivityNeeds = {
@@ -15,6 +15,7 @@ export type DeskActivityNeeds = {
   readonly nightcap: IdleAnticsApi['nightcap'];
   readonly pendingQuestion: PlansApi['pendingQuestion'];
   readonly pop: HTMLElement;
+  readonly robot: HTMLElement;
   readonly state: RobotState;
   readonly stopAntic: IdleAnticsApi['stopAntic'];
   readonly tabs: Map<string, ChatTab>;
@@ -73,20 +74,18 @@ export function createDeskActivity(r: DeskActivityNeeds) {
     if (r.state.peek) return; // (away on the island: nobody to look at)
     let { dx, dy } = r.state.lastCursor;
     const pose = r.deskState.pose;
-    let follow = pose === 'idle' || pose === 'talking' || pose === 'wave' || pose === 'cheer' || pose === 'eager';
-    if (r.state.lookOverride && r.state.lookOverride.until > Date.now()) {
-      ({ dx, dy } = r.state.lookOverride);
-      follow = false;
-    } else if (pose === 'reading' || pose === 'typing') ({ dx, dy } = MONITOR);
+    if (r.state.lookOverride && r.state.lookOverride.until > Date.now()) ({ dx, dy } = r.state.lookOverride);
+    else if (pose === 'reading' || pose === 'typing') ({ dx, dy } = MONITOR);
     else if (pose === 'thinking') ({ dx, dy } = { dx: -80, dy: -200 });
     else if (pose === 'sleep') ({ dx, dy } = { dx: 0, dy: 0 });
     const dist = Math.hypot(dx, dy) || 1;
     const reach = clamp(dist / 120, 0, 1);
     const lx = (dx / dist) * 6 * reach;
     const ly = (dy / dist) * 4 * reach;
-    setRootVar('--look-x', `${lx.toFixed(2)}px`);
-    setRootVar('--look-y', `${ly.toFixed(2)}px`);
-    setRootVar('--tilt', `${(follow && r.state.awake ? lx * 0.8 : 0).toFixed(2)}deg`);
+    // (on the robot, where the office reads them: on the root, each would restyle the whole chat,
+    // as often as the mouse moves)
+    setVar(r.robot, '--look-x', `${lx.toFixed(2)}px`);
+    setVar(r.robot, '--look-y', `${ly.toFixed(2)}px`);
   }
 
   function lookAt(dx: number, dy: number, ms: number) {

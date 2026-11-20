@@ -32,7 +32,7 @@ import { CSS_VARS, type Flash, type Mood, type OfficeData, officeData, REACTIONS
 
 export type Office3DOptions = {
   stateEl: HTMLElement; // its dataset, classes and --paint: what to show (protocol.ts)
-  moodEl: HTMLElement; // its classes: awake / asleep / thinking / talking / dragging / typing
+  moodEl: HTMLElement; // its classes: awake / asleep / thinking / talking / dragging / typing / expanded
   width: number;
   height: number;
   solo?: boolean; // the character alone, out for a walk (walker3d.js)
@@ -248,16 +248,17 @@ function mount(
   let raf = 0;
   const clock0 = performance.now();
 
-  const cssNum = (name: string) => parseFloat(document.documentElement.style.getPropertyValue(name)) || 0;
-  // --paint as the page set it, on stateEl or round it (protocol.ts). Read off the inline styles:
+  // A variable as the page set it, on stateEl or round it (protocol.ts). Read off the inline styles:
   // a computed style makes the browser restyle the whole page first, a long chat and all.
-  const paintOf = () => {
+  const cssVar = (name: string) => {
     for (let e: HTMLElement | null = stateEl; e; e = e.parentElement) {
-      const v = e.style.getPropertyValue(CSS_VARS.paint).trim();
+      const v = e.style.getPropertyValue(name).trim();
       if (v) return v;
     }
     return '';
   };
+  const cssNum = (name: string) => parseFloat(cssVar(name)) || 0;
+  const paintOf = () => cssVar(CSS_VARS.paint);
 
   const bonkParts = toy ? { toy, camera, emit, worldPoint, react } : null;
   const playFrame = charger ? createPlay({ world, charger, emit, worldPoint, camYaw, react, cssNum }) : null;
@@ -272,6 +273,29 @@ function mount(
   let wasGone: boolean | undefined;
   let goneAt = 0;
   let soloLit = false;
+  // Between frames it naps on a timer: a requestAnimationFrame waiting wakes the window, and the
+  // GPU process with it, at every refresh of the screen even when nothing gets drawn. For a robot
+  // away on the island, or idle at 6 or 12 frames a second, that was most of what it cost. A
+  // change the page makes (its classes, data or variables) wakes it at once.
+  let nap = 0;
+  const NAP_AWAY = 250; // (hidden, or away on the island: how often it looks whether it's back)
+  function napFor(ms: number) {
+    cancelAnimationFrame(raf);
+    nap = window.setTimeout(() => {
+      nap = 0;
+      raf = requestAnimationFrame(frame);
+    }, ms);
+  }
+  function wake() {
+    if (!nap) return;
+    clearTimeout(nap);
+    nap = 0;
+    raf = requestAnimationFrame(frame);
+  }
+  const changes = new MutationObserver(wake);
+  changes.observe(stateEl, { attributes: true });
+  changes.observe(moodEl, { attributes: true, attributeFilter: ['class'] });
+  document.addEventListener('visibilitychange', wake);
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     const awake = mood('awake');
@@ -291,10 +315,18 @@ function mount(
         desk.stickiesMoving ||
         data.tidy === '1' ||
         REACTIONS.some((r) => flashing(r));
-    // (its robot's in the group chat's meeting room: the empty desk needs only the odd frame)
-    const fps = data.meeting === '1' && !dragging ? 2 : lively ? 30 : awake ? 12 : 6;
+    // (its robot's in the group chat's meeting room: the empty desk needs only the odd frame;
+    // idle with its chat open, you're reading the chat and its window is the screen's height,
+    // so it breathes at the sleepy rate: half the cost of its idle frames)
+    const resting = !awake || mood('expanded');
+    const fps = data.meeting === '1' && !dragging ? 2 : lively ? 30 : resting ? 6 : 12;
     // (hidden at the screen's edge, data-peek: only its head peeks out, drawn by the page)
-    if (((document.hidden || data.peek === '1') && !solo) || now - lastFrame < 1000 / fps - 2) return; // (a walker draws while still hidden, to take over seamlessly)
+    if ((document.hidden || data.peek === '1') && !solo) return napFor(NAP_AWAY); // (a walker draws while still hidden, to take over seamlessly)
+    const wait = lastFrame + 1000 / fps - 2 - now;
+    if (wait > 0) {
+      if (wait > 20) napFor(wait - 10); // (woken a little early: the frame then lands on a refresh)
+      return;
+    }
     lastFrame = now;
     // the shadows follow every frame while something moves; sitting or sleeping, twice a second
     // is plenty (they're the costliest part of a frame)
@@ -675,6 +707,9 @@ function mount(
     ...picking,
     dispose() {
       cancelAnimationFrame(raf);
+      clearTimeout(nap);
+      changes.disconnect();
+      document.removeEventListener('visibilitychange', wake);
       clearTimeout(lostTimer);
       walker?.dispose();
       renderer.dispose();

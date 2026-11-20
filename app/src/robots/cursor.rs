@@ -20,7 +20,9 @@ pub fn watch_cursor(app: AppHandle) {
                         continue;
                     }
                     let s = window::scale_of(r.hwnd);
-                    if tick.is_multiple_of(2) && r.eyes != Some((cx, cy)) {
+                    // (not to one away on the island: there's nobody to look at, and each message
+                    // wakes its page)
+                    if tick.is_multiple_of(2) && !r.peek && r.eyes != Some((cx, cy)) {
                         r.eyes = Some((cx, cy));
                         let at = json!({ "x": (cx - r.anchor.0) as f64 / s, "y": (cy - r.anchor.1) as f64 / s });
                         out.push((id.clone(), "robot:cursor", at));

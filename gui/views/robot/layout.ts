@@ -9,7 +9,7 @@ import type { StageApi } from '@/features/robots/stage/tile';
 import type { SidePanelApi } from '@/features/chat/side/panel';
 import type { RobotState } from './types';
 import * as ipc from '@/ipc';
-import { $ } from '@/lib/dom';
+import { $, setVar } from '@/lib/dom';
 import type { Layout } from '@/types/model';
 
 /** What it uses of the robot window (robot.ts's hub). */
@@ -26,22 +26,24 @@ export type WindowLayoutNeeds = {
 };
 
 export function createWindowLayout(r: WindowLayoutNeeds) {
+  // (the variables go on the elements that use them: robot.css says why)
+  const robotParts = [$('#robot'), $('#working')];
+  const panel = $('#panel');
   ipc.on('robot:layout', (l) => {
-    const root = document.documentElement.style;
     r.state.placement = l.placement;
     r.state.robotX = l.robotX;
     r.state.robotY = l.robotY;
-    root.setProperty('--robot-x', `${l.robotX}px`);
-    root.setProperty('--robot-y', `${l.robotY}px`);
+    setVar(robotParts, '--robot-x', `${l.robotX}px`);
+    setVar(robotParts, '--robot-y', `${l.robotY}px`);
     const tiled = l.placement === 'stage' || l.placement === 'dock'; // (docked: a tile of its own, the stage's look)
     r.setStaged(tiled ? (l.stage ?? {}) : null, l.inset ?? 4);
     if (l.panel && r.stagePart.staged) {
-      root.setProperty('--panel-x', `${l.panel.x}px`);
-      root.setProperty('--panel-w', `${l.panel.w}px`);
+      setVar(panel, '--panel-x', `${l.panel.x}px`);
+      setVar(panel, '--panel-w', `${l.panel.w}px`);
       r.chatSizePart.winH = l.bounds.height;
     } else if (l.panel) {
-      root.setProperty('--panel-x', `${l.panel.x}px`);
-      root.setProperty('--panel-w', `${l.panel.w}px`);
+      setVar(panel, '--panel-x', `${l.panel.x}px`);
+      setVar(panel, '--panel-w', `${l.panel.w}px`);
       r.chatSizePart.winH = l.bounds.height;
       r.placePanel(); // (its height, and the tail at the robot's head)
     }

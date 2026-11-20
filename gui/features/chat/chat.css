@@ -509,6 +509,9 @@ body.busy #send .ic { width: 13px; height: 13px; }
 .helper-list li:hover { background: var(--bg-3); }
 .helper-list .hi { text-align: center; }
 .helper-list li.running .hi::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--violet); border-top-color: transparent; animation: spin 0.8s linear infinite; }
+/* (a command left running, a dev server say, shows its terminal icon still: a spinner going for hours
+   would keep the whole screen-high window redrawing) */
+.helper-list li.running.command .hi::before { content: none; }
 .helper-list .hn { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .helper-list .hm { color: var(--muted); font: 11px var(--font-mono); white-space: nowrap; }
 .helper-list .hs { grid-column: 2 / 4; color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -585,7 +588,9 @@ button.tv-doc:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--
 .bm-bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width 0.5s, background 0.3s; }
 #brain-meter.warm .bm-bar i { background: var(--warn); }
 #brain-meter.full .bm-bar i { background: var(--danger); }
-#brain-meter.full { animation: pulse 1.2s ease-in-out infinite; }
+/* (a few pulses, then it stays red: pulsing for good, it would keep the whole screen-high window
+   redrawing for as long as the chat stayed open) */
+#brain-meter.full { animation: pulse 1.2s ease-in-out 4; }
 /* the context optimizer (chat/context/engine.ts): dim while off, lit while it works, its map green once it's done;
    while it works a bar under its words, accent while it reads, violet while its chunks get their vectors
    (sliding when there's no telling how far) */

@@ -3,7 +3,7 @@
 // the chat), or one of them opens in a panel beside the chat (Move to side). A thread knows the
 // whole conversation up to when it was first asked; the conversation never hears about it,
 // unless you take an answer back with "Use in main" (app/src/sidechat.rs).
-import { $, iconButton } from '@/lib/dom';
+import { $, iconButton, setVar } from '@/lib/dom';
 import { Icon } from '@/icons/icons';
 import type { Layout, SideMessage, SideThread } from '@/types/model';
 import * as ipc from '@/ipc';
@@ -53,6 +53,7 @@ export const SideQuestions = ({
 }) => {
   const body = document.body;
   const sidePanel = $('#side-panel');
+  const mainPanel = $('#panel');
   const sideBody = $('#sp-body');
   const answers = new WeakMap<HTMLElement, { tab: SideTab; at: number }>();
   const groups = new Map<string, Group>(); // "tabId|at" -> its group
@@ -577,13 +578,13 @@ export const SideQuestions = ({
       showPop('No room beside the chat here, so it stays under the answer.', 2600);
       return closeSide({ open: true });
     }
-    const root = document.documentElement.style;
     const left = l.placement === 'left' || l.side === 'left' || l.stage?.dock === 'right';
     const [mainX, sideX] = left ? [l.panel.x + w, l.panel.x] : [l.panel.x, l.panel.x + mainW + GAP];
-    root.setProperty('--panel-x', `${mainX}px`);
-    root.setProperty('--panel-w', `${mainW}px`);
-    root.setProperty('--side-x', `${sideX}px`);
-    root.setProperty('--side-w', `${w - GAP}px`);
+    // (on the elements that use them: views/robot/robot.css says why)
+    setVar(mainPanel, '--panel-x', `${mainX}px`);
+    setVar(mainPanel, '--panel-w', `${mainW}px`);
+    setVar(sidePanel, '--side-x', `${sideX}px`);
+    setVar(sidePanel, '--side-w', `${w - GAP}px`);
   }
 
   $('#sp-inline').addEventListener('click', () => closeSide({ open: true }));

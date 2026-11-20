@@ -27,8 +27,17 @@ export function iconButton(cls: string, title: string, icon: string, label = '')
 }
 
 /** Set a CSS variable on the page's root, only when it changes: each write makes the browser
- *  restyle the whole page (a long chat and all), and the mouse sets some many times a second. */
+ *  restyle the whole page (a long chat and all, ~10 ms), so only for what changes rarely (the
+ *  robot's colour and size); what the layout or the mouse moves goes through `setVar`. */
 export function setRootVar(name: string, value: string) {
-  const root = document.documentElement.style;
-  if (root.getPropertyValue(name) !== value) root.setProperty(name, value);
+  setVar(document.documentElement, name, value);
+}
+
+/** Set a CSS variable on the elements that use it, only where it changes. Set on an element
+ *  holding the chat, it restyles the whole chat like the root does, unless the variable is
+ *  registered with `inherits: false` (`@property`, views/robot/robot.css): then only the
+ *  element itself is restyled. */
+export function setVar(els: HTMLElement | HTMLElement[], name: string, value: string) {
+  for (const e of Array.isArray(els) ? els : [els])
+    if (e.style.getPropertyValue(name) !== value) e.style.setProperty(name, value);
 }

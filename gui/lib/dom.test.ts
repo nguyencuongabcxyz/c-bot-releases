@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { $, el, iconButton, setRootVar } from './dom';
+import { $, el, iconButton, setRootVar, setVar } from './dom';
 
 beforeEach(() => {
   document.body.innerHTML = '<div id="box"><p class="line">hi</p></div>';
@@ -53,6 +53,27 @@ describe('setRootVar', () => {
     const watch = new MutationObserver((m) => seen.push(...m));
     watch.observe(document.documentElement, { attributes: true });
     setRootVar('--y', '1');
+    expect([...seen, ...watch.takeRecords()]).toHaveLength(0);
+    watch.disconnect();
+  });
+});
+
+describe('setVar', () => {
+  test('sets a variable on each element given', () => {
+    const [a, b] = [$('#box'), $('.line')];
+    setVar([a, b], '--w', '3px');
+    expect(a.style.getPropertyValue('--w')).toBe('3px');
+    expect(b.style.getPropertyValue('--w')).toBe('3px');
+    expect(document.documentElement.style.getPropertyValue('--w')).toBe('');
+  });
+
+  test('leaves an element alone when its value is the same', () => {
+    const box = $('#box');
+    setVar(box, '--h', '1px');
+    const seen: MutationRecord[] = [];
+    const watch = new MutationObserver((m) => seen.push(...m));
+    watch.observe(box, { attributes: true });
+    setVar(box, '--h', '1px');
     expect([...seen, ...watch.takeRecords()]).toHaveLength(0);
     watch.disconnect();
   });

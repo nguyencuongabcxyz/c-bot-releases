@@ -186,9 +186,12 @@ export function createHelpers(r: HelpersNeeds) {
     if (tab === r.active()) renderHelpers();
   }
 
+  // the running ones' clocks on the card (ticking: the ticker below)
+  let clocks: { tab: ChatTab; id: string; el: HTMLElement }[] = [];
   function renderHelpers() {
     const t = r.current(); // (it has helpers only with a tab open)
     const list = [...(t?.agents?.values() || [])];
+    clocks = [];
     helpersEl.hidden = !list.length;
     if (!list.length) return;
     const back = list.filter((a) => a.status !== 'running').length;
@@ -212,6 +215,7 @@ export function createHelpers(r: HelpersNeeds) {
       $('.hi', li).innerHTML = icon ? Icon(icon, 'sm') : '';
       $('.hn', li).textContent = `${a.parent ? '↳ ' : ''}${a.description}`;
       $('.hm', li).textContent = helperMeta(a);
+      if (a.status === 'running') clocks.push({ tab: t, id: a.id, el: $('.hm', li) });
       const firstLine = (a.summary || a.report || '').split('\n').find((l) => l.trim()) || '';
       const running = a.command ? 'Running in the background' : a.activity || 'Getting started…';
       $('.hs', li).textContent = a.status === 'running' ? running : firstLine || 'Done';
@@ -298,10 +302,15 @@ export function createHelpers(r: HelpersNeeds) {
     body.scrollTop = 0;
   }
 
-  // running helpers' clocks keep ticking on the card
+  // running helpers' clocks keep ticking on the card: just their words (rebuilt every second, the
+  // whole card would be laid out again and its spinners started over, for as long as a dev
+  // server ran in the background)
   setInterval(() => {
-    const t = r.active();
-    if (!helpersEl.hidden && [...(t?.agents?.values() || [])].some((a) => a.status === 'running')) renderHelpers();
+    if (helpersEl.hidden) return;
+    for (const c of clocks) {
+      const a = c.tab.agents?.get(c.id);
+      if (a?.status === 'running') c.el.textContent = helperMeta(a);
+    }
   }, 1000);
 
   function openHelper(tab: ChatTab, id: string) {

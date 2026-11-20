@@ -24,14 +24,22 @@
   /* (the accent is the robot's paint, as the theme tones it: @/theme/theme.css) */
   --user-bg: color-mix(in srgb, var(--accent) 16%, var(--bg));
   --user-line: color-mix(in srgb, var(--accent) 38%, transparent);
-  --robot-x: 0px;
   --s: 1; /* the robot's size (Workshop: Size) */
-  --robot-y: 0px;
-  --look-x: 0px;
-  --look-y: 0px;
-  --tilt: 0deg;
-  --swing: 0deg;
 }
+
+/* Where the layout puts things, set on the elements that use them (views/robot/layout.ts,
+   chat/size.ts, chat/side/threads.ts, robots/stage/tile.ts: setVar), and not inherited: set on
+   the root or the panel, every change would restyle the whole chat (a long one: ~10 ms a time),
+   every frame of a drag. The initial values are the fallbacks chat.css had. */
+@property --robot-x { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --robot-y { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --panel-x { syntax: "<length>"; inherits: false; initial-value: 8px; }
+@property --panel-w { syntax: "<length>"; inherits: false; initial-value: 520px; }
+@property --panel-top { syntax: "<length>"; inherits: false; initial-value: 8px; }
+@property --panel-bottom { syntax: "<length>"; inherits: false; initial-value: 14px; }
+@property --tail-y { syntax: "<length-percentage>"; inherits: false; initial-value: 50%; }
+@property --side-x { syntax: "<length>"; inherits: false; initial-value: 8px; }
+@property --side-w { syntax: "<length>"; inherits: false; initial-value: 360px; }
 
 html, body {
   margin: 0;

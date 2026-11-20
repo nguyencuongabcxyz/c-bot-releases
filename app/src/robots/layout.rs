@@ -140,6 +140,34 @@ pub(super) fn layout_for(
     }
 }
 
+/// At its desk, not docked nor on the stage: the chat beside it, as wide as you made it (with
+/// room for the side panel too, when that's open).
+fn free_layout(r: &Robot) -> Layout {
+    let lay = |chat_w| layout_for(r.anchor, r.expanded, r.tucked, r.peek, chat_w, r.dims);
+    let fit = lay(r.chat_w + r.side_w);
+    let beside = matches!(fit.placement, "left" | "right");
+    if r.resize_from.is_some() && r.expanded && beside {
+        // (its edge being dragged: the window as wide as the chat can go on that side, from the
+        // press to the let-go, and only the panel moves in it. Resized at every step, the window
+        // and the whole chat in it were laid out afresh every frame; it's fitted as you let go)
+        return roomy(lay(fit.max_chat_w), &fit);
+    }
+    fit
+}
+
+/// `big`'s window (the chat as wide as it can go), with `fit`'s chat in it, by the robot as
+/// `fit` has it: the window grew on the chat's side, so the robot sits further in by as much.
+fn roomy(mut big: Layout, fit: &Layout) -> Layout {
+    let num = |l: &Layout, k: &str| l.msg[k].as_f64().unwrap_or(0.0);
+    let shift = num(&big, "robotX") - num(fit, "robotX");
+    let panel = &fit.msg["panel"];
+    let x = panel["x"].as_f64().unwrap_or(0.0) + shift;
+    big.msg
+        .insert("panel".into(), json!({ "x": x, "w": panel["w"].clone() }));
+    big.panel_w = fit.panel_w;
+    big
+}
+
 /// On the stage: the window is its tile, the chat fills it (stage::INSET in from its edges),
 /// the robot itself hides (its face goes in the chat's title bar).
 pub(super) fn stage_layout(t: &StageTile) -> Layout {
@@ -213,14 +241,7 @@ pub(super) fn lay_out(app: &AppHandle, id: &str) -> Option<Laid> {
         let layout = match (&r.stage, docked) {
             (Some(t), _) => stage_layout(t),
             (None, Some(l)) => l,
-            (None, None) => layout_for(
-                r.anchor,
-                r.expanded,
-                r.tucked,
-                r.peek,
-                r.chat_w + r.side_w,
-                r.dims,
-            ), // (the panel makes room for both)
+            (None, None) => free_layout(r),
         };
         let was = r
             .layout
@@ -263,4 +284,43 @@ pub(super) fn lay_out(app: &AppHandle, id: &str) -> Option<Laid> {
         walkers::veil(app, hwnd, hide);
     }
     Some(laid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn laid(width: i32, robot_x: f64, panel_x: f64, panel_w: f64) -> Layout {
+        let msg = json!({ "robotX": robot_x, "panel": { "x": panel_x, "w": panel_w }, "placement": "left" });
+        Layout {
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                w: width,
+                h: 900,
+            },
+            placement: "left",
+            panel_w,
+            max_chat_w: 1200.0,
+            msg: object(msg),
+        }
+    }
+
+    #[test]
+    fn roomy_keeps_a_left_chat_against_the_robot() {
+        // the chat on the robot's left, 500 wide: the window grows 700 to the left
+        let fit = laid(800, 500.0, 8.0, 486.0);
+        let big = roomy(laid(1500, 1200.0, 8.0, 1186.0), &fit);
+        assert_eq!(big.bounds.w, 1500);
+        assert_eq!(big.msg["panel"], json!({ "x": 708.0, "w": 486.0 }));
+        assert!((big.panel_w - 486.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn roomy_keeps_a_right_chat_where_it_was() {
+        // the chat on its right: the window grows to the right, the robot stays at its left
+        let fit = laid(800, 0.0, 306.0, 480.0);
+        let big = roomy(laid(1500, 0.0, 306.0, 1180.0), &fit);
+        assert_eq!(big.msg["panel"], json!({ "x": 306.0, "w": 480.0 }));
+    }
 }

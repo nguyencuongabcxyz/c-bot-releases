@@ -10,7 +10,7 @@ import type { ChatLogApi } from './log';
 import type { StageApi } from '@/features/robots/stage/tile';
 import type { RobotState } from '@/views/robot/types';
 import * as ipc from '@/ipc';
-import { $ } from '@/lib/dom';
+import { $, setVar } from '@/lib/dom';
 import { onDrag } from '@/lib/drag';
 import type { Office3DView } from '@/office3d';
 
@@ -34,19 +34,21 @@ export function createChatSize(r: ChatSizeNeeds) {
   let chatH: number | null = null; // (null: the height of the screen)
   let winH = innerHeight; // (the window's height in the last layout: it's resized just after)
   const fullH = () => winH - 22; // (8 px above, 14 below, as #panel sits)
+  // (the variables go on the elements that use them: views/robot/robot.css says why)
+  const panels = [$('#panel'), $('#side-panel')];
+  const tailed = [$('#panel'), $('#panel .tail')];
   function placePanel() {
     if (r.stagePart.staged) return; // (on the stage the chat fills its tile: robot:layout)
-    const root = document.documentElement.style;
     const h = chatH == null ? fullH() : Math.max(Math.min(CHAT_H_MIN, fullH()), Math.min(chatH, fullH()));
     const fromTop = r.state.robotY + (ROBOT_H * (r.state.scale || 1)) / 2 < winH / 2;
     const top = fromTop ? 8 : winH - 14 - h;
-    root.setProperty('--panel-top', `${top}px`);
-    root.setProperty('--panel-bottom', `${winH - top - h}px`);
+    setVar(panels, '--panel-top', `${top}px`);
+    setVar(panels, '--panel-bottom', `${winH - top - h}px`);
     r.body.classList.toggle('chat-from-top', fromTop);
     r.body.classList.toggle('chat-short', h < fullH() - 2);
     // the tail points at the robot's head (kept on the panel's straight edge)
     const headY = r.state.robotY + r.office.headPosition().y - top;
-    root.setProperty('--tail-y', `${Math.round(Math.min(Math.max(headY, 40), h - 70))}px`);
+    setVar(tailed, '--tail-y', `${Math.round(Math.min(Math.max(headY, 40), h - 70))}px`);
   }
   function sizeGrip(grip: HTMLElement, width: boolean, height: boolean) {
     const way = width && height ? 'd' : width ? 'h' : 'v';
